@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pgView Shop</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    tr[onclick]:hover, tr[style*="cursor"]:hover { background: var(--pico-table-row-stripped-background-color); }
+    nav { margin-bottom: 0; }
+    #app { min-height: 80vh; }
+    .grid article { margin-bottom: 0; }
+    [role="button"].secondary { --pico-color: var(--pico-secondary); }
+  </style>
+</head>
+<body>
+  <div id="app" style="padding:4rem;text-align:center">
+    <p aria-busy="true">Loading...</p>
+  </div>
+
+  <footer class="container" style="text-align:center;padding:2rem;opacity:0.5">
+    <small>pgView — Server-Side Rendering in PL/pgSQL — 0 dependencies</small>
+  </footer>
+
+  <script>
+    var API = 'http://localhost:3000/rpc/page';
+
+    function render(html) {
+      var app = document.getElementById('app');
+      app.innerHTML = html;
+      // Convert <md> blocks to rendered HTML (innerHTML preserves badges/links)
+      app.querySelectorAll('md').forEach(function(el) {
+        var div = document.createElement('div');
+        div.innerHTML = marked.parse(el.innerHTML.trim());
+        el.parentNode.replaceChild(div, el);
+      });
+      // Make any table row containing an internal link fully clickable
+      app.querySelectorAll('tbody tr').forEach(function(tr) {
+        var a = tr.querySelector('a[href^="/"]');
+        if (!a) return;
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', function(e) {
+          if (e.target.closest('a')) return;
+          e.preventDefault();
+          go(a.getAttribute('href'));
+        });
+      });
+      // Execute inline scripts
+      app.querySelectorAll('script').forEach(function(old) {
+        var s = document.createElement('script');
+        s.textContent = old.textContent;
+        old.parentNode.replaceChild(s, old);
+      });
+    }
+
+    function go(path) {
+      fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_path: path, p_body: {} })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(html) {
+        if (html.startsWith('<!-- redirect:')) {
+          return go(html.match(/<!-- redirect:(.+?) -->/)[1]);
+        }
+        render(html);
+        history.pushState({ path: path }, '', '#' + path);
+      })
+      .catch(function(err) {
+        render('<main class="container"><article><header>Network Error</header><p>' + err.message + '</p></article></main>');
+      });
+    }
+
+    function post(path, body) {
+      fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_path: path, p_body: body })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(html) {
+        if (html.startsWith('<!-- redirect:')) {
+          return go(html.match(/<!-- redirect:(.+?) -->/)[1]);
+        }
+        render(html);
+        history.pushState({ path: path }, '', '#' + path);
+      })
+      .catch(function(err) {
+        render('<main class="container"><article><header>Network Error</header><p>' + err.message + '</p></article></main>');
+      });
+    }
+
+    document.getElementById('app').addEventListener('click', function(e) {
+      var a = e.target.closest('a[href^="/"]');
+      if (!a) return;
+      e.preventDefault();
+      go(a.getAttribute('href'));
+    });
+
+    window.onpopstate = function(e) { if (e.state) go(e.state.path); };
+
+    go(location.hash.slice(1) || '/');
+  </script>
+</body>
+</html>

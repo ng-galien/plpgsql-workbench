@@ -1,0 +1,29 @@
+{
+  "name": "plpgsql-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for PL/pgSQL Workbench",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "plpgsql-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@libpg-query/parser": "^17.6.3",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@types/express": "^5.0.6",
+    "express": "^5.2.1",
+    "pg": "^8.20.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.18.0",
+    "nodemon": "^3.1.14",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0"
+  }
+}
