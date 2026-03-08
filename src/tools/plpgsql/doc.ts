@@ -1,9 +1,8 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { DbClient } from "../connection.js";
-import { text, withClient } from "../helpers.js";
+import type { DbClient } from "../../connection.js";
+import type { ToolHandler, WithClient } from "../../container.js";
+import { text } from "../../helpers.js";
 
-// Helpers that clutter the graph — filter them out by default
 const HELPER_FNS = new Set([
   "esc", "path_segment", "pgv_money", "pgv_badge", "pgv_status", "pgv_tier", "pgv_nav",
   "h", "ok_response", "err_response", "list_response", "path_id",
@@ -18,7 +17,6 @@ interface Dep {
 }
 
 async function queryDeps(client: DbClient, schemas: string[]): Promise<Dep[]> {
-  // Check if plpgsql_check is available
   const extCheck = await client.query(
     `SELECT 1 FROM pg_extension WHERE extname = 'plpgsql_check'`
   );
@@ -69,11 +67,9 @@ function buildGraph(deps: Dep[], schemas: string[], showHelpers: boolean, showTa
   const schemasSet = new Set(schemas);
   const violations: string[] = [];
 
-  // Classify functions by layer
   const isPage = (name: string) => name.startsWith("pgv_");
   const isRouter = (name: string) => name === "page";
 
-  // Subgraphs per schema
   for (const schema of schemas) {
     const schemaFns = new Set(
       deps.filter(d => d.source_schema === schema).map(d => d.source)
@@ -111,7 +107,6 @@ function buildGraph(deps: Dep[], schemas: string[], showHelpers: boolean, showTa
     lines.push(`  end`);
   }
 
-  // Edges
   for (const d of deps) {
     if (d.dep_type === "RELATION" && !showTables) continue;
     if (!showHelpers && HELPER_FNS.has(d.target)) continue;
@@ -121,7 +116,6 @@ function buildGraph(deps: Dep[], schemas: string[], showHelpers: boolean, showTa
     const targetId = `${d.target_schema}_${d.target}`;
     const arrow = d.dep_type === "RELATION" ? "-.->" : "-->";
 
-    // Cross-schema = boundary violation
     if (d.source_schema !== d.target_schema && schemasSet.has(d.target_schema)) {
       lines.push(`  ${sourceId} ${arrow}|CROSS| ${targetId}`);
       violations.push(`${d.source_schema}.${d.source} -> ${d.target_schema}.${d.target}`);
@@ -130,7 +124,6 @@ function buildGraph(deps: Dep[], schemas: string[], showHelpers: boolean, showTa
     }
   }
 
-  // Style violations in red
   if (violations.length > 0) {
     lines.push(`  linkStyle default stroke:#888`);
   }
@@ -138,18 +131,26 @@ function buildGraph(deps: Dep[], schemas: string[], showHelpers: boolean, showTa
   return lines.join("\n");
 }
 
-export function registerDoc(s: McpServer): void {
-  s.tool(
-    "doc",
-    "Generate dependency graph (Mermaid) for a schema. Shows function calls, table access, and cross-schema boundary violations.",
-    {
-      schema: z.string().describe("Schema name, or comma-separated list. Ex: shop or clients,commandes"),
-      tables: z.boolean().default(false).describe("Include table dependencies (default: false)"),
-      helpers: z.boolean().default(false).describe("Include helper functions like esc, pgv_money (default: false)"),
+export function createDocTool({ withClient }: {
+  withClient: WithClient;
+}): ToolHandler {
+  return {
+    metadata: {
+      name: "pg_doc",
+      description: "Generate dependency graph (Mermaid) for a schema. Shows function calls, table access, and cross-schema boundary violations.",
+      schema: z.object({
+        schema: z.string().describe("Schema name, or comma-separated list. Ex: shop or clients,commandes"),
+        tables: z.boolean().default(false).describe("Include table dependencies (default: false)"),
+        helpers: z.boolean().default(false).describe("Include helper functions like esc, pgv_money (default: false)"),
+      }),
     },
-    async ({ schema, tables, helpers }) => {
+    handler: async (args, _extra) => {
+      const schemaArg = args.schema as string;
+      const tables = (args.tables as boolean | undefined) ?? false;
+      const helpers = (args.helpers as boolean | undefined) ?? false;
+
       return withClient(async (client) => {
-        const schemas = schema.split(",").map(s => s.trim());
+        const schemas = schemaArg.split(",").map(s => s.trim());
 
         const deps = await queryDeps(client, schemas);
         if (deps.length === 0) {
@@ -158,7 +159,6 @@ export function registerDoc(s: McpServer): void {
 
         const mermaid = buildGraph(deps, schemas, helpers, tables);
 
-        // Detect boundary violations
         const schemasSet = new Set(schemas);
         const violations = deps.filter(
           d => d.source_schema !== d.target_schema
@@ -168,12 +168,12 @@ export function registerDoc(s: McpServer): void {
 
         const parts: string[] = [];
         parts.push(`# Dependency Graph: ${schemas.join(", ")}`);
+        parts.push(`completeness: full`);
         parts.push("");
         parts.push("```mermaid");
         parts.push(mermaid);
         parts.push("```");
 
-        // Stats
         const fnCalls = deps.filter(d => d.dep_type === "FUNCTION" && (helpers || !HELPER_FNS.has(d.target)));
         const tblAccess = deps.filter(d => d.dep_type === "RELATION");
         const uniqueFns = new Set(deps.map(d => `${d.source_schema}.${d.source}`));
@@ -201,6 +201,6 @@ export function registerDoc(s: McpServer): void {
 
         return text(parts.join("\n"));
       });
-    }
-  );
+    },
+  };
 }

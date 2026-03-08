@@ -1,7 +1,7 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { text, withClient } from "../helpers.js";
-import type { DbClient } from "../connection.js";
+import type { DbClient } from "../../connection.js";
+import type { ToolHandler, WithClient } from "../../container.js";
+import { text } from "../../helpers.js";
 import fs from "fs/promises";
 import path from "path";
 
@@ -24,7 +24,6 @@ async function queryFunctions(
   schema?: string,
   fnName?: string,
 ): Promise<FunctionEntry[]> {
-  // Exclude functions owned by extensions (pgTAP, plpgsql_check, etc.)
   let where = "l.lanname IN ('plpgsql', 'sql') AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid = d.refobjid WHERE d.objid = p.oid AND d.deptype = 'e')";
   const params: string[] = [];
 
@@ -65,7 +64,6 @@ async function dumpFunctions(
     return "no functions found";
   }
 
-  // Detect overloads (same schema+name)
   const counts = new Map<string, number>();
   for (const fn of functions) {
     const key = `${fn.schema}/${fn.name}`;
@@ -90,7 +88,6 @@ async function dumpFunctions(
     }
 
     const filePath = path.join(schemaDir, fileName);
-    // pg_get_functiondef omits trailing semicolon — add it for psql compatibility
     const content = fn.ddl.trimEnd().endsWith(";") ? fn.ddl : fn.ddl.trimEnd() + ";\n";
     await fs.writeFile(filePath, content, "utf-8");
     written.push(`${fn.schema}/${fileName}`);
@@ -98,6 +95,7 @@ async function dumpFunctions(
 
   const parts: string[] = [];
   parts.push(`dumped ${written.length} function${written.length !== 1 ? "s" : ""} to ${outDir}`);
+  parts.push(`completeness: full`);
   parts.push("");
   for (const f of written) {
     parts.push(`  ${f}`);
@@ -105,23 +103,31 @@ async function dumpFunctions(
   return parts.join("\n");
 }
 
-export function registerDump(s: McpServer): void {
-  s.tool(
-    "dump",
-    "Export PL/pgSQL and SQL functions to SQL files on disk for version control.\n" +
-      "Creates one .sql file per function with full CREATE OR REPLACE DDL.\n" +
-      "Structure: {path}/{schema}/{function_name}.sql",
-    {
-      target: z
-        .string()
-        .optional()
-        .describe(
-          "plpgsql:// URI scope. Omit for all schemas, plpgsql://schema for one schema, plpgsql://schema/function/name for one function",
-        ),
-      path: z.string().describe("Output directory (absolute or relative to server CWD)"),
+export function createDumpTool({ withClient }: {
+  withClient: WithClient;
+}): ToolHandler {
+  return {
+    metadata: {
+      name: "pg_dump",
+      description:
+        "Export PL/pgSQL and SQL functions to SQL files on disk for version control.\n" +
+        "Creates one .sql file per function with full CREATE OR REPLACE DDL.\n" +
+        "Structure: {path}/{schema}/{function_name}.sql",
+      schema: z.object({
+        target: z
+          .string()
+          .optional()
+          .describe(
+            "plpgsql:// URI scope. Omit for all schemas, plpgsql://schema for one schema, plpgsql://schema/function/name for one function",
+          ),
+        path: z.string().describe("Output directory (absolute or relative to server CWD)"),
+      }),
     },
-    async ({ target, path: outPath }) =>
-      withClient(async (client) => {
+    handler: async (args, _extra) => {
+      const target = args.target as string | undefined;
+      const outPath = args.path as string;
+
+      return withClient(async (client) => {
         let schema: string | undefined;
         let fnName: string | undefined;
 
@@ -135,13 +141,14 @@ export function registerDump(s: McpServer): void {
             if (schemaMatch) {
               schema = schemaMatch[1];
             } else {
-              return text(`✗ invalid target: ${target}\nexpected: plpgsql://schema or plpgsql://schema/function/name`);
+              return text(`problem: invalid target: ${target}\nwhere: pg_dump\nfix_hint: expected plpgsql://schema or plpgsql://schema/function/name`);
             }
           }
         }
 
         const result = await dumpFunctions(client, resolveOutPath(outPath), schema, fnName);
         return text(result);
-      }),
-  );
+      });
+    },
+  };
 }

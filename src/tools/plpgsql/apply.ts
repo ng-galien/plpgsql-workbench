@@ -1,7 +1,7 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { text, withClient } from "../helpers.js";
-import type { DbClient } from "../connection.js";
+import type { DbClient } from "../../connection.js";
+import type { ToolHandler, WithClient } from "../../container.js";
+import { text } from "../../helpers.js";
 import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
@@ -54,7 +54,7 @@ async function applyFiles(
   try {
     entries = await fs.readdir(resolved);
   } catch {
-    return `✗ directory not found: ${resolved}`;
+    return `problem: directory not found: ${resolved}\nwhere: pg_apply\nfix_hint: check the path argument`;
   }
 
   const sqlFiles = entries.filter((f) => f.endsWith(".sql")).sort();
@@ -66,7 +66,6 @@ async function applyFiles(
     await ensureMigrationTable(client);
   }
 
-  // Load already-applied migrations
   const applied = new Map<string, string>();
   if (track) {
     const { rows } = await client.query<{ filename: string; hash: string }>(
@@ -83,7 +82,6 @@ async function applyFiles(
     const content = await fs.readFile(filePath, "utf-8");
     const hash = crypto.createHash("sha256").update(content).digest("hex").slice(0, 16);
 
-    // Track mode: skip already-applied, warn on changed
     if (track && applied.has(file)) {
       if (applied.get(file) === hash) {
         results.push({ filename: file, status: "skipped" });
@@ -94,7 +92,6 @@ async function applyFiles(
       }
     }
 
-    // Execute in its own transaction
     try {
       await client.query("BEGIN");
       await client.query(content);
@@ -106,7 +103,6 @@ async function applyFiles(
       continue;
     }
 
-    // Record successful application
     if (track) {
       await client.query(
         `INSERT INTO workbench.applied_migration (filename, hash, commit_hash) VALUES ($1, $2, $3)
@@ -136,6 +132,7 @@ function formatResults(results: ApplyResult[], dir: string): string {
   } else {
     parts.push(`✓ ${applied.length} applied (${dir})`);
   }
+  parts.push(`completeness: full`);
 
   parts.push("");
 
@@ -165,37 +162,45 @@ function formatResults(results: ApplyResult[], dir: string): string {
   return parts.join("\n");
 }
 
-export function registerApply(s: McpServer): void {
-  s.tool(
-    "apply",
-    "Apply SQL files from disk to the database.\n" +
-      "Executes .sql files in alphabetical order, each in its own transaction.\n" +
-      "With track:true (default), skips already-applied files and detects changes.\n" +
-      "Use track:false for idempotent seed files that should always re-run.",
-    {
-      path: z.string().describe("Directory containing .sql files (relative to project root or absolute)"),
-      track: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe("Track applied files to avoid re-running (default: true). Set false for seed files."),
-      force: z
-        .boolean()
-        .optional()
-        .default(false)
-        .describe("Re-apply changed files instead of warning (only with track:true)"),
+export function createApplyTool({ withClient }: {
+  withClient: WithClient;
+}): ToolHandler {
+  return {
+    metadata: {
+      name: "pg_apply",
+      description:
+        "Apply SQL files from disk to the database.\n" +
+        "Executes .sql files in alphabetical order, each in its own transaction.\n" +
+        "With track:true (default), skips already-applied files and detects changes.\n" +
+        "Use track:false for idempotent seed files that should always re-run.",
+      schema: z.object({
+        path: z.string().describe("Directory containing .sql files (relative to project root or absolute)"),
+        track: z
+          .boolean()
+          .optional()
+          .default(true)
+          .describe("Track applied files to avoid re-running (default: true). Set false for seed files."),
+        force: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe("Re-apply changed files instead of warning (only with track:true)"),
+      }),
     },
-    async ({ path: dir, track, force }) =>
-      withClient(async (client) => {
+    handler: async (args, _extra) => {
+      const dir = args.path as string;
+      const track = (args.track as boolean | undefined) ?? true;
+      const force = (args.force as boolean | undefined) ?? false;
+
+      return withClient(async (client) => {
         if (force && track) {
-          // Force mode: clear tracked entries for changed files so they re-run
           await ensureMigrationTable(client);
           const resolved = resolveDir(dir);
           let entries: string[];
           try {
             entries = await fs.readdir(resolved);
           } catch {
-            return text(`✗ directory not found: ${resolved}`);
+            return text(`problem: directory not found: ${resolved}\nwhere: pg_apply\nfix_hint: check the path argument`);
           }
           const sqlFiles = entries.filter((f) => f.endsWith(".sql")).sort();
           for (const file of sqlFiles) {
@@ -214,6 +219,7 @@ export function registerApply(s: McpServer): void {
 
         const result = await applyFiles(client, dir, track);
         return text(result);
-      }),
-  );
+      });
+    },
+  };
 }

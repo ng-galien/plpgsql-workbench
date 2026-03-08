@@ -1,8 +1,10 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { DbClient } from "../connection.js";
-import { PlUri } from "../uri.js";
-import { text, withClient } from "../helpers.js";
+import type { DbClient } from "../../connection.js";
+import type { ToolHandler, WithClient } from "../../container.js";
+import { text } from "../../helpers.js";
+import { PlUri } from "../../uri.js";
+
+// --- Shared service (registered in container, injected into set + coverage) ---
 
 export interface TestReport {
   passed: number;
@@ -51,6 +53,7 @@ export function formatTestReport(report: TestReport): string {
   const parts: string[] = [];
   const sym = report.failed > 0 ? "✗" : "✓";
   parts.push(`${sym} ${report.passed} passed, ${report.failed} failed, ${report.total} total`);
+  parts.push(`completeness: full`);
   parts.push("");
 
   for (const r of report.results) {
@@ -106,17 +109,29 @@ export async function runTests(
   }
 }
 
-export function registerTest(s: McpServer): void {
-  s.tool(
-    "test",
-    "Run pgTAP tests. target: run unit test for a function. schema: run all tests in a test schema.\n" +
-      "Convention and examples: get plpgsql://workbench/doc/testing",
-    {
-      target: z.string().optional().describe("Function URI to test. Ex: plpgsql://public/function/hello"),
-      schema: z.string().optional().describe("Test schema. Ex: public_ut, billing_it"),
-      pattern: z.string().optional().describe("Regex filter on test names. Ex: ^test_hello$"),
+// --- Tool factory ---
+
+export function createTestTool({ withClient, runTests }: {
+  withClient: WithClient;
+  runTests: (client: DbClient, testSchema: string, pattern?: string) => Promise<TestReport | null>;
+}): ToolHandler {
+  return {
+    metadata: {
+      name: "pg_test",
+      description:
+        "Run pgTAP tests. target: run unit test for a function. schema: run all tests in a test schema.\n" +
+        "Convention and examples: pg_get plpgsql://workbench/doc/testing",
+      schema: z.object({
+        target: z.string().optional().describe("Function URI to test. Ex: plpgsql://public/function/hello"),
+        schema: z.string().optional().describe("Test schema. Ex: public_ut, billing_it"),
+        pattern: z.string().optional().describe("Regex filter on test names. Ex: ^test_hello$"),
+      }),
     },
-    async ({ target, schema, pattern }) => {
+    handler: async (args, _extra) => {
+      const target = args.target as string | undefined;
+      const schema = args.schema as string | undefined;
+      const pattern = args.pattern as string | undefined;
+
       if (!target && !schema) return text("✗ provide target (function URI) or schema (test schema)");
 
       return withClient(async (client) => {
@@ -149,5 +164,5 @@ export function registerTest(s: McpServer): void {
         return text(formatTestReport(report));
       });
     },
-  );
+  };
 }

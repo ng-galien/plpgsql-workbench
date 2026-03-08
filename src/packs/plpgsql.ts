@@ -1,0 +1,77 @@
+/**
+ * plpgsql pack — registers the PostgreSQL connection, shared services,
+ * and all 11 plpgsql-workbench tools into the Awilix container.
+ *
+ * Dependencies are resolved by parameter name (Awilix PROXY mode).
+ */
+
+import { Pool } from "pg";
+import { asFunction, type AwilixContainer } from "awilix";
+import type { DbClient } from "../connection.js";
+import type { ToolPack, WithClient } from "../container.js";
+
+// Shared services
+import { resolveUri } from "../tools/plpgsql/get.js";
+import { runTests, formatTestReport } from "../tools/plpgsql/test.js";
+import { createSetFunction } from "../tools/plpgsql/set.js";
+
+// Tool factories
+import { createGetTool } from "../tools/plpgsql/get.js";
+import { createSearchTool } from "../tools/plpgsql/search.js";
+import { createSetTool } from "../tools/plpgsql/set.js";
+import { createEditTool } from "../tools/plpgsql/edit.js";
+import { createQueryTool } from "../tools/plpgsql/query.js";
+import { createExplainTool } from "../tools/plpgsql/explain.js";
+import { createTestTool } from "../tools/plpgsql/test.js";
+import { createCoverageTool } from "../tools/plpgsql/coverage.js";
+import { createDumpTool } from "../tools/plpgsql/dump.js";
+import { createApplyTool } from "../tools/plpgsql/apply.js";
+import { createDocTool } from "../tools/plpgsql/doc.js";
+
+export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record<string, unknown>) => {
+  const connectionString = (config.connectionString as string) ??
+    process.env.PLPGSQL_CONNECTION ??
+    process.env.DATABASE_URL ??
+    "postgresql://postgres@localhost:5432/postgres";
+
+  container.register({
+    // --- Infrastructure ---
+
+    pool: asFunction(() =>
+      new Pool({ connectionString, max: 5 })
+    ).singleton().disposer((pool: Pool) => pool.end()),
+
+    withClient: asFunction(({ pool }: { pool: Pool }) => {
+      const fn: WithClient = async <T>(cb: (client: DbClient) => Promise<T>): Promise<T> => {
+        const client = await pool.connect();
+        try { return await cb(client); }
+        finally { client.release(); }
+      };
+      return fn;
+    }).singleton(),
+
+    // --- Shared services (used across tools via injection) ---
+    // Wrapped in asFunction so they participate in DI lifecycle
+    // and the pool/withClient aren't eagerly resolved.
+
+    resolveUri: asFunction(() => resolveUri).singleton(),
+    runTests: asFunction(() => runTests).singleton(),
+    formatTestReport: asFunction(() => formatTestReport).singleton(),
+
+    setFunction: asFunction(createSetFunction).singleton(),
+
+    // --- Tools ---
+
+    getTool: asFunction(createGetTool).singleton(),
+    searchTool: asFunction(createSearchTool).singleton(),
+    setTool: asFunction(createSetTool).singleton(),
+    editTool: asFunction(createEditTool).singleton(),
+    queryTool: asFunction(createQueryTool).singleton(),
+    explainTool: asFunction(createExplainTool).singleton(),
+    testTool: asFunction(createTestTool).singleton(),
+    coverageTool: asFunction(createCoverageTool).singleton(),
+    dumpTool: asFunction(createDumpTool).singleton(),
+    applyTool: asFunction(createApplyTool).singleton(),
+    docTool: asFunction(createDocTool).singleton(),
+  });
+};

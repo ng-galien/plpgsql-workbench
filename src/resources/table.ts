@@ -90,9 +90,10 @@ async function findTableUsers(
       AND p.prosrc ~* $2
   `, [schema, `\\m${tableName}\\M`]);
 
+  const esc = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return rows.map((r) => {
-    const hasWrite = new RegExp(`(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\s+.*\\b${tableName}\\b`, "i").test(r.prosrc);
-    const hasRead = new RegExp(`(FROM|JOIN)\\s+.*\\b${tableName}\\b`, "i").test(r.prosrc);
+    const hasWrite = new RegExp(`(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\s+.*\\b${esc}\\b`, "i").test(r.prosrc);
+    const hasRead = new RegExp(`(FROM|JOIN)\\s+.*\\b${esc}\\b`, "i").test(r.prosrc);
     const mode: "R" | "W" | "RW" = hasWrite && hasRead ? "RW" : hasWrite ? "W" : "R";
     return { name: r.proname, mode };
   });

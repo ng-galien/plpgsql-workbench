@@ -1,5 +1,3 @@
-import { getClient, type DbClient } from "./connection.js";
-
 export type ToolResult = { content: { type: "text"; text: string }[] };
 
 export function text(t: string): ToolResult {
@@ -13,15 +11,6 @@ export function wrap(uri: string, completeness: "full" | "partial", body: string
     for (const n of next) parts.push(`  - ${n}`);
   }
   return parts.join("\n");
-}
-
-export async function withClient<T>(fn: (client: DbClient) => Promise<T>): Promise<T> {
-  const client = await getClient();
-  try {
-    return await fn(client);
-  } finally {
-    client.release();
-  }
 }
 
 interface PgError {

@@ -1,24 +1,34 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { PlUri } from "../uri.js";
-import { text, withClient } from "../helpers.js";
+import type { ToolHandler, WithClient } from "../../container.js";
+import { text } from "../../helpers.js";
+import { PlUri } from "../../uri.js";
 
 const SEARCH_LIMIT = 20;
 
-export function registerSearch(s: McpServer): void {
-  s.tool(
-    "search",
-    "Find database objects by name or content. Searches functions, tables, triggers, and types.\n" +
-      "Returns matching objects with navigable URIs.\n" +
-      "name: SQL LIKE pattern (% = wildcard). content: regex search in function bodies.\n" +
-      "Results capped at 20 per object type. Narrow with schema or kind if truncated.",
-    {
-      name: z.string().optional().describe("Name pattern. Ex: %transfer%, order%"),
-      content: z.string().optional().describe("Regex in function bodies. Ex: INSERT INTO orders"),
-      schema: z.string().optional().describe("Limit to schema (default: all)"),
-      kind: z.enum(["all", "function", "table", "trigger", "type"]).optional().describe("Object type (default: all)"),
+export function createSearchTool({ withClient }: {
+  withClient: WithClient;
+}): ToolHandler {
+  return {
+    metadata: {
+      name: "pg_search",
+      description:
+        "Find database objects by name or content. Searches functions, tables, triggers, and types.\n" +
+        "Returns matching objects with navigable URIs.\n" +
+        "name: SQL LIKE pattern (% = wildcard). content: regex search in function bodies.\n" +
+        "Results capped at 20 per object type. Narrow with schema or kind if truncated.",
+      schema: z.object({
+        name: z.string().optional().describe("Name pattern. Ex: %transfer%, order%"),
+        content: z.string().optional().describe("Regex in function bodies. Ex: INSERT INTO orders"),
+        schema: z.string().optional().describe("Limit to schema (default: all)"),
+        kind: z.enum(["all", "function", "table", "trigger", "type"]).optional().describe("Object type (default: all)"),
+      }),
     },
-    async ({ name, content, schema, kind }) => {
+    handler: async (args, _extra) => {
+      const name = args.name as string | undefined;
+      const content = args.content as string | undefined;
+      const schema = args.schema as string | undefined;
+      const kind = args.kind as string | undefined;
+
       if (!name && !content) return text("✗ provide name and/or content");
 
       return withClient(async (client) => {
@@ -174,5 +184,5 @@ export function registerSearch(s: McpServer): void {
         return text(parts.join("\n"));
       });
     },
-  );
+  };
 }

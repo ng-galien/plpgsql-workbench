@@ -154,10 +154,11 @@ async function findTablesUsed(
 
   const used: { name: string; mode: "R" | "W" | "RW" }[] = [];
   for (const t of tables) {
-    const re = new RegExp(`\\b${t.relname}\\b`, "i");
+    const esc = t.relname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`\\b${esc}\\b`, "i");
     if (re.test(body)) {
-      const hasWrite = new RegExp(`(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\s+.*\\b${t.relname}\\b`, "i").test(body);
-      const hasRead = new RegExp(`(FROM|JOIN)\\s+.*\\b${t.relname}\\b`, "i").test(body);
+      const hasWrite = new RegExp(`(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\s+.*\\b${esc}\\b`, "i").test(body);
+      const hasRead = new RegExp(`(FROM|JOIN)\\s+.*\\b${esc}\\b`, "i").test(body);
       used.push({ name: t.relname, mode: hasWrite && hasRead ? "RW" : hasWrite ? "W" : "R" });
     }
   }

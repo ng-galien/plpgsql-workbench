@@ -3,31 +3,45 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
-import { registerGet } from "./tools/get.js";
-import { registerSearch } from "./tools/search.js";
-import { registerSet } from "./tools/set.js";
-import { registerEdit } from "./tools/edit.js";
-import { registerTest } from "./tools/test.js";
-import { registerQuery } from "./tools/query.js";
-import { registerExplain } from "./tools/explain.js";
-import { registerCoverage } from "./tools/coverage.js";
-import { registerDump } from "./tools/dump.js";
-import { registerApply } from "./tools/apply.js";
-import { registerDoc } from "./tools/doc.js";
+import pino from "pino";
+import { buildContainer, mountTools, type ToolPack } from "./container.js";
+import { plpgsqlPack } from "./packs/plpgsql.js";
+import { docstorePack } from "./packs/docstore.js";
+import { googlePack } from "./packs/google.js";
+
+const log = pino({
+  level: process.env.LOG_LEVEL ?? "info",
+  transport: { target: "pino-pretty", options: { colorize: true } },
+});
+
+log.info("Building container...");
+
+const packConfigs: Record<string, Record<string, unknown>> = {
+  plpgsql: {},
+  docstore: {},
+};
+const packImpls: Record<string, ToolPack> = {
+  plpgsql: plpgsqlPack,
+  docstore: docstorePack,
+};
+
+if (process.env.GOOGLE_CREDENTIALS_PATH) {
+  packConfigs.google = {};
+  packImpls.google = googlePack;
+  log.info("Google pack enabled (GOOGLE_CREDENTIALS_PATH set)");
+}
+
+const container = buildContainer(
+  { packs: packConfigs },
+  packImpls,
+);
+
+const registry: Map<string, unknown> = container.resolve("toolRegistry");
+log.info({ tools: [...registry.keys()], count: registry.size }, "Tools registered");
 
 function createServer(): McpServer {
   const s = new McpServer({ name: "plpgsql-workbench", version: "0.1.0" });
-  registerGet(s);
-  registerSearch(s);
-  registerSet(s);
-  registerEdit(s);
-  registerTest(s);
-  registerQuery(s);
-  registerExplain(s);
-  registerCoverage(s);
-  registerDump(s);
-  registerApply(s);
-  registerDoc(s);
+  mountTools(s, container);
   return s;
 }
 
@@ -37,6 +51,7 @@ const app = express();
 app.use(express.json());
 
 app.post("/mcp", async (req, res) => {
+  log.debug({ method: req.body?.method }, "MCP request");
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   const server = createServer();
   let closed = false;
@@ -54,7 +69,7 @@ app.post("/mcp", async (req, res) => {
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (err) {
-    console.error("Error handling MCP request:", err);
+    log.error(err, "Error handling MCP request");
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",
@@ -81,5 +96,5 @@ app.delete("/mcp", async (_req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.error(`plpgsql-workbench MCP listening on http://localhost:${PORT}/mcp`);
+  log.info({ port: PORT }, "plpgsql-workbench MCP listening");
 });
