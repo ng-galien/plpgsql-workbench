@@ -2,7 +2,7 @@
 # Port convention: app #3 → PG:5443 PGRST:3003 HTTP:8083
 services:
   postgres:
-    image: postgres:17-alpine
+    image: supabase/postgres:17.6.1.093
     ports:
       - "5443:5432"
     environment:

@@ -1,7 +1,7 @@
 # {{NAME}} — Port convention: app #{{SLOT}} → PG:{{PG}} PGRST:{{PGRST}} HTTP:{{HTTP}}
 services:
   postgres:
-    image: postgres:17-alpine
+    image: supabase/postgres:17.6.1.093
     ports:
       - "{{PG}}:5432"
     environment:
