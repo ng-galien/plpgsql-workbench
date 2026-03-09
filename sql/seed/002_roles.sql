@@ -28,3 +28,11 @@ GRANT USAGE ON SCHEMA app TO web_anon;
 -- pgv schema (reusable UI primitives)
 CREATE SCHEMA IF NOT EXISTS pgv;
 GRANT USAGE ON SCHEMA pgv TO web_anon;
+
+-- docman schema (document management)
+CREATE SCHEMA IF NOT EXISTS docman;
+GRANT USAGE ON SCHEMA docman TO web_anon;
+
+-- docstore schema (file index)
+CREATE SCHEMA IF NOT EXISTS docstore;
+GRANT USAGE ON SCHEMA docstore TO web_anon;
