@@ -25,8 +25,8 @@ PLPGSQL_CONNECTION=postgresql://postgres:postgres@localhost:5433/postgres npm st
 
 # Bootstrap seed data (extensions + test schemas are auto-created by Docker init)
 # For application data, use:
-#   pg_apply path:sql/migrations
-#   pg_apply path:sql/functions
+#   pg_schema path:sql/migrations
+#   pg_func_load path:sql/functions
 ```
 
 No test framework is configured in this repo — testing happens via pgTAP inside PostgreSQL.
@@ -110,14 +110,15 @@ Each tool file exports a factory function `createXxxTool(deps) -> ToolHandler`. 
 |------|------|---------|
 | `pg_get` | `get.ts` | Navigate database by `plpgsql://` URI |
 | `pg_search` | `search.ts` | Find objects by name pattern or body regex |
-| `pg_set` | `set.ts` | Deploy SQL (CREATE OR REPLACE) with plpgsql_check + auto-test pipeline |
-| `pg_edit` | `edit.ts` | Patch function body via old->new replacements |
+| `pg_func_set` | `func-set.ts` | Deploy function (CREATE OR REPLACE) with plpgsql_check + auto-test pipeline |
+| `pg_func_edit` | `func-edit.ts` | Patch function body via old->new replacements |
+| `pg_func_save` | `func-save.ts` | Save functions from DB to `.sql` files on disk |
+| `pg_func_load` | `func-load.ts` | Load function `.sql` files from disk to DB |
+| `pg_schema` | `schema.ts` | Apply DDL migration files with tracking (run-once) |
 | `pg_query` | `query.ts` | Execute raw SQL (SELECT returns rows, DML returns count) |
 | `pg_explain` | `explain.ts` | EXPLAIN ANALYZE on a query (wrapped in ROLLBACK transaction) |
 | `pg_test` | `test.ts` | Run pgTAP tests (by target URI or schema) |
 | `pg_coverage` | `coverage.ts` | Code coverage via AST instrumentation |
-| `pg_dump` | `dump.ts` | Export functions to `.sql` files on disk |
-| `pg_apply` | `apply.ts` | Apply `.sql` files with migration tracking |
 | `pg_doc` | `doc.ts` | Generate Mermaid dependency graphs via plpgsql_check |
 
 **docstore tools** (`src/tools/docstore/`):
@@ -154,7 +155,7 @@ Modules: `catalog.ts`, `schema.ts`, `function.ts`, `table.ts`, `trigger.ts`, `ty
 
 ### Deploy Pipeline
 
-When `pg_set` or `pg_edit` is called on a function:
+When `pg_func_set` or `pg_func_edit` is called on a function:
 1. `CREATE OR REPLACE FUNCTION` in transaction
 2. `plpgsql_check` static analysis (rolls back on error)
 3. Auto-run `{schema}_ut.test_{name}()` if it exists
@@ -191,7 +192,7 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, demo in `demo/init/05-pg
 - `sql/migrations/` — Application DDL (example: banking, shop schemas)
 - `sql/functions/` — Application functions organized by schema
 
-Applied via: `pg_apply path:sql/migrations` then `pg_apply path:sql/functions`.
+Applied via: `pg_schema path:sql/migrations` then `pg_func_load path:sql/functions`.
 
 Note: `sql/migrations/` and `sql/functions/` contain demo/example content (banking, shop). These are illustrative and not part of the platform itself.
 

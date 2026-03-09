@@ -104,7 +104,7 @@ export function createSetFunction({ runTests, formatTestReport }: {
 
 // --- Tool factory ---
 
-export function createSetTool({ withClient, setFunction, resolveUri }: {
+export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
   withClient: WithClient;
   setFunction: SetFunctionFn;
   resolveUri: ResolveUriFn;
@@ -141,10 +141,10 @@ export function createSetTool({ withClient, setFunction, resolveUri }: {
 
   return {
     metadata: {
-      name: "pg_set",
+      name: "pg_func_set",
       description:
-        "Deploy a PL/pgSQL object and validate it. On success, returns the deployed resource (same as get).\n" +
-        "Functions: CREATE OR REPLACE + plpgsql_check. DDL: dry-run in transaction (BEGIN/ROLLBACK).",
+        "Deploy a PL/pgSQL function and validate it. Pipeline: CREATE OR REPLACE + plpgsql_check + auto-test.\n" +
+        "On success, returns the deployed resource. Also handles DDL dry-run in transaction (BEGIN/ROLLBACK).",
       schema: z.object({
         uri: z.string().describe("Target URI. Ex: plpgsql://public/function/transfer"),
         content: z.string().describe("Full SQL statement. Ex: CREATE OR REPLACE FUNCTION ..."),
@@ -155,7 +155,7 @@ export function createSetTool({ withClient, setFunction, resolveUri }: {
       const content = args.content as string;
       const parsed = PlUri.parse(uri);
       if (!parsed || !parsed.kind || !parsed.name) {
-        return text(`problem: invalid URI: ${uri}\nwhere: pg_set\nfix_hint: use plpgsql://schema/kind/name`);
+        return text(`problem: invalid URI: ${uri}\nwhere: pg_func_set\nfix_hint: use plpgsql://schema/kind/name`);
       }
 
       return withClient(async (client) => {

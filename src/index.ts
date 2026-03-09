@@ -88,14 +88,14 @@ app.post("/mcp", async (req, res) => {
 
 // --- Claude Code workflow guard ---
 // Workflow strict:
-//   DDL (schemas, tables, indexes) → fichiers SQL + pg_apply
-//   Fonctions PL/pgSQL → pg_set + pg_test, puis pg_dump quand stable
+//   DDL (schemas, tables, indexes) → fichiers SQL + pg_schema
+//   Fonctions PL/pgSQL → pg_func_set + pg_test, puis pg_func_save quand stable
 //   pg_query → SELECT ad-hoc et DML données uniquement
 const WORKFLOW = [
   "Workflow strict:",
-  "  1. DDL (schemas, tables, indexes) -> fichiers SQL sur disque + pg_apply",
-  "  2. Fonctions PL/pgSQL -> pg_set pour creer/iterer + pg_test pour valider",
-  "  3. Quand stable -> pg_dump pour exporter en fichiers .sql",
+  "  1. DDL (schemas, tables, indexes) -> fichiers SQL sur disque + pg_schema",
+  "  2. Fonctions PL/pgSQL -> pg_func_set pour creer/iterer + pg_test pour valider",
+  "  3. Quand stable -> pg_func_save pour exporter en fichiers .sql",
   "  4. pg_query -> SELECT ad-hoc et DML donnees uniquement",
 ].join("\n");
 
@@ -115,7 +115,7 @@ app.post("/claude-hook", (req, res) => {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
           permissionDecisionReason:
-            "pg_query interdit pour les fonctions. Utilise pg_set + pg_test.\n\n" + WORKFLOW,
+            "pg_query interdit pour les fonctions. Utilise pg_func_set + pg_test.\n\n" + WORKFLOW,
         },
       });
       return;
@@ -127,7 +127,7 @@ app.post("/claude-hook", (req, res) => {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
           permissionDecisionReason:
-            "pg_query interdit pour le DDL. Ecris un fichier SQL + pg_apply.\n\n" + WORKFLOW,
+            "pg_query interdit pour le DDL. Ecris un fichier SQL + pg_schema.\n\n" + WORKFLOW,
         },
       });
       return;
@@ -145,7 +145,7 @@ app.post("/claude-hook", (req, res) => {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
           permissionDecisionReason:
-            "Interdit d'ecrire des fonctions dans des fichiers SQL. Utilise pg_set + pg_test, puis pg_dump quand stable.\n\n" + WORKFLOW,
+            "Interdit d'ecrire des fonctions dans des fichiers SQL. Utilise pg_func_set + pg_test, puis pg_func_save quand stable.\n\n" + WORKFLOW,
         },
       });
       return;

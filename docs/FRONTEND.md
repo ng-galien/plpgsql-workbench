@@ -621,7 +621,7 @@ docker compose up -d    # PostgreSQL + PostgREST
 ### Supabase (prod)
 
 ```
-1. Deploy fonctions via pg_apply
+1. Deploy fonctions via pg_func_load
 2. GRANT sur page() et frag_*()
 3. shell.html sur Supabase Storage ou CDN
 4. Changer l'endpoint : /rest/v1/rpc/page + header apikey

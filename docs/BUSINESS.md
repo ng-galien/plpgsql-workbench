@@ -342,7 +342,7 @@ workbench.tenant           (id, name, toolbox_name)      -- chaque tenant → 1 
 |---------|-------|-------|
 | `solo` | pg_query, pg_get, pg_search | 19€/mois |
 | `pro` | solo + pg_explain, pg_doc, fs_peek | 39€/mois |
-| `equipe` | pro + pg_coverage, pg_test, pg_dump | 69€/mois |
+| `equipe` | pro + pg_coverage, pg_test, pg_func_save | 69€/mois |
 | `admin` | tous (15 tools) | dev / administration |
 
 **Principes :**

@@ -101,14 +101,14 @@ async function dumpFunctions(
   return parts.join("\n");
 }
 
-export function createDumpTool({ withClient }: {
+export function createFuncSaveTool({ withClient }: {
   withClient: WithClient;
 }): ToolHandler {
   return {
     metadata: {
-      name: "pg_dump",
+      name: "pg_func_save",
       description:
-        "Export PL/pgSQL and SQL functions to SQL files on disk for version control.\n" +
+        "Save functions from database to SQL files on disk for version control.\n" +
         "Creates one .sql file per function with full CREATE OR REPLACE DDL.\n" +
         "Structure: {path}/{schema}/{function_name}.sql",
       schema: z.object({
@@ -139,7 +139,7 @@ export function createDumpTool({ withClient }: {
             if (schemaMatch) {
               schema = schemaMatch[1];
             } else {
-              return text(`problem: invalid target: ${target}\nwhere: pg_dump\nfix_hint: expected plpgsql://schema or plpgsql://schema/function/name`);
+              return text(`problem: invalid target: ${target}\nwhere: pg_func_save\nfix_hint: expected plpgsql://schema or plpgsql://schema/function/name`);
             }
           }
         }

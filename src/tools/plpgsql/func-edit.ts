@@ -3,18 +3,18 @@ import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
 import { PlUri } from "../../uri.js";
 import { queryFunctionDdl } from "../../resources/function.js";
-import type { SetFunctionFn } from "./set.js";
+import type { SetFunctionFn } from "./func-set.js";
 
-export function createEditTool({ withClient, setFunction }: {
+export function createFuncEditTool({ withClient, setFunction }: {
   withClient: WithClient;
   setFunction: SetFunctionFn;
 }): ToolHandler {
   return {
     metadata: {
-      name: "pg_edit",
+      name: "pg_func_edit",
       description:
         "Patch a PL/pgSQL function body. Fetches current DDL, applies old->new replacements, deploys and validates.\n" +
-        "Only for functions/procedures. Use pg_set for other object types.\n" +
+        "Only for functions/procedures. Use pg_func_set for other object types.\n" +
         "Each edit must match exactly once in the source (like a surgical patch).",
       schema: z.object({
         uri: z.string().describe("Function URI. Ex: plpgsql://public/function/transfer"),
@@ -29,12 +29,12 @@ export function createEditTool({ withClient, setFunction }: {
       const edits = args.edits as { old: string; new: string }[];
       const parsed = PlUri.parse(uri);
       if (!parsed || parsed.kind !== "function" || !parsed.name) {
-        return text("problem: edit only works on functions\nwhere: pg_edit\nfix_hint: URI must be plpgsql://schema/function/name");
+        return text("problem: edit only works on functions\nwhere: pg_func_edit\nfix_hint: URI must be plpgsql://schema/function/name");
       }
 
       return withClient(async (client) => {
         const ddl = await queryFunctionDdl(client, parsed.schema, parsed.name!);
-        if (!ddl) return text(`problem: function ${parsed.schema}.${parsed.name} not found\nwhere: pg_edit\nfix_hint: check the URI`);
+        if (!ddl) return text(`problem: function ${parsed.schema}.${parsed.name} not found\nwhere: pg_func_edit\nfix_hint: check the URI`);
 
         let patched = ddl;
         for (let i = 0; i < edits.length; i++) {

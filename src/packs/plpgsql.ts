@@ -1,6 +1,6 @@
 /**
  * plpgsql pack — registers the PostgreSQL connection, shared services,
- * and all 11 plpgsql-workbench tools into the Awilix container.
+ * and all plpgsql-workbench tools into the Awilix container.
  *
  * Dependencies are resolved by parameter name (Awilix PROXY mode).
  */
@@ -13,19 +13,20 @@ import type { ToolPack, WithClient } from "../container.js";
 // Shared services
 import { resolveUri } from "../tools/plpgsql/get.js";
 import { runTests, formatTestReport } from "../tools/plpgsql/test.js";
-import { createSetFunction } from "../tools/plpgsql/set.js";
+import { createSetFunction } from "../tools/plpgsql/func-set.js";
 
 // Tool factories
 import { createGetTool } from "../tools/plpgsql/get.js";
 import { createSearchTool } from "../tools/plpgsql/search.js";
-import { createSetTool } from "../tools/plpgsql/set.js";
-import { createEditTool } from "../tools/plpgsql/edit.js";
+import { createFuncSetTool } from "../tools/plpgsql/func-set.js";
+import { createFuncEditTool } from "../tools/plpgsql/func-edit.js";
 import { createQueryTool } from "../tools/plpgsql/query.js";
 import { createExplainTool } from "../tools/plpgsql/explain.js";
 import { createTestTool } from "../tools/plpgsql/test.js";
 import { createCoverageTool } from "../tools/plpgsql/coverage.js";
-import { createDumpTool } from "../tools/plpgsql/dump.js";
-import { createApplyTool } from "../tools/plpgsql/apply.js";
+import { createFuncSaveTool } from "../tools/plpgsql/func-save.js";
+import { createFuncLoadTool } from "../tools/plpgsql/func-load.js";
+import { createSchemaTool } from "../tools/plpgsql/schema.js";
 import { createDocTool } from "../tools/plpgsql/doc.js";
 
 export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record<string, unknown>) => {
@@ -68,14 +69,15 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
 
     getTool: asFunction(createGetTool).singleton(),
     searchTool: asFunction(createSearchTool).singleton(),
-    setTool: asFunction(createSetTool).singleton(),
-    editTool: asFunction(createEditTool).singleton(),
+    funcSetTool: asFunction(createFuncSetTool).singleton(),
+    funcEditTool: asFunction(createFuncEditTool).singleton(),
     queryTool: asFunction(createQueryTool).singleton(),
     explainTool: asFunction(createExplainTool).singleton(),
     testTool: asFunction(createTestTool).singleton(),
     coverageTool: asFunction(createCoverageTool).singleton(),
-    dumpTool: asFunction(createDumpTool).singleton(),
-    applyTool: asFunction(createApplyTool).singleton(),
+    funcSaveTool: asFunction(createFuncSaveTool).singleton(),
+    funcLoadTool: asFunction(createFuncLoadTool).singleton(),
+    schemaTool: asFunction(createSchemaTool).singleton(),
     docTool: asFunction(createDocTool).singleton(),
   });
 };

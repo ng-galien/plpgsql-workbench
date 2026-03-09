@@ -34,16 +34,16 @@ async function ensureMigrationTable(client: DbClient): Promise<void> {
   `);
 }
 
-interface ApplyResult {
+interface MigrationResult {
   filename: string;
   status: "applied" | "skipped" | "changed" | "error";
   message?: string;
 }
 
-async function applyFiles(
+async function applyMigrations(
   client: DbClient,
   dir: string,
-  track: boolean,
+  force: boolean,
 ): Promise<string> {
   const resolved = resolveDir(dir);
 
@@ -51,7 +51,7 @@ async function applyFiles(
   try {
     entries = await fs.readdir(resolved);
   } catch {
-    return `problem: directory not found: ${resolved}\nwhere: pg_apply\nfix_hint: check the path argument`;
+    return `problem: directory not found: ${resolved}\nwhere: pg_schema\nfix_hint: check the path argument`;
   }
 
   const sqlFiles = entries.filter((f) => f.endsWith(".sql")).sort();
@@ -59,34 +59,32 @@ async function applyFiles(
     return `no .sql files in ${resolved}`;
   }
 
-  if (track) {
-    await ensureMigrationTable(client);
-  }
+  await ensureMigrationTable(client);
 
   const applied = new Map<string, string>();
-  if (track) {
-    const { rows } = await client.query<{ filename: string; hash: string }>(
-      `SELECT filename, hash FROM workbench.applied_migration`,
-    );
-    for (const r of rows) applied.set(r.filename, r.hash);
-  }
+  const { rows } = await client.query<{ filename: string; hash: string }>(
+    `SELECT filename, hash FROM workbench.applied_migration`,
+  );
+  for (const r of rows) applied.set(r.filename, r.hash);
 
-  const commit = track ? await gitCommit() : null;
-  const results: ApplyResult[] = [];
+  const commit = await gitCommit();
+  const results: MigrationResult[] = [];
 
   for (const file of sqlFiles) {
     const filePath = path.join(resolved, file);
     const content = await fs.readFile(filePath, "utf-8");
     const hash = crypto.createHash("sha256").update(content).digest("hex").slice(0, 16);
 
-    if (track && applied.has(file)) {
+    if (applied.has(file)) {
       if (applied.get(file) === hash) {
         results.push({ filename: file, status: "skipped" });
         continue;
-      } else {
+      } else if (!force) {
         results.push({ filename: file, status: "changed", message: "file changed since last apply (hash mismatch)" });
         continue;
       }
+      // force: delete old tracking so it re-applies
+      await client.query(`DELETE FROM workbench.applied_migration WHERE filename = $1`, [file]);
     }
 
     try {
@@ -100,13 +98,11 @@ async function applyFiles(
       continue;
     }
 
-    if (track) {
-      await client.query(
-        `INSERT INTO workbench.applied_migration (filename, hash, commit_hash) VALUES ($1, $2, $3)
-         ON CONFLICT (filename) DO UPDATE SET hash = $2, commit_hash = $3, applied_at = now()`,
-        [file, hash, commit],
-      );
-    }
+    await client.query(
+      `INSERT INTO workbench.applied_migration (filename, hash, commit_hash) VALUES ($1, $2, $3)
+       ON CONFLICT (filename) DO UPDATE SET hash = $2, commit_hash = $3, applied_at = now()`,
+      [file, hash, commit],
+    );
 
     results.push({ filename: file, status: "applied" });
   }
@@ -114,7 +110,7 @@ async function applyFiles(
   return formatResults(results, dir);
 }
 
-function formatResults(results: ApplyResult[], dir: string): string {
+function formatResults(results: MigrationResult[], dir: string): string {
   const applied = results.filter((r) => r.status === "applied");
   const skipped = results.filter((r) => r.status === "skipped");
   const changed = results.filter((r) => r.status === "changed");
@@ -130,7 +126,6 @@ function formatResults(results: ApplyResult[], dir: string): string {
     parts.push(`✓ ${applied.length} applied (${dir})`);
   }
   parts.push(`completeness: full`);
-
   parts.push("");
 
   for (const r of results) {
@@ -159,62 +154,31 @@ function formatResults(results: ApplyResult[], dir: string): string {
   return parts.join("\n");
 }
 
-export function createApplyTool({ withClient }: {
+export function createSchemaTool({ withClient }: {
   withClient: WithClient;
 }): ToolHandler {
   return {
     metadata: {
-      name: "pg_apply",
+      name: "pg_schema",
       description:
-        "Apply SQL files from disk to the database.\n" +
+        "Apply pending DDL migration files to the database.\n" +
         "Executes .sql files in alphabetical order, each in its own transaction.\n" +
-        "With track:true (default), skips already-applied files and detects changes.\n" +
-        "Use track:false for idempotent seed files that should always re-run.",
+        "Tracks applied files to avoid re-running. Detects changed files.",
       schema: z.object({
-        path: z.string().describe("Directory containing .sql files (relative to project root or absolute)"),
-        track: z
-          .boolean()
-          .optional()
-          .default(true)
-          .describe("Track applied files to avoid re-running (default: true). Set false for seed files."),
+        path: z.string().describe("Directory containing DDL migration .sql files (relative to project root or absolute)"),
         force: z
           .boolean()
           .optional()
           .default(false)
-          .describe("Re-apply changed files instead of warning (only with track:true)"),
+          .describe("Re-apply changed files instead of warning"),
       }),
     },
     handler: async (args, _extra) => {
       const dir = args.path as string;
-      const track = (args.track as boolean | undefined) ?? true;
       const force = (args.force as boolean | undefined) ?? false;
 
       return withClient(async (client) => {
-        if (force && track) {
-          await ensureMigrationTable(client);
-          const resolved = resolveDir(dir);
-          let entries: string[];
-          try {
-            entries = await fs.readdir(resolved);
-          } catch {
-            return text(`problem: directory not found: ${resolved}\nwhere: pg_apply\nfix_hint: check the path argument`);
-          }
-          const sqlFiles = entries.filter((f) => f.endsWith(".sql")).sort();
-          for (const file of sqlFiles) {
-            const filePath = path.join(resolved, file);
-            const content = await fs.readFile(filePath, "utf-8");
-            const hash = crypto.createHash("sha256").update(content).digest("hex").slice(0, 16);
-            const { rows } = await client.query<{ hash: string }>(
-              `SELECT hash FROM workbench.applied_migration WHERE filename = $1`,
-              [file],
-            );
-            if (rows.length > 0 && rows[0].hash !== hash) {
-              await client.query(`DELETE FROM workbench.applied_migration WHERE filename = $1`, [file]);
-            }
-          }
-        }
-
-        const result = await applyFiles(client, dir, track);
+        const result = await applyMigrations(client, dir, force);
         return text(result);
       });
     },
