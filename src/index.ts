@@ -169,9 +169,13 @@ function esc(s: string): string {
 }
 
 app.get("/api/browse", async (req, res) => {
-  const dir = (req.query.path as string) || "/";
+  let dir = (req.query.path as string) || "/";
+  // Walk up to a valid directory if the path doesn't exist
+  let resolved = path.resolve(dir);
+  for (let i = 0; i < 20; i++) {
+    try { await fs.access(resolved); break; } catch { resolved = path.dirname(resolved); }
+  }
   try {
-    const resolved = path.resolve(dir);
     const parent = path.dirname(resolved);
     const entries = await fs.readdir(resolved, { withFileTypes: true });
     const dirs = entries

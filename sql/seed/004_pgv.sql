@@ -228,6 +228,28 @@ AS $function$
     || '</textarea></label>';
 $function$;
 
+CREATE OR REPLACE FUNCTION pgv.error(p_status text, p_title text, p_detail text DEFAULT NULL, p_hint text DEFAULT NULL)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  v_html := '<article style="border-left:4px solid var(--pico-del-color);margin-top:2rem">'
+    || '<header><strong>' || pgv.esc(p_status) || ' — ' || pgv.esc(p_title) || '</strong></header>';
+  IF p_detail IS NOT NULL THEN
+    v_html := v_html || '<p>' || pgv.esc(p_detail) || '</p>';
+  END IF;
+  IF p_hint IS NOT NULL THEN
+    v_html := v_html || '<p><small>' || pgv.esc(p_hint) || '</small></p>';
+  END IF;
+  v_html := v_html || '<footer><a href="/" hx-get="/rpc/page?p_path=/" hx-push-url="/" hx-target="#app">Retour au dashboard</a></footer>'
+    || '</article>';
+  RETURN v_html;
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION pgv.action(p_endpoint text, p_label text, p_target text DEFAULT '#app'::text, p_confirm text DEFAULT NULL::text, p_variant text DEFAULT 'primary'::text)
  RETURNS text
  LANGUAGE sql

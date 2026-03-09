@@ -15,8 +15,8 @@ BEGIN
   v_doc := docman.peek(p_doc_id);
 
   IF v_doc ? 'error' THEN
-    RETURN pgv.page('Erreur', '/docs', app.nav_items(),
-      '<p>Document non trouve.</p>');
+    RAISE EXCEPTION 'Document % introuvable', p_doc_id
+      USING HINT = 'Verifiez l''identifiant du document.';
   END IF;
 
   -- Info card
@@ -86,7 +86,7 @@ BEGIN
     v_body := v_body || pgv.card('Relations', '<em>Aucune relation</em>');
   ELSE
     v_body := v_body || pgv.card('Relations',
-      '<table role="grid"><thead><tr><th>Type</th><th>Document</th><th>Direction</th></tr></thead><tbody>'
+      '<table role="grid"><thead><tr><th>Type</th><th>Direction</th><th>Document</th></tr></thead><tbody>'
       || v_relations_html || '</tbody></table>');
   END IF;
 

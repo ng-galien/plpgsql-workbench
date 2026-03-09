@@ -5,32 +5,30 @@ AS $function$
 DECLARE
   v_docs_root text;
   v_body text;
+  v_browse_path text;
 BEGIN
-  -- Handle POST: save config
-  IF p_body ? 'documentsRoot' THEN
-    INSERT INTO workbench.config (app, key, value)
-    VALUES ('docman', 'documentsRoot', p_body->>'documentsRoot')
-    ON CONFLICT (app, key) DO UPDATE SET value = EXCLUDED.value;
-
-    PERFORM set_config('response.headers',
-      '[{"HX-Trigger": "configSaved"}]', true);
-  END IF;
-
   -- Read current config
   SELECT value INTO v_docs_root
   FROM workbench.config
   WHERE app = 'docman' AND key = 'documentsRoot';
 
+  v_browse_path := coalesce(v_docs_root, '/');
+
   v_body := '<article><header>Documents</header>'
-    || '<form hx-post="/rpc/page?p_path=/settings" hx-target="#app" hx-swap="innerHTML">'
+    || '<form hx-post="/rpc/save_settings" hx-target="#app" hx-swap="innerHTML">'
     || '<label>Repertoire des documents <sup>*</sup>'
     || '<div class="grid">'
-    || '<input id="documentsRoot" name="documentsRoot" type="text" value="' || coalesce(pgv.esc(v_docs_root), '') || '" required>'
-    || '<button type="button" onclick="document.getElementById(''folder-picker'').style.display=document.getElementById(''folder-picker'').style.display===''none''?''block'':''none''" class="outline">Parcourir</button>'
+    || '<input id="documentsRoot" name="p_documentsroot" type="text" value="' || coalesce(pgv.esc(v_docs_root), '') || '" required>'
+    || '<button type="button" class="outline"'
+    || ' hx-get="/api/browse?path=' || pgv.esc(v_browse_path) || '"'
+    || ' hx-target="#folder-list"'
+    || ' hx-swap="innerHTML"'
+    || ' onclick="document.getElementById(''folder-picker'').style.display=''block''"'
+    || '>Parcourir</button>'
     || '</div></label>'
     || '<div id="folder-picker" style="display:none">'
     || '<article>'
-    || '<div id="folder-list" hx-get="/api/browse?path=' || coalesce(pgv.esc(v_docs_root), '/') || '" hx-trigger="load" hx-swap="innerHTML"></div>'
+    || '<div id="folder-list"></div>'
     || '</article>'
     || '</div>'
     || '<button type="submit">Enregistrer</button>'
