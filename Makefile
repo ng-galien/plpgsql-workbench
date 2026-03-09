@@ -93,6 +93,8 @@ new-app:
 	    pgv/template/workbench.json > $(APP_DIR)/workbench.json; \
 	sed -e 's/{{NAME}}/$(NAME)/g' \
 	    pgv/template/01-roles.sql > $(APP_DIR)/sql/01-roles.sql; \
+	sed -e "s/{{MCP}}/$$MCP/g" \
+	    pgv/template/.mcp.json > $(APP_DIR)/.mcp.json; \
 	cp pgv/frontend/index.html $(APP_DIR)/frontend/index.html; \
 	cp pgv/frontend/pgview.css $(APP_DIR)/frontend/pgview.css; \
 	cp apps/001-uxlab/frontend/nginx.conf $(APP_DIR)/frontend/nginx.conf; \
