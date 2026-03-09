@@ -29,7 +29,7 @@ async function queryFunctions(
     params.push(schema);
     where += ` AND n.nspname = $${params.length}`;
   } else {
-    where += ` AND n.nspname NOT IN ('pg_catalog', 'information_schema')`;
+    where += ` AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pgv', 'workbench')`;
   }
 
   if (fnName) {
