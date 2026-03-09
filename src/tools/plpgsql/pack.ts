@@ -1,18 +1,10 @@
 import { z } from "zod";
-import { parse, parsePlPgSQL, loadModule } from "@libpg-query/parser";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
+import { ensureParserModule, extractFuncDeps } from "./deps.js";
 import fs from "fs/promises";
 import path from "path";
-
-let moduleLoaded = false;
-async function ensureModule(): Promise<void> {
-  if (!moduleLoaded) {
-    await loadModule();
-    moduleLoaded = true;
-  }
-}
 
 interface FuncRow {
   schema: string;
@@ -21,9 +13,6 @@ interface FuncRow {
   ddl: string;
   oid: string;
 }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Node = any;
 
 async function querySchemaFunctions(
   client: DbClient,
@@ -46,92 +35,6 @@ async function querySchemaFunctions(
     [schemas],
   );
   return rows;
-}
-
-// ── AST-based dependency extraction ──────────────────────────────
-
-/** Collect all schema-qualified function calls from an AST node (recursive) */
-function collectFuncCalls(node: Node, out: Set<string>): void {
-  if (!node || typeof node !== "object") return;
-
-  if (node.FuncCall?.funcname) {
-    const parts = node.FuncCall.funcname;
-    if (Array.isArray(parts) && parts.length === 2) {
-      const schema = parts[0]?.String?.sval;
-      const name = parts[1]?.String?.sval;
-      if (schema && name) out.add(`${schema}.${name}`);
-    }
-  }
-
-  for (const val of Object.values(node)) {
-    if (Array.isArray(val)) {
-      for (const item of val) collectFuncCalls(item, out);
-    } else if (val && typeof val === "object") {
-      collectFuncCalls(val, out);
-    }
-  }
-}
-
-/** Extract SQL expressions from PL/pgSQL AST (recursive) */
-function collectPlpgsqlExprs(node: Node, out: string[]): void {
-  if (!node || typeof node !== "object") return;
-
-  if (node.PLpgSQL_expr?.query) {
-    out.push(node.PLpgSQL_expr.query);
-  }
-
-  for (const val of Object.values(node)) {
-    if (Array.isArray(val)) {
-      for (const item of val) collectPlpgsqlExprs(item, out);
-    } else if (val && typeof val === "object") {
-      collectPlpgsqlExprs(val, out);
-    }
-  }
-}
-
-/** Extract the function body from DDL (between $function$ or $$ delimiters) */
-function extractBody(ddl: string): string | null {
-  // Match $tag$...$tag$ where tag can be empty or any identifier
-  const match = ddl.match(/\$([^$]*)\$([\s\S]*)\$\1\$/);
-  return match ? match[2] : null;
-}
-
-/** Normalize PL/pgSQL expression for SQL parsing (strip assignment) */
-function normalizePlExpr(expr: string): string {
-  // "var := some_expression" → "some_expression"
-  const assignMatch = expr.match(/^\s*\w+\s*:=\s*([\s\S]+)$/);
-  return assignMatch ? assignMatch[1] : expr;
-}
-
-/** Get all schema-qualified function calls from a function's DDL */
-async function extractDeps(fn: FuncRow): Promise<Set<string>> {
-  const calls = new Set<string>();
-
-  if (fn.lang === "sql") {
-    const body = extractBody(fn.ddl);
-    if (!body) return calls;
-    try {
-      const ast = await parse(body);
-      collectFuncCalls(ast, calls);
-    } catch { /* unparseable SQL — skip */ }
-  } else if (fn.lang === "plpgsql") {
-    try {
-      const ast = await parsePlPgSQL(fn.ddl);
-      const exprs: string[] = [];
-      collectPlpgsqlExprs(ast, exprs);
-      for (const expr of exprs) {
-        const normalized = normalizePlExpr(expr);
-        try {
-          const sqlAst = await parse(`SELECT ${normalized}`);
-          collectFuncCalls(sqlAst, calls);
-        } catch { /* unparseable expression — skip */ }
-      }
-    } catch { /* unparseable PL/pgSQL — skip */ }
-  }
-
-  // Remove self-reference
-  calls.delete(`${fn.schema}.${fn.name}`);
-  return calls;
 }
 
 // ── Topological sort ─────────────────────────────────────────────
@@ -239,7 +142,7 @@ export function createPackTool({ withClient }: {
         : path.resolve(process.cwd(), outFile);
 
       return withClient(async (client) => {
-        await ensureModule();
+        await ensureParserModule();
 
         const allFns = await querySchemaFunctions(client, schemas);
 
@@ -248,7 +151,7 @@ export function createPackTool({ withClient }: {
         const knownNames = new Set(allFns.map((f) => `${f.schema}.${f.name}`));
 
         for (const fn of allFns) {
-          const calls = await extractDeps(fn);
+          const calls = await extractFuncDeps(fn);
           for (const callee of calls) {
             if (knownNames.has(callee)) {
               edges.push({ caller: `${fn.schema}.${fn.name}`, callee });

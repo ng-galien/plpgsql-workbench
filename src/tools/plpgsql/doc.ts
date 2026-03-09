@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
+import { ensureParserModule, extractFuncDeps } from "./deps.js";
 
 const HELPER_FNS = new Set([
   "esc", "path_segment", "pgv_money", "pgv_badge", "pgv_status", "pgv_tier", "pgv_nav",
@@ -17,47 +18,71 @@ interface Dep {
 }
 
 async function queryDeps(client: DbClient, schemas: string[]): Promise<Dep[]> {
-  const extCheck = await client.query(
+  const hasPlpgsqlCheck = (await client.query(
     `SELECT 1 FROM pg_extension WHERE extname = 'plpgsql_check'`
-  );
-  if (extCheck.rowCount === 0) {
-    throw new Error("plpgsql_check extension required for dependency graph");
-  }
+  )).rowCount! > 0;
 
   const rows: Dep[] = [];
   for (const schema of schemas) {
-    const fns = await client.query(
-      `SELECT p.oid, p.proname
+    const fns = await client.query<{ oid: string; proname: string; lanname: string; ddl: string }>(
+      `SELECT p.oid::text, p.proname, l.lanname, pg_get_functiondef(p.oid) AS ddl
        FROM pg_proc p
        JOIN pg_namespace n ON n.oid = p.pronamespace
+       JOIN pg_language l ON l.oid = p.prolang
        WHERE n.nspname = $1
-         AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')`,
+         AND l.lanname IN ('sql', 'plpgsql')`,
       [schema]
     );
 
-    await client.query("BEGIN");
-    for (const fn of fns.rows) {
-      try {
-        await client.query("SAVEPOINT dep_check");
-        const deps = await client.query(
-          `SELECT type, schema, name FROM plpgsql_show_dependency_tb($1::oid)`,
-          [fn.oid]
-        );
-        await client.query("RELEASE SAVEPOINT dep_check");
-        for (const d of deps.rows) {
-          rows.push({
-            source_schema: schema,
-            source: fn.proname,
-            dep_type: d.type,
-            target_schema: d.schema,
-            target: d.name,
-          });
+    // PL/pgSQL functions: use plpgsql_check if available (includes table deps)
+    if (hasPlpgsqlCheck) {
+      const plFns = fns.rows.filter(f => f.lanname === "plpgsql");
+      await client.query("BEGIN");
+      for (const fn of plFns) {
+        try {
+          await client.query("SAVEPOINT dep_check");
+          const deps = await client.query(
+            `SELECT type, schema, name FROM plpgsql_show_dependency_tb($1::oid)`,
+            [fn.oid]
+          );
+          await client.query("RELEASE SAVEPOINT dep_check");
+          for (const d of deps.rows) {
+            rows.push({
+              source_schema: schema,
+              source: fn.proname,
+              dep_type: d.type,
+              target_schema: d.schema,
+              target: d.name,
+            });
+          }
+        } catch {
+          await client.query("ROLLBACK TO SAVEPOINT dep_check").catch(() => {});
         }
-      } catch {
-        await client.query("ROLLBACK TO SAVEPOINT dep_check").catch(() => {});
+      }
+      await client.query("COMMIT");
+    }
+
+    // All functions (SQL + PL/pgSQL without plpgsql_check): use AST
+    const astFns = hasPlpgsqlCheck
+      ? fns.rows.filter(f => f.lanname === "sql")
+      : fns.rows;
+
+    await ensureParserModule();
+    for (const fn of astFns) {
+      const calls = await extractFuncDeps({
+        schema, name: fn.proname, lang: fn.lanname, ddl: fn.ddl,
+      });
+      for (const callee of calls) {
+        const [targetSchema, targetName] = callee.split(".");
+        rows.push({
+          source_schema: schema,
+          source: fn.proname,
+          dep_type: "FUNCTION",
+          target_schema: targetSchema,
+          target: targetName,
+        });
       }
     }
-    await client.query("COMMIT");
   }
   return rows;
 }
@@ -154,7 +179,7 @@ export function createDocTool({ withClient }: {
 
         const deps = await queryDeps(client, schemas);
         if (deps.length === 0) {
-          return text(`No PL/pgSQL functions found in schema(s): ${schemas.join(", ")}`);
+          return text(`No functions found in schema(s): ${schemas.join(", ")}`);
         }
 
         const mermaid = buildGraph(deps, schemas, helpers, tables);
