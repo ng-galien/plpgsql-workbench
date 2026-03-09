@@ -7,7 +7,7 @@
 COMPOSE := docker compose
 PGV_DIR := ../../pgv
 
-.PHONY: up down clean logs ps sync pack
+.PHONY: up down clean logs ps sync pack mcp
 
 # Copy pgv framework files from canonical source
 sync:
@@ -36,6 +36,10 @@ logs:
 # Service status
 ps:
 	$(COMPOSE) ps
+
+# Start MCP server for this app (auto-reload)
+mcp:
+	cd ../.. && WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/003-docman/workbench.json npx nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'
 
 # Re-export functions from dev DB into init SQL files
 pack:

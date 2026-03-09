@@ -6,7 +6,7 @@
 COMPOSE := docker compose
 PGV_DIR := ../../pgv
 
-.PHONY: up down clean logs ps sync
+.PHONY: up down clean logs ps sync mcp
 
 sync:
 	cp $(PGV_DIR)/sql/pgv.sql sql/02-pgv.sql
@@ -30,3 +30,7 @@ logs:
 
 ps:
 	$(COMPOSE) ps
+
+# Start MCP server for this app (auto-reload)
+mcp:
+	cd ../.. && WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/{{SLOT}}-{{NAME}}/workbench.json npx nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'

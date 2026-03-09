@@ -4,20 +4,6 @@
 -- Schema: pgv
 CREATE SCHEMA IF NOT EXISTS pgv;
 
-CREATE OR REPLACE FUNCTION pgv.action(p_rpc text, p_label text, p_params jsonb DEFAULT NULL::jsonb, p_confirm text DEFAULT NULL::text, p_variant text DEFAULT 'primary'::text)
- RETURNS text
- LANGUAGE sql
- IMMUTABLE
-AS $function$
-  SELECT '<button data-rpc="' || p_rpc || '"'
-    || CASE WHEN p_params IS NOT NULL THEN ' data-params=''' || p_params::text || '''' ELSE '' END
-    || CASE WHEN p_confirm IS NOT NULL THEN ' data-confirm="' || pgv.esc(p_confirm) || '"' ELSE '' END
-    || CASE WHEN p_variant = 'danger' THEN ' class="secondary"'
-            WHEN p_variant = 'outline' THEN ' class="outline"'
-            ELSE '' END
-    || '>' || pgv.esc(p_label) || '</button>';
-$function$;
-
 CREATE OR REPLACE FUNCTION pgv.badge(p_text text, p_variant text DEFAULT 'default'::text)
  RETURNS text
  LANGUAGE sql
@@ -40,6 +26,20 @@ AS $function$
     || '</article>';
 $function$;
 
+CREATE OR REPLACE FUNCTION pgv.dl(VARIADIC p_pairs text[])
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+DECLARE v_html text := '<dl class="pgv-dl">'; i int;
+BEGIN
+  FOR i IN 1..array_length(p_pairs, 1) BY 2 LOOP
+    v_html := v_html || '<dt>' || p_pairs[i] || '</dt><dd>' || coalesce(p_pairs[i+1], '-') || '</dd>';
+  END LOOP;
+  RETURN v_html || '</dl>';
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION pgv.esc(p_text text)
  RETURNS text
  LANGUAGE sql
@@ -48,6 +48,36 @@ AS $function$
   SELECT replace(replace(replace(replace(replace(
     coalesce(p_text, ''),
     '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '"', '&quot;'), '''', '&#39;');
+$function$;
+
+CREATE OR REPLACE FUNCTION pgv.action(p_rpc text, p_label text, p_params jsonb DEFAULT NULL::jsonb, p_confirm text DEFAULT NULL::text, p_variant text DEFAULT 'primary'::text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<button data-rpc="' || p_rpc || '"'
+    || CASE WHEN p_params IS NOT NULL THEN ' data-params=''' || p_params::text || '''' ELSE '' END
+    || CASE WHEN p_confirm IS NOT NULL THEN ' data-confirm="' || pgv.esc(p_confirm) || '"' ELSE '' END
+    || CASE WHEN p_variant = 'danger' THEN ' class="secondary"'
+            WHEN p_variant = 'outline' THEN ' class="outline"'
+            ELSE '' END
+    || '>' || pgv.esc(p_label) || '</button>';
+$function$;
+
+CREATE OR REPLACE FUNCTION pgv.error(p_status text, p_title text, p_detail text DEFAULT NULL::text, p_hint text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+DECLARE v_html text;
+BEGIN
+  v_html := '<article class="pgv-error">'
+    || '<header><strong>' || pgv.esc(p_status) || E' \u2014 ' || pgv.esc(p_title) || '</strong></header>';
+  IF p_detail IS NOT NULL THEN v_html := v_html || '<p>' || pgv.esc(p_detail) || '</p>'; END IF;
+  IF p_hint IS NOT NULL THEN v_html := v_html || '<p><small>' || pgv.esc(p_hint) || '</small></p>'; END IF;
+  v_html := v_html || '<footer><a href="/">Retour au dashboard</a></footer></article>';
+  RETURN v_html;
+END;
 $function$;
 
 CREATE OR REPLACE FUNCTION pgv.filesize(p_bytes bigint)
@@ -85,67 +115,6 @@ AS $function$
     || '></label>';
 $function$;
 
-CREATE OR REPLACE FUNCTION pgv.money(p_amount numeric)
- RETURNS text
- LANGUAGE sql
- IMMUTABLE
-AS $function$
-  SELECT to_char(p_amount, 'FM999 999 990D00') || ' EUR';
-$function$;
-
-CREATE OR REPLACE FUNCTION pgv.stat(p_label text, p_value text, p_detail text DEFAULT NULL::text)
- RETURNS text
- LANGUAGE sql
- IMMUTABLE
-AS $function$
-  SELECT '<article class="pgv-stat">'
-    || '<small>' || p_label || '</small>'
-    || '<p class="pgv-stat-value">' || p_value || '</p>'
-    || CASE WHEN p_detail IS NOT NULL THEN '<small>' || p_detail || '</small>' ELSE '' END
-    || '</article>';
-$function$;
-
-CREATE OR REPLACE FUNCTION pgv.textarea(p_name text, p_label text, p_value text DEFAULT NULL::text, p_rows integer DEFAULT 3)
- RETURNS text
- LANGUAGE sql
- IMMUTABLE
-AS $function$
-  SELECT '<label>' || p_label
-    || '<textarea name="' || p_name || '" rows="' || p_rows || '">'
-    || coalesce(pgv.esc(p_value), '')
-    || '</textarea></label>';
-$function$;
-
-CREATE OR REPLACE FUNCTION pgv.dl(VARIADIC p_pairs text[])
- RETURNS text
- LANGUAGE plpgsql
- IMMUTABLE
-AS $function$
-DECLARE v_html text := '<dl class="pgv-dl">'; i int;
-BEGIN
-  FOR i IN 1..array_length(p_pairs, 1) BY 2 LOOP
-    v_html := v_html || '<dt>' || p_pairs[i] || '</dt><dd>' || coalesce(p_pairs[i+1], '-') || '</dd>';
-  END LOOP;
-  RETURN v_html || '</dl>';
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION pgv.error(p_status text, p_title text, p_detail text DEFAULT NULL::text, p_hint text DEFAULT NULL::text)
- RETURNS text
- LANGUAGE plpgsql
- IMMUTABLE
-AS $function$
-DECLARE v_html text;
-BEGIN
-  v_html := '<article class="pgv-error">'
-    || '<header><strong>' || pgv.esc(p_status) || E' \u2014 ' || pgv.esc(p_title) || '</strong></header>';
-  IF p_detail IS NOT NULL THEN v_html := v_html || '<p>' || pgv.esc(p_detail) || '</p>'; END IF;
-  IF p_hint IS NOT NULL THEN v_html := v_html || '<p><small>' || pgv.esc(p_hint) || '</small></p>'; END IF;
-  v_html := v_html || '<footer><a href="/">Retour au dashboard</a></footer></article>';
-  RETURN v_html;
-END;
-$function$;
-
 CREATE OR REPLACE FUNCTION pgv.md_table(p_headers text[], p_rows text[])
  RETURNS text
  LANGUAGE plpgsql
@@ -169,6 +138,14 @@ BEGIN
   END IF;
   RETURN '<figure><md>' || v_md || '</md></figure>';
 END;
+$function$;
+
+CREATE OR REPLACE FUNCTION pgv.money(p_amount numeric)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT to_char(p_amount, 'FM999 999 990D00') || ' EUR';
 $function$;
 
 CREATE OR REPLACE FUNCTION pgv.nav(p_brand text, p_items jsonb, p_current text)
@@ -303,6 +280,29 @@ BEGIN
   END LOOP;
   RETURN v_html || '</select></label>';
 END;
+$function$;
+
+CREATE OR REPLACE FUNCTION pgv.stat(p_label text, p_value text, p_detail text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<article class="pgv-stat">'
+    || '<small>' || p_label || '</small>'
+    || '<p class="pgv-stat-value">' || p_value || '</p>'
+    || CASE WHEN p_detail IS NOT NULL THEN '<small>' || p_detail || '</small>' ELSE '' END
+    || '</article>';
+$function$;
+
+CREATE OR REPLACE FUNCTION pgv.textarea(p_name text, p_label text, p_value text DEFAULT NULL::text, p_rows integer DEFAULT 3)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<label>' || p_label
+    || '<textarea name="' || p_name || '" rows="' || p_rows || '">'
+    || coalesce(pgv.esc(p_value), '')
+    || '</textarea></label>';
 $function$;
 
 GRANT USAGE ON SCHEMA pgv TO web_anon;
