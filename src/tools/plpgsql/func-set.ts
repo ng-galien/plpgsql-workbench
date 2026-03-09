@@ -54,10 +54,12 @@ export function createSetFunction({ runTests, formatTestReport }: {
       validation = `✓ deployed (${lang} function, plpgsql_check skipped)`;
     } else {
       try {
+        await client.query("SAVEPOINT plpgsql_check");
         const check = await client.query<{ lineno: number; message: string; hint: string | null; level: string; statement: string | null }>(
           `SELECT lineno, message, hint, level, statement FROM plpgsql_check_function_tb($1)`,
           [`${schema}.${name}`],
         );
+        await client.query("RELEASE SAVEPOINT plpgsql_check");
         if (check.rows.length === 0) {
           validation = "✓ plpgsql_check passed";
         } else {
@@ -72,6 +74,7 @@ export function createSetFunction({ runTests, formatTestReport }: {
           validation = `${sym} plpgsql_check:\n${diag}`;
         }
       } catch {
+        await client.query("ROLLBACK TO SAVEPOINT plpgsql_check").catch(() => {});
         validation = "✓ deployed (plpgsql_check not available)";
       }
     }
