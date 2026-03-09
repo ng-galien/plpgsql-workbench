@@ -45,7 +45,11 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
       const fn: WithClient = async <T>(cb: (client: DbClient) => Promise<T>): Promise<T> => {
         const client = await pool.connect();
         try { return await cb(client); }
-        finally { client.release(); }
+        finally {
+          // Clean up any aborted transaction before returning to pool
+          await client.query("ROLLBACK").catch(() => {});
+          client.release();
+        }
       };
       return fn;
     }).singleton(),
