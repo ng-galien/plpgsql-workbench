@@ -71,10 +71,37 @@ export function buildContainer(profile: WorkbenchProfile, packs: Record<string, 
 
 // --- MCP mounting ---
 
-/** Register all tools from the container onto an McpServer. */
-export function mountTools(server: McpServer, container: AwilixContainer): void {
+/**
+ * Register tools from the container onto an McpServer.
+ * In dev mode (WORKBENCH_MODE=dev or no toolbox table): mounts all tools.
+ * Otherwise: mounts only tools from the specified toolbox.
+ */
+export async function mountTools(server: McpServer, container: AwilixContainer, toolbox?: string): Promise<void> {
   const registry: Map<string, ToolHandler> = container.resolve("toolRegistry");
+  const withClient: WithClient = container.resolve("withClient");
+
+  let allowedTools: Set<string> | null = null;
+
+  if (process.env.WORKBENCH_MODE !== "dev") {
+    try {
+      const toolNames = await withClient(async (client) => {
+        const box = toolbox ?? "admin";
+        const res = await client.query(
+          `SELECT tool_name FROM workbench.toolbox_tool WHERE toolbox_name = $1`,
+          [box]
+        );
+        return res.rows.map((r: { tool_name: string }) => r.tool_name);
+      });
+      if (toolNames.length > 0) {
+        allowedTools = new Set(toolNames);
+      }
+    } catch {
+      // Table doesn't exist yet — mount everything
+    }
+  }
+
   for (const [, tool] of registry) {
+    if (allowedTools && !allowedTools.has(tool.metadata.name)) continue;
     server.tool(
       tool.metadata.name,
       tool.metadata.description,

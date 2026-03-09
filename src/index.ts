@@ -8,6 +8,7 @@ import { buildContainer, mountTools, type ToolPack } from "./container.js";
 import { plpgsqlPack } from "./packs/plpgsql.js";
 import { docstorePack } from "./packs/docstore.js";
 import { googlePack } from "./packs/google.js";
+import { docmanPack } from "./packs/docman.js";
 
 const log = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -19,17 +20,15 @@ log.info("Building container...");
 const packConfigs: Record<string, Record<string, unknown>> = {
   plpgsql: {},
   docstore: {},
+  google: {},
+  docman: {},
 };
 const packImpls: Record<string, ToolPack> = {
   plpgsql: plpgsqlPack,
   docstore: docstorePack,
+  google: googlePack,
+  docman: docmanPack,
 };
-
-if (process.env.GOOGLE_CREDENTIALS_PATH) {
-  packConfigs.google = {};
-  packImpls.google = googlePack;
-  log.info("Google pack enabled (GOOGLE_CREDENTIALS_PATH set)");
-}
 
 const container = buildContainer(
   { packs: packConfigs },
@@ -39,9 +38,9 @@ const container = buildContainer(
 const registry: Map<string, unknown> = container.resolve("toolRegistry");
 log.info({ tools: [...registry.keys()], count: registry.size }, "Tools registered");
 
-function createServer(): McpServer {
+async function createServer(): Promise<McpServer> {
   const s = new McpServer({ name: "plpgsql-workbench", version: "0.1.0" });
-  mountTools(s, container);
+  await mountTools(s, container);
   return s;
 }
 
@@ -53,7 +52,7 @@ app.use(express.json());
 app.post("/mcp", async (req, res) => {
   log.debug({ method: req.body?.method }, "MCP request");
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  const server = createServer();
+  const server = await createServer();
   let closed = false;
 
   const closeAll = async () => {
@@ -85,6 +84,81 @@ app.post("/mcp", async (req, res) => {
   } finally {
     await closeAll();
   }
+});
+
+// --- Claude Code workflow guard ---
+// Workflow strict:
+//   DDL (schemas, tables, indexes) → fichiers SQL + pg_apply
+//   Fonctions PL/pgSQL → pg_set + pg_test, puis pg_dump quand stable
+//   pg_query → SELECT ad-hoc et DML données uniquement
+const WORKFLOW = [
+  "Workflow strict:",
+  "  1. DDL (schemas, tables, indexes) -> fichiers SQL sur disque + pg_apply",
+  "  2. Fonctions PL/pgSQL -> pg_set pour creer/iterer + pg_test pour valider",
+  "  3. Quand stable -> pg_dump pour exporter en fichiers .sql",
+  "  4. pg_query -> SELECT ad-hoc et DML donnees uniquement",
+].join("\n");
+
+const DDL_PATTERN = /^\s*(CREATE\s+(SCHEMA|TABLE|INDEX|EXTENSION|TYPE)|ALTER\s+(TABLE|SCHEMA|TYPE)|DROP\s+(SCHEMA|TABLE|INDEX|TYPE|EXTENSION))/i;
+const FUNC_PATTERN = /^\s*CREATE\s+(OR\s+REPLACE\s+)?FUNCTION/i;
+
+app.post("/claude-hook", (req, res) => {
+  const { tool_name, tool_input } = req.body ?? {};
+
+  // Rule: pg_query must not do DDL or function management
+  if (tool_name === "mcp__plpgsql-workbench__pg_query") {
+    const sql = (tool_input?.sql ?? "") as string;
+    if (FUNC_PATTERN.test(sql)) {
+      log.warn({ sql: sql.slice(0, 80) }, "hook: blocked CREATE FUNCTION in pg_query");
+      res.json({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason:
+            "pg_query interdit pour les fonctions. Utilise pg_set + pg_test.\n\n" + WORKFLOW,
+        },
+      });
+      return;
+    }
+    if (DDL_PATTERN.test(sql)) {
+      log.warn({ sql: sql.slice(0, 80) }, "hook: blocked DDL in pg_query");
+      res.json({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason:
+            "pg_query interdit pour le DDL. Ecris un fichier SQL + pg_apply.\n\n" + WORKFLOW,
+        },
+      });
+      return;
+    }
+  }
+
+  // Rule: Write must not create .sql files containing CREATE FUNCTION
+  if (tool_name === "Write") {
+    const filePath = (tool_input?.file_path ?? "") as string;
+    const content = (tool_input?.content ?? "") as string;
+    if (filePath.endsWith(".sql") && FUNC_PATTERN.test(content)) {
+      log.warn({ file: filePath }, "hook: blocked Write of SQL function file");
+      res.json({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason:
+            "Interdit d'ecrire des fonctions dans des fichiers SQL. Utilise pg_set + pg_test, puis pg_dump quand stable.\n\n" + WORKFLOW,
+        },
+      });
+      return;
+    }
+  }
+
+  // Allow everything else
+  res.json({
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "allow",
+    },
+  });
 });
 
 app.get("/mcp", async (_req, res) => {
