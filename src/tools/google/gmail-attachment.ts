@@ -27,18 +27,18 @@ export function createGmailAttachmentTool({ gmailClient }: {
       const messageId = args.message_id as string;
       const attachmentId = args.attachment_id as string;
 
-      const inboxRoot = gmailClient.config.inboxRoot;
-      if (!inboxRoot) {
-        return text("problem: inbox_root not configured\nwhere: gmail_attachment\nfix_hint: set GMAIL_INBOX_ROOT or configure inboxRoot in google pack");
-      }
-      const resolvedRoot = path.resolve(inboxRoot.replace(/^~/, os.homedir()));
-
       let gmail;
       try {
         gmail = await ensureGmailConnected(gmailClient);
       } catch (err) {
-        return text(`problem: Gmail auth failed: ${(err as Error).message}\nwhere: gmail_attachment\nfix_hint: check GOOGLE_CREDENTIALS_PATH and token`);
+        return text(`problem: Gmail auth failed: ${(err as Error).message}\nwhere: gmail_attachment\nfix_hint: check workbench.config(google, *)`);
       }
+
+      const inboxRoot = gmailClient.getConfig().inboxRoot;
+      if (!inboxRoot) {
+        return text("problem: inbox_root not configured\nwhere: gmail_attachment\nfix_hint: pg_query sql:INSERT INTO workbench.config VALUES ('google','inboxRoot','/path/to/inbox')");
+      }
+      const resolvedRoot = path.resolve(inboxRoot.replace(/^~/, os.homedir()));
 
       // Fetch message metadata for subject
       const detail = await gmail.users.messages.get({

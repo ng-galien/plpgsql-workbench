@@ -2,13 +2,14 @@
  * Google OAuth2 auth service.
  *
  * Manages token lifecycle: load saved token, interactive OAuth flow, save refresh token.
- * Injected into Gmail tools as `gmailClient` (a lazily-connected gmail service instance).
+ * Config is read lazily from workbench.config(google, *) on first connect().
  */
 
 import fs from "fs";
 import path from "path";
 import { google } from "googleapis";
 import { authenticate } from "@google-cloud/local-auth";
+import type { WithClient } from "../../container.js";
 
 export interface GoogleAuthConfig {
   credentialsPath: string;
@@ -18,74 +19,85 @@ export interface GoogleAuthConfig {
 }
 
 export interface GmailClient {
-  config: GoogleAuthConfig;
   connect: () => Promise<void>;
   getGmail: () => ReturnType<typeof google.gmail>;
+  getConfig: () => GoogleAuthConfig;
 }
 
-export function createGmailClient({ googleAuthConfig }: {
-  googleAuthConfig: GoogleAuthConfig;
+export function createGmailClient({ withClient }: {
+  withClient: WithClient;
 }): GmailClient {
-  const { credentialsPath, tokenPath, scopes } = googleAuthConfig;
-
+  let config: GoogleAuthConfig | null = null;
   let auth: any = null;
   let connected = false;
+
+  async function loadConfig(): Promise<GoogleAuthConfig> {
+    if (config) return config;
+    config = await withClient(async (client) => {
+      const res = await client.query(
+        `SELECT key, value FROM workbench.config WHERE app = 'google'`
+      );
+      const map = Object.fromEntries(res.rows.map((r: any) => [r.key, r.value]));
+      if (!map.credentialsPath) {
+        throw new Error(
+          "Config missing: workbench.config(google, credentialsPath).\n" +
+          "fix_hint: pg_query sql:INSERT INTO workbench.config VALUES ('google','credentialsPath','/path/to/credentials.json')"
+        );
+      }
+      if (!map.tokenPath) {
+        throw new Error(
+          "Config missing: workbench.config(google, tokenPath).\n" +
+          "fix_hint: pg_query sql:INSERT INTO workbench.config VALUES ('google','tokenPath','/path/to/token.json')"
+        );
+      }
+      return {
+        credentialsPath: map.credentialsPath,
+        tokenPath: map.tokenPath,
+        scopes: map.scopes ? map.scopes.split(",") : ["https://www.googleapis.com/auth/gmail.readonly"],
+        inboxRoot: map.inboxRoot ?? "",
+      };
+    });
+    return config;
+  }
 
   function ensureDir(filePath: string): void {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   }
 
-  function loadSavedToken(): any | null {
-    if (!fs.existsSync(tokenPath)) return null;
-    const data = fs.readFileSync(tokenPath, "utf-8");
-    return google.auth.fromJSON(JSON.parse(data));
-  }
-
-  function saveToken(client: any): void {
-    const keys = JSON.parse(fs.readFileSync(credentialsPath, "utf-8"));
-    const key = keys.installed || keys.web;
-    const payload = JSON.stringify({
-      type: "authorized_user",
-      client_id: key.client_id,
-      client_secret: key.client_secret,
-      refresh_token: client.credentials.refresh_token,
-    });
-    ensureDir(tokenPath);
-    fs.writeFileSync(tokenPath, payload);
-  }
-
   async function connect(): Promise<void> {
     if (connected) return;
+    const cfg = await loadConfig();
 
     // 1. Try saved token
-    const saved = loadSavedToken();
-    if (saved) {
-      auth = saved;
+    if (fs.existsSync(cfg.tokenPath)) {
+      const data = fs.readFileSync(cfg.tokenPath, "utf-8");
+      auth = google.auth.fromJSON(JSON.parse(data));
       connected = true;
       return;
     }
 
     // 2. Interactive OAuth — opens browser for consent, local HTTP callback
-    if (!fs.existsSync(credentialsPath)) {
-      throw new Error(`Google credentials not found: ${credentialsPath}`);
+    if (!fs.existsSync(cfg.credentialsPath)) {
+      throw new Error(`Google credentials not found: ${cfg.credentialsPath}`);
     }
-    const client = await authenticate({ scopes, keyfilePath: credentialsPath });
-    if (client.credentials) saveToken(client);
+    const client = await authenticate({ scopes: cfg.scopes, keyfilePath: cfg.credentialsPath });
+    if (client.credentials) {
+      const keys = JSON.parse(fs.readFileSync(cfg.credentialsPath, "utf-8"));
+      const key = keys.installed || keys.web;
+      const payload = JSON.stringify({
+        type: "authorized_user",
+        client_id: key.client_id,
+        client_secret: key.client_secret,
+        refresh_token: client.credentials.refresh_token,
+      });
+      ensureDir(cfg.tokenPath);
+      fs.writeFileSync(cfg.tokenPath, payload);
+    }
     auth = client;
     connected = true;
   }
 
-  // Try silent reconnect at creation (no browser needed if token exists)
-  try {
-    const saved = loadSavedToken();
-    if (saved) {
-      auth = saved;
-      connected = true;
-    }
-  } catch { /* start disconnected */ }
-
-  /** Return a gmail service instance with the current auth. */
   function getGmail(): ReturnType<typeof google.gmail> {
     if (!connected || !auth) {
       throw new Error("Gmail not connected — call connect() first");
@@ -93,11 +105,14 @@ export function createGmailClient({ googleAuthConfig }: {
     return google.gmail({ version: "v1", auth: auth as any });
   }
 
-  return {
-    config: googleAuthConfig,
-    connect,
-    getGmail,
-  };
+  function getConfig(): GoogleAuthConfig {
+    if (!config) {
+      throw new Error("Gmail not connected — call connect() first to load config");
+    }
+    return config;
+  }
+
+  return { connect, getGmail, getConfig };
 }
 
 /**

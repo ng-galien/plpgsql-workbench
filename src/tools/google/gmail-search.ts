@@ -32,7 +32,7 @@ export function createGmailSearchTool({ gmailClient }: {
       try {
         gmail = await ensureGmailConnected(gmailClient);
       } catch (err) {
-        return text(`problem: Gmail auth failed: ${(err as Error).message}\nwhere: gmail_search\nfix_hint: check GOOGLE_CREDENTIALS_PATH and token`);
+        return text(`problem: Gmail auth failed: ${(err as Error).message}\nwhere: gmail_search\nfix_hint: check workbench.config(google, *)`);
       }
 
       const listRes = await gmail.users.messages.list({ userId: "me", q, maxResults });
