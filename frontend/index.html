@@ -28,7 +28,7 @@
 
   <div id="app"
        hx-get="/rpc/page"
-       hx-vals='js:{"p_path": window.location.hash.slice(1) || "/"}'
+       hx-vals='js:{"p_path": window.location.pathname || "/"}'
        hx-trigger="load">
     <main class="container" aria-busy="true" style="min-height:50vh;display:flex;align-items:center;justify-content:center">
       Chargement...
