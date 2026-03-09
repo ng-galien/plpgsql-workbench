@@ -36,3 +36,7 @@ GRANT USAGE ON SCHEMA docman TO web_anon;
 -- docstore schema (file index)
 CREATE SCHEMA IF NOT EXISTS docstore;
 GRANT USAGE ON SCHEMA docstore TO web_anon;
+
+-- workbench.config access for app settings page
+GRANT USAGE ON SCHEMA workbench TO web_anon;
+GRANT SELECT, INSERT, UPDATE ON workbench.config TO web_anon;

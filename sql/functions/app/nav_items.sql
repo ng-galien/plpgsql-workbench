@@ -6,6 +6,7 @@ AS $function$
   SELECT '[
     {"href": "/", "label": "Dashboard"},
     {"href": "/docs", "label": "Documents"},
-    {"href": "/docs/search", "label": "Recherche"}
+    {"href": "/docs/search", "label": "Recherche"},
+    {"href": "/settings", "label": "Config"}
   ]'::jsonb;
 $function$;

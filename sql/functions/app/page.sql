@@ -17,6 +17,8 @@ BEGIN
       );
     WHEN p_path LIKE '/docs%' THEN
       RETURN docman.page(p_path, p_body);
+    WHEN p_path = '/settings' THEN
+      RETURN app.page_settings(p_body);
     ELSE
       RETURN pgv.page('404', p_path, app.nav_items(),
         '<p>Page non trouvee : <code>' || pgv.esc(p_path) || '</code></p>');
