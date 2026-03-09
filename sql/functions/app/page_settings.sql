@@ -23,7 +23,16 @@ BEGIN
 
   v_body := '<article><header>Documents</header>'
     || '<form hx-post="/rpc/page?p_path=/settings" hx-target="#app" hx-swap="innerHTML">'
-    || pgv.input('documentsRoot', 'text', 'Repertoire des documents', v_docs_root, true)
+    || '<label>Repertoire des documents <sup>*</sup>'
+    || '<div class="grid">'
+    || '<input id="documentsRoot" name="documentsRoot" type="text" value="' || coalesce(pgv.esc(v_docs_root), '') || '" required>'
+    || '<button type="button" onclick="document.getElementById(''folder-picker'').style.display=document.getElementById(''folder-picker'').style.display===''none''?''block'':''none''" class="outline">Parcourir</button>'
+    || '</div></label>'
+    || '<div id="folder-picker" style="display:none">'
+    || '<article>'
+    || '<div id="folder-list" hx-get="/api/browse?path=' || coalesce(pgv.esc(v_docs_root), '/') || '" hx-trigger="load" hx-swap="innerHTML"></div>'
+    || '</article>'
+    || '</div>'
     || '<button type="submit">Enregistrer</button>'
     || '</form></article>';
 

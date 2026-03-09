@@ -3,6 +3,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
+import fs from "fs/promises";
+import path from "path";
 import pino from "pino";
 import { buildContainer, mountTools, type ToolPack } from "./container.js";
 import { plpgsqlPack } from "./packs/plpgsql.js";
@@ -159,6 +161,45 @@ app.post("/claude-hook", (req, res) => {
       permissionDecision: "allow",
     },
   });
+});
+
+// --- Filesystem browse API (for folder picker) ---
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+app.get("/api/browse", async (req, res) => {
+  const dir = (req.query.path as string) || "/";
+  try {
+    const resolved = path.resolve(dir);
+    const parent = path.dirname(resolved);
+    const entries = await fs.readdir(resolved, { withFileTypes: true });
+    const dirs = entries
+      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .map((e) => e.name)
+      .sort();
+
+    const lines: string[] = [];
+    lines.push(`<small><code>${esc(resolved)}</code></small>`);
+    if (resolved !== parent) {
+      lines.push(`<a href="#" hx-get="/api/browse?path=${encodeURIComponent(parent)}" hx-target="#folder-list" hx-swap="innerHTML" style="display:block;padding:4px 0">&#x2B06; ..</a>`);
+    }
+    lines.push(`<div style="max-height:300px;overflow-y:auto">`);
+    for (const d of dirs) {
+      const full = path.join(resolved, d);
+      lines.push(
+        `<a href="#" hx-get="/api/browse?path=${encodeURIComponent(full)}" hx-target="#folder-list" hx-swap="innerHTML" style="display:block;padding:4px 0">` +
+        `&#x1F4C1; ${esc(d)}</a>`
+      );
+    }
+    if (dirs.length === 0) lines.push(`<p><small><em>Aucun sous-dossier</em></small></p>`);
+    lines.push(`</div>`);
+    lines.push(`<button type="button" class="contrast" style="margin-top:0.5rem" onclick="document.getElementById('documentsRoot').value='${esc(resolved).replace(/'/g, "\\'")}';document.getElementById('folder-picker').style.display='none'">Selectionner ce dossier</button>`);
+
+    res.type("html").send(lines.join("\n"));
+  } catch {
+    res.type("html").status(400).send(`<p>Impossible de lire : <code>${esc(dir)}</code></p>`);
+  }
 });
 
 app.get("/mcp", async (_req, res) => {
