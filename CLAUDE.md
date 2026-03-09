@@ -4,24 +4,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PL/pgSQL Workbench is an MCP (Model Context Protocol) server that provides tools for navigating, editing, testing, and analyzing PL/pgSQL code in PostgreSQL. It runs as an HTTP server (default port 3100) exposing MCP tools at `/mcp`.
+PL/pgSQL Workbench is a development platform built as an MCP (Model Context Protocol) server. It provides tools for navigating, editing, testing, and analyzing PL/pgSQL code in PostgreSQL. It runs as an HTTP server (default port 3100) exposing MCP tools at `/mcp`.
 
-Part of a broader vision: building full applications with PostgreSQL as sole runtime (see `docs/PGAPP.md`).
+The workbench is the foundation for building all applications with PostgreSQL as sole runtime (see `docs/PGAPP.md`). Each application is a set of PostgreSQL schemas + MCP tools, packaged via toolboxes for commercial distribution.
 
 ## Build & Run Commands
 
 ```bash
+# Start dev database (Supabase PostgreSQL 17)
+docker compose up -d
+
+# Dev with auto-reload (connection string is set in npm script)
+npm run dev
+
 # Build
 npm run build          # tsc -> dist/
 
-# Dev with auto-reload
-PLPGSQL_CONNECTION=postgresql://postgres:postgres@localhost:5433/postgres npx tsx watch src/index.ts
-
 # Start built version
 PLPGSQL_CONNECTION=postgresql://postgres:postgres@localhost:5433/postgres npm start
+
+# Bootstrap seed data (extensions + test schemas are auto-created by Docker init)
+# For application data, use:
+#   pg_apply path:sql/migrations
+#   pg_apply path:sql/functions
 ```
 
 No test framework is configured in this repo — testing happens via pgTAP inside PostgreSQL.
+
+### Dev Database
+
+The dev database uses `supabase/postgres:17.6.1.093` (same as production target).
+
+```bash
+docker compose up -d     # Start (port 5433)
+docker compose down      # Stop (data persists in pgdata volume)
+docker compose down -v   # Stop + wipe data (triggers fresh initdb on next up)
+```
+
+**Connection:** `postgresql://postgres:postgres@localhost:5433/postgres`
+
+**Auto-initialized on first start** (via `sql/seed/` mounted into `init-scripts/`):
+- `plpgsql_check` + `pgtap` extensions
+- `workbench` schema (toolbox, toolbox_tool, tenant tables)
+
+**Sync tools to DB** (after code changes):
+```bash
+npm run sync-tools    # Populates workbench.toolbox_tool from code registry
+```
+
+**Supabase extensions available** (pre-installed in image): `pgcrypto`, `uuid-ossp`, `pg_graphql`, `pg_net`, `pg_cron`, `pgjwt`, `supabase_vault`, `pg_stat_statements`, and more.
 
 ### Demo
 
@@ -36,13 +67,14 @@ The demo is a shop e-commerce app with two frontends:
 - `demo/frontend/index.html` — SPA calling PostgREST RPC directly
 - `demo/frontend/pgview.html` — pgView client (DB generates HTML, frontend is ~100 lines)
 
-## Environment Variables
+## Environment Variables (infra bootstrap only)
 
 - `PLPGSQL_CONNECTION` / `DATABASE_URL` — PostgreSQL connection string (default: `postgresql://postgres@localhost:5432/postgres`)
 - `MCP_PORT` — HTTP port (default: `3100`)
-- `GOOGLE_CREDENTIALS_PATH` — OAuth2 client credentials JSON (enables Google/Gmail pack)
-- `GOOGLE_TOKEN_PATH` — Saved refresh token (default: `~/.config/plpgsql-workbench/google-token.json`)
-- `GMAIL_INBOX_ROOT` — Download directory for Gmail attachments
+- `LOG_LEVEL` — Pino log level (default: `info`)
+- `WORKBENCH_MODE` — `dev` = mount all tools without toolbox filtering (set in `npm run dev`)
+
+**All application config** (Google credentials, document paths, etc.) is stored in `workbench.config(app, key, value)` and read from DB at each MCP request. Zero env vars for app config.
 
 ## Architecture
 
@@ -50,13 +82,13 @@ The demo is a shop e-commerce app with two frontends:
 
 The project uses **Awilix** dependency injection with PROXY mode. All services and tools are registered in a container and resolved by parameter name.
 
-- **`container.ts`** — Core types (`ToolHandler`, `ToolPack`, `WithClient`, `ToolExtra`), `buildContainer()` (resolves `*Tool` registrations), `mountTools()` (mounts tools onto McpServer)
+- **`container.ts`** — Core types (`ToolHandler`, `ToolPack`, `WithClient`, `ToolExtra`), `buildContainer()` (resolves `*Tool` registrations), `mountTools()` (reads toolbox from DB, mounts authorized tools onto McpServer)
 - **`connection.ts`** — Exports `DbClient` type alias (`PoolClient`)
 - **`helpers.ts`** — `text()` for MCP tool results, `wrap()` for formatted output with next-step URIs, `formatErrorTriplet()` for PostgreSQL error formatting
 
 ### Entry Point & Server Lifecycle
 
-`src/index.ts` — Creates an Express server with a `/mcp` POST endpoint. Each request gets a fresh `McpServer` + transport instance (stateless per-request design). Packs are loaded conditionally (Google pack only if `GOOGLE_CREDENTIALS_PATH` is set). Tools are mounted via `mountTools(server, container)`.
+`src/index.ts` — Creates an Express server with a `/mcp` POST endpoint. Each request gets a fresh `McpServer` + transport instance (stateless per-request design). All packs are always loaded. Tools are mounted via `mountTools(server, container)`.
 
 ### Packs (`src/packs/`)
 
@@ -152,15 +184,15 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, demo in `demo/init/05-pg
 - HTML helpers: `esc()` (XSS), `pgv_badge()`, `pgv_money()`, `pgv_status()`, `pgv_nav()`
 - `<!-- redirect:/path -->` convention for POST->redirect
 
-## Example SQL (`sql/`)
+## SQL (`sql/`)
 
-Sample SQL files used with the `pg_apply` tool, organized for the three example schemas:
+- `sql/seed/` — Bootstrap DDL, auto-run by Docker on first start: extensions + workbench schema
+- `sql/migrations/` — Application DDL (example: banking, shop schemas)
+- `sql/functions/` — Application functions organized by schema
 
-- `sql/seed/` — Bootstrap: extensions (plpgsql_check, pgtap) and test schemas (public_ut, public_it)
-- `sql/migrations/` — DDL: banking schema (accounts, transactions) and shop schema
-- `sql/functions/` — Functions organized by schema (`public/`, `public_ut/`, `banking/`, `banking_ut/`, `shop/`, `shop_ut/`). Includes simple examples (hello, add_numbers, classify) and full business logic (transfer, place_order)
+Applied via: `pg_apply path:sql/migrations` then `pg_apply path:sql/functions`.
 
-Applied via: `pg_apply path:sql/seed track:false` then `pg_apply path:sql/migrations` then `pg_apply path:sql/functions`.
+Note: `sql/migrations/` and `sql/functions/` contain demo/example content (banking, shop). These are illustrative and not part of the platform itself.
 
 ## Key Conventions
 
@@ -170,6 +202,8 @@ Applied via: `pg_apply path:sql/seed track:false` then `pg_apply path:sql/migrat
 - **Schema = Module (DDD)** — Each PostgreSQL schema is a bounded context with its own tables, functions, router, and tests
 - **PostgreSQL extensions** — `plpgsql_check` (static analysis), `pgtap` (testing) — both optional, server degrades gracefully
 - **Tool naming** — `{domain}_{action}`: `pg_*` (PostgreSQL), `fs_*` (filesystem/docstore), `gmail_*` (Google)
+- **Zero inline SQL in app tools** — App tools (doc_*, etc.) MUST NOT contain raw SQL. Business logic lives in PL/pgSQL functions deployed in the app schema (e.g. `docman.import()`, `docman.classify()`). App MCP tools are thin orchestrators: they read config from DB, call platform primitives (fs_*, gmail_*), and call app PL/pgSQL functions via `withClient`. SQL in TypeScript = bug.
+- **Zero process.env for app config** — Only infra bootstrap uses env vars (PLPGSQL_CONNECTION, MCP_PORT, LOG_LEVEL, WORKBENCH_MODE). All app config lives in `workbench.config(app, key, value)` and is read from DB at request time. No defaults, no fallbacks.
 
 ## Documentation Map
 
@@ -177,7 +211,7 @@ Applied via: `pg_apply path:sql/seed track:false` then `pg_apply path:sql/migrat
 |------|---------|
 | `docs/LMNAV.md` | Output format specification with examples for every tool |
 | `docs/PGAPP.md` | Full platform vision: API router, pgView SSR, schema=module, VS Code extension, pgv primitives |
-| `docs/BUSINESS.md` | Business plan for SaaS artisan ERP built on pgView |
+| `docs/BUSINESS.md` | Business plan for SaaS artisan ERP + toolbox packaging model |
 | `docs/AI-INTEGRATION.md` | 3-level AI integration: MCP (done), chat widget, autonomous agent |
 | `docs/PRIMITIVE.md` | Original spec for MCP tool primitives (some aspirational) |
 | `src/docs/testing.md` | pgTAP testing guide (loaded into workbench DB as built-in doc) |

@@ -1,5 +1,8 @@
 # Business Plan — SaaS pgView pour Artisans
 
+> Ce document décrit le premier produit commercial construit sur la plateforme PL/pgSQL Workbench.
+> Le workbench est la plateforme de développement de l'entreprise — chaque application est un ensemble de schemas PostgreSQL + tools MCP, packagé via des toolboxes pour distribution commerciale.
+
 ## Executive Summary
 
 Application de gestion métier pour artisans (fumistes, menuisiers, plombiers, chauffagistes) construite entièrement en PostgreSQL. Le HTML est généré côté serveur par des fonctions PL/pgSQL (pgView), servi par PostgREST, affiché par un shell SPA de 50 lignes. Zéro framework JS, zéro serveur applicatif.
@@ -310,6 +313,45 @@ Inclus Supabase :    plpgsql_check, pgTAP, pg_trgm, pgcrypto
 À activer :          pg_net (webhooks), supa_audit (audit trail)
                      pg_jsonschema (validation), pg_cron (jobs)
 ```
+
+### Packaging par Toolbox
+
+Le packaging des offres est piloté par la base de données via le schema `workbench`.
+
+```
+Code (tool definitions)           ← source des tools (TypeScript/Awilix)
+    ↓
+  npm run sync-tools              ← étape de déploiement
+    ↓
+  workbench.toolbox_tool          ← source de vérité runtime
+    ↓                ↓
+  MCP workbench    MCP client     ← lisent la DB, montent les tools autorisés
+```
+
+**Modèle de données :**
+
+```sql
+workbench.toolbox          (name, description)           -- ex: solo, pro, equipe, admin
+workbench.toolbox_tool     (toolbox_name, tool_name)     -- N:N, quels tools dans chaque toolbox
+workbench.tenant           (id, name, toolbox_name)      -- chaque tenant → 1 toolbox
+```
+
+**Exemple de packaging par offre :**
+
+| Toolbox | Tools | Offre |
+|---------|-------|-------|
+| `solo` | pg_query, pg_get, pg_search | 19€/mois |
+| `pro` | solo + pg_explain, pg_doc, fs_peek | 39€/mois |
+| `equipe` | pro + pg_coverage, pg_test, pg_dump | 69€/mois |
+| `admin` | tous (15 tools) | dev / administration |
+
+**Principes :**
+
+- **DB = source de vérité** pour le packaging, pas le code
+- **Pas de hiérarchie implicite** entre toolboxes — chaque toolbox liste explicitement ses tools (mapping N:N)
+- **`npm run sync-tools`** peuple la toolbox `admin` depuis le code, les autres toolboxes sont gérées manuellement (SQL ou futur admin UI)
+- **Multi-tenant** : le tenant est identifié par JWT (Supabase Auth), sa toolbox détermine les tools MCP exposés
+- **Découplage total** : un même tool peut être dans plusieurs toolboxes, une toolbox custom peut être créée pour un client spécifique
 
 ---
 
