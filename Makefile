@@ -76,23 +76,24 @@ check:
 new-app:
 	@test -n "$(NAME)" || (echo "Usage: make new-app NAME=myapp SLOT=4" && exit 1)
 	@test -n "$(SLOT)" || (echo "Usage: make new-app NAME=myapp SLOT=4" && exit 1)
-	@test ! -d "apps/$(NAME)" || (echo "apps/$(NAME) already exists" && exit 1)
-	@mkdir -p apps/$(NAME)/sql apps/$(NAME)/frontend
+	$(eval APP_DIR := apps/$(shell printf '%03d' $(SLOT))-$(NAME))
+	@test ! -d "$(APP_DIR)" || (echo "$(APP_DIR) already exists" && exit 1)
+	@mkdir -p $(APP_DIR)/sql $(APP_DIR)/frontend
 	@PG=$$((5440 + $(SLOT))); PGRST=$$((3000 + $(SLOT))); HTTP=$$((8080 + $(SLOT))); MCP=$$((3100 + $(SLOT))); \
-	echo "Creating apps/$(NAME) (slot $(SLOT): PG:$$PG PGRST:$$PGRST HTTP:$$HTTP MCP:$$MCP)"; \
+	echo "Creating $(APP_DIR) (PG:$$PG PGRST:$$PGRST HTTP:$$HTTP MCP:$$MCP)"; \
 	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{SLOT}}/$(SLOT)/g" \
 	    -e "s/{{PG}}/$$PG/g" -e "s/{{PGRST}}/$$PGRST/g" \
 	    -e "s/{{HTTP}}/$$HTTP/g" -e "s/{{MCP}}/$$MCP/g" \
-	    pgv/template/docker-compose.yml > apps/$(NAME)/docker-compose.yml; \
+	    pgv/template/docker-compose.yml > $(APP_DIR)/docker-compose.yml; \
 	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{SLOT}}/$(SLOT)/g" \
 	    -e "s/{{PG}}/$$PG/g" -e "s/{{PGRST}}/$$PGRST/g" \
 	    -e "s/{{HTTP}}/$$HTTP/g" -e "s/{{MCP}}/$$MCP/g" \
-	    pgv/template/Makefile > apps/$(NAME)/Makefile; \
+	    pgv/template/Makefile > $(APP_DIR)/Makefile; \
 	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{PG}}/$$PG/g" -e "s/{{MCP}}/$$MCP/g" \
-	    pgv/template/workbench.json > apps/$(NAME)/workbench.json; \
+	    pgv/template/workbench.json > $(APP_DIR)/workbench.json; \
 	sed -e 's/{{NAME}}/$(NAME)/g' \
-	    pgv/template/01-roles.sql > apps/$(NAME)/sql/01-roles.sql; \
-	cp pgv/frontend/index.html apps/$(NAME)/frontend/index.html; \
-	cp pgv/frontend/pgview.css apps/$(NAME)/frontend/pgview.css; \
-	cp apps/uxlab/frontend/nginx.conf apps/$(NAME)/frontend/nginx.conf; \
-	echo "Done. Next: edit apps/$(NAME)/sql/03-ddl.sql"
+	    pgv/template/01-roles.sql > $(APP_DIR)/sql/01-roles.sql; \
+	cp pgv/frontend/index.html $(APP_DIR)/frontend/index.html; \
+	cp pgv/frontend/pgview.css $(APP_DIR)/frontend/pgview.css; \
+	cp apps/001-uxlab/frontend/nginx.conf $(APP_DIR)/frontend/nginx.conf; \
+	echo "Done. Next: edit $(APP_DIR)/sql/03-ddl.sql"

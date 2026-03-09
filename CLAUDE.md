@@ -62,14 +62,16 @@ Apps live in `apps/`. Each has its own `docker-compose.yml`, `Makefile`, `sql/`,
 
 **Port convention** — app N: PG=5440+N, PostgREST=3000+N, HTTP=8080+N
 
-| App | N | PG | PGRST | HTTP |
-|-----|---|-----|-------|------|
-| uxlab | 1 | 5441 | 3001 | 8081 |
-| demo | 2 | 5442 | 3002 | 8082 |
-| docman | 3 | 5443 | 3003 | 8083 |
+| Directory | PG | PGRST | HTTP | MCP |
+|-----------|-----|-------|------|-----|
+| `apps/001-uxlab` | 5441 | 3001 | 8081 | 3101 |
+| `apps/002-demo` | 5442 | 3002 | 8082 | 3102 |
+| `apps/003-docman` | 5443 | 3003 | 8083 | 3103 |
 
 ```bash
-cd apps/uxlab && make up    # or: cd apps/demo && docker compose up -d
+cd apps/001-uxlab && make up         # Start app stack
+npm run dev:uxlab                    # Start MCP for this app
+make new-app NAME=billing SLOT=4    # Scaffold → apps/004-billing/
 ```
 
 The pgView framework (shared) lives in `pgv/` and is copied into each app via `make sync`.
