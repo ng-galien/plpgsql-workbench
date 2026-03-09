@@ -122,13 +122,13 @@ export function createTestTool({ withClient, runTests }: {
         "Run pgTAP tests. target: run unit test for a function. schema: run all tests in a test schema.\n" +
         "Convention and examples: pg_get plpgsql://workbench/doc/testing",
       schema: z.object({
-        target: z.string().optional().describe("Function URI to test. Ex: plpgsql://public/function/hello"),
+        uri: z.string().optional().describe("URI: plpgsql://schema (all tests) or plpgsql://schema/function/name (one function's tests)"),
         schema: z.string().optional().describe("Test schema. Ex: public_ut, billing_it"),
         pattern: z.string().optional().describe("Regex filter on test names. Ex: ^test_hello$"),
       }),
     },
     handler: async (args, _extra) => {
-      const target = args.target as string | undefined;
+      const target = args.uri as string | undefined;
       const schema = args.schema as string | undefined;
       const pattern = args.pattern as string | undefined;
 
@@ -140,11 +140,18 @@ export function createTestTool({ withClient, runTests }: {
 
         if (target) {
           const parsed = PlUri.parse(target);
-          if (!parsed || parsed.kind !== "function" || !parsed.name) {
-            return text("✗ target must be a function URI: plpgsql://schema/function/name");
+          if (!parsed) {
+            return text("✗ invalid URI: " + target);
           }
-          testSchema = `${parsed.schema}_ut`;
-          testPattern = `^test_${parsed.name}$`;
+          // URI pointing to a schema (no kind/name) → treat as test schema
+          if (!parsed.kind || !parsed.name) {
+            testSchema = parsed.schema;
+          } else if (parsed.kind === "function") {
+            testSchema = `${parsed.schema}_ut`;
+            testPattern = `^test_${parsed.name}$`;
+          } else {
+            return text("✗ target must be a function URI or schema URI");
+          }
         } else {
           testSchema = schema!;
         }
