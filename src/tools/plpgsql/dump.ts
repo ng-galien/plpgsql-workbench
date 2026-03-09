@@ -5,11 +5,9 @@ import { text } from "../../helpers.js";
 import fs from "fs/promises";
 import path from "path";
 
-/** Resolve relative paths from project root (parent of mcp-server/) */
 function resolveOutPath(outPath: string): string {
   if (path.isAbsolute(outPath)) return outPath;
-  const root = process.env.WORKBENCH_ROOT ?? path.resolve(process.cwd(), "..");
-  return path.resolve(root, outPath);
+  return path.resolve(process.cwd(), outPath);
 }
 
 interface FunctionEntry {

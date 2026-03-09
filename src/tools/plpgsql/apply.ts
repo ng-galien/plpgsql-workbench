@@ -7,18 +7,15 @@ import path from "path";
 import crypto from "crypto";
 import { execFile } from "child_process";
 
-/** Resolve relative paths from project root (parent of mcp-server/) */
 function resolveDir(dir: string): string {
   if (path.isAbsolute(dir)) return dir;
-  const root = process.env.WORKBENCH_ROOT ?? path.resolve(process.cwd(), "..");
-  return path.resolve(root, dir);
+  return path.resolve(process.cwd(), dir);
 }
 
 /** Get current git commit hash, or null if not in a repo */
 function gitCommit(): Promise<string | null> {
   return new Promise((resolve) => {
-    const root = process.env.WORKBENCH_ROOT ?? path.resolve(process.cwd(), "..");
-    execFile("git", ["rev-parse", "--short", "HEAD"], { cwd: root }, (err, stdout) => {
+    execFile("git", ["rev-parse", "--short", "HEAD"], { cwd: process.cwd() }, (err, stdout) => {
       if (err) return resolve(null);
       resolve(stdout.trim() || null);
     });
