@@ -34,7 +34,7 @@ services:
       - "3000:3000"
     environment:
       PGRST_DB_URI: postgres://authenticator:authenticator@postgres:5432/postgres
-      PGRST_DB_SCHEMAS: uxlab
+      PGRST_DB_SCHEMAS: app
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3000
       PGRST_SERVER_CORS_ALLOWED_ORIGINS: http://localhost:8080

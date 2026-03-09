@@ -4,6 +4,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import fs from "fs/promises";
+import os from "os";
 import path from "path";
 import pino from "pino";
 import { buildContainer, mountTools, type ToolPack } from "./container.js";
@@ -169,7 +170,7 @@ function esc(s: string): string {
 }
 
 app.get("/api/browse", async (req, res) => {
-  let dir = (req.query.path as string) || "/";
+  let dir = (req.query.path as string) || os.homedir();
   // Walk up to a valid directory if the path doesn't exist
   let resolved = path.resolve(dir);
   for (let i = 0; i < 20; i++) {
