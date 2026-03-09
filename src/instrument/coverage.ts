@@ -113,8 +113,39 @@ function findOriginalLine(originalLine: number, beforePoints: CoveragePoint[]): 
 
 /**
  * Search for a regex pattern in lines starting from startIdx.
+ * For END IF / END LOOP, tracks nesting depth to find the correct match.
  */
 function findPattern(lines: string[], startIdx: number, pattern: RegExp): number {
+  const isEndIf = pattern.source.includes("END") && pattern.source.includes("IF");
+  const isEndLoop = pattern.source.includes("END") && pattern.source.includes("LOOP");
+
+  if (isEndIf) {
+    // We start from inside the body of the IF whose END IF we seek.
+    // Every nested IF/END IF pair cancels out. The target END IF
+    // is the first one that drops depth below 0.
+    let depth = 0;
+    for (let i = startIdx; i < lines.length; i++) {
+      if (/^\s*IF\b/i.test(lines[i])) depth++;
+      if (/^\s*END\s+IF\s*;/i.test(lines[i])) {
+        depth--;
+        if (depth < 0) return i;
+      }
+    }
+    return -1;
+  }
+
+  if (isEndLoop) {
+    let depth = 0;
+    for (let i = startIdx; i < lines.length; i++) {
+      if (/^\s*(FOR|WHILE|LOOP)\b/i.test(lines[i])) depth++;
+      if (/^\s*END\s+LOOP\s*;/i.test(lines[i])) {
+        depth--;
+        if (depth < 0) return i;
+      }
+    }
+    return -1;
+  }
+
   for (let i = startIdx; i < lines.length; i++) {
     if (pattern.test(lines[i])) return i;
   }
@@ -192,6 +223,7 @@ export async function runCoverage(
     originalDdl.slice(0, extracted.bodyStart) +
     instrumentedBody +
     originalDdl.slice(extracted.bodyStart + extracted.body.length);
+
 
   // Deploy + capture
   const hit = new Set<string>();
