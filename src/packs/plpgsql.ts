@@ -28,6 +28,7 @@ import { createFuncSaveTool } from "../tools/plpgsql/func-save.js";
 import { createFuncLoadTool } from "../tools/plpgsql/func-load.js";
 import { createSchemaTool } from "../tools/plpgsql/schema.js";
 import { createDocTool } from "../tools/plpgsql/doc.js";
+import { createPackTool } from "../tools/plpgsql/pack.js";
 
 export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record<string, unknown>) => {
   const connectionString = (config.connectionString as string) ??
@@ -79,5 +80,6 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
     funcLoadTool: asFunction(createFuncLoadTool).singleton(),
     schemaTool: asFunction(createSchemaTool).singleton(),
     docTool: asFunction(createDocTool).singleton(),
+    packTool: asFunction(createPackTool).singleton(),
   });
 };

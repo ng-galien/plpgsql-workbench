@@ -1,0 +1,295 @@
+/* pgview.css — pgv component tokens + light/dark themes
+   Contract: PL/pgSQL outputs class="pgv-*", this file provides all styling.
+   Theme: set <html data-theme="light|dark"> (PicoCSS convention). */
+
+/* ── Tokens (light) ─────────────────────────────────────────────── */
+:root, [data-theme="light"] {
+  /* Table */
+  --pgv-table-header-bg: #f0f1f3;
+  --pgv-table-header-fg: #5a5e66;
+  --pgv-table-border: #e5e7eb;
+  --pgv-table-stripe: rgba(0, 0, 0, 0.018);
+  --pgv-table-hover: rgba(0, 0, 0, 0.04);
+  --pgv-table-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+
+  /* Badge */
+  --pgv-badge-radius: 12px;
+  --pgv-badge-px: 10px;
+  --pgv-badge-py: 2px;
+  --pgv-badge-fs: 0.85em;
+  --pgv-badge-fw: 500;
+
+  --pgv-badge-default-bg: #e2e3e5;
+  --pgv-badge-default-fg: #383d41;
+  --pgv-badge-success-bg: #d4edda;
+  --pgv-badge-success-fg: #155724;
+  --pgv-badge-danger-bg: #f8d7da;
+  --pgv-badge-danger-fg: #721c24;
+  --pgv-badge-warning-bg: #fff3cd;
+  --pgv-badge-warning-fg: #856404;
+  --pgv-badge-info-bg: #d1ecf1;
+  --pgv-badge-info-fg: #0c5460;
+  --pgv-badge-primary-bg: #cce5ff;
+  --pgv-badge-primary-fg: #004085;
+
+  /* Stat */
+  --pgv-stat-value-fs: 2rem;
+  --pgv-stat-value-fw: 600;
+
+  /* Error */
+  --pgv-error-border: var(--pico-del-color, #c62828);
+  --pgv-error-border-width: 4px;
+  --pgv-error-mt: 2rem;
+
+  /* Description list */
+  --pgv-dl-dt-fw: 600;
+  --pgv-dl-dt-fg: var(--pico-muted-color);
+  --pgv-dl-gap: 0.25rem;
+
+  /* Nav brand */
+  --pgv-nav-brand-fw: 700;
+}
+
+/* ── Tokens (dark) ──────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --pgv-table-header-bg: #1e2128;
+  --pgv-table-header-fg: #9ca3af;
+  --pgv-table-border: #2d3139;
+  --pgv-table-stripe: rgba(255, 255, 255, 0.015);
+  --pgv-table-hover: rgba(255, 255, 255, 0.04);
+  --pgv-table-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.04);
+
+  --pgv-badge-default-bg: #3a3d41;
+  --pgv-badge-default-fg: #d4d5d7;
+  --pgv-badge-success-bg: #1b4332;
+  --pgv-badge-success-fg: #95d5b2;
+  --pgv-badge-danger-bg: #4a1c24;
+  --pgv-badge-danger-fg: #f5a0a8;
+  --pgv-badge-warning-bg: #4a3c0a;
+  --pgv-badge-warning-fg: #f5d98e;
+  --pgv-badge-info-bg: #0c3547;
+  --pgv-badge-info-fg: #89d4e0;
+  --pgv-badge-primary-bg: #0a3060;
+  --pgv-badge-primary-fg: #8ec4f5;
+}
+
+/* ── Badge ──────────────────────────────────────────────────────── */
+.pgv-badge {
+  display: inline-block;
+  padding: var(--pgv-badge-py) var(--pgv-badge-px);
+  border-radius: var(--pgv-badge-radius);
+  font-size: var(--pgv-badge-fs);
+  font-weight: var(--pgv-badge-fw);
+  background: var(--pgv-badge-default-bg);
+  color: var(--pgv-badge-default-fg);
+}
+.pgv-badge-success { background: var(--pgv-badge-success-bg); color: var(--pgv-badge-success-fg); }
+.pgv-badge-danger  { background: var(--pgv-badge-danger-bg);  color: var(--pgv-badge-danger-fg); }
+.pgv-badge-warning { background: var(--pgv-badge-warning-bg); color: var(--pgv-badge-warning-fg); }
+.pgv-badge-info    { background: var(--pgv-badge-info-bg);    color: var(--pgv-badge-info-fg); }
+.pgv-badge-primary { background: var(--pgv-badge-primary-bg); color: var(--pgv-badge-primary-fg); }
+
+/* ── Stat ───────────────────────────────────────────────────────── */
+.pgv-stat {
+  text-align: center;
+}
+.pgv-stat-value {
+  font-size: var(--pgv-stat-value-fs);
+  margin: 0.25rem 0;
+  font-weight: var(--pgv-stat-value-fw);
+}
+
+/* ── Description List ───────────────────────────────────────────── */
+.pgv-dl dt {
+  font-weight: var(--pgv-dl-dt-fw);
+  color: var(--pgv-dl-dt-fg);
+  margin-top: var(--pgv-dl-gap);
+}
+
+/* ── Error ──────────────────────────────────────────────────────── */
+.pgv-error {
+  border-left: var(--pgv-error-border-width) solid var(--pgv-error-border);
+  margin-top: var(--pgv-error-mt);
+}
+
+/* ── Theme toggle ───────────────────────────────────────────────── */
+.pgv-theme-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 0.25rem;
+  line-height: 1;
+  color: var(--pico-color);
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+.pgv-theme-toggle:hover {
+  opacity: 1;
+}
+
+/* ── Table ──────────────────────────────────────────────────────── */
+.pgv-table {
+  overflow-x: auto;
+  border-radius: 8px;
+  box-shadow: var(--pgv-table-shadow);
+  margin-bottom: 1.5rem;
+}
+
+.pgv-table table {
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Header */
+.pgv-table thead th {
+  background: var(--pgv-table-header-bg);
+  color: var(--pgv-table-header-fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.65rem 1rem;
+  border-bottom: 2px solid var(--pgv-table-border);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.pgv-table thead th:first-child {
+  border-top-left-radius: 8px;
+}
+.pgv-table thead th:last-child {
+  border-top-right-radius: 8px;
+}
+
+/* Cells */
+.pgv-table td {
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--pgv-table-border);
+  vertical-align: middle;
+  transition: background 0.15s ease;
+}
+
+/* Zebra striping */
+.pgv-table tbody tr:nth-child(even) {
+  background: var(--pgv-table-stripe);
+}
+
+/* Hover */
+.pgv-table tbody tr:hover td {
+  background: var(--pgv-table-hover);
+}
+
+/* Clickable rows */
+.pgv-table tbody tr[style*="cursor"] {
+  cursor: pointer;
+}
+.pgv-table tbody tr[style*="cursor"]:hover td {
+  background: var(--pgv-table-hover);
+}
+
+/* Last row rounded corners */
+.pgv-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 8px;
+}
+.pgv-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 8px;
+}
+
+/* Remove PicoCSS default table bottom-border on last row */
+.pgv-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── Pager ──────────────────────────────────────────────────────── */
+.pgv-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--pgv-table-border);
+  background: var(--pgv-table-header-bg);
+  border-radius: 0 0 8px 8px;
+  font-size: 0.8rem;
+}
+
+.pgv-pager-info {
+  color: var(--pgv-table-header-fg);
+}
+
+.pgv-pager-btns {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pgv-pager-btns button {
+  all: unset;
+  cursor: pointer;
+  min-width: 1.8rem;
+  height: 1.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--pico-color);
+  transition: background 0.15s, color 0.15s;
+}
+.pgv-pager-btns button:hover:not([disabled]):not(.active) {
+  background: var(--pgv-table-hover);
+}
+.pgv-pager-btns button.active {
+  background: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
+  font-weight: 600;
+}
+.pgv-pager-btns button[disabled] {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.pgv-pager-dots {
+  min-width: 1.4rem;
+  text-align: center;
+  color: var(--pgv-table-header-fg);
+}
+
+/* When pager is present, remove bottom radius from table */
+.pgv-table:has(.pgv-pager) tbody tr:last-child td:first-child,
+.pgv-table:has(.pgv-pager) tbody tr:last-child td:last-child {
+  border-radius: 0;
+}
+
+/* Sortable headers */
+.pgv-sortable {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding-right: 1.6rem !important;
+}
+.pgv-sortable::after {
+  content: '⇅';
+  position: absolute;
+  right: 0.5rem;
+  opacity: 0.25;
+  font-size: 0.7rem;
+  transition: opacity 0.15s;
+}
+.pgv-sortable:hover::after {
+  opacity: 0.5;
+}
+.pgv-sortable[data-sort="asc"]::after {
+  content: '↑';
+  opacity: 0.8;
+}
+.pgv-sortable[data-sort="desc"]::after {
+  content: '↓';
+  opacity: 0.8;
+}

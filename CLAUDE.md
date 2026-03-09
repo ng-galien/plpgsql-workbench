@@ -54,18 +54,23 @@ npm run sync-tools    # Populates workbench.toolbox_tool from code registry
 
 **Supabase extensions available** (pre-installed in image): `pgcrypto`, `uuid-ossp`, `pg_graphql`, `pg_net`, `pg_cron`, `pgjwt`, `supabase_vault`, `pg_stat_statements`, and more.
 
-### Demo
+### Apps
+
+Apps live in `apps/`. Each has its own `docker-compose.yml`, `Makefile`, `sql/`, `frontend/`.
+
+**Port convention** — app N: PG=5440+N, PostgREST=3000+N, HTTP=8080+N
+
+| App | N | PG | PGRST | HTTP |
+|-----|---|-----|-------|------|
+| uxlab | 1 | 5441 | 3001 | 8081 |
+| demo | 2 | 5442 | 3002 | 8082 |
+| docman | 3 | 5443 | 3003 | 8083 |
 
 ```bash
-cd demo && docker compose up -d
-# PostgreSQL on port 5434, PostgREST on port 3000, Frontend on port 8080
-# Then run the MCP server with:
-PLPGSQL_CONNECTION=postgresql://postgres:postgres@localhost:5434/postgres npx tsx watch src/index.ts
+cd apps/uxlab && make up    # or: cd apps/demo && docker compose up -d
 ```
 
-The demo is a shop e-commerce app with two frontends:
-- `demo/frontend/index.html` — SPA calling PostgREST RPC directly
-- `demo/frontend/pgview.html` — pgView client (DB generates HTML, frontend is ~100 lines)
+The pgView framework (shared) lives in `pgv/` and is copied into each app via `make sync`.
 
 ## Environment Variables (infra bootstrap only)
 
@@ -176,29 +181,57 @@ Tool outputs use LMNAV (LM-Navigable), a compact text format optimized for LLM c
 
 ## pgView Pattern
 
-Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, demo in `demo/init/05-pgview.sql`):
+Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, canonical source in `pgv/`):
 
 - PostgreSQL generates HTML via `page(path, body) -> "text/html"` domain
 - PostgREST serves raw HTML (`Content-Type: text/html`) via domain trick
-- **htmx** for declarative navigation, forms, partials (replaces custom JS)
-- **PicoCSS** classless styling, **marked.js** for Markdown tables
-- `page()` = full pages, `frag_*()` = htmx partials (swap fragments)
-- `set_config('response.headers', ...)` for HX-Redirect, HX-Trigger, etc.
-- `pgv.*` schema = reusable UI primitives (see `docs/FRONTEND.md`)
+- **Alpine.js** shell (~150 lines) handles routing, events, toast, dialogs
+- **PicoCSS** classless styling, **marked.js** for Markdown tables in `<md>` blocks
+- `pgv.*` schema = reusable UI primitives styled via `pgview.css`
 
-## SQL (`sql/`)
+### pgView Conventions (ENFORCED)
 
-Three layers: **platform** (seed) vs **app** (migrations + functions).
+**1. data-\* contract** — PL/pgSQL generates pure HTML + `data-*` attributes. Shell interprets them.
 
-| Directory | Layer | Content | Deployment |
-|-----------|-------|---------|------------|
-| `sql/seed/` | Platform | Extensions, roles, schemas, **pgv primitives** | Auto-run by Docker init |
-| `sql/migrations/` | App | DDL: tables, indexes, constraints per app | `pg_schema` (tracked, run-once) |
-| `sql/functions/` | App | PL/pgSQL business functions per schema | `pg_func_load` (idempotent) |
+| Pattern | Who generates | Shell action |
+|---------|--------------|--------------|
+| `<a href="/path">` | PL/pgSQL | `go(path)` navigation |
+| `<form data-rpc="fn">` | PL/pgSQL | `post(fn, formData)` |
+| `<button data-rpc="fn" data-params='{}' data-confirm="msg">` | `pgv.action()` | `post(fn, params)` |
+| `<template data-toast="success\|error">msg</template>` | action return | Toast notification |
+| `<template data-redirect="/path"></template>` | action return | `go(path)` redirect |
+| `<button data-dialog="name" data-src="url" data-target="id">` | PL/pgSQL | Open dialog |
+| `<button data-toggle-theme>` | `pgv.nav()` | Flip light/dark theme |
 
-**pgv primitives** (`pgv.*`) are platform infrastructure shared by all apps. They live in `sql/seed/004_pgv.sql` — never in `sql/functions/`. `pg_func_save` excludes `pgv` and `workbench` schemas by default.
+**2. CSS classes, NEVER inline styles** — pgv primitives output `class="pgv-*"`, all styling lives in `pgview.css` with `--pgv-*` CSS custom properties. Light/dark themes via `[data-theme]` selectors. NEVER generate `style="..."` in pgv functions.
 
-Bootstrap after fresh DB: `pg_func_load path:sql/functions` then `pg_schema path:sql/migrations`.
+**3. Tables via Markdown** — Use `<md>` blocks for tables, NOT raw `<table>` HTML. The shell converts via marked.js and adds sort + pagination automatically.
+- `<md>` = table with sortable columns
+- `<md data-page="10">` = table with pagination (10 rows/page)
+- HTML inline (badges, etc.) works inside markdown cells
+
+**4. pgv primitives are platform** — `pgv.*` functions live in `pgv/sql/pgv.sql` (canonical source, exported via `pg_pack`). They are shared infrastructure, not app code. Each app copies pgv files via `make sync`.
+
+### pgView Files
+
+| File | Role |
+|------|------|
+| `pgv/frontend/index.html` | Alpine.js shell (routing, events, toast, dialog, table enhance) |
+| `pgv/frontend/pgview.css` | CSS tokens + component styles + light/dark themes |
+| `pgv/sql/pgv.sql` | pgv + pgv_ut schemas (pg_pack output) |
+| `sql/*-pgv.sql` | PL/pgSQL UI primitives (badge, stat, card, grid, page, nav, input, sel, textarea, error, action) |
+
+## SQL
+
+**Dev DB** (`sql/seed/`) — workbench-only bootstrap (extensions, roles, workbench schema). Auto-run by Docker init on port 5433.
+
+**pgv framework** (`pgv/sql/pgv.sql`) — canonical source for `pgv.*` + `pgv_ut.*` schemas. Exported via `pg_pack`, copied into each app by `make sync`.
+
+**Apps** (`apps/*/sql/`) — each app has its own SQL init files:
+- `01-roles.sql` — roles and permissions
+- `02-pgv.sql` — copied from `pgv/sql/pgv.sql`
+- `03-ddl.sql` — tables, indexes, seed data
+- `04-functions.sql` — pg_pack output of app functions
 
 ## Key Conventions
 
@@ -217,7 +250,7 @@ Bootstrap after fresh DB: `pg_func_load path:sql/functions` then `pg_schema path
 |------|---------|
 | `docs/LMNAV.md` | Output format specification with examples for every tool |
 | `docs/PGAPP.md` | Platform architecture: API router, pgView SSR, schema=module, VS Code extension, pgv primitives |
-| `docs/FRONTEND.md` | **UI/UX stack reference**: htmx + PicoCSS + PostgREST + pgView primitives, shell, routing, partials |
+| `docs/FRONTEND.md` | **UI/UX stack reference**: Alpine.js + PicoCSS + PostgREST + pgView primitives, shell, data-\* contract |
 | `docs/BUSINESS.md` | Business plan for SaaS artisan ERP + toolbox packaging model |
 | `docs/AI-INTEGRATION.md` | 3-level AI integration: MCP (done), chat widget, autonomous agent |
 | `docs/PRIMITIVE.md` | Original spec for MCP tool primitives (some aspirational) |

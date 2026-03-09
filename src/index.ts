@@ -102,8 +102,8 @@ const WORKFLOW = [
   "  4. pg_query -> SELECT ad-hoc et DML donnees uniquement",
 ].join("\n");
 
-const DDL_PATTERN = /^\s*(CREATE\s+(SCHEMA|TABLE|INDEX|EXTENSION|TYPE)|ALTER\s+(TABLE|SCHEMA|TYPE)|DROP\s+(SCHEMA|TABLE|INDEX|TYPE|EXTENSION))/i;
-const FUNC_PATTERN = /^\s*CREATE\s+(OR\s+REPLACE\s+)?FUNCTION/i;
+const DDL_PATTERN = /^\s*(CREATE\s+(SCHEMA|TABLE|INDEX|EXTENSION|TYPE)|ALTER\s+(TABLE|SCHEMA|TYPE)|DROP\s+(SCHEMA|TABLE|INDEX|TYPE|EXTENSION))/im;
+const FUNC_PATTERN = /^\s*CREATE\s+(OR\s+REPLACE\s+)?FUNCTION/im;
 
 app.post("/claude-hook", (req, res) => {
   const { tool_name, tool_input } = req.body ?? {};
@@ -149,6 +149,24 @@ app.post("/claude-hook", (req, res) => {
           permissionDecision: "deny",
           permissionDecisionReason:
             "Interdit d'ecrire des fonctions dans des fichiers SQL. Utilise pg_func_set + pg_test, puis pg_func_save quand stable.\n\n" + WORKFLOW,
+        },
+      });
+      return;
+    }
+  }
+
+  // Rule: pgv functions must not contain inline styles
+  if (tool_name === "mcp__plpgsql-workbench__pg_func_set") {
+    const body = (tool_input?.body ?? "") as string;
+    const schema = (tool_input?.schema ?? "") as string;
+    if (schema === "pgv" && /style\s*=\s*"/.test(body)) {
+      log.warn({ schema }, "hook: blocked inline style in pgv function");
+      res.json({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason:
+            "Les fonctions pgv ne doivent pas contenir de style inline (style=\"...\"). Utilise class=\"pgv-*\" et definis les styles dans pgview.css.",
         },
       });
       return;
