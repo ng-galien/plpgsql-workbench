@@ -187,12 +187,12 @@ app.get("/api/browse", async (req, res) => {
     lines.push(`<div class="folder-path" id="folder-current-path">${esc(resolved)}</div>`);
     lines.push(`<div class="folder-list">`);
     if (resolved !== parent) {
-      lines.push(`<a href="#" hx-get="/api/browse?path=${encodeURIComponent(parent)}" hx-target="#folder-content" hx-swap="innerHTML" class="folder-up"><span class="folder-icon">&#x2B06;</span> ..</a>`);
+      lines.push(`<a href="#" data-path="${esc(parent)}" class="folder-up"><span class="folder-icon">&#x2B06;</span> ..</a>`);
     }
     for (const d of dirs) {
       const full = path.join(resolved, d);
       lines.push(
-        `<a href="#" hx-get="/api/browse?path=${encodeURIComponent(full)}" hx-target="#folder-content" hx-swap="innerHTML">` +
+        `<a href="#" data-path="${esc(full)}">` +
         `<span class="folder-icon">&#x1F4C1;</span> ${esc(d)}</a>`
       );
     }
