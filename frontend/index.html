@@ -13,10 +13,29 @@
     .htmx-indicator { opacity: 0; transition: opacity 200ms; }
     .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
     tr[style*="cursor"]:hover { background: var(--pico-table-row-stripped-background-color); }
-    #error-toast:empty { display: none; }
-    #error-toast {
+
+    /* Toast notification */
+    #toast {
       position: fixed; bottom: 1rem; right: 1rem; z-index: 999;
-      max-width: 400px;
+      max-width: 460px; transition: opacity 0.3s;
+    }
+    #toast:empty { display: none; }
+    #toast article {
+      margin: 0; padding: 0.75rem 1rem; font-size: 0.9rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      animation: toast-in 0.3s ease-out;
+    }
+    #toast .toast-success { border-left: 4px solid var(--pico-ins-color); }
+    #toast .toast-error { border-left: 4px solid var(--pico-del-color); }
+    #toast .toast-title { font-weight: 600; margin-bottom: 0.25rem; }
+    #toast .toast-detail { color: var(--pico-muted-color); font-size: 0.85rem; }
+    #toast .toast-close {
+      float: right; background: none; border: none; cursor: pointer;
+      color: var(--pico-muted-color); font-size: 1.2rem; padding: 0; line-height: 1;
+    }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(1rem); }
+      to { opacity: 1; transform: translateY(0); }
     }
   </style>
 </head>
@@ -24,7 +43,7 @@
       hx-headers='{"Accept": "text/html"}'
       hx-target="#app"
       hx-swap="innerHTML show:window:top"
-      hx-target-error="#error-toast">
+      hx-target-error="#toast">
 
   <div id="app"
        hx-get="/rpc/page"
@@ -35,10 +54,74 @@
     </main>
   </div>
 
-  <div id="error-toast" role="alert"></div>
+  <div id="toast" role="alert"></div>
 
   <script>
-    // Markdown conversion + clickable rows after each htmx swap
+    // --- Toast system ---
+    var toastTimer = null;
+    function showToast(message, level, detail) {
+      var toast = document.getElementById('toast');
+      var cls = level === 'success' ? 'toast-success' : 'toast-error';
+      var html = '<article class="' + cls + '">'
+        + '<button class="toast-close" onclick="clearToast()">&times;</button>'
+        + '<div class="toast-title">' + message + '</div>';
+      if (detail) html += '<div class="toast-detail">' + detail + '</div>';
+      html += '</article>';
+      toast.innerHTML = html;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(clearToast, level === 'success' ? 3000 : 8000);
+    }
+    function clearToast() {
+      document.getElementById('toast').innerHTML = '';
+      clearTimeout(toastTimer);
+    }
+
+    // --- PostgREST error interceptor ---
+    htmx.on('htmx:responseError', function(evt) {
+      var xhr = evt.detail.xhr;
+      var status = xhr.status;
+      var body = xhr.responseText || '';
+
+      // Try to parse PostgREST JSON error
+      try {
+        var err = JSON.parse(body);
+        if (err.message) {
+          var title = status + ' — ' + (err.code || 'Erreur');
+          var detail = err.message;
+          if (err.hint) detail += ' (' + err.hint + ')';
+          showToast(title, 'error', detail);
+          // Prevent default error target swap (we handled it)
+          evt.detail.shouldSwap = false;
+          return;
+        }
+      } catch(e) {}
+
+      // Non-JSON error fallback
+      showToast('Erreur ' + status, 'error', body.substring(0, 200));
+    });
+
+    // Also catch network errors / timeouts
+    htmx.on('htmx:sendError', function() {
+      showToast('Erreur reseau', 'error', 'Impossible de contacter le serveur.');
+    });
+    htmx.on('htmx:timeout', function() {
+      showToast('Timeout', 'error', 'Le serveur met trop de temps a repondre.');
+    });
+
+    // --- Server-triggered toasts (HX-Trigger: showToast) ---
+    document.body.addEventListener('showToast', function(evt) {
+      var d = evt.detail || {};
+      showToast(d.message || 'OK', d.level || 'success', d.detail || '');
+    });
+
+    // Clear toast on next successful request
+    htmx.on('htmx:afterRequest', function(evt) {
+      if (!evt.detail.failed && evt.detail.target && evt.detail.target.id === 'app') {
+        clearToast();
+      }
+    });
+
+    // --- Markdown conversion + clickable rows ---
     htmx.on('htmx:afterSwap', function(evt) {
       var el = evt.detail.target;
       el.querySelectorAll('md').forEach(function(md) {
@@ -56,26 +139,6 @@
             {target: '#app', swap: 'innerHTML', pushUrl: a.getAttribute('href')});
         });
       });
-    });
-
-    // Push URL into hash on navigation
-    htmx.on('htmx:pushedIntoHistory', function(evt) {
-      // htmx manages history natively
-    });
-
-    // Clear error toast on next success
-    htmx.on('htmx:afterRequest', function(evt) {
-      if (!evt.detail.failed) document.getElementById('error-toast').innerHTML = '';
-    });
-
-    // Toast events from server (HX-Trigger: showToast)
-    document.body.addEventListener('showToast', function(evt) {
-      var d = evt.detail || {};
-      var toast = document.getElementById('error-toast');
-      var color = d.level === 'success' ? 'var(--pico-ins-color)' : 'var(--pico-del-color)';
-      toast.innerHTML = '<article style="border-left:4px solid ' + color + ';margin:0">' +
-        (d.message || d.value || '') + '</article>';
-      setTimeout(function() { toast.innerHTML = ''; }, 4000);
     });
   </script>
 </body>

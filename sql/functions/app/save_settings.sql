@@ -9,9 +9,8 @@ BEGIN
     ON CONFLICT (app, key) DO UPDATE SET value = EXCLUDED.value;
   END IF;
 
-  -- Redirect back to settings page
   PERFORM set_config('response.headers',
-    '[{"HX-Redirect": "/settings"}]', true);
+    '[{"HX-Trigger": "{\"showToast\": {\"message\": \"Configuration enregistree avec succes\", \"level\": \"success\"}}"}]', true);
   RETURN '';
 END;
 $function$;

@@ -184,21 +184,20 @@ app.get("/api/browse", async (req, res) => {
       .sort();
 
     const lines: string[] = [];
-    lines.push(`<small><code>${esc(resolved)}</code></small>`);
+    lines.push(`<div class="folder-path" id="folder-current-path">${esc(resolved)}</div>`);
+    lines.push(`<div class="folder-list">`);
     if (resolved !== parent) {
-      lines.push(`<a href="#" hx-get="/api/browse?path=${encodeURIComponent(parent)}" hx-target="#folder-list" hx-swap="innerHTML" style="display:block;padding:4px 0">&#x2B06; ..</a>`);
+      lines.push(`<a href="#" hx-get="/api/browse?path=${encodeURIComponent(parent)}" hx-target="#folder-content" hx-swap="innerHTML" class="folder-up"><span class="folder-icon">&#x2B06;</span> ..</a>`);
     }
-    lines.push(`<div style="max-height:300px;overflow-y:auto">`);
     for (const d of dirs) {
       const full = path.join(resolved, d);
       lines.push(
-        `<a href="#" hx-get="/api/browse?path=${encodeURIComponent(full)}" hx-target="#folder-list" hx-swap="innerHTML" style="display:block;padding:4px 0">` +
-        `&#x1F4C1; ${esc(d)}</a>`
+        `<a href="#" hx-get="/api/browse?path=${encodeURIComponent(full)}" hx-target="#folder-content" hx-swap="innerHTML">` +
+        `<span class="folder-icon">&#x1F4C1;</span> ${esc(d)}</a>`
       );
     }
-    if (dirs.length === 0) lines.push(`<p><small><em>Aucun sous-dossier</em></small></p>`);
+    if (dirs.length === 0) lines.push(`<div class="folder-empty">Aucun sous-dossier</div>`);
     lines.push(`</div>`);
-    lines.push(`<button type="button" class="contrast" style="margin-top:0.5rem" onclick="document.getElementById('documentsRoot').value='${esc(resolved).replace(/'/g, "\\'")}';document.getElementById('folder-picker').style.display='none'">Selectionner ce dossier</button>`);
 
     res.type("html").send(lines.join("\n"));
   } catch {
