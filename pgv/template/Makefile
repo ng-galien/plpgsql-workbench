@@ -9,6 +9,7 @@ PGV_DIR := ../../pgv
 .PHONY: up down clean logs ps sync mcp
 
 sync:
+	cp $(PGV_DIR)/sql/00-extensions.sql sql/00-extensions.sql
 	cp $(PGV_DIR)/sql/pgv.sql sql/02-pgv.sql
 	cp $(PGV_DIR)/frontend/pgview.css frontend/pgview.css
 

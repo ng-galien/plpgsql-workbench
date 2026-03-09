@@ -11,6 +11,7 @@ PGV_DIR := ../../pgv
 
 # Copy pgv framework files from canonical source
 sync:
+	cp $(PGV_DIR)/sql/00-extensions.sql sql/00-extensions.sql
 	cp $(PGV_DIR)/sql/pgv.sql sql/02-pgv.sql
 
 # Start all services (postgres + postgrest + nginx)
