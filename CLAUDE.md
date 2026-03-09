@@ -188,13 +188,17 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, demo in `demo/init/05-pg
 
 ## SQL (`sql/`)
 
-- `sql/seed/` — Bootstrap DDL, auto-run by Docker on first start: extensions + workbench schema
-- `sql/migrations/` — Application DDL (example: banking, shop schemas)
-- `sql/functions/` — Application functions organized by schema
+Three layers: **platform** (seed) vs **app** (migrations + functions).
 
-Applied via: `pg_schema path:sql/migrations` then `pg_func_load path:sql/functions`.
+| Directory | Layer | Content | Deployment |
+|-----------|-------|---------|------------|
+| `sql/seed/` | Platform | Extensions, roles, schemas, **pgv primitives** | Auto-run by Docker init |
+| `sql/migrations/` | App | DDL: tables, indexes, constraints per app | `pg_schema` (tracked, run-once) |
+| `sql/functions/` | App | PL/pgSQL business functions per schema | `pg_func_load` (idempotent) |
 
-Note: `sql/migrations/` and `sql/functions/` contain demo/example content (banking, shop). These are illustrative and not part of the platform itself.
+**pgv primitives** (`pgv.*`) are platform infrastructure shared by all apps. They live in `sql/seed/004_pgv.sql` — never in `sql/functions/`. `pg_func_save` excludes `pgv` and `workbench` schemas by default.
+
+Bootstrap after fresh DB: `pg_func_load path:sql/functions` then `pg_schema path:sql/migrations`.
 
 ## Key Conventions
 
