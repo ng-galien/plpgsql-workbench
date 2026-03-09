@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pgView</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/htmx-ext-response-targets@2.0.2/response-targets.js"></script>
+  <script src="https://unpkg.com/htmx-ext-preload@2.1.0/preload.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+    .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+    tr[style*="cursor"]:hover { background: var(--pico-table-row-stripped-background-color); }
+    #error-toast:empty { display: none; }
+    #error-toast {
+      position: fixed; bottom: 1rem; right: 1rem; z-index: 999;
+      max-width: 400px;
+    }
+  </style>
+</head>
+<body hx-ext="response-targets, preload"
+      hx-headers='{"Accept": "text/html"}'
+      hx-target="#app"
+      hx-swap="innerHTML show:window:top"
+      hx-target-error="#error-toast">
+
+  <div id="app"
+       hx-get="/rpc/page"
+       hx-vals='js:{"p_path": window.location.hash.slice(1) || "/"}'
+       hx-trigger="load">
+    <main class="container" aria-busy="true" style="min-height:50vh;display:flex;align-items:center;justify-content:center">
+      Chargement...
+    </main>
+  </div>
+
+  <div id="error-toast" role="alert"></div>
+
+  <script>
+    // Markdown conversion + clickable rows after each htmx swap
+    htmx.on('htmx:afterSwap', function(evt) {
+      var el = evt.detail.target;
+      el.querySelectorAll('md').forEach(function(md) {
+        var div = document.createElement('div');
+        div.innerHTML = marked.parse(md.innerHTML.trim());
+        md.parentNode.replaceChild(div, md);
+      });
+      el.querySelectorAll('tbody tr').forEach(function(tr) {
+        var a = tr.querySelector('a[href^="/"]');
+        if (!a) return;
+        tr.style.cursor = 'pointer';
+        tr.addEventListener('click', function(e) {
+          if (e.target.closest('a, button')) return;
+          htmx.ajax('GET', '/rpc/page?p_path=' + encodeURIComponent(a.getAttribute('href')),
+            {target: '#app', swap: 'innerHTML', pushUrl: a.getAttribute('href')});
+        });
+      });
+    });
+
+    // Push URL into hash on navigation
+    htmx.on('htmx:pushedIntoHistory', function(evt) {
+      // htmx manages history natively
+    });
+
+    // Clear error toast on next success
+    htmx.on('htmx:afterRequest', function(evt) {
+      if (!evt.detail.failed) document.getElementById('error-toast').innerHTML = '';
+    });
+
+    // Toast events from server (HX-Trigger: showToast)
+    document.body.addEventListener('showToast', function(evt) {
+      var d = evt.detail || {};
+      var toast = document.getElementById('error-toast');
+      var color = d.level === 'success' ? 'var(--pico-ins-color)' : 'var(--pico-del-color)';
+      toast.innerHTML = '<article style="border-left:4px solid ' + color + ';margin:0">' +
+        (d.message || d.value || '') + '</article>';
+      setTimeout(function() { toast.innerHTML = ''; }, 4000);
+    });
+  </script>
+</body>
+</html>
