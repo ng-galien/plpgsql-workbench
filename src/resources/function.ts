@@ -21,7 +21,7 @@ export async function queryFunctionDdl(client: DbClient, schema: string, name: s
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     JOIN pg_language l ON l.oid = p.prolang
-    WHERE n.nspname = $1 AND p.proname = $2 AND l.lanname = 'plpgsql'
+    WHERE n.nspname = $1 AND p.proname = $2 AND l.lanname IN ('sql', 'plpgsql')
     LIMIT 1
   `, [schema, name]);
   return rows.length > 0 ? rows[0].def : null;
@@ -42,7 +42,7 @@ export async function queryFunction(client: DbClient, schema: string, name: stri
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     JOIN pg_language l ON l.oid = p.prolang
-    WHERE n.nspname = $1 AND p.proname = $2 AND l.lanname = 'plpgsql'
+    WHERE n.nspname = $1 AND p.proname = $2 AND l.lanname IN ('sql', 'plpgsql')
     LIMIT 1
   `, [schema, name]);
 

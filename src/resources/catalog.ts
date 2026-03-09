@@ -23,7 +23,7 @@ export async function queryCatalog(client: DbClient): Promise<CatalogEntry[]> {
        WHERE c.relnamespace = n.oid AND c.relkind = 'r') AS table_count,
       (SELECT count(*) FROM pg_proc p
        JOIN pg_language l ON l.oid = p.prolang
-       WHERE p.pronamespace = n.oid AND l.lanname = 'plpgsql') AS function_count,
+       WHERE p.pronamespace = n.oid AND l.lanname IN ('sql', 'plpgsql')) AS function_count,
       (SELECT count(DISTINCT t.tgname) FROM pg_trigger t
        JOIN pg_class c ON c.oid = t.tgrelid
        WHERE c.relnamespace = n.oid AND NOT t.tgisinternal) AS trigger_count

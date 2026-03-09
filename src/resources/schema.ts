@@ -69,7 +69,7 @@ async function queryFunctionsOverview(
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     JOIN pg_language l ON l.oid = p.prolang
-    WHERE n.nspname = $1 AND l.lanname = 'plpgsql'
+    WHERE n.nspname = $1 AND l.lanname IN ('sql', 'plpgsql')
     ORDER BY p.proname
   `, [schema]);
   return rows;

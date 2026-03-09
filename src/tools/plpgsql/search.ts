@@ -57,7 +57,7 @@ export function createSearchTool({ withClient }: {
         if (searchKind === "all" || searchKind === "function") {
           const { conditions, params, nextIdx } = schemaConditions("n");
           let pi = nextIdx;
-          conditions.push("l.lanname = 'plpgsql'");
+          conditions.push("l.lanname IN ('sql', 'plpgsql')");
 
           if (name) { conditions.push(`p.proname LIKE $${pi++}`); params.push(name); }
           if (content) { conditions.push(`p.prosrc ~ $${pi++}`); params.push(content); }

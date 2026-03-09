@@ -86,7 +86,7 @@ async function findTableUsers(
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     JOIN pg_language l ON l.oid = p.prolang
-    WHERE n.nspname = $1 AND l.lanname = 'plpgsql'
+    WHERE n.nspname = $1 AND l.lanname IN ('sql', 'plpgsql')
       AND p.prosrc ~* $2
   `, [schema, `\\m${tableName}\\M`]);
 
