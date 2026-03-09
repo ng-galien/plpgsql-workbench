@@ -37,29 +37,43 @@ export function createSetFunction({ runTests, formatTestReport }: {
       return text(`completeness: full\n\n✗ deploy failed\n${formatErrorTriplet(err, content, `${schema}.${name}`)}`);
     }
 
-    // Validation
+    // Validation: plpgsql_check only works on plpgsql functions
     let validation = "";
     let hasErrors = false;
-    try {
-      const check = await client.query<{ lineno: number; message: string; hint: string | null; level: string; statement: string | null }>(
-        `SELECT lineno, message, hint, level, statement FROM plpgsql_check_function_tb($1)`,
-        [`${schema}.${name}`],
-      );
-      if (check.rows.length === 0) {
-        validation = "✓ plpgsql_check passed";
-      } else {
-        hasErrors = check.rows.some((r) => r.level === "error");
-        const diag = check.rows.map((r) => {
-          const parts = [`problem: ${r.message}`, `where: line ${r.lineno}`];
-          if (r.statement) parts.push(`statement: ${r.statement}`);
-          if (r.hint) parts.push(`fix_hint: ${r.hint}`);
-          return `  [${r.level}]\n  ${parts.join("\n  ")}`;
-        }).join("\n");
-        const sym = hasErrors ? "✗" : "⚠";
-        validation = `${sym} plpgsql_check:\n${diag}`;
+
+    const langRes = await client.query<{ lang: string }>(
+      `SELECT l.lanname AS lang FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       JOIN pg_language l ON l.oid = p.prolang
+       WHERE n.nspname = $1 AND p.proname = $2 LIMIT 1`,
+      [schema, name],
+    );
+    const lang = langRes.rows[0]?.lang;
+
+    if (lang !== "plpgsql") {
+      validation = `✓ deployed (${lang} function, plpgsql_check skipped)`;
+    } else {
+      try {
+        const check = await client.query<{ lineno: number; message: string; hint: string | null; level: string; statement: string | null }>(
+          `SELECT lineno, message, hint, level, statement FROM plpgsql_check_function_tb($1)`,
+          [`${schema}.${name}`],
+        );
+        if (check.rows.length === 0) {
+          validation = "✓ plpgsql_check passed";
+        } else {
+          hasErrors = check.rows.some((r) => r.level === "error");
+          const diag = check.rows.map((r) => {
+            const parts = [`problem: ${r.message}`, `where: line ${r.lineno}`];
+            if (r.statement) parts.push(`statement: ${r.statement}`);
+            if (r.hint) parts.push(`fix_hint: ${r.hint}`);
+            return `  [${r.level}]\n  ${parts.join("\n  ")}`;
+          }).join("\n");
+          const sym = hasErrors ? "✗" : "⚠";
+          validation = `${sym} plpgsql_check:\n${diag}`;
+        }
+      } catch {
+        validation = "✓ deployed (plpgsql_check not available)";
       }
-    } catch {
-      validation = "✓ deployed (plpgsql_check not available)";
     }
 
     if (hasErrors) {
