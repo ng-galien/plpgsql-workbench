@@ -177,12 +177,13 @@ Tool outputs use LMNAV (LM-Navigable), a compact text format optimized for LLM c
 
 Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, demo in `demo/init/05-pgview.sql`):
 
-- PostgreSQL generates HTML directly via `page(path, body) -> text`
-- PostgREST exposes it as `POST /rpc/page`
-- Frontend shell is ~50 lines: `go(path)`, `post(path, body)`, `render(html)`
-- `<md>` blocks for Markdown tables (converted client-side by marked.js)
-- HTML helpers: `esc()` (XSS), `pgv_badge()`, `pgv_money()`, `pgv_status()`, `pgv_nav()`
-- `<!-- redirect:/path -->` convention for POST->redirect
+- PostgreSQL generates HTML via `page(path, body) -> "text/html"` domain
+- PostgREST serves raw HTML (`Content-Type: text/html`) via domain trick
+- **htmx** for declarative navigation, forms, partials (replaces custom JS)
+- **PicoCSS** classless styling, **marked.js** for Markdown tables
+- `page()` = full pages, `frag_*()` = htmx partials (swap fragments)
+- `set_config('response.headers', ...)` for HX-Redirect, HX-Trigger, etc.
+- `pgv.*` schema = reusable UI primitives (see `docs/FRONTEND.md`)
 
 ## SQL (`sql/`)
 
@@ -210,7 +211,8 @@ Note: `sql/migrations/` and `sql/functions/` contain demo/example content (banki
 | File | Content |
 |------|---------|
 | `docs/LMNAV.md` | Output format specification with examples for every tool |
-| `docs/PGAPP.md` | Full platform vision: API router, pgView SSR, schema=module, VS Code extension, pgv primitives |
+| `docs/PGAPP.md` | Platform architecture: API router, pgView SSR, schema=module, VS Code extension, pgv primitives |
+| `docs/FRONTEND.md` | **UI/UX stack reference**: htmx + PicoCSS + PostgREST + pgView primitives, shell, routing, partials |
 | `docs/BUSINESS.md` | Business plan for SaaS artisan ERP + toolbox packaging model |
 | `docs/AI-INTEGRATION.md` | 3-level AI integration: MCP (done), chat widget, autonomous agent |
 | `docs/PRIMITIVE.md` | Original spec for MCP tool primitives (some aspirational) |
