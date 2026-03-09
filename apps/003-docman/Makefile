@@ -6,16 +6,22 @@
 
 COMPOSE := docker compose
 PGV_DIR := ../../pgv
+PGV_IMAGE := pg-workbench
 
-.PHONY: up down clean logs ps sync pack mcp
+.PHONY: up down clean logs ps sync pack mcp image
 
 # Copy pgv framework files from canonical source
 sync:
 	cp $(PGV_DIR)/sql/00-extensions.sql sql/00-extensions.sql
 	cp $(PGV_DIR)/sql/pgv.sql sql/02-pgv.sql
 
+# Build pg-workbench image if missing
+image:
+	@docker image inspect $(PGV_IMAGE) > /dev/null 2>&1 || \
+		(echo "Building $(PGV_IMAGE)..." && docker build -t $(PGV_IMAGE) ../../docker/)
+
 # Start all services (postgres + postgrest + nginx)
-up: sync
+up: image sync
 	$(COMPOSE) up -d
 	@echo ""
 	@echo "  postgres  → localhost:5443"

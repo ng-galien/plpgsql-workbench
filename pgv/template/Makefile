@@ -5,15 +5,21 @@
 
 COMPOSE := docker compose
 PGV_DIR := ../../pgv
+PGV_IMAGE := pg-workbench
 
-.PHONY: up down clean logs ps sync mcp
+.PHONY: up down clean logs ps sync mcp image
 
 sync:
 	cp $(PGV_DIR)/sql/00-extensions.sql sql/00-extensions.sql
 	cp $(PGV_DIR)/sql/pgv.sql sql/02-pgv.sql
 	cp $(PGV_DIR)/frontend/pgview.css frontend/pgview.css
 
-up: sync
+# Build pg-workbench image if missing
+image:
+	@docker image inspect $(PGV_IMAGE) > /dev/null 2>&1 || \
+		(echo "Building $(PGV_IMAGE)..." && docker build -t $(PGV_IMAGE) ../../docker/)
+
+up: image sync
 	$(COMPOSE) up -d
 	@echo ""
 	@echo "  postgres  → localhost:{{PG}}"

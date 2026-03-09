@@ -2,27 +2,19 @@
 # Port convention: app #3 → PG:5443 PGRST:3003 HTTP:8083
 services:
   postgres:
-    image: supabase/postgres:17.6.1.093
+    image: pg-workbench
     ports:
       - "5443:5432"
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
-      JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters
-      JWT_EXP: 3600
     volumes:
-      - ./sql:/docker-entrypoint-initdb.d/init-scripts:ro
+      - ./sql:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
       timeout: 5s
       retries: 10
-    command:
-      - postgres
-      - -c
-      - config_file=/etc/postgresql/postgresql.conf
-      - -c
-      - log_min_messages=fatal
 
   postgrest:
     image: postgrest/postgrest:v12.2.3

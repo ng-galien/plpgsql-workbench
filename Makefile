@@ -5,11 +5,21 @@
 # MCP:        npm run dev          (all packs, dev DB)
 #             npm run dev:docman   (docman packs, docman DB)
 
+PGV_IMAGE := pg-workbench
+
+# --- Docker image (postgres + plpgsql_check + pgtap) ---
+
+.PHONY: image
+
+image:
+	@docker image inspect $(PGV_IMAGE) > /dev/null 2>&1 || \
+		(echo "Building $(PGV_IMAGE)..." && docker build -t $(PGV_IMAGE) docker/)
+
 # --- Dev DB (port 5433) ---
 
 .PHONY: dev-up dev-down dev-clean dev-init
 
-dev-up:
+dev-up: image
 	docker compose up -d
 	@echo ""
 	@echo "  Dev DB → localhost:5433"
@@ -95,6 +105,9 @@ new-app:
 	    pgv/template/01-roles.sql > $(APP_DIR)/sql/01-roles.sql; \
 	sed -e "s/{{MCP}}/$$MCP/g" \
 	    pgv/template/.mcp.json > $(APP_DIR)/.mcp.json; \
+	mkdir -p $(APP_DIR)/.claude; \
+	sed -e "s/{{MCP}}/$$MCP/g" \
+	    pgv/template/.claude/settings.local.json > $(APP_DIR)/.claude/settings.local.json; \
 	cp pgv/frontend/index.html $(APP_DIR)/frontend/index.html; \
 	cp pgv/frontend/pgview.css $(APP_DIR)/frontend/pgview.css; \
 	cp apps/001-uxlab/frontend/nginx.conf $(APP_DIR)/frontend/nginx.conf; \
