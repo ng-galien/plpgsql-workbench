@@ -12,21 +12,21 @@ The workbench is the foundation for building all applications with PostgreSQL as
 
 ```bash
 # Start dev database (Supabase PostgreSQL 17)
-docker compose up -d
+make dev-up              # or: docker compose up -d
+make dev-init            # loads pgv into dev DB (after fresh start)
 
-# Dev with auto-reload (connection string is set in npm script)
+# Dev MCP server (all packs, dev DB on 5433)
 npm run dev
 
+# Dev MCP server for a specific app
+npm run dev:docman       # packs + DB from apps/docman/workbench.json, port 3103
+npm run dev:uxlab        # packs + DB from apps/uxlab/workbench.json, port 3101
+
 # Build
-npm run build          # tsc -> dist/
+npm run build            # tsc -> dist/
 
-# Start built version
-PLPGSQL_CONNECTION=postgresql://postgres:postgres@localhost:5433/postgres npm start
-
-# Bootstrap seed data (extensions + test schemas are auto-created by Docker init)
-# For application data, use:
-#   pg_schema path:sql/migrations
-#   pg_func_load path:sql/functions
+# Scaffold a new app
+make new-app NAME=myapp SLOT=4   # creates apps/myapp/ with all files
 ```
 
 No test framework is configured in this repo — testing happens via pgTAP inside PostgreSQL.
@@ -36,16 +36,18 @@ No test framework is configured in this repo — testing happens via pgTAP insid
 The dev database uses `supabase/postgres:17.6.1.093` (same as production target).
 
 ```bash
-docker compose up -d     # Start (port 5433)
-docker compose down      # Stop (data persists in pgdata volume)
-docker compose down -v   # Stop + wipe data (triggers fresh initdb on next up)
+make dev-up              # Start (port 5433)
+make dev-down            # Stop (data persists in pgdata volume)
+make dev-clean           # Stop + wipe data (triggers fresh initdb on next up)
+make dev-init            # Start + load pgv into dev DB
 ```
 
 **Connection:** `postgresql://postgres:postgres@localhost:5433/postgres`
 
-**Auto-initialized on first start** (via `sql/seed/` mounted into `init-scripts/`):
+**Auto-initialized on first start** (via `seed/` mounted into `init-scripts/`):
 - `plpgsql_check` + `pgtap` extensions
 - `workbench` schema (toolbox, toolbox_tool, tenant tables)
+- Run `make dev-init` after fresh start to also load pgv framework
 
 **Sync tools to DB** (after code changes):
 ```bash

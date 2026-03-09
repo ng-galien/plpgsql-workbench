@@ -12,6 +12,9 @@
     "watch": "tsc --watch",
     "start": "node dist/index.js",
     "dev": "WORKBENCH_MODE=dev PLPGSQL_CONNECTION=postgresql://postgres:postgres@localhost:5433/postgres nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'",
+    "dev:uxlab": "WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/uxlab/workbench.json nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'",
+    "dev:demo": "WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/demo/workbench.json nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'",
+    "dev:docman": "WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/docman/workbench.json nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'",
     "sync-tools": "PLPGSQL_CONNECTION=postgresql://postgres:postgres@localhost:5433/postgres node --import tsx src/sync-tools.ts"
   },
   "dependencies": {

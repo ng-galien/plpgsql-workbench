@@ -3,6 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
+import fsSync from "fs";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -18,20 +19,58 @@ const log = pino({
   transport: { target: "pino-pretty", options: { colorize: true } },
 });
 
-log.info("Building container...");
+// --- Config loading ---
+// WORKBENCH_CONFIG=apps/docman/workbench.json → load app-specific config
+// Without it → load all packs (dev mode)
 
-const packConfigs: Record<string, Record<string, unknown>> = {
-  plpgsql: {},
-  docstore: {},
-  google: {},
-  docman: {},
-};
-const packImpls: Record<string, ToolPack> = {
+interface WorkbenchConfig {
+  name: string;
+  packs: string[];
+  connection?: string;
+  port?: number;
+}
+
+const ALL_PACKS: Record<string, ToolPack> = {
   plpgsql: plpgsqlPack,
   docstore: docstorePack,
   google: googlePack,
   docman: docmanPack,
 };
+
+function loadConfig(): WorkbenchConfig {
+  const configPath = process.env.WORKBENCH_CONFIG;
+  if (configPath) {
+    const resolved = path.resolve(configPath);
+    const raw = JSON.parse(fsSync.readFileSync(resolved, "utf-8"));
+    log.info({ config: resolved, app: raw.name, packs: raw.packs }, "Loaded app config");
+    return raw;
+  }
+  // Default: all packs
+  return {
+    name: "dev",
+    packs: Object.keys(ALL_PACKS),
+  };
+}
+
+const appConfig = loadConfig();
+
+// Apply connection from config (config > env > default)
+if (appConfig.connection) {
+  process.env.PLPGSQL_CONNECTION = appConfig.connection;
+}
+
+const packConfigs: Record<string, Record<string, unknown>> = {};
+const packImpls: Record<string, ToolPack> = {};
+for (const name of appConfig.packs) {
+  if (!ALL_PACKS[name]) {
+    log.warn({ pack: name }, "Unknown pack in config, skipping");
+    continue;
+  }
+  packConfigs[name] = {};
+  packImpls[name] = ALL_PACKS[name];
+}
+
+log.info({ app: appConfig.name, packs: Object.keys(packImpls) }, "Building container");
 
 const container = buildContainer(
   { packs: packConfigs },
@@ -47,7 +86,7 @@ async function createServer(): Promise<McpServer> {
   return s;
 }
 
-const PORT = parseInt(process.env.MCP_PORT ?? "3100", 10);
+const PORT = appConfig.port ?? parseInt(process.env.MCP_PORT ?? "3100", 10);
 
 const app = express();
 app.use(express.json());

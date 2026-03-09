@@ -1,0 +1,6 @@
+{
+  "name": "{{NAME}}",
+  "packs": ["plpgsql"],
+  "connection": "postgresql://postgres:postgres@localhost:{{PG}}/postgres",
+  "port": {{MCP}}
+}

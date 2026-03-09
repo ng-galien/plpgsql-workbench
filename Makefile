@@ -1,0 +1,98 @@
+# plpgsql-workbench — Platform Makefile
+#
+# Dev DB:     make dev-up / make dev-down / make dev-clean
+# Apps:       make app-up APP=uxlab / make app-down APP=docman
+# MCP:        npm run dev          (all packs, dev DB)
+#             npm run dev:docman   (docman packs, docman DB)
+
+# --- Dev DB (port 5433) ---
+
+.PHONY: dev-up dev-down dev-clean dev-init
+
+dev-up:
+	docker compose up -d
+	@echo ""
+	@echo "  Dev DB → localhost:5433"
+
+dev-down:
+	docker compose down
+
+dev-clean:
+	docker compose down -v
+
+# Load pgv framework into dev DB (after fresh start)
+dev-init: dev-up
+	@echo "Waiting for DB..."
+	@sleep 2
+	PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f pgv/sql/pgv.sql -q
+	@echo "pgv loaded into dev DB"
+
+# --- App management ---
+
+.PHONY: app-up app-down app-clean app-logs
+
+app-up:
+	@test -n "$(APP)" || (echo "Usage: make app-up APP=uxlab" && exit 1)
+	$(MAKE) -C apps/$(APP) up
+
+app-down:
+	@test -n "$(APP)" || (echo "Usage: make app-down APP=uxlab" && exit 1)
+	$(MAKE) -C apps/$(APP) down
+
+app-clean:
+	@test -n "$(APP)" || (echo "Usage: make app-clean APP=uxlab" && exit 1)
+	$(MAKE) -C apps/$(APP) clean
+
+app-logs:
+	@test -n "$(APP)" || (echo "Usage: make app-logs APP=uxlab" && exit 1)
+	$(MAKE) -C apps/$(APP) logs
+
+# --- Sync pgv to all apps ---
+
+.PHONY: sync-pgv
+
+sync-pgv:
+	@for app in apps/*/; do \
+		if [ -f "$$app/Makefile" ]; then \
+			echo "Syncing pgv → $$app"; \
+			$(MAKE) -C $$app sync 2>/dev/null || true; \
+		fi; \
+	done
+
+# --- Build ---
+
+.PHONY: build check
+
+build:
+	npm run build
+
+check:
+	npx tsc --noEmit
+
+# --- New app scaffold ---
+
+.PHONY: new-app
+
+new-app:
+	@test -n "$(NAME)" || (echo "Usage: make new-app NAME=myapp SLOT=4" && exit 1)
+	@test -n "$(SLOT)" || (echo "Usage: make new-app NAME=myapp SLOT=4" && exit 1)
+	@test ! -d "apps/$(NAME)" || (echo "apps/$(NAME) already exists" && exit 1)
+	@mkdir -p apps/$(NAME)/sql apps/$(NAME)/frontend
+	@PG=$$((5440 + $(SLOT))); PGRST=$$((3000 + $(SLOT))); HTTP=$$((8080 + $(SLOT))); MCP=$$((3100 + $(SLOT))); \
+	echo "Creating apps/$(NAME) (slot $(SLOT): PG:$$PG PGRST:$$PGRST HTTP:$$HTTP MCP:$$MCP)"; \
+	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{SLOT}}/$(SLOT)/g" \
+	    -e "s/{{PG}}/$$PG/g" -e "s/{{PGRST}}/$$PGRST/g" \
+	    -e "s/{{HTTP}}/$$HTTP/g" -e "s/{{MCP}}/$$MCP/g" \
+	    pgv/template/docker-compose.yml > apps/$(NAME)/docker-compose.yml; \
+	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{SLOT}}/$(SLOT)/g" \
+	    -e "s/{{PG}}/$$PG/g" -e "s/{{PGRST}}/$$PGRST/g" \
+	    -e "s/{{HTTP}}/$$HTTP/g" -e "s/{{MCP}}/$$MCP/g" \
+	    pgv/template/Makefile > apps/$(NAME)/Makefile; \
+	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{PG}}/$$PG/g" -e "s/{{MCP}}/$$MCP/g" \
+	    pgv/template/workbench.json > apps/$(NAME)/workbench.json; \
+	sed -e 's/{{NAME}}/$(NAME)/g' \
+	    pgv/template/01-roles.sql > apps/$(NAME)/sql/01-roles.sql; \
+	cp pgv/frontend/index.html apps/$(NAME)/frontend/index.html; \
+	cp pgv/frontend/pgview.css apps/$(NAME)/frontend/pgview.css; \
+	cp apps/uxlab/frontend/nginx.conf apps/$(NAME)/frontend/nginx.conf; \
+	echo "Done. Next: edit apps/$(NAME)/sql/03-ddl.sql"

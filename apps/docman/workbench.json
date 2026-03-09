@@ -1,0 +1,6 @@
+{
+  "name": "docman",
+  "packs": ["plpgsql", "docstore", "google", "docman"],
+  "connection": "postgresql://postgres:postgres@localhost:5443/postgres",
+  "port": 3103
+}
