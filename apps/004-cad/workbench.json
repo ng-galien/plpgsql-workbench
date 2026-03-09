@@ -1,0 +1,6 @@
+{
+  "name": "cad",
+  "packs": ["plpgsql"],
+  "connection": "postgresql://postgres:postgres@localhost:5444/postgres",
+  "port": 3104
+}

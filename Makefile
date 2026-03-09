@@ -95,9 +95,11 @@ new-app:
 	    -e "s/{{PG}}/$$PG/g" -e "s/{{PGRST}}/$$PGRST/g" \
 	    -e "s/{{HTTP}}/$$HTTP/g" -e "s/{{MCP}}/$$MCP/g" \
 	    pgv/template/docker-compose.yml > $(APP_DIR)/docker-compose.yml; \
+	APP_BASENAME=$$(basename $(APP_DIR)); \
 	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{SLOT}}/$(SLOT)/g" \
 	    -e "s/{{PG}}/$$PG/g" -e "s/{{PGRST}}/$$PGRST/g" \
 	    -e "s/{{HTTP}}/$$HTTP/g" -e "s/{{MCP}}/$$MCP/g" \
+	    -e "s/{{APP_DIR}}/$$APP_BASENAME/g" \
 	    pgv/template/Makefile > $(APP_DIR)/Makefile; \
 	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{PG}}/$$PG/g" -e "s/{{MCP}}/$$MCP/g" \
 	    pgv/template/workbench.json > $(APP_DIR)/workbench.json; \

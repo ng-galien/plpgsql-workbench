@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pgView</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="/pgview.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 1rem; right: 1rem; z-index: 999;
+      max-width: 460px;
+    }
+    #toast article {
+      margin: 0; padding: 0.75rem 1rem; font-size: 0.9rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    #toast .toast-success { border-left: 4px solid var(--pico-ins-color); }
+    #toast .toast-error   { border-left: 4px solid var(--pico-del-color); }
+    #toast .toast-close {
+      float: right; background: none; border: none; cursor: pointer;
+      color: var(--pico-muted-color); font-size: 1.2rem; padding: 0; line-height: 1;
+    }
+
+    /* Folder picker */
+    .folder-path {
+      font-family: monospace; font-size: 0.85rem;
+      background: var(--pico-code-background-color);
+      padding: 0.5rem 0.75rem; border-radius: var(--pico-border-radius);
+      margin-bottom: 0.75rem; word-break: break-all;
+    }
+    .folder-list {
+      max-height: 50vh; overflow-y: auto;
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: var(--pico-border-radius);
+    }
+    .folder-list a {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.6rem 0.75rem; text-decoration: none;
+      color: var(--pico-color);
+      border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+    .folder-list a:last-child { border-bottom: none; }
+    .folder-list a:hover { background: var(--pico-primary-focus); }
+    .folder-empty { padding: 2rem; text-align: center; color: var(--pico-muted-color); }
+  </style>
+</head>
+<body x-data="pgview" x-init="boot()">
+
+  <!-- Page content -->
+  <div id="app">
+    <main class="container" aria-busy="true"
+      style="min-height:50vh;display:flex;align-items:center;justify-content:center">
+      Chargement...
+    </main>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" role="alert" x-show="toast.show" x-transition>
+    <article :class="'toast-' + toast.level">
+      <button class="toast-close" @click="toast.show = false">&times;</button>
+      <div style="font-weight:600;margin-bottom:0.25rem" x-text="toast.msg"></div>
+      <div x-show="toast.detail" style="color:var(--pico-muted-color);font-size:0.85rem"
+           x-text="toast.detail"></div>
+    </article>
+  </div>
+
+  <!-- Dialog (shell-owned, reusable) -->
+  <dialog x-ref="dialog">
+    <article style="width:min(90vw,560px);margin:0">
+      <header>
+        <button aria-label="Fermer" rel="prev" @click="$refs.dialog.close()"></button>
+        <strong x-text="dlg.title"></strong>
+      </header>
+      <div x-ref="dlgBody"></div>
+      <footer style="display:flex;justify-content:flex-end;gap:.5rem">
+        <button class="secondary" @click="$refs.dialog.close()">Annuler</button>
+        <button @click="dlgSelect()">Sélectionner</button>
+      </footer>
+    </article>
+  </dialog>
+
+  <script>
+  document.addEventListener('alpine:init', function() {
+    Alpine.data('pgview', function() { return {
+      toast: { show: false, msg: '', level: 'success', detail: '' },
+      dlg:   { title: '', target: '' },
+      _tt: null,
+
+      /* ── Bootstrap ─────────────────────────────────── */
+      boot: function() {
+        var saved = localStorage.getItem('pgv-theme');
+        if (saved) document.documentElement.setAttribute('data-theme', saved);
+        this._listen();
+        this.go(location.pathname || '/');
+        var self = this;
+        window.onpopstate = function() { self.go(location.pathname || '/', false); };
+      },
+
+      /* ── Event delegation on #app ──────────────────── */
+      _listen: function() {
+        var self = this;
+        var app = document.getElementById('app');
+
+        app.addEventListener('click', function(e) {
+          // Internal links
+          var a = e.target.closest('a[href^="/"]');
+          if (a) { e.preventDefault(); return self.go(a.getAttribute('href')); }
+
+          // data-rpc buttons
+          var btn = e.target.closest('button[data-rpc]');
+          if (btn) {
+            e.preventDefault();
+            if (btn.dataset.confirm && !confirm(btn.dataset.confirm)) return;
+            var params = btn.dataset.params ? JSON.parse(btn.dataset.params) : {};
+            return self.post(btn.dataset.rpc, params);
+          }
+
+          // Theme toggle
+          var thm = e.target.closest('[data-toggle-theme]');
+          if (thm) {
+            e.preventDefault();
+            var html = document.documentElement;
+            var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', next);
+            localStorage.setItem('pgv-theme', next);
+            thm.innerHTML = next === 'dark' ? '&#x2600;' : '&#x263E;';
+            return;
+          }
+
+          // data-dialog buttons
+          var dlg = e.target.closest('[data-dialog]');
+          if (dlg) {
+            e.preventDefault();
+            return self.openDialog(dlg.dataset.dialog, dlg.dataset.src, dlg.dataset.target);
+          }
+        });
+
+        app.addEventListener('submit', function(e) {
+          var form = e.target.closest('form[data-rpc]');
+          if (!form) return;
+          e.preventDefault();
+          var data = {};
+          new FormData(form).forEach(function(v, k) { data[k] = v; });
+          self.post(form.dataset.rpc, data);
+        });
+
+        // Dialog folder navigation
+        this.$refs.dlgBody.addEventListener('click', function(e) {
+          var a = e.target.closest('a[data-path]');
+          if (!a) return;
+          e.preventDefault();
+          self._browse(a.dataset.path);
+        });
+      },
+
+      /* ── Navigation ────────────────────────────────── */
+      go: function(path, push) {
+        if (push === undefined) push = true;
+        var self = this;
+        return fetch('/rpc/page', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          body: JSON.stringify({ p_path: path })
+        })
+        .then(function(r) {
+          if (!r.ok) return self._err(r);
+          return r.text().then(function(html) {
+            self._render(html);
+            if (push) history.pushState({}, '', path);
+            window.scrollTo(0, 0);
+          });
+        })
+        .catch(function() {
+          self.showToast('Erreur réseau', 'error', 'Serveur injoignable.');
+        });
+      },
+
+      /* ── POST action ───────────────────────────────── */
+      post: function(endpoint, data) {
+        var self = this;
+        return fetch('/rpc/' + endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          body: JSON.stringify(data)
+        })
+        .then(function(r) {
+          if (!r.ok) return self._err(r);
+          return r.text().then(function(html) { self._render(html); });
+        })
+        .catch(function() {
+          self.showToast('Erreur réseau', 'error', 'Serveur injoignable.');
+        });
+      },
+
+      /* ── Render response ───────────────────────────── */
+      _render: function(html) {
+        // Extract <template data-toast="level">message</template>
+        var tm = html.match(/<template data-toast="([^"]*)">([\s\S]*?)<\/template>/);
+        if (tm) {
+          this.showToast(tm[2].trim(), tm[1]);
+          html = html.replace(tm[0], '');
+        }
+
+        // Extract <template data-redirect="/path"></template>
+        var rm = html.match(/<template data-redirect="([^"]+)"><\/template>/);
+        if (rm) { this.go(rm[1]); return; }
+
+        // Render page content
+        if (!html.trim()) return;
+        var app = document.getElementById('app');
+        app.innerHTML = html;
+
+        // Post-process: markdown + clickable rows
+        var self = this;
+        this.$nextTick(function() { self._enhance(app); });
+      },
+
+      /* ── Table: sort + pagination ────────────────── */
+      _initTable: function(wrap, tbl, pageSize) {
+        var tbody = tbl.querySelector('tbody');
+        var allRows = Array.from(tbody.querySelectorAll('tr'));
+        var page = 0;
+        var pager = null;
+
+        // ── Render visible rows ──
+        function render() {
+          var rows = allRows;
+          if (pageSize > 0) {
+            var start = page * pageSize;
+            rows.forEach(function(r) { r.style.display = 'none'; });
+            rows.slice(start, start + pageSize).forEach(function(r) { r.style.display = ''; });
+            renderPager();
+          }
+        }
+
+        // ── Pager bar ──
+        function renderPager() {
+          if (!pageSize || allRows.length <= pageSize) {
+            if (pager) pager.style.display = 'none';
+            return;
+          }
+          if (!pager) {
+            pager = document.createElement('div');
+            pager.className = 'pgv-pager';
+            wrap.appendChild(pager);
+          }
+          pager.style.display = '';
+          var total = allRows.length;
+          var pages = Math.ceil(total / pageSize);
+          var start = page * pageSize + 1;
+          var end = Math.min(start + pageSize - 1, total);
+
+          var h = '<span class="pgv-pager-info">' + start + '-' + end + ' sur ' + total + '</span>';
+          h += '<span class="pgv-pager-btns">';
+          h += '<button ' + (page === 0 ? 'disabled' : 'data-page="' + (page - 1) + '"') + '>&lsaquo;</button>';
+          for (var i = 0; i < pages; i++) {
+            if (pages > 7 && i > 1 && i < pages - 2 && Math.abs(i - page) > 1) {
+              if (i === 2 || i === pages - 3) h += '<span class="pgv-pager-dots">&hellip;</span>';
+              continue;
+            }
+            h += '<button ' + (i === page ? 'class="active"' : 'data-page="' + i + '"') + '>' + (i + 1) + '</button>';
+          }
+          h += '<button ' + (page >= pages - 1 ? 'disabled' : 'data-page="' + (page + 1) + '"') + '>&rsaquo;</button>';
+          h += '</span>';
+          pager.innerHTML = h;
+
+          pager.querySelectorAll('[data-page]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              page = parseInt(btn.dataset.page);
+              render();
+            });
+          });
+        }
+
+        // ── Sort comparator ──
+        function compare(col, asc) {
+          return function(a, b) {
+            var av = (a.children[col] || {}).textContent || '';
+            var bv = (b.children[col] || {}).textContent || '';
+            var an = parseFloat(av.replace(/[^\d.,-]/g, '').replace(',', '.'));
+            var bn = parseFloat(bv.replace(/[^\d.,-]/g, '').replace(',', '.'));
+            if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+            var ad = av.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            var bd = bv.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (ad && bd) {
+              var da = ad[3] + ad[2] + ad[1], db = bd[3] + bd[2] + bd[1];
+              return asc ? da.localeCompare(db) : db.localeCompare(da);
+            }
+            return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+          };
+        }
+
+        // ── Sortable headers ──
+        var ths = tbl.querySelectorAll('thead th');
+        ths.forEach(function(th, col) {
+          th.classList.add('pgv-sortable');
+          th.addEventListener('click', function() {
+            var asc = th.dataset.sort !== 'asc';
+            ths.forEach(function(h) { h.dataset.sort = ''; });
+            th.dataset.sort = asc ? 'asc' : 'desc';
+            allRows.sort(compare(col, asc));
+            allRows.forEach(function(r) { tbody.appendChild(r); });
+            page = 0;
+            render();
+          });
+        });
+
+        render();
+      },
+
+      _enhance: function(el) {
+        var self = this;
+        // Sync theme toggle icon
+        var themeBtn = el.querySelector('[data-toggle-theme]');
+        if (themeBtn) {
+          themeBtn.innerHTML = document.documentElement.getAttribute('data-theme') === 'dark'
+            ? '&#x2600;' : '&#x263E;';
+        }
+        // <md> → rendered markdown, tables wrapped in .pgv-table
+        el.querySelectorAll('md').forEach(function(md) {
+          var pageSize = parseInt(md.dataset.page) || 0;
+          var div = document.createElement('div');
+          div.innerHTML = marked.parse(md.innerHTML.trim());
+          div.querySelectorAll('table').forEach(function(tbl) {
+            var wrap = document.createElement('div');
+            wrap.className = 'pgv-table';
+            tbl.parentNode.insertBefore(wrap, tbl);
+            wrap.appendChild(tbl);
+            self._initTable(wrap, tbl, pageSize);
+          });
+          md.parentNode.replaceChild(div, md);
+        });
+        // Clickable table rows
+        el.querySelectorAll('tbody tr').forEach(function(tr) {
+          var a = tr.querySelector('a[href^="/"]');
+          if (!a) return;
+          tr.style.cursor = 'pointer';
+          tr.addEventListener('click', function(e) {
+            if (e.target.closest('a, button')) return;
+            self.go(a.getAttribute('href'));
+          });
+        });
+      },
+
+      /* ── Toast ─────────────────────────────────────── */
+      showToast: function(msg, level, detail) {
+        clearTimeout(this._tt);
+        this.toast = { show: true, msg: msg, level: level || 'success', detail: detail || '' };
+        var self = this;
+        this._tt = setTimeout(function() { self.toast.show = false; },
+          level === 'error' ? 8000 : 3000);
+      },
+
+      /* ── Error handling ────────────────────────────── */
+      _err: function(r) {
+        var self = this;
+        var status = r.status;
+        return r.json().then(function(e) {
+          if (e.message) {
+            var title = status + ' — ' + (e.code || 'Erreur');
+            var detail = e.message + (e.hint ? ' (' + e.hint + ')' : '');
+            self.showToast(title, 'error', detail);
+          } else {
+            self.showToast('Erreur ' + status, 'error');
+          }
+        }).catch(function() {
+          self.showToast('Erreur ' + status, 'error');
+        });
+      },
+
+      /* ── Dialog ────────────────────────────────────── */
+      openDialog: function(name, src, target) {
+        this.dlg = { title: name === 'folder-picker' ? 'Sélectionner un dossier' : name, target: target || '' };
+        this.$refs.dlgBody.innerHTML = '<p aria-busy="true">Chargement...</p>';
+        this.$refs.dialog.showModal();
+        this._browse(src);
+      },
+
+      _browse: function(pathOrUrl) {
+        var url = pathOrUrl.indexOf('/') === 0 && pathOrUrl.indexOf('/api') !== 0
+          ? '/api/browse?path=' + encodeURIComponent(pathOrUrl)
+          : pathOrUrl;
+        var self = this;
+        fetch(url).then(function(r) { return r.text(); })
+          .then(function(html) { self.$refs.dlgBody.innerHTML = html; })
+          .catch(function() { self.$refs.dlgBody.innerHTML = '<p>Erreur de chargement.</p>'; });
+      },
+
+      dlgSelect: function() {
+        var pathEl = this.$refs.dlgBody.querySelector('.folder-path');
+        if (pathEl && this.dlg.target) {
+          var input = document.getElementById(this.dlg.target);
+          if (input) input.value = pathEl.textContent.trim();
+        }
+        this.$refs.dialog.close();
+      }
+    }; });
+  });
+  </script>
+</body>
+</html>

@@ -4,15 +4,26 @@
 -- Schema: uxlab
 CREATE SCHEMA IF NOT EXISTS uxlab;
 
+CREATE OR REPLACE FUNCTION uxlab.form_echo(p_name text DEFAULT ''::text, p_email text DEFAULT ''::text, p_role text DEFAULT ''::text, p_notes text DEFAULT ''::text)
+ RETURNS "text/html"
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN '<template data-toast="success">Formulaire recu: ' || pgv.esc(p_name) || '</template>'
+      || '<template data-redirect="/forms"></template>';
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION uxlab.nav_items()
  RETURNS jsonb
  LANGUAGE sql
- IMMUTABLE
+ STABLE
 AS $function$
   SELECT '[
     {"href": "/", "label": "Dashboard"},
     {"href": "/atoms", "label": "Composants"},
     {"href": "/forms", "label": "Formulaires"},
+    {"href": "/dialogs", "label": "Dialogs"},
     {"href": "/toast", "label": "Toasts"},
     {"href": "/errors", "label": "Erreurs"},
     {"href": "/settings", "label": "Config"}
@@ -24,16 +35,6 @@ CREATE OR REPLACE FUNCTION uxlab.page(p_path text, p_body jsonb DEFAULT '{}'::js
  LANGUAGE sql
 AS $function$
   SELECT pgv.route('uxlab', p_path, p_body);
-$function$;
-
-CREATE OR REPLACE FUNCTION uxlab.form_echo(p_name text DEFAULT ''::text, p_email text DEFAULT ''::text, p_role text DEFAULT ''::text, p_notes text DEFAULT ''::text)
- RETURNS "text/html"
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  RETURN '<template data-toast="success">Formulaire recu: ' || pgv.esc(p_name) || '</template>'
-      || '<template data-redirect="/forms"></template>';
-END;
 $function$;
 
 CREATE OR REPLACE FUNCTION uxlab.page_atoms()
@@ -78,6 +79,34 @@ BEGIN
     || '<section><h4>pgv.error</h4>'
     || pgv.error('404', 'Page non trouvee', 'Le chemin /exemple n''existe pas.', 'Verifiez l''URL.')
     || '</section>';
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION uxlab.page_dialogs()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN
+    '<section><h4>Confirmations (data-confirm)</h4>'
+    || '<p>Les boutons data-rpc acceptent un attribut data-confirm qui affiche un confirm() natif.</p>'
+    || '<div class="grid">'
+    || pgv.action('toast_success', 'Action avec confirmation', NULL::jsonb, 'Etes-vous sur de vouloir continuer ?')
+    || pgv.action('toast_error', 'Suppression danger', NULL::jsonb, 'Supprimer definitivement ?', 'danger')
+    || '</div></section>'
+    || '<section><h4>Dialog modale (data-dialog)</h4>'
+    || '<p>Le shell possede un dialog reutilisable. Un bouton data-dialog ouvre une modale et charge du contenu depuis data-src.</p>'
+    || '<form>'
+    || pgv.input('documents_root', 'text', 'Dossier documents', NULL, false)
+    || '<button type="button" data-dialog="folder-picker" data-src="/" data-target="documents_root">Parcourir...</button>'
+    || '</form></section>'
+    || '<section><h4>Toast apres action</h4>'
+    || '<p>Les actions serveur retournent un template data-toast. Le shell extrait le message et affiche un toast.</p>'
+    || '<div class="grid">'
+    || '<button data-rpc="toast_success">Toast succes</button>'
+    || '<button data-rpc="toast_error" class="secondary">Toast erreur</button>'
+    || '<button data-rpc="toast_raise" class="contrast">Toast RAISE</button>'
+    || '</div></section>';
 END;
 $function$;
 

@@ -1,4 +1,4 @@
-# {{NAME}} — Port convention: app #{{SLOT}} → PG:{{PG}} PGRST:{{PGRST}} HTTP:{{HTTP}}
+# cad — Port convention: app #4 → PG:5444 PGRST:3004 HTTP:8084
 #
 # Bootstrap: make up
 # Teardown:  make clean
@@ -22,9 +22,9 @@ image:
 up: image sync
 	$(COMPOSE) up -d
 	@echo ""
-	@echo "  postgres  → localhost:{{PG}}"
-	@echo "  postgrest → localhost:{{PGRST}}"
-	@echo "  frontend  → http://localhost:{{HTTP}}"
+	@echo "  postgres  → localhost:5444"
+	@echo "  postgrest → localhost:3004"
+	@echo "  frontend  → http://localhost:8084"
 
 down:
 	$(COMPOSE) down
@@ -40,4 +40,4 @@ ps:
 
 # Start MCP server for this app (auto-reload)
 mcp:
-	cd ../.. && WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/{{APP_DIR}}/workbench.json npx nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'
+	cd ../.. && WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/004-cad/workbench.json npx nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'

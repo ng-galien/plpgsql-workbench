@@ -87,10 +87,9 @@ async function queryDeps(client: DbClient, schemas: string[]): Promise<Dep[]> {
   return rows;
 }
 
-function buildGraph(deps: Dep[], schemas: string[], showHelpers: boolean, showTables: boolean): string {
+function buildGraph(deps: Dep[], schemas: string[], showHelpers: boolean, showTables: boolean, infraSet: Set<string>): string {
   const lines: string[] = ["graph LR"];
   const schemasSet = new Set(schemas);
-  const violations: string[] = [];
 
   const isPage = (name: string) => name.startsWith("pgv_");
   const isRouter = (name: string) => name === "page";
@@ -142,15 +141,11 @@ function buildGraph(deps: Dep[], schemas: string[], showHelpers: boolean, showTa
     const arrow = d.dep_type === "RELATION" ? "-.->" : "-->";
 
     if (d.source_schema !== d.target_schema && schemasSet.has(d.target_schema)) {
-      lines.push(`  ${sourceId} ${arrow}|CROSS| ${targetId}`);
-      violations.push(`${d.source_schema}.${d.source} -> ${d.target_schema}.${d.target}`);
+      const label = infraSet.has(d.target_schema) ? "INFRA" : "CROSS";
+      lines.push(`  ${sourceId} ${arrow}|${label}| ${targetId}`);
     } else if (schemasSet.has(d.target_schema)) {
       lines.push(`  ${sourceId} ${arrow} ${targetId}`);
     }
-  }
-
-  if (violations.length > 0) {
-    lines.push(`  linkStyle default stroke:#888`);
   }
 
   return lines.join("\n");
@@ -165,14 +160,17 @@ export function createDocTool({ withClient }: {
       description: "Generate dependency graph (Mermaid) for a schema. Shows function calls, table access, and cross-schema boundary violations.",
       schema: z.object({
         schema: z.string().describe("Schema name, or comma-separated list. Ex: shop or clients,commandes"),
+        infra: z.string().optional().describe("Infrastructure schemas (comma-separated). Cross-schema calls to these are informational, not violations. Ex: pgv,workbench"),
         tables: z.boolean().default(false).describe("Include table dependencies (default: false)"),
         helpers: z.boolean().default(false).describe("Include helper functions like esc, pgv_money (default: false)"),
       }),
     },
     handler: async (args, _extra) => {
       const schemaArg = args.schema as string;
+      const infraArg = args.infra as string | undefined;
       const tables = (args.tables as boolean | undefined) ?? false;
       const helpers = (args.helpers as boolean | undefined) ?? false;
+      const infraSet = new Set(infraArg?.split(",").map(s => s.trim()) ?? []);
 
       return withClient(async (client) => {
         const schemas = schemaArg.split(",").map(s => s.trim());
@@ -182,14 +180,16 @@ export function createDocTool({ withClient }: {
           return text(`No functions found in schema(s): ${schemas.join(", ")}`);
         }
 
-        const mermaid = buildGraph(deps, schemas, helpers, tables);
+        const mermaid = buildGraph(deps, schemas, helpers, tables, infraSet);
 
         const schemasSet = new Set(schemas);
-        const violations = deps.filter(
+        const crossSchema = deps.filter(
           d => d.source_schema !== d.target_schema
             && schemasSet.has(d.target_schema)
             && d.dep_type === "FUNCTION"
         );
+        const infraCalls = crossSchema.filter(d => infraSet.has(d.target_schema));
+        const violations = crossSchema.filter(d => !infraSet.has(d.target_schema));
 
         const parts: string[] = [];
         parts.push(`# Dependency Graph: ${schemas.join(", ")}`);
@@ -209,19 +209,25 @@ export function createDocTool({ withClient }: {
         parts.push(`- **${fnCalls.length}** function calls`);
         parts.push(`- **${tblAccess.length}** table accesses`);
 
+        if (infraCalls.length > 0) {
+          parts.push("");
+          parts.push("## Cross-schema calls (infrastructure)");
+          for (const v of infraCalls) {
+            parts.push(`- \`${v.source_schema}.${v.source}\` -> \`${v.target_schema}.${v.target}\``);
+          }
+        }
+
         if (violations.length > 0) {
           parts.push("");
           parts.push("## Boundary Violations");
-          parts.push("");
-          parts.push("Cross-schema function calls detected:");
-          parts.push("");
+          parts.push("Cross-schema calls between business domains:");
           for (const v of violations) {
             parts.push(`- \`${v.source_schema}.${v.source}\` -> \`${v.target_schema}.${v.target}\``);
           }
         } else if (schemas.length > 1) {
           parts.push("");
           parts.push("## Boundaries");
-          parts.push("No cross-schema violations detected.");
+          parts.push("No boundary violations detected.");
         }
 
         return text(parts.join("\n"));
