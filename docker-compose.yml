@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: supabase/postgres:17.6.1.093
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      JWT_SECRET: super-secret-jwt-token-with-at-least-32-characters
+      JWT_EXP: 3600
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/seed/001_extensions.sql:/docker-entrypoint-initdb.d/init-scripts/90-extensions.sql:ro
+      - ./sql/seed/003_workbench.sql:/docker-entrypoint-initdb.d/init-scripts/91-workbench.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+      - -c
+      - log_min_messages=fatal
+
+volumes:
+  pgdata:
