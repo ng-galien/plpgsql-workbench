@@ -42,7 +42,7 @@ Fichiers générés :
 
 ### pgm install
 
-Copie les fichiers SQL et assets des modules dans le dossier de l'app.
+Copie les fichiers SQL, assets, scripts et styles des modules dans le dossier de l'app. Génère `pgv-modules.js` pour le chargement des composants Alpine.js.
 
 ```bash
 pgm install              # installe tous les modules de workbench.json
@@ -94,6 +94,8 @@ pgm info cad3d
 #   extensions: postgis, postgis_sfcgal
 #   sql: sql/extensions.sql, sql/ddl.sql, sql/functions.sql
 #   assets: frontend/viewer.html
+#   scripts: frontend/cad3d.js
+#   styles: frontend/cad3d.css
 #   docker: postgis/postgis:17-3.5
 ```
 
@@ -115,17 +117,6 @@ Retire un module de workbench.json.
 pgm remove cad3d
 # Removed "cad3d" from workbench.json
 # Run 'pgm install' to re-sync files
-```
-
-### pgm pack
-
-Indique la commande pg_pack équivalente pour exporter les fonctions d'un module depuis la DB.
-
-```bash
-pgm pack cad,cad_ut -m cad3d
-# pg_pack equivalent:
-#   schemas: cad,cad_ut
-#   path: modules/cad3d/sql/functions.sql
 ```
 
 ## Concepts
@@ -150,8 +141,13 @@ modules/
       extensions.sql
       ddl.sql
       functions.sql
+      cad/              ← pg_func_save individuel
+        add_beam.sql
+        ...
     frontend/
       viewer.html
+      cad3d.js          ← Alpine.js components
+      cad3d.css          ← module styles
 ```
 
 ### module.json
@@ -175,7 +171,9 @@ Manifeste déclaratif d'un module :
     "sql/functions.sql"
   ],
   "assets": {
-    "frontend": ["frontend/viewer.html"]
+    "frontend": ["frontend/viewer.html"],
+    "scripts": ["frontend/cad3d.js"],
+    "styles": ["frontend/cad3d.css"]
   },
   "grants": {
     "web_anon": ["cad"]
@@ -197,6 +195,8 @@ Manifeste déclaratif d'un module :
 | `extensions` | Extensions PostgreSQL requises |
 | `sql` | Fichiers SQL à déployer, dans l'ordre |
 | `assets.frontend` | Fichiers copiés dans `frontend/` de l'app |
+| `assets.scripts` | JS chargés par le shell (composants Alpine.js) |
+| `assets.styles` | CSS chargés par le shell (styles du module) |
 | `grants` | Rôles et schemas pour GRANT automatique |
 | `docker` | Image Docker requise (si différente du défaut) |
 
@@ -252,6 +252,136 @@ sql/
   05-groups.sql              ← app
 ```
 
+## Module registry — MCP tools auto-path
+
+Le serveur MCP est **module-aware** : les tools `pg_pack` et `pg_func_save` n'ont plus besoin de path. Un **module registry** mappe chaque schema à son module via les fichiers `module.json`.
+
+### Comment ça marche
+
+Au démarrage, le MCP server :
+1. Trouve le workspace root (remonte jusqu'à trouver `modules/`)
+2. Scanne tous les `modules/*/module.json`
+3. Construit un mapping `schema → module → paths`
+
+Quand un tool est appelé :
+- `pg_pack schemas: "cad,cad_ut"` → le registry résout : schema `cad` → module `cad3d` → `modules/cad3d/sql/functions.sql`
+- `pg_func_save target: "plpgsql://cad"` → le registry résout : schema `cad` → module `cad3d` → `modules/cad3d/sql/`
+
+### pg_pack (module-aware)
+
+Exporte les fonctions d'un ou plusieurs schemas dans le fichier `functions.sql` du module correspondant.
+
+```
+pg_pack schemas: "cad,cad_ut"
+# → packed 54 functions from 2 schema(s) -> cad3d/sql/functions.sql
+# → deps: 35 edges resolved via AST
+```
+
+Plus de paramètre `path`. Le registry sait que `cad` + `cad_ut` appartiennent au module `cad3d` et écrit dans `modules/cad3d/sql/functions.sql`.
+
+Si les schemas ne correspondent à aucun module :
+```
+# → problem: no module owns schemas [foo, foo_ut]
+# → fix_hint: check modules/*/module.json schemas field
+```
+
+### pg_func_save (module-aware)
+
+Sauvegarde les fonctions individuelles dans le dossier SQL du module.
+
+```
+pg_func_save target: "plpgsql://cad"
+# → dumped 49 functions to modules/cad3d/sql/cad/
+```
+
+Plus de paramètre `path`. Le registry résout `cad` → `modules/cad3d/sql/`.
+
+### Mapping des schemas
+
+Le registry inclut automatiquement les schemas de test par convention :
+
+| Schema dans module.json | Schemas reconnus |
+|------------------------|------------------|
+| `schemas.public: "cad"` | `cad`, `cad_ut`, `cad_it` |
+| `schemas.private: "_cad"` | `_cad` |
+
+## Fragments — Composants Alpine.js
+
+Les modules peuvent fournir des **fragments** : des composants Alpine.js réutilisables dans n'importe quelle page PL/pgSQL.
+
+### Comment ça marche
+
+```
+module.json                      pgv-modules.js            Alpine.js
+  assets.scripts: [cad3d.js]  →    <script src=cad3d.js>  →  Alpine.data('cadViewer')
+  assets.styles: [cad3d.css]  →    <link href=cad3d.css>
+
+PL/pgSQL fragment                 Shell _enhance()
+  cad.fragment_viewer(id)     →    Alpine.initTree(el)    →  x-data="cadViewer" activé
+```
+
+1. **module.json** déclare `assets.scripts` et `assets.styles`
+2. **pgm install** copie les fichiers et génère `pgv-modules.js`
+3. **Le shell** charge `pgv-modules.js` avant Alpine.js → composants enregistrés
+4. **PL/pgSQL** génère du HTML avec `x-data="composant"` → Alpine l'active via `initTree()`
+
+### Exemple
+
+Module JS (`frontend/cad3d.js`) :
+```js
+document.addEventListener('alpine:init', function() {
+  Alpine.data('cadViewer', function() {
+    return {
+      drawingId: null,
+      load: function(id) { /* Three.js setup, fetch scene... */ },
+      resetCamera: function() { /* ... */ },
+      toggleWireframe: function() { /* ... */ }
+    };
+  });
+});
+```
+
+Fragment PL/pgSQL :
+```sql
+CREATE FUNCTION cad.fragment_viewer(p_drawing_id int)
+RETURNS text LANGUAGE sql AS $$
+  SELECT '<div x-data="cadViewer" x-init="load(' || p_drawing_id || ')">'
+      || '  <canvas x-ref="viewport"></canvas>'
+      || '  <button @click="resetCamera()">Reset</button>'
+      || '</div>';
+$$;
+```
+
+Utilisation dans une page :
+```sql
+v_body := '<div class="grid">'
+       || cad.fragment_viewer(p_id)
+       || cad.fragment_tree(p_id)
+       || '</div>';
+```
+
+### pgv-modules.js
+
+Fichier auto-généré par `pgm install`. Charge les scripts et styles de tous les modules :
+
+```js
+// Auto-generated by pgm install — DO NOT EDIT
+(function() {
+  var l = document.createElement('link');
+  l.rel = 'stylesheet'; l.href = '/cad3d.css';
+  document.head.appendChild(l);
+  var s = document.createElement('script');
+  s.src = '/cad3d.js';
+  document.head.appendChild(s);
+})();
+```
+
+Le shell `index.html` le charge avant Alpine.js :
+```html
+<script src="/pgv-modules.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+```
+
 ## Workflow
 
 ### Créer une app
@@ -272,13 +402,29 @@ pgm deploy --apply       # applique le SQL
 pg_func_set ...          # créer/modifier des fonctions
 pg_test ...              # valider
 
-# 2. Exporter dans le module source
-pgm pack cad,cad_ut -m cad3d
+# 2. Exporter dans le module (auto-résolu, pas de path)
+pg_pack schemas: "cad,cad_ut"       # → modules/cad3d/sql/functions.sql
+pg_func_save target: "plpgsql://cad" # → modules/cad3d/sql/cad/*.sql
 
 # 3. Distribuer aux apps
 pgm install              # sync fichiers module → app
 pgm deploy --apply       # appliquer en base
 ```
+
+### Pipeline complet
+
+```
+pg_func_set          dev itératif dans la DB
+      ↓
+pg_pack              auto → modules/cad3d/sql/functions.sql
+pg_func_save         auto → modules/cad3d/sql/cad/*.sql
+      ↓
+pgm install          modules/ → apps/*/sql/ + frontend/
+      ↓
+pgm deploy --apply   SQL → DB live (en ordre de deps)
+```
+
+Impossible de sauver au mauvais endroit : les tools MCP connaissent le module registry et résolvent automatiquement le chemin de sortie.
 
 ### Depuis un dossier d'app
 
@@ -312,9 +458,10 @@ sync-modules:
 
 ```
 src/pgm/
-  cli.ts          # Entry point (commander.js)
+  cli.ts          # Entry point CLI (commander.js)
   resolver.ts     # Lecture module.json, résolution deps (topo sort)
-  installer.ts    # Copie fichiers avec slot assignment
+  installer.ts    # Copie fichiers + génération pgv-modules.js
   deployer.ts     # Check deps en base + exécution SQL
   scaffold.ts     # Génération fichiers app (pgm init)
+  registry.ts     # Mapping schema → module (injecté dans MCP tools)
 ```
