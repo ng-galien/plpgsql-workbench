@@ -6,7 +6,8 @@
  *   <div x-data="cadTree">
  */
 
-document.addEventListener('alpine:init', function() {
+(function() {
+  function register() {
 
   var COLORS = {
     poteau: 0xc8956c, traverse: 0xa07850, chevron: 0xd4a76a,
@@ -370,4 +371,12 @@ document.addEventListener('alpine:init', function() {
     };
   });
 
-});
+  } // end register()
+
+  // Register now if Alpine is ready, otherwise wait for alpine:init
+  if (window.Alpine) {
+    register();
+  } else {
+    document.addEventListener('alpine:init', register);
+  }
+})();
