@@ -13,7 +13,7 @@
   ],
   "sql": [
     "sql/00-extensions.sql",
-    "sql/pgv.sql"
+    "sql/functions.sql"
   ],
   "assets": {
     "frontend": [

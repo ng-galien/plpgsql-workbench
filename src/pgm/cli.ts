@@ -3,13 +3,13 @@
  * pgm — PostgreSQL Module Manager
  *
  * Usage:
- *   pgm install [--deploy]   Install modules from workbench.json (+ deploy to DB)
- *   pgm install <module>     Add module to workbench.json + install
- *   pgm deploy [module]      Deploy module SQL to live DB in dependency order
+ *   pgm init                 Initialize a new app in current directory
+ *   pgm install [module]     Install modules (copy files to app)
+ *   pgm deploy [module]      Deploy SQL to DB (dry run by default, --apply to execute)
  *   pgm remove <module>      Remove module from workbench.json
  *   pgm list                 Show installed modules tree
  *   pgm info <module>        Show module details
- *   pgm pack <schemas>       Export schemas from DB into module source
+ *   pgm available            List all modules in workspace
  */
 
 import { Command } from "commander";
@@ -294,8 +294,12 @@ program
     console.log(`  dependencies: ${manifest.dependencies.length > 0 ? manifest.dependencies.join(", ") : "none"}`);
     console.log(`  extensions: ${manifest.extensions.length > 0 ? manifest.extensions.join(", ") : "none"}`);
     console.log(`  sql: ${manifest.sql.join(", ")}`);
-    const assets = manifest.assets?.frontend ?? [];
-    console.log(`  assets: ${assets.length > 0 ? assets.join(", ") : "none"}`);
+    const frontend = manifest.assets?.frontend ?? [];
+    const scripts = manifest.assets?.scripts ?? [];
+    const styles = manifest.assets?.styles ?? [];
+    console.log(`  assets: ${frontend.length > 0 ? frontend.join(", ") : "none"}`);
+    if (scripts.length > 0) console.log(`  scripts: ${scripts.join(", ")}`);
+    if (styles.length > 0) console.log(`  styles: ${styles.join(", ")}`);
     if (manifest.docker) {
       console.log(`  docker: ${manifest.docker.image}`);
       if (manifest.docker.note) console.log(`    ${manifest.docker.note}`);
@@ -321,40 +325,6 @@ program
       const manifest = await loadManifest(modulesDir, name);
       console.log(`  ${manifest.name}@${manifest.version}  ${manifest.description}`);
     }
-  });
-
-// --- pack ---
-
-program
-  .command("pack <schemas>")
-  .description("Export schemas from DB into module source (wraps pg_pack)")
-  .option("-m, --module <name>", "Target module name")
-  .action(async (schemas: string, opts: { module?: string }) => {
-    const wsRoot = await findWorkspaceRoot(process.cwd());
-
-    const moduleName = opts.module;
-    if (!moduleName) {
-      console.error("Please specify target module: pgm pack <schemas> -m <module>");
-      console.error("  e.g.: pgm pack cad,cad_ut -m cad3d");
-      process.exit(1);
-    }
-
-    const manifest = await loadManifest(path.join(wsRoot, "modules"), moduleName);
-
-    const funcFile = manifest.sql.find((f) => f.includes("functions"));
-    if (!funcFile) {
-      console.error(`No functions SQL file found in ${moduleName}/module.json`);
-      process.exit(1);
-    }
-
-    const outPath = path.join("modules", moduleName, funcFile);
-    console.log(`pg_pack equivalent:`);
-    console.log(`  schemas: ${schemas}`);
-    console.log(`  path: ${outPath}`);
-    console.log("");
-    console.log(`Use MCP tool pg_pack with:`);
-    console.log(`  schemas: "${schemas}"`);
-    console.log(`  path: "${outPath}"`);
   });
 
 program.parse();

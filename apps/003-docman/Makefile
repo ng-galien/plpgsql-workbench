@@ -49,8 +49,9 @@ mcp:
 	cd ../.. && WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/003-docman/workbench.json npx nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'
 
 # Re-export functions from dev DB into init SQL files
+# pg_pack auto-resolves paths via module registry
 pack:
 	@echo "Connect to dev DB and run:"
-	@echo "  pg_pack schemas:pgv,pgv_ut path:pgv/sql/pgv.sql"
-	@echo "  pg_pack schemas:docman,docman_ut path:apps/docman/sql/04-functions.sql"
-	@echo "Then: make clean && make up"
+	@echo "  pg_pack schemas:pgv,pgv_ut"
+	@echo "  pg_pack schemas:docman,docman_ut"
+	@echo "Then: pgm install && make clean && make up"

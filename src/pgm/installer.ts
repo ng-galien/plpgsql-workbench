@@ -49,10 +49,11 @@ export async function installModules(
       let targetName: string;
       if (manifest.name === "pgv") {
         // pgv has reserved slots
+        const slot = String(PGV_SLOT).padStart(2, "0");
         switch (basename) {
           case "00-extensions.sql": targetName = "00-extensions.sql"; break;
-          case "pgv.sql":           targetName = "02-pgv.sql"; break;
-          default:                  targetName = `0${PGV_SLOT}-${basename}`; break;
+          case "functions.sql":     targetName = `${slot}-pgv.sql`; break;
+          default:                  targetName = `${slot}-${basename}`; break;
         }
       } else {
         // Other modules get their slot
@@ -119,8 +120,8 @@ export async function installModules(
   }
 
   // --- Generate pgv-modules.js ---
-  await generateModulesLoader(appDir, allScripts, allStyles);
   if (allScripts.length > 0 || allStyles.length > 0) {
+    await generateModulesLoader(appDir, allScripts, allStyles);
     results.push({
       module: "pgm",
       version: "",

@@ -258,7 +258,7 @@ function claudeSettings(ports: Ports): string {
         "Bash(docker compose:*)",
         "mcp__plpgsql-workbench__pg_query",
         "mcp__plpgsql-workbench__pg_get",
-        "mcp__plpgsql-workbench__pg_set",
+        "mcp__plpgsql-workbench__pg_func_set",
         "mcp__plpgsql-workbench__pg_test",
         "mcp__plpgsql-workbench__pg_explain",
         "mcp__plpgsql-workbench__pg_search",

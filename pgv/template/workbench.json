@@ -1,7 +1,0 @@
-{
-  "name": "{{NAME}}",
-  "packs": ["plpgsql"],
-  "modules": ["pgv"],
-  "connection": "postgresql://postgres:postgres@localhost:{{PG}}/postgres",
-  "port": {{MCP}}
-}

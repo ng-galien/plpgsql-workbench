@@ -50,9 +50,9 @@ mcp:
 	cd ../.. && WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/001-uxlab/workbench.json npx nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'
 
 # Re-export functions from dev DB into init SQL files
-# Run this after iterating with pg_func_set on dev DB (port 5433)
+# pg_pack auto-resolves paths via module registry
 pack:
 	@echo "Connect to dev DB and run:"
-	@echo "  pg_pack schemas:pgv,pgv_ut path:pgv/sql/pgv.sql"
-	@echo "  pg_pack schemas:uxlab path:apps/uxlab/sql/04-functions.sql"
-	@echo "Then: make clean && make up"
+	@echo "  pg_pack schemas:pgv,pgv_ut"
+	@echo "  pg_pack schemas:uxlab"
+	@echo "Then: pgm install && make clean && make up"

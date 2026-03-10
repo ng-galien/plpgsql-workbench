@@ -131,7 +131,7 @@ modules/
     module.json
     sql/
       00-extensions.sql
-      pgv.sql
+      functions.sql
     frontend/
       index.html
       pgview.css

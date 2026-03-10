@@ -26,7 +26,7 @@ npm run dev:uxlab        # packs + DB from apps/uxlab/workbench.json, port 3101
 npm run build            # tsc -> dist/
 
 # Scaffold a new app
-make new-app NAME=myapp SLOT=4   # creates apps/myapp/ with all files
+mkdir apps/myapp && cd apps/myapp && pgm init   # or: node ../../dist/pgm/cli.js init
 ```
 
 No test framework is configured in this repo — testing happens via pgTAP inside PostgreSQL.
@@ -71,10 +71,10 @@ Apps live in `apps/`. Each has its own `docker-compose.yml`, `Makefile`, `sql/`,
 ```bash
 cd apps/001-uxlab && make up         # Start app stack
 npm run dev:uxlab                    # Start MCP for this app
-make new-app NAME=billing SLOT=4    # Scaffold → apps/004-billing/
+mkdir apps/billing && cd apps/billing && pgm init   # Scaffold new app
 ```
 
-The pgView framework (shared) lives in `pgv/` and is copied into each app via `make sync`.
+The pgView framework and other modules live in `modules/` and are distributed to apps via `pgm install`. See `docs/PGM.md`.
 
 ## Environment Variables (infra bootstrap only)
 
@@ -105,7 +105,7 @@ Each pack registers infrastructure + tools into the Awilix container:
 
 | Pack | File | What it registers |
 |------|------|-------------------|
-| plpgsql | `packs/plpgsql.ts` | `pool`, `withClient`, shared services, 11 pg_* tools |
+| plpgsql | `packs/plpgsql.ts` | `pool`, `withClient`, shared services, 13 pg_* tools |
 | docstore | `packs/docstore.ts` | 4 fs_* tools (depends on plpgsql's `withClient`) |
 | google | `packs/google.ts` | `googleAuthConfig`, `gmailClient`, 3 gmail_* tools |
 
@@ -185,7 +185,7 @@ Tool outputs use LMNAV (LM-Navigable), a compact text format optimized for LLM c
 
 ## pgView Pattern
 
-Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, canonical source in `pgv/`):
+Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, canonical source in `modules/pgv/`):
 
 - PostgreSQL generates HTML via `page(path, body) -> "text/html"` domain
 - PostgREST serves raw HTML (`Content-Type: text/html`) via domain trick
@@ -214,28 +214,28 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, canonical source in `pgv
 - `<md data-page="10">` = table with pagination (10 rows/page)
 - HTML inline (badges, etc.) works inside markdown cells
 
-**4. pgv primitives are platform** — `pgv.*` functions live in `pgv/sql/pgv.sql` (canonical source, exported via `pg_pack`). They are shared infrastructure, not app code. Each app copies pgv files via `make sync`.
+**4. pgv primitives are platform** — `pgv.*` functions live in `modules/pgv/sql/functions.sql` (canonical source, exported via `pg_pack`). They are shared infrastructure, not app code. Each app gets pgv files via `pgm install`.
 
 ### pgView Files
 
 | File | Role |
 |------|------|
-| `pgv/frontend/index.html` | Alpine.js shell (routing, events, toast, dialog, table enhance) |
-| `pgv/frontend/pgview.css` | CSS tokens + component styles + light/dark themes |
-| `pgv/sql/pgv.sql` | pgv + pgv_ut schemas (pg_pack output) |
-| `sql/*-pgv.sql` | PL/pgSQL UI primitives (badge, stat, card, grid, page, nav, input, sel, textarea, error, action) |
+| `modules/pgv/frontend/index.html` | Alpine.js shell (routing, events, toast, dialog, table enhance) |
+| `modules/pgv/frontend/pgview.css` | CSS tokens + component styles + light/dark themes |
+| `modules/pgv/sql/functions.sql` | pgv + pgv_ut schemas (pg_pack output) |
 
 ## SQL
 
 **Dev DB** (`sql/seed/`) — workbench-only bootstrap (extensions, roles, workbench schema). Auto-run by Docker init on port 5433.
 
-**pgv framework** (`pgv/sql/pgv.sql`) — canonical source for `pgv.*` + `pgv_ut.*` schemas. Exported via `pg_pack`, copied into each app by `make sync`.
+**pgv framework** (`modules/pgv/sql/functions.sql`) — canonical source for `pgv.*` + `pgv_ut.*` schemas. Exported via `pg_pack`, distributed to apps via `pgm install`.
 
-**Apps** (`apps/*/sql/`) — each app has its own SQL init files:
-- `01-roles.sql` — roles and permissions
-- `02-pgv.sql` — copied from `pgv/sql/pgv.sql`
-- `03-ddl.sql` — tables, indexes, seed data
-- `04-functions.sql` — pg_pack output of app functions
+**Apps** (`apps/*/sql/`) — each app has its own SQL init files, managed by `pgm install`:
+- `00-extensions.sql` — from pgv module
+- `01-roles.sql` — app-specific roles and permissions
+- `02-pgv.sql` — from pgv module
+- `05-{module}-*.sql` — from other modules
+- `03-ddl.sql`, `04-functions.sql` — app-specific
 
 ## Key Conventions
 

@@ -62,9 +62,7 @@ export async function checkModules(
 
     for (const manifest of plan.order) {
       if (only && manifest.name !== only) {
-        // Still register what this skipped module would create
-        if (manifest.schemas.public) willCreate.add(manifest.schemas.public);
-        if (manifest.schemas.private) willCreate.add(manifest.schemas.private);
+        // Skipped modules must already exist in DB — don't assume they will be created
         continue;
       }
 

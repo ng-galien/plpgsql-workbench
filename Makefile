@@ -34,7 +34,7 @@ dev-clean:
 dev-init: dev-up
 	@echo "Waiting for DB..."
 	@sleep 2
-	PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f modules/pgv/sql/pgv.sql -q
+	PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f modules/pgv/sql/functions.sql -q
 	@echo "pgv loaded into dev DB"
 
 # --- App management ---
@@ -82,37 +82,5 @@ check:
 	npx tsc --noEmit
 
 # --- New app scaffold ---
-
-.PHONY: new-app
-
-new-app:
-	@test -n "$(NAME)" || (echo "Usage: make new-app NAME=myapp SLOT=4" && exit 1)
-	@test -n "$(SLOT)" || (echo "Usage: make new-app NAME=myapp SLOT=4" && exit 1)
-	$(eval APP_DIR := apps/$(shell printf '%03d' $(SLOT))-$(NAME))
-	@test ! -d "$(APP_DIR)" || (echo "$(APP_DIR) already exists" && exit 1)
-	@mkdir -p $(APP_DIR)/sql $(APP_DIR)/frontend
-	@PG=$$((5440 + $(SLOT))); PGRST=$$((3000 + $(SLOT))); HTTP=$$((8080 + $(SLOT))); MCP=$$((3100 + $(SLOT))); \
-	echo "Creating $(APP_DIR) (PG:$$PG PGRST:$$PGRST HTTP:$$HTTP MCP:$$MCP)"; \
-	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{SLOT}}/$(SLOT)/g" \
-	    -e "s/{{PG}}/$$PG/g" -e "s/{{PGRST}}/$$PGRST/g" \
-	    -e "s/{{HTTP}}/$$HTTP/g" -e "s/{{MCP}}/$$MCP/g" \
-	    pgv/template/docker-compose.yml > $(APP_DIR)/docker-compose.yml; \
-	APP_BASENAME=$$(basename $(APP_DIR)); \
-	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{SLOT}}/$(SLOT)/g" \
-	    -e "s/{{PG}}/$$PG/g" -e "s/{{PGRST}}/$$PGRST/g" \
-	    -e "s/{{HTTP}}/$$HTTP/g" -e "s/{{MCP}}/$$MCP/g" \
-	    -e "s/{{APP_DIR}}/$$APP_BASENAME/g" \
-	    pgv/template/Makefile > $(APP_DIR)/Makefile; \
-	sed -e 's/{{NAME}}/$(NAME)/g' -e "s/{{PG}}/$$PG/g" -e "s/{{MCP}}/$$MCP/g" \
-	    pgv/template/workbench.json > $(APP_DIR)/workbench.json; \
-	sed -e 's/{{NAME}}/$(NAME)/g' \
-	    pgv/template/01-roles.sql > $(APP_DIR)/sql/01-roles.sql; \
-	sed -e "s/{{MCP}}/$$MCP/g" \
-	    pgv/template/.mcp.json > $(APP_DIR)/.mcp.json; \
-	mkdir -p $(APP_DIR)/.claude; \
-	sed -e "s/{{MCP}}/$$MCP/g" \
-	    pgv/template/.claude/settings.local.json > $(APP_DIR)/.claude/settings.local.json; \
-	cp pgv/frontend/index.html $(APP_DIR)/frontend/index.html; \
-	cp pgv/frontend/pgview.css $(APP_DIR)/frontend/pgview.css; \
-	cp apps/001-uxlab/frontend/nginx.conf $(APP_DIR)/frontend/nginx.conf; \
-	echo "Done. Next: edit $(APP_DIR)/sql/03-ddl.sql"
+# Use: pgm init (from the target app directory)
+# See: docs/PGM.md

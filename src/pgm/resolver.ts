@@ -71,11 +71,16 @@ export async function findAppRoot(startDir: string): Promise<string> {
 
 export async function loadManifest(modulesDir: string, name: string): Promise<ModuleManifest> {
   const manifestPath = path.join(modulesDir, name, "module.json");
+  let raw: string;
   try {
-    const raw = await fs.readFile(manifestPath, "utf-8");
-    return JSON.parse(raw) as ModuleManifest;
+    raw = await fs.readFile(manifestPath, "utf-8");
   } catch {
     throw new Error(`Module '${name}' not found at ${manifestPath}`);
+  }
+  try {
+    return JSON.parse(raw) as ModuleManifest;
+  } catch {
+    throw new Error(`Invalid JSON in ${manifestPath}`);
   }
 }
 
@@ -168,13 +173,10 @@ export async function resolve(modulesDir: string, requested: string[]): Promise<
     }
   }
 
-  // Circular deps: append remaining
+  // Circular deps: error out
   if (order.length < manifests.size) {
-    for (const [, manifest] of manifests) {
-      if (!order.includes(manifest)) {
-        order.push(manifest);
-      }
-    }
+    const stuck = [...manifests.keys()].filter((n) => !order.some((m) => m.name === n));
+    throw new Error(`Circular dependency detected between: ${stuck.join(", ")}`);
   }
 
   return { order, edges };
