@@ -118,8 +118,9 @@ function topoSort(fns: FuncRow[], edges: Edge[]): FuncRow[] {
 
 // ── Tool ─────────────────────────────────────────────────────────
 
-export function createPackTool({ withClient }: {
+export function createPackTool({ withClient, moduleRegistry }: {
   withClient: WithClient;
+  moduleRegistry: Promise<import("../../pgm/registry.js").ModuleRegistry>;
 }): ToolHandler {
   return {
     metadata: {
@@ -127,23 +128,36 @@ export function createPackTool({ withClient }: {
       description:
         "Export schemas into a single consolidated SQL init file.\n" +
         "Includes CREATE SCHEMA + all functions (dependency-sorted via AST) + GRANT.\n" +
-        "Use for docker-compose init scripts or framework distribution.",
+        "Output path is auto-resolved from module registry (schema → module → file).",
       schema: z.object({
-        schemas: z.string().describe("Comma-separated schema names. Ex: pgv,pgv_ut"),
-        path: z.string().describe("Output file path (.sql). Ex: uxlab/sql/02-pgv.sql"),
+        schemas: z.string().describe("Comma-separated schema names. Ex: cad,cad_ut"),
         role: z.string().optional().describe("Role for GRANT EXECUTE (default: web_anon)"),
       }),
     },
     handler: async (args) => {
       const schemas = (args.schemas as string).split(",").map((s) => s.trim()).filter(Boolean);
-      const outFile = args.path as string;
       const role = (args.role as string) ?? "web_anon";
 
       if (schemas.length === 0) return text("problem: no schemas specified");
 
-      const resolved = path.isAbsolute(outFile)
-        ? outFile
-        : path.resolve(process.cwd(), outFile);
+      const registry = await moduleRegistry;
+      const mapping = registry.resolve(schemas);
+      if (!mapping) {
+        return text(
+          `problem: no module owns schemas [${schemas.join(", ")}]\n` +
+          `where: pg_pack\n` +
+          `fix_hint: check modules/*/module.json schemas field`,
+        );
+      }
+      if (!mapping.functionsFile) {
+        return text(
+          `problem: module "${mapping.module}" has no functions SQL file in module.json\n` +
+          `where: pg_pack\n` +
+          `fix_hint: add a "sql/functions.sql" entry to module.json sql field`,
+        );
+      }
+
+      const resolved = path.join(mapping.modulePath, mapping.functionsFile);
 
       return withClient(async (client) => {
         await ensureParserModule();
@@ -201,7 +215,7 @@ export function createPackTool({ withClient }: {
         await fs.writeFile(resolved, content, "utf-8");
 
         const parts: string[] = [];
-        parts.push(`packed ${totalFunctions} functions from ${schemas.length} schema(s) -> ${outFile}`);
+        parts.push(`packed ${totalFunctions} functions from ${schemas.length} schema(s) -> ${mapping.module}/${mapping.functionsFile}`);
         parts.push(`deps: ${edges.length} edges resolved via AST`);
         parts.push(`completeness: full`);
         parts.push("");

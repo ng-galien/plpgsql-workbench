@@ -6,7 +6,9 @@
  */
 
 import { Pool } from "pg";
-import { asFunction, type AwilixContainer } from "awilix";
+import fsSync from "fs";
+import pathMod from "path";
+import { asFunction, asValue, type AwilixContainer } from "awilix";
 import type { DbClient } from "../connection.js";
 import type { ToolPack, WithClient } from "../container.js";
 
@@ -14,6 +16,7 @@ import type { ToolPack, WithClient } from "../container.js";
 import { resolveUri } from "../tools/plpgsql/get.js";
 import { runTests, formatTestReport } from "../tools/plpgsql/test.js";
 import { createSetFunction } from "../tools/plpgsql/func-set.js";
+import { buildModuleRegistry } from "../pgm/registry.js";
 
 // Tool factories
 import { createGetTool } from "../tools/plpgsql/get.js";
@@ -63,6 +66,18 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
     resolveUri: asFunction(() => resolveUri).singleton(),
     runTests: asFunction(() => runTests).singleton(),
     formatTestReport: asFunction(() => formatTestReport).singleton(),
+
+    moduleRegistry: asValue((() => {
+      // Find workspace root synchronously, then build registry (async)
+      let dir = process.cwd();
+      for (let i = 0; i < 10; i++) {
+        if (fsSync.existsSync(pathMod.join(dir, "modules"))) {
+          return buildModuleRegistry(dir);
+        }
+        dir = pathMod.dirname(dir);
+      }
+      return buildModuleRegistry(process.cwd());
+    })()),
 
     setFunction: asFunction(createSetFunction).singleton(),
 

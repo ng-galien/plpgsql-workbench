@@ -25,6 +25,89 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION cad._abbrev(text,text) IS 'Abbreviate piece labels for display: Poteau A -> A, Traverse AB -> tAB, Lisse bas AB -> bAB, Chevron AV-1 -> V1, etc.';
 
+CREATE OR REPLACE FUNCTION cad._render_tree_node(p_shape cad.shape)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_icon text;
+  v_props text := '';
+  v_label text;
+BEGIN
+  -- Icon per type
+  v_icon := CASE p_shape.type
+    WHEN 'line' THEN '&#9473;'
+    WHEN 'rect' THEN '&#9635;'
+    WHEN 'circle' THEN '&#9675;'
+    WHEN 'arc' THEN '&#8978;'
+    WHEN 'polyline' THEN '&#10097;'
+    WHEN 'text' THEN 'T'
+    WHEN 'dimension' THEN '&#8596;'
+    ELSE '?'
+  END;
+
+  -- Label
+  v_label := COALESCE(p_shape.label, p_shape.type || ' #' || p_shape.id);
+
+  -- Wood props if present
+  IF p_shape.props->>'section' IS NOT NULL THEN
+    v_props := p_shape.props->>'section';
+    IF p_shape.props->>'wood_type' IS NOT NULL THEN
+      v_props := v_props || ' ' || (p_shape.props->>'wood_type');
+    END IF;
+  END IF;
+
+  RETURN '<div class="cad-tree-node" data-id="' || p_shape.id || '"'
+    || ' @click="select(' || p_shape.id || ')">'
+    || '<span class="cad-tree-icon">' || v_icon || '</span>'
+    || pgv.esc(v_label)
+    || CASE WHEN v_props <> '' 
+         THEN '<span class="cad-tree-props">' || pgv.esc(v_props) || '</span>'
+         ELSE '' END
+    || '</div>';
+END;
+$function$;
+COMMENT ON FUNCTION cad._render_tree_node(cad.shape) IS 'Rend un noeud feuille du tree explorer.';
+
+CREATE OR REPLACE FUNCTION cad._render_tree_group(p_group_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text := '';
+  v_group cad.shape;
+  v_child cad.shape;
+  v_count int;
+BEGIN
+  SELECT * INTO v_group FROM cad.shape WHERE id = p_group_id;
+  IF NOT FOUND THEN RETURN ''; END IF;
+
+  SELECT count(*) INTO v_count FROM cad.shape WHERE parent_id = p_group_id;
+
+  v_html := '<details open>'
+    || '<summary @click.stop="selectGroup(' || p_group_id || ')">'
+    || '<span class="cad-tree-icon">&#128230;</span>'
+    || pgv.esc(COALESCE(v_group.label, 'Groupe #' || p_group_id))
+    || ' <span class="cad-tree-props">(' || v_count || ')</span>'
+    || '</summary>'
+    || '<div>';
+
+  FOR v_child IN
+    SELECT * FROM cad.shape WHERE parent_id = p_group_id ORDER BY sort_order, id
+  LOOP
+    IF v_child.type = 'group' THEN
+      v_html := v_html || cad._render_tree_group(v_child.id);
+    ELSE
+      v_html := v_html || cad._render_tree_node(v_child);
+    END IF;
+  END LOOP;
+
+  v_html := v_html || '</div></details>';
+  RETURN v_html;
+END;
+$function$;
+COMMENT ON FUNCTION cad._render_tree_group(integer) IS 'Rend un noeud groupe du tree explorer (récursif).';
+
 CREATE OR REPLACE FUNCTION cad.add_beam(p_drawing_id integer, p_section text, p_start real[], p_end real[], p_label text DEFAULT NULL::text, p_role text DEFAULT NULL::text, p_wood_type text DEFAULT 'pin'::text)
  RETURNS integer
  LANGUAGE plpgsql
@@ -500,6 +583,57 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION cad.faces(integer) IS 'Faces de la bounding box (top/bottom/left/right/front/back) avec coordonnees.';
+
+CREATE OR REPLACE FUNCTION cad.fragment_tree(p_drawing_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text := '';
+  v_layer record;
+  v_shape cad.shape;
+BEGIN
+  v_html := '<div x-data="cadTree" class="cad-tree">';
+
+  FOR v_layer IN
+    SELECT * FROM cad.layer
+    WHERE drawing_id = p_drawing_id
+    ORDER BY sort_order, id
+  LOOP
+    v_html := v_html || '<details open>'
+      || '<summary>'
+      || '<span class="cad-tree-swatch" style="background:' || pgv.esc(v_layer.color) || '"></span>'
+      || pgv.esc(v_layer.name)
+      || ' <span class="cad-tree-props">(' || (
+           SELECT count(*) FROM cad.shape WHERE layer_id = v_layer.id AND type <> 'group'
+         )::text || ')</span>'
+      || '<button class="cad-tree-eye" data-layer="' || v_layer.id || '"'
+      || ' @click.stop="toggleLayer(' || v_layer.id || ')">'
+      || CASE WHEN v_layer.visible THEN E'\u25C9' ELSE E'\u25CB' END
+      || '</button>'
+      || '</summary>'
+      || '<div>';
+
+    FOR v_shape IN
+      SELECT * FROM cad.shape
+      WHERE layer_id = v_layer.id AND parent_id IS NULL
+      ORDER BY sort_order, id
+    LOOP
+      IF v_shape.type = 'group' THEN
+        v_html := v_html || cad._render_tree_group(v_shape.id);
+      ELSE
+        v_html := v_html || cad._render_tree_node(v_shape);
+      END IF;
+    END LOOP;
+
+    v_html := v_html || '</div></details>';
+  END LOOP;
+
+  v_html := v_html || '</div>';
+  RETURN v_html;
+END;
+$function$;
+COMMENT ON FUNCTION cad.fragment_tree(integer) IS 'Fragment: tree explorer for a drawing. Uses cadTree Alpine component.';
 
 CREATE OR REPLACE FUNCTION cad.group_shapes(p_drawing_id integer, p_shape_ids integer[], p_name text DEFAULT NULL::text)
  RETURNS integer
@@ -1607,8 +1741,11 @@ BEGIN
     RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
   END IF;
 
-  -- Canvas SVG interactif (pan + zoom)
-  v_body := pgv.svg_canvas(cad.render_svg(p_id));
+  -- Layout: tree + canvas
+  v_body := '<div class="cad-layout">'
+    || cad.fragment_tree(p_id)
+    || '<div>' || pgv.svg_canvas(cad.render_svg(p_id)) || '</div>'
+    || '</div>';
 
   -- Stats
   v_body := v_body || pgv.grid(

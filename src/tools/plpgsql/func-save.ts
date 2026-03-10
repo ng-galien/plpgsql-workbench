@@ -5,11 +5,6 @@ import { text } from "../../helpers.js";
 import fs from "fs/promises";
 import path from "path";
 
-function resolveOutPath(outPath: string): string {
-  if (path.isAbsolute(outPath)) return outPath;
-  return path.resolve(process.cwd(), outPath);
-}
-
 interface FunctionEntry {
   oid: string;
   schema: string;
@@ -101,8 +96,9 @@ async function dumpFunctions(
   return parts.join("\n");
 }
 
-export function createFuncSaveTool({ withClient }: {
+export function createFuncSaveTool({ withClient, moduleRegistry }: {
   withClient: WithClient;
+  moduleRegistry: Promise<import("../../pgm/registry.js").ModuleRegistry>;
 }): ToolHandler {
   return {
     metadata: {
@@ -110,41 +106,51 @@ export function createFuncSaveTool({ withClient }: {
       description:
         "Save functions from database to SQL files on disk for version control.\n" +
         "Creates one .sql file per function with full CREATE OR REPLACE DDL.\n" +
-        "Structure: {path}/{schema}/{function_name}.sql",
+        "Output path is auto-resolved from module registry (schema → module dir).\n" +
+        "Structure: modules/{module}/sql/{schema}/{function_name}.sql",
       schema: z.object({
         target: z
           .string()
-          .optional()
           .describe(
-            "plpgsql:// URI scope. Omit for all schemas, plpgsql://schema for one schema, plpgsql://schema/function/name for one function",
+            "plpgsql:// URI scope. plpgsql://schema for one schema, plpgsql://schema/function/name for one function",
           ),
-        path: z.string().describe("Output directory (absolute or relative to server CWD)"),
       }),
     },
     handler: async (args, _extra) => {
-      const target = args.target as string | undefined;
-      const outPath = args.path as string;
+      const target = args.target as string;
 
       return withClient(async (client) => {
         let schema: string | undefined;
         let fnName: string | undefined;
 
-        if (target) {
-          const fnMatch = target.match(/^plpgsql:\/\/(\w+)\/function\/(\w+)$/);
-          if (fnMatch) {
-            schema = fnMatch[1];
-            fnName = fnMatch[2];
+        const fnMatch = target.match(/^plpgsql:\/\/(\w+)\/function\/(\w+)$/);
+        if (fnMatch) {
+          schema = fnMatch[1];
+          fnName = fnMatch[2];
+        } else {
+          const schemaMatch = target.match(/^plpgsql:\/\/(\w+)\/?$/);
+          if (schemaMatch) {
+            schema = schemaMatch[1];
           } else {
-            const schemaMatch = target.match(/^plpgsql:\/\/(\w+)\/?$/);
-            if (schemaMatch) {
-              schema = schemaMatch[1];
-            } else {
-              return text(`problem: invalid target: ${target}\nwhere: pg_func_save\nfix_hint: expected plpgsql://schema or plpgsql://schema/function/name`);
-            }
+            return text(`problem: invalid target: ${target}\nwhere: pg_func_save\nfix_hint: expected plpgsql://schema or plpgsql://schema/function/name`);
           }
         }
 
-        const result = await dumpFunctions(client, resolveOutPath(outPath), schema, fnName);
+        if (!schema) {
+          return text(`problem: schema required\nwhere: pg_func_save\nfix_hint: use plpgsql://schema`);
+        }
+
+        const registry = await moduleRegistry;
+        const outDir = registry.savePath(schema);
+        if (!outDir) {
+          return text(
+            `problem: no module owns schema "${schema}"\n` +
+            `where: pg_func_save\n` +
+            `fix_hint: check modules/*/module.json schemas field`,
+          );
+        }
+
+        const result = await dumpFunctions(client, outDir, schema, fnName);
         return text(result);
       });
     },
