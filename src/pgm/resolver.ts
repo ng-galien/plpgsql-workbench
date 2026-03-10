@@ -12,7 +12,7 @@ export interface ModuleManifest {
   name: string;
   version: string;
   description: string;
-  schemas: { public: string | null; private: string | null };
+  schemas: { public: string | null; private: string | null; qa?: string | null };
   dependencies: string[];
   extensions: string[];
   sql: string[];

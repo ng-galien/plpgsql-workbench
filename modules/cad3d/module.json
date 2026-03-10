@@ -4,7 +4,8 @@
   "description": "CAD 3D engine for wood structures. PostGIS/SFCGAL geometry, Three.js viewer, wireframe rendering, bill of materials.",
   "schemas": {
     "public": "cad",
-    "private": "_cad"
+    "private": "_cad",
+    "qa": "cad_qa"
   },
   "dependencies": [
     "pgv"

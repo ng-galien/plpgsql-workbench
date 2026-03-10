@@ -25,11 +25,13 @@ dev-up: image dev-env
 	@echo "  postgrest → localhost:3000  (schemas: $$(cat .env 2>/dev/null | grep PGRST_DB_SCHEMAS | cut -d= -f2))"
 	@echo "  frontend  → http://localhost:8080"
 
-# Generate .env with PGRST_DB_SCHEMAS from modules/*/module.json
+# Generate .env with PGRST_DB_SCHEMAS from modules/*/module.json (includes _ut, _qa)
 dev-env:
 	@schemas=$$(python3 -c "import json,glob; \
-		s=[json.load(open(f)).get('schemas',{}).get('public','') for f in sorted(glob.glob('modules/*/module.json'))]; \
-		print(','.join(x for x in s if x))" 2>/dev/null || echo "pgv"); \
+		s=[]; \
+		[s.extend([p, p+'_ut', p+'_qa']) for f in sorted(glob.glob('modules/*/module.json')) \
+		 for p in [json.load(open(f)).get('schemas',{}).get('public','')] if p]; \
+		print(','.join(s))" 2>/dev/null || echo "pgv"); \
 	echo "PGRST_DB_SCHEMAS=$$schemas" > .env
 
 dev-down:
@@ -60,6 +62,22 @@ dev-init: dev-up dev-sync
 			[ -f "$$sql" ] && echo "  Loading $$sql" && \
 			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f "$$sql" -q 2>&1 | grep -v "^$$" || true; \
 		done; \
+	done
+	@echo "Creating QA schemas..."
+	@for mod in modules/*/; do \
+		schema=$$(python3 -c "import json; print(json.load(open('$${mod}module.json')).get('schemas',{}).get('qa',''))" 2>/dev/null); \
+		if [ -n "$$schema" ]; then \
+			echo "  CREATE SCHEMA $$schema"; \
+			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -c \
+				"CREATE SCHEMA IF NOT EXISTS $$schema; GRANT USAGE ON SCHEMA $$schema TO web_anon; GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA $$schema TO web_anon;" -q 2>&1 | grep -v "^$$" || true; \
+		fi; \
+	done
+	@echo "Loading QA seeds..."
+	@for mod in modules/*/; do \
+		if [ -f "$${mod}qa/seed.sql" ]; then \
+			echo "  Loading $${mod}qa/seed.sql" && \
+			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f "$${mod}qa/seed.sql" -q 2>&1 | grep -v "^$$" || true; \
+		fi; \
 	done
 	@echo "All modules loaded into dev DB"
 

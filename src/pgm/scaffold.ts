@@ -113,7 +113,7 @@ export async function scaffoldApp(appDir: string, name: string, ports: Ports, ws
   // .claude/settings.local.json
   await fs.writeFile(
     path.join(appDir, ".claude", "settings.local.json"),
-    claudeSettings(ports),
+    claudeSettings(name, ports),
   );
   created.push(".claude/settings.local.json");
 
@@ -250,7 +250,7 @@ function mcpJson(ports: Ports): string {
   }, null, 2) + "\n";
 }
 
-function claudeSettings(ports: Ports): string {
+function claudeSettings(appName: string, ports: Ports): string {
   return JSON.stringify({
     permissions: {
       allow: [
@@ -277,7 +277,7 @@ function claudeSettings(ports: Ports): string {
           hooks: [
             {
               type: "http",
-              url: `http://localhost:${ports.mcp}/claude-hook`,
+              url: `http://localhost:${ports.mcp}/hooks/${appName}`,
               timeout: 5,
             },
           ],
@@ -299,6 +299,7 @@ export async function scaffoldModule(
 
   await fs.mkdir(path.join(moduleDir, "build"), { recursive: true });
   await fs.mkdir(path.join(moduleDir, "src"), { recursive: true });
+  await fs.mkdir(path.join(moduleDir, "qa"), { recursive: true });
   await fs.mkdir(path.join(moduleDir, "frontend"), { recursive: true });
   await fs.mkdir(path.join(moduleDir, ".claude"), { recursive: true });
 
@@ -307,7 +308,7 @@ export async function scaffoldModule(
     name,
     version: "0.1.0",
     description: "",
-    schemas: { public: schemaName, private: null },
+    schemas: { public: schemaName, private: null, qa: `${schemaName}_qa` },
     dependencies: ["pgv"],
     extensions: [],
     sql: [`build/${schemaName}.ddl.sql`, `build/${schemaName}.func.sql`],
@@ -323,7 +324,7 @@ export async function scaffoldModule(
   // build/<schema>.ddl.sql (DDL placeholder)
   await fs.writeFile(
     path.join(moduleDir, "build", `${schemaName}.ddl.sql`),
-    `-- ${name} — DDL\n\nCREATE SCHEMA IF NOT EXISTS ${schemaName};\nCREATE SCHEMA IF NOT EXISTS ${schemaName}_ut;\n`,
+    `-- ${name} — DDL\n\nCREATE SCHEMA IF NOT EXISTS ${schemaName};\nCREATE SCHEMA IF NOT EXISTS ${schemaName}_ut;\nCREATE SCHEMA IF NOT EXISTS ${schemaName}_qa;\n`,
   );
   created.push(`build/${schemaName}.ddl.sql`);
 

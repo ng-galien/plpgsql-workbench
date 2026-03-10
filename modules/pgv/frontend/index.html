@@ -57,6 +57,10 @@
       boot: function() {
         var saved = localStorage.getItem('pgv-theme');
         if (saved) document.documentElement.setAttribute('data-theme', saved);
+        // App mode: <meta name="pgv-schema"> fixes the schema
+        // Dev mode: no meta → extract schema from URL /{schema}/path
+        var meta = document.querySelector('meta[name="pgv-schema"]');
+        this._fixedSchema = meta ? meta.getAttribute('content') : null;
         this._listen();
         this.go(location.pathname || '/');
         var self = this;
@@ -124,10 +128,29 @@
       go: function(path, push) {
         if (push === undefined) push = true;
         var self = this;
-        return fetch('/rpc/page', {
+
+        // Resolve schema + route path
+        var rpcUrl, body;
+        if (this._fixedSchema) {
+          // App mode: single schema, use page(p_path)
+          rpcUrl = '/rpc/page';
+          body = { p_path: path };
+        } else {
+          // Dev mode: /{schema}/path → pgv.route(schema, path)
+          var m = path.match(/^\/([a-z][a-z0-9_]*)(\/.*)?$/);
+          if (m) {
+            rpcUrl = '/rpc/route';
+            body = { p_schema: m[1], p_path: m[2] || '/' };
+          } else {
+            rpcUrl = '/rpc/page';
+            body = { p_path: path };
+          }
+        }
+
+        return fetch(rpcUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'text/html' },
-          body: JSON.stringify({ p_path: path })
+          body: JSON.stringify(body)
         })
         .then(function(r) {
           if (!r.ok) return self._err(r);

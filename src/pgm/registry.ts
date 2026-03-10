@@ -37,10 +37,11 @@ export async function buildModuleRegistry(workspaceRoot: string): Promise<Module
         const schemas: string[] = [];
         if (manifest.schemas.public) schemas.push(manifest.schemas.public);
         if (manifest.schemas.private) schemas.push(manifest.schemas.private);
-        // Also include test schemas by convention
+        // Also include test/qa schemas by convention
         if (manifest.schemas.public) {
           schemas.push(`${manifest.schemas.public}_ut`);
           schemas.push(`${manifest.schemas.public}_it`);
+          schemas.push(`${manifest.schemas.public}_qa`);
         }
 
         const functionsFile = manifest.sql.find((f) => f.endsWith(".func.sql")) ?? "";
@@ -73,7 +74,9 @@ export async function buildModuleRegistry(workspaceRoot: string): Promise<Module
     savePath(schema: string): string | null {
       for (const m of mappings) {
         if (m.schemas.includes(schema)) {
-          return path.join(m.modulePath, "src");
+          // QA schemas save to qa/ directory, everything else to src/
+          const subdir = schema.endsWith("_qa") ? "qa" : "src";
+          return path.join(m.modulePath, subdir);
         }
       }
       return null;

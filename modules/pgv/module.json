@@ -4,7 +4,8 @@
   "description": "pgView — Server-Side Rendering framework for PostgreSQL apps. Alpine.js shell + PicoCSS + PostgREST + pgv.* UI primitives.",
   "schemas": {
     "public": "pgv",
-    "private": null
+    "private": null,
+    "qa": "pgv_qa"
   },
   "dependencies": [],
   "extensions": [
