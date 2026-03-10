@@ -1,6 +1,8 @@
-FROM postgres:17-alpine AS builder
+FROM postgis/postgis:17-3.5 AS builder
 
-RUN apk add --no-cache build-base git postgresql-dev perl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential git postgresql-server-dev-17 perl \
+    && rm -rf /var/lib/apt/lists/*
 
 # plpgsql_check
 RUN git clone --depth 1 https://github.com/okbob/plpgsql_check.git /tmp/plpgsql_check \
@@ -14,7 +16,7 @@ RUN git clone --depth 1 https://github.com/theory/pgtap.git /tmp/pgtap \
     && make \
     && make install
 
-FROM postgres:17-alpine
+FROM postgis/postgis:17-3.5
 
-COPY --from=builder /usr/local/lib/postgresql/ /usr/local/lib/postgresql/
-COPY --from=builder /usr/local/share/postgresql/extension/ /usr/local/share/postgresql/extension/
+COPY --from=builder /usr/lib/postgresql/17/lib/ /usr/lib/postgresql/17/lib/
+COPY --from=builder /usr/share/postgresql/17/extension/ /usr/share/postgresql/17/extension/

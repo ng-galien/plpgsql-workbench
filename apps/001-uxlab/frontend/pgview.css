@@ -1,87 +1,326 @@
-/* pgview.css — pgv component tokens + light/dark themes
-   Contract: PL/pgSQL outputs class="pgv-*", this file provides all styling.
-   Theme: set <html data-theme="light|dark"> (PicoCSS convention). */
+/* pgview.css — Warm Industrial Precision
+   PicoCSS overrides + pgv component styles.
+   Theme: <html data-theme="light|dark"> */
 
-/* ── Tokens (light) ─────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── PicoCSS Overrides ─────────────────────────────────────────── */
+:root {
+  --pico-font-family: 'Barlow', system-ui, -apple-system, sans-serif;
+  --pico-font-size: 0.9375rem;
+  --pico-line-height: 1.5;
+  --pico-border-radius: 0.25rem;
+  --pico-spacing: 0.75rem;
+  --pico-typography-spacing-vertical: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Tokens (light) ────────────────────────────────────────────── */
 :root, [data-theme="light"] {
+  --pgv-bg: #faf9f6;
+  --pgv-surface: #ffffff;
+  --pgv-text: #1c1917;
+  --pgv-muted: #78716c;
+  --pgv-border: #e7e5e4;
+  --pgv-border-strong: #d6d3d1;
+  --pgv-accent: #b45309;
+  --pgv-accent-hover: #92400e;
+  --pgv-accent-subtle: rgba(180, 83, 9, 0.08);
+  --pgv-hover: rgba(0, 0, 0, 0.03);
+
+  --pico-primary: #b45309;
+  --pico-primary-hover: #92400e;
+  --pico-primary-focus: rgba(180, 83, 9, 0.12);
+  --pico-primary-background: #b45309;
+  --pico-primary-hover-background: #92400e;
+  --pico-background-color: var(--pgv-bg);
+  --pico-card-background-color: var(--pgv-surface);
+  --pico-muted-color: var(--pgv-muted);
+  --pico-muted-border-color: var(--pgv-border);
+
   /* Table */
-  --pgv-table-header-bg: #f0f1f3;
-  --pgv-table-header-fg: #5a5e66;
-  --pgv-table-border: #e5e7eb;
-  --pgv-table-stripe: rgba(0, 0, 0, 0.018);
-  --pgv-table-hover: rgba(0, 0, 0, 0.04);
-  --pgv-table-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --pgv-table-header-bg: #f5f3f0;
+  --pgv-table-header-fg: #57534e;
+  --pgv-table-border: #e7e5e4;
+  --pgv-table-stripe: rgba(0, 0, 0, 0.015);
+  --pgv-table-hover: rgba(180, 83, 9, 0.05);
+  --pgv-table-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 0 0 1px var(--pgv-border);
 
   /* Badge */
-  --pgv-badge-radius: 12px;
-  --pgv-badge-px: 10px;
-  --pgv-badge-py: 2px;
-  --pgv-badge-fs: 0.85em;
-  --pgv-badge-fw: 500;
+  --pgv-badge-default-bg: #e7e5e4; --pgv-badge-default-fg: #44403c;
+  --pgv-badge-success-bg: #dcfce7; --pgv-badge-success-fg: #166534;
+  --pgv-badge-danger-bg: #fee2e2; --pgv-badge-danger-fg: #991b1b;
+  --pgv-badge-warning-bg: #fef3c7; --pgv-badge-warning-fg: #92400e;
+  --pgv-badge-info-bg: #dbeafe; --pgv-badge-info-fg: #1e40af;
+  --pgv-badge-primary-bg: #ffedd5; --pgv-badge-primary-fg: #9a3412;
 
-  --pgv-badge-default-bg: #e2e3e5;
-  --pgv-badge-default-fg: #383d41;
-  --pgv-badge-success-bg: #d4edda;
-  --pgv-badge-success-fg: #155724;
-  --pgv-badge-danger-bg: #f8d7da;
-  --pgv-badge-danger-fg: #721c24;
-  --pgv-badge-warning-bg: #fff3cd;
-  --pgv-badge-warning-fg: #856404;
-  --pgv-badge-info-bg: #d1ecf1;
-  --pgv-badge-info-fg: #0c5460;
-  --pgv-badge-primary-bg: #cce5ff;
-  --pgv-badge-primary-fg: #004085;
-
-  /* Stat */
-  --pgv-stat-value-fs: 2rem;
-  --pgv-stat-value-fw: 600;
-
-  /* Error */
-  --pgv-error-border: var(--pico-del-color, #c62828);
-  --pgv-error-border-width: 4px;
-  --pgv-error-mt: 2rem;
-
-  /* Description list */
-  --pgv-dl-dt-fw: 600;
-  --pgv-dl-dt-fg: var(--pico-muted-color);
-  --pgv-dl-gap: 0.25rem;
-
-  /* Nav brand */
-  --pgv-nav-brand-fw: 700;
+  /* Canvas */
+  --pgv-canvas-bg: #f5f3f0;
+  --pgv-canvas-grid: #e0ddd8;
 }
 
-/* ── Tokens (dark) ──────────────────────────────────────────────── */
+/* ── Tokens (dark) ─────────────────────────────────────────────── */
 [data-theme="dark"] {
-  --pgv-table-header-bg: #1e2128;
-  --pgv-table-header-fg: #9ca3af;
-  --pgv-table-border: #2d3139;
-  --pgv-table-stripe: rgba(255, 255, 255, 0.015);
-  --pgv-table-hover: rgba(255, 255, 255, 0.04);
-  --pgv-table-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --pgv-bg: #0c0a09;
+  --pgv-surface: #1c1917;
+  --pgv-text: #e7e5e4;
+  --pgv-muted: #a8a29e;
+  --pgv-border: #292524;
+  --pgv-border-strong: #3a3532;
+  --pgv-accent: #d97706;
+  --pgv-accent-hover: #f59e0b;
+  --pgv-accent-subtle: rgba(217, 119, 6, 0.1);
+  --pgv-hover: rgba(255, 255, 255, 0.03);
 
-  --pgv-badge-default-bg: #3a3d41;
-  --pgv-badge-default-fg: #d4d5d7;
-  --pgv-badge-success-bg: #1b4332;
-  --pgv-badge-success-fg: #95d5b2;
-  --pgv-badge-danger-bg: #4a1c24;
-  --pgv-badge-danger-fg: #f5a0a8;
-  --pgv-badge-warning-bg: #4a3c0a;
-  --pgv-badge-warning-fg: #f5d98e;
-  --pgv-badge-info-bg: #0c3547;
-  --pgv-badge-info-fg: #89d4e0;
-  --pgv-badge-primary-bg: #0a3060;
-  --pgv-badge-primary-fg: #8ec4f5;
+  --pico-primary: #d97706;
+  --pico-primary-hover: #f59e0b;
+  --pico-primary-focus: rgba(217, 119, 6, 0.15);
+  --pico-primary-background: #d97706;
+  --pico-primary-hover-background: #f59e0b;
+  --pico-background-color: var(--pgv-bg);
+  --pico-card-background-color: var(--pgv-surface);
+  --pico-muted-color: var(--pgv-muted);
+  --pico-muted-border-color: var(--pgv-border);
+
+  --pgv-table-header-bg: #1c1917;
+  --pgv-table-header-fg: #a8a29e;
+  --pgv-table-border: #292524;
+  --pgv-table-stripe: rgba(255, 255, 255, 0.012);
+  --pgv-table-hover: rgba(217, 119, 6, 0.06);
+  --pgv-table-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 0 1px var(--pgv-border);
+
+  --pgv-badge-default-bg: #292524; --pgv-badge-default-fg: #d6d3d1;
+  --pgv-badge-success-bg: #14532d; --pgv-badge-success-fg: #86efac;
+  --pgv-badge-danger-bg: #450a0a; --pgv-badge-danger-fg: #fca5a5;
+  --pgv-badge-warning-bg: #451a03; --pgv-badge-warning-fg: #fcd34d;
+  --pgv-badge-info-bg: #1e3a5f; --pgv-badge-info-fg: #93c5fd;
+  --pgv-badge-primary-bg: #431407; --pgv-badge-primary-fg: #fdba74;
+
+  --pgv-canvas-bg: #1c1917;
+  --pgv-canvas-grid: #292524;
 }
 
-/* ── Badge ──────────────────────────────────────────────────────── */
+/* ── Global Refinements ────────────────────────────────────────── */
+body {
+  background: var(--pgv-bg);
+  color: var(--pgv-text);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+h2 { font-size: 1.35rem; margin-bottom: 0.5rem; }
+h3 { font-size: 1.1rem; }
+h4 { font-size: 0.95rem; }
+
+hgroup { margin-bottom: 1rem; }
+hgroup > h2 { margin-bottom: 0; }
+
+small, .small { font-size: 0.8rem; }
+
+code, kbd, pre {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.8125rem;
+}
+
+/* ── Navigation ────────────────────────────────────────────────── */
+nav {
+  border-bottom: 1px solid var(--pgv-border);
+  background: var(--pgv-surface);
+  padding: 0 !important;
+}
+
+nav ul {
+  margin: 0;
+  padding: 0;
+}
+
+nav li {
+  padding: 0.45rem 0;
+}
+
+nav a {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.2rem;
+  text-decoration: none;
+  color: var(--pgv-muted);
+  transition: color 0.15s, background 0.15s;
+}
+
+nav a:hover {
+  color: var(--pgv-text);
+  background: var(--pgv-hover);
+}
+
+nav a[aria-current="page"] {
+  color: var(--pgv-accent);
+  background: var(--pgv-accent-subtle);
+}
+
+nav strong {
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--pgv-text);
+}
+
+/* ── Compact Buttons ───────────────────────────────────────────── */
+button, [type="submit"], [type="button"], [role="button"],
+input[type="submit"], input[type="button"] {
+  --pico-form-element-spacing-vertical: 0.35rem;
+  --pico-form-element-spacing-horizontal: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border-radius: 0.25rem;
+}
+
+button.secondary, [role="button"].secondary {
+  --pico-form-element-spacing-vertical: 0.35rem;
+  --pico-form-element-spacing-horizontal: 0.75rem;
+}
+
+button.outline, [role="button"].outline {
+  --pico-form-element-spacing-vertical: 0.3rem;
+  --pico-form-element-spacing-horizontal: 0.6rem;
+  font-size: 0.75rem;
+}
+
+/* Danger variant for data-rpc buttons */
+button.secondary[data-rpc] {
+  font-size: 0.75rem;
+  --pico-form-element-spacing-vertical: 0.2rem;
+  --pico-form-element-spacing-horizontal: 0.5rem;
+}
+
+/* Inline button groups */
+.grid button, fieldset[role="group"] button {
+  margin-bottom: 0;
+}
+
+/* ── Compact Forms ─────────────────────────────────────────────── */
+label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--pgv-muted);
+  margin-bottom: 0.15rem;
+}
+
+input, select, textarea {
+  --pico-form-element-spacing-vertical: 0.4rem;
+  --pico-form-element-spacing-horizontal: 0.6rem;
+  font-size: 0.875rem;
+  border-radius: 0.25rem;
+}
+
+fieldset {
+  margin-bottom: 0.5rem;
+}
+
+details {
+  border: 1px solid var(--pgv-border);
+  border-radius: 0.25rem;
+  padding: 0;
+  margin-bottom: 0.75rem;
+}
+
+details > summary {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  color: var(--pgv-muted);
+  list-style-type: none;
+}
+
+details > summary::before {
+  content: '▸ ';
+  font-size: 0.7rem;
+}
+
+details[open] > summary::before {
+  content: '▾ ';
+}
+
+details[open] > summary {
+  border-bottom: 1px solid var(--pgv-border);
+  margin-bottom: 0;
+}
+
+details > *:not(summary) {
+  padding: 0.5rem 0.75rem;
+}
+
+/* ── Articles / Cards ──────────────────────────────────────────── */
+article {
+  border: 1px solid var(--pgv-border);
+  border-radius: 0.375rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  padding: 0;
+  margin-bottom: 0.75rem;
+}
+
+article > header {
+  padding: 0.6rem 0.85rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background: var(--pgv-table-header-bg);
+  border-bottom: 1px solid var(--pgv-border);
+  border-radius: 0.375rem 0.375rem 0 0;
+}
+
+article > *:not(header):not(footer) {
+  padding: 0.75rem 0.85rem;
+}
+
+article > footer {
+  padding: 0.5rem 0.85rem;
+  font-size: 0.8125rem;
+  background: var(--pgv-table-header-bg);
+  border-top: 1px solid var(--pgv-border);
+  border-radius: 0 0 0.375rem 0.375rem;
+}
+
+article > footer a {
+  font-size: 0.8125rem;
+}
+
+/* Grid cards */
+.grid > article {
+  margin-bottom: 0;
+}
+
+/* ── Section spacing ───────────────────────────────────────────── */
+section {
+  margin-bottom: 1.25rem;
+}
+
+section > h4:first-child {
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--pgv-border);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pgv-muted);
+}
+
+/* ── Badge ─────────────────────────────────────────────────────── */
 .pgv-badge {
   display: inline-block;
-  padding: var(--pgv-badge-py) var(--pgv-badge-px);
-  border-radius: var(--pgv-badge-radius);
-  font-size: var(--pgv-badge-fs);
-  font-weight: var(--pgv-badge-fw);
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   background: var(--pgv-badge-default-bg);
   color: var(--pgv-badge-default-fg);
+  vertical-align: middle;
 }
 .pgv-badge-success { background: var(--pgv-badge-success-bg); color: var(--pgv-badge-success-fg); }
 .pgv-badge-danger  { background: var(--pgv-badge-danger-bg);  color: var(--pgv-badge-danger-fg); }
@@ -89,51 +328,68 @@
 .pgv-badge-info    { background: var(--pgv-badge-info-bg);    color: var(--pgv-badge-info-fg); }
 .pgv-badge-primary { background: var(--pgv-badge-primary-bg); color: var(--pgv-badge-primary-fg); }
 
-/* ── Stat ───────────────────────────────────────────────────────── */
+/* ── Stat ──────────────────────────────────────────────────────── */
 .pgv-stat {
   text-align: center;
+  padding: 0.6rem 0.5rem !important;
+}
+.pgv-stat small {
+  color: var(--pgv-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
 }
 .pgv-stat-value {
-  font-size: var(--pgv-stat-value-fs);
-  margin: 0.25rem 0;
-  font-weight: var(--pgv-stat-value-fw);
+  font-size: 1.5rem;
+  margin: 0.15rem 0;
+  font-weight: 700;
+  color: var(--pgv-text);
+  line-height: 1.2;
 }
 
-/* ── Description List ───────────────────────────────────────────── */
+/* ── Description List ──────────────────────────────────────────── */
+.pgv-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.875rem;
+}
 .pgv-dl dt {
-  font-weight: var(--pgv-dl-dt-fw);
-  color: var(--pgv-dl-dt-fg);
-  margin-top: var(--pgv-dl-gap);
+  font-weight: 500;
+  color: var(--pgv-muted);
+  font-size: 0.8rem;
+}
+.pgv-dl dd {
+  margin: 0;
 }
 
-/* ── Error ──────────────────────────────────────────────────────── */
+/* ── Error ─────────────────────────────────────────────────────── */
 .pgv-error {
-  border-left: var(--pgv-error-border-width) solid var(--pgv-error-border);
-  margin-top: var(--pgv-error-mt);
+  border-left: 3px solid var(--pico-del-color, #dc2626);
 }
 
-/* ── Theme toggle ───────────────────────────────────────────────── */
+/* ── Theme Toggle ──────────────────────────────────────────────── */
 .pgv-theme-toggle {
-  background: none;
-  border: none;
+  all: unset;
   cursor: pointer;
-  font-size: 1.2rem;
+  font-size: 1rem;
   padding: 0.25rem;
   line-height: 1;
-  color: var(--pico-color);
-  opacity: 0.7;
-  transition: opacity 0.2s;
+  color: var(--pgv-muted);
+  opacity: 0.6;
+  transition: opacity 0.15s;
 }
 .pgv-theme-toggle:hover {
   opacity: 1;
 }
 
-/* ── Table ──────────────────────────────────────────────────────── */
+/* ── Table ─────────────────────────────────────────────────────── */
 .pgv-table {
   overflow-x: auto;
-  border-radius: 8px;
+  border-radius: 0.375rem;
   box-shadow: var(--pgv-table-shadow);
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .pgv-table table {
@@ -141,81 +397,60 @@
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
 }
 
-/* Header */
 .pgv-table thead th {
   background: var(--pgv-table-header-bg);
   color: var(--pgv-table-header-fg);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 0.65rem 1rem;
-  border-bottom: 2px solid var(--pgv-table-border);
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--pgv-table-border);
   white-space: nowrap;
   position: sticky;
   top: 0;
   z-index: 1;
 }
 
-.pgv-table thead th:first-child {
-  border-top-left-radius: 8px;
-}
-.pgv-table thead th:last-child {
-  border-top-right-radius: 8px;
-}
+.pgv-table thead th:first-child { border-top-left-radius: 0.375rem; }
+.pgv-table thead th:last-child  { border-top-right-radius: 0.375rem; }
 
-/* Cells */
 .pgv-table td {
-  padding: 0.6rem 1rem;
+  padding: 0.4rem 0.75rem;
   border-bottom: 1px solid var(--pgv-table-border);
   vertical-align: middle;
-  transition: background 0.15s ease;
+  transition: background 0.1s;
 }
 
-/* Zebra striping */
 .pgv-table tbody tr:nth-child(even) {
   background: var(--pgv-table-stripe);
 }
 
-/* Hover */
 .pgv-table tbody tr:hover td {
   background: var(--pgv-table-hover);
 }
 
-/* Clickable rows */
-.pgv-table tbody tr[style*="cursor"] {
-  cursor: pointer;
-}
 .pgv-table tbody tr[style*="cursor"]:hover td {
   background: var(--pgv-table-hover);
 }
 
-/* Last row rounded corners */
-.pgv-table tbody tr:last-child td:first-child {
-  border-bottom-left-radius: 8px;
-}
-.pgv-table tbody tr:last-child td:last-child {
-  border-bottom-right-radius: 8px;
-}
+.pgv-table tbody tr:last-child td:first-child { border-bottom-left-radius: 0.375rem; }
+.pgv-table tbody tr:last-child td:last-child  { border-bottom-right-radius: 0.375rem; }
+.pgv-table tbody tr:last-child td { border-bottom: none; }
 
-/* Remove PicoCSS default table bottom-border on last row */
-.pgv-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-/* ── Pager ──────────────────────────────────────────────────────── */
+/* ── Pager ─────────────────────────────────────────────────────── */
 .pgv-pager {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 1rem;
+  padding: 0.35rem 0.75rem;
   border-top: 1px solid var(--pgv-table-border);
   background: var(--pgv-table-header-bg);
-  border-radius: 0 0 8px 8px;
-  font-size: 0.8rem;
+  border-radius: 0 0 0.375rem 0.375rem;
+  font-size: 0.75rem;
 }
 
 .pgv-pager-info {
@@ -225,71 +460,240 @@
 .pgv-pager-btns {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
 }
 
 .pgv-pager-btns button {
   all: unset;
   cursor: pointer;
-  min-width: 1.8rem;
-  height: 1.8rem;
+  min-width: 1.5rem;
+  height: 1.5rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  font-size: 0.8rem;
+  border-radius: 0.2rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  color: var(--pico-color);
-  transition: background 0.15s, color 0.15s;
+  color: var(--pgv-text);
+  transition: background 0.1s;
 }
 .pgv-pager-btns button:hover:not([disabled]):not(.active) {
   background: var(--pgv-table-hover);
 }
 .pgv-pager-btns button.active {
-  background: var(--pico-primary-background);
-  color: var(--pico-primary-inverse);
+  background: var(--pgv-accent);
+  color: #fff;
   font-weight: 600;
 }
 .pgv-pager-btns button[disabled] {
-  opacity: 0.3;
+  opacity: 0.25;
   cursor: default;
 }
-
 .pgv-pager-dots {
-  min-width: 1.4rem;
+  min-width: 1.2rem;
   text-align: center;
   color: var(--pgv-table-header-fg);
 }
 
-/* When pager is present, remove bottom radius from table */
 .pgv-table:has(.pgv-pager) tbody tr:last-child td:first-child,
 .pgv-table:has(.pgv-pager) tbody tr:last-child td:last-child {
   border-radius: 0;
 }
 
-/* Sortable headers */
+/* ── Sortable Headers ──────────────────────────────────────────── */
 .pgv-sortable {
   cursor: pointer;
   user-select: none;
+  padding-right: 1.4rem !important;
   position: relative;
-  padding-right: 1.6rem !important;
 }
 .pgv-sortable::after {
   content: '⇅';
   position: absolute;
-  right: 0.5rem;
-  opacity: 0.25;
+  right: 0.4rem;
+  opacity: 0.2;
+  font-size: 0.6rem;
+  transition: opacity 0.1s;
+}
+.pgv-sortable:hover::after { opacity: 0.5; }
+.pgv-sortable[data-sort="asc"]::after  { content: '↑'; opacity: 0.7; }
+.pgv-sortable[data-sort="desc"]::after { content: '↓'; opacity: 0.7; }
+
+/* ── Toast ─────────────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  z-index: 999;
+  max-width: 380px;
+}
+
+#toast article {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.8rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 0 0 1px var(--pgv-border);
+  border-radius: 0.375rem;
+}
+
+#toast .toast-success { border-left: 3px solid #16a34a; }
+#toast .toast-error   { border-left: 3px solid #dc2626; }
+
+#toast .toast-close {
+  float: right;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--pgv-muted);
+  font-size: 1rem;
+  padding: 0;
+  line-height: 1;
+  margin: -0.1rem -0.2rem 0 0.5rem;
+}
+
+/* ── Dialog ────────────────────────────────────────────────────── */
+dialog {
+  border: 1px solid var(--pgv-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.15);
+}
+
+dialog article {
+  border: none;
+  box-shadow: none;
+  margin: 0;
+}
+
+/* ── Folder Picker ─────────────────────────────────────────────── */
+.folder-path {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  background: var(--pgv-table-header-bg);
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--pgv-border);
+  margin-bottom: 0.5rem;
+  word-break: break-all;
+}
+
+.folder-list {
+  max-height: 45vh;
+  overflow-y: auto;
+  border: 1px solid var(--pgv-border);
+  border-radius: 0.25rem;
+}
+
+.folder-list a {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  text-decoration: none;
+  color: var(--pgv-text);
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--pgv-border);
+  transition: background 0.1s;
+}
+.folder-list a:last-child { border-bottom: none; }
+.folder-list a:hover { background: var(--pgv-accent-subtle); }
+
+.folder-empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--pgv-muted);
+  font-size: 0.8rem;
+}
+
+/* ── SVG Canvas ────────────────────────────────────────────────── */
+.pgv-canvas {
+  border: 1px solid var(--pgv-border);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  background: var(--pgv-canvas-bg);
+  margin-bottom: 1rem;
+}
+
+.pgv-canvas-vp {
+  overflow: auto;
+  cursor: grab;
+  position: relative;
+  /* Subtle grid pattern */
+  background-image:
+    linear-gradient(var(--pgv-canvas-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--pgv-canvas-grid) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: -1px -1px;
+}
+
+.pgv-canvas-vp:active {
+  cursor: grabbing;
+}
+
+.pgv-canvas-vp svg {
+  display: block;
+  transform-origin: 0 0;
+}
+
+[data-theme="dark"] .pgv-canvas-vp svg {
+  filter: invert(0.88) hue-rotate(180deg);
+}
+
+.pgv-canvas-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--pgv-surface);
+  border-top: 1px solid var(--pgv-border);
+  user-select: none;
+}
+
+.pgv-canvas-btn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.35rem;
+  border-radius: 0.2rem;
   font-size: 0.7rem;
-  transition: opacity 0.15s;
+  font-weight: 500;
+  color: var(--pgv-muted);
+  transition: background 0.1s, color 0.1s;
 }
-.pgv-sortable:hover::after {
-  opacity: 0.5;
+
+.pgv-canvas-btn:hover {
+  background: var(--pgv-hover);
+  color: var(--pgv-text);
 }
-.pgv-sortable[data-sort="asc"]::after {
-  content: '↑';
-  opacity: 0.8;
+
+.pgv-canvas-zoom {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  min-width: 2.8rem;
+  text-align: center;
+  color: var(--pgv-muted);
 }
-.pgv-sortable[data-sort="desc"]::after {
-  content: '↓';
-  opacity: 0.8;
+
+.pgv-canvas-sep {
+  width: 1px;
+  height: 1rem;
+  background: var(--pgv-border);
+  margin: 0 0.2rem;
+}
+
+/* ── Utility ───────────────────────────────────────────────────── */
+.container { max-width: 1100px; }
+
+p:last-child { margin-bottom: 0; }
+
+/* Tighter grid gaps */
+.grid { gap: 0.75rem; }
+
+/* Loading state */
+[aria-busy="true"] {
+  font-size: 0.85rem;
+  color: var(--pgv-muted);
 }

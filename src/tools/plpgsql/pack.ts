@@ -12,6 +12,8 @@ interface FuncRow {
   lang: string;
   ddl: string;
   oid: string;
+  description: string | null;
+  ident: string;
 }
 
 async function querySchemaFunctions(
@@ -20,7 +22,9 @@ async function querySchemaFunctions(
 ): Promise<FuncRow[]> {
   const { rows } = await client.query<FuncRow>(
     `SELECT n.nspname AS schema, p.proname AS name, l.lanname AS lang,
-            pg_get_functiondef(p.oid) AS ddl, p.oid::text
+            pg_get_functiondef(p.oid) AS ddl, p.oid::text,
+            obj_description(p.oid, 'pg_proc') AS description,
+            p.oid::regprocedure::text AS ident
      FROM pg_proc p
      JOIN pg_namespace n ON n.oid = p.pronamespace
      JOIN pg_language l ON l.oid = p.prolang
@@ -177,6 +181,10 @@ export function createPackTool({ withClient }: {
             for (const fn of fns) {
               const ddl = fn.ddl.trimEnd();
               sections.push(ddl.endsWith(";") ? ddl : ddl + ";");
+              if (fn.description) {
+                const escaped = fn.description.replace(/'/g, "''");
+                sections.push(`COMMENT ON FUNCTION ${fn.ident} IS '${escaped}';`);
+              }
               sections.push("");
             }
             totalFunctions += fns.length;

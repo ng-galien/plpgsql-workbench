@@ -10,7 +10,7 @@ import type { TestReport } from "./test.js";
 // --- Service types ---
 
 export type SetFunctionFn = (
-  client: DbClient, schema: string, name: string, content: string,
+  client: DbClient, schema: string, name: string, content: string, description?: string,
 ) => Promise<ToolResult>;
 
 type RunTestsFn = (
@@ -27,7 +27,7 @@ export function createSetFunction({ runTests, formatTestReport }: {
   runTests: RunTestsFn;
   formatTestReport: FormatTestReportFn;
 }): SetFunctionFn {
-  return async (client, schema, name, content) => {
+  return async (client, schema, name, content, description?) => {
     await client.query("BEGIN");
 
     try {
@@ -98,6 +98,20 @@ export function createSetFunction({ runTests, formatTestReport }: {
 
     await client.query("COMMIT");
 
+    // Apply COMMENT ON FUNCTION if description provided
+    if (description) {
+      const { rows: [{ ident }] } = await client.query<{ ident: string }>(
+        `SELECT p.oid::regprocedure::text AS ident
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = $1 AND p.proname = $2 LIMIT 1`,
+        [schema, name],
+      );
+      if (ident) {
+        const escaped = description.replace(/'/g, "''");
+        await client.query(`COMMENT ON FUNCTION ${ident} IS '${escaped}'`);
+      }
+    }
+
     // Return deployed state
     const fn = await queryFunction(client, schema, name);
     const state = fn ? formatFunction(fn) : "";
@@ -151,11 +165,13 @@ export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
       schema: z.object({
         uri: z.string().describe("Target URI. Ex: plpgsql://public/function/transfer"),
         content: z.string().describe("Full SQL statement. Ex: CREATE OR REPLACE FUNCTION ..."),
+        description: z.string().optional().describe("Function doc (COMMENT ON FUNCTION). Short description of what the function does."),
       }),
     },
     handler: async (args, _extra) => {
       const uri = args.uri as string;
       const content = args.content as string;
+      const description = args.description as string | undefined;
       const parsed = PlUri.parse(uri);
       if (!parsed || !parsed.kind || !parsed.name) {
         return text(`problem: invalid URI: ${uri}\nwhere: pg_func_set\nfix_hint: use plpgsql://schema/kind/name`);
@@ -163,7 +179,7 @@ export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
 
       return withClient(async (client) => {
         if (parsed.kind === "function") {
-          return await setFunction(client, parsed.schema, parsed.name!, content);
+          return await setFunction(client, parsed.schema, parsed.name!, content, description);
         } else {
           return await setDdl(client, parsed, content);
         }

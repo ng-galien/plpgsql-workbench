@@ -6,6 +6,7 @@ export interface FunctionDetail {
   schema: string;
   args: { name: string; type: string }[];
   return_type: string;
+  description: string | null;
   variables: { name: string; type: string }[];
   body: string;
   calls: string[];
@@ -33,12 +34,14 @@ export async function queryFunction(client: DbClient, schema: string, name: stri
     return_type: string;
     prosrc: string;
     args: string;
+    description: string | null;
   }>(`
     SELECT
       p.oid::text,
       pg_get_function_result(p.oid) AS return_type,
       p.prosrc,
-      COALESCE(pg_get_function_arguments(p.oid), '') AS args
+      COALESCE(pg_get_function_arguments(p.oid), '') AS args,
+      obj_description(p.oid, 'pg_proc') AS description
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     JOIN pg_language l ON l.oid = p.prolang
@@ -56,7 +59,7 @@ export async function queryFunction(client: DbClient, schema: string, name: stri
   const callers = await findCallers(client, schema, name);
   const tables_used = await findTablesUsed(client, schema, body);
 
-  return { name, schema, args, return_type: row.return_type, variables, body, calls, callers, tables_used };
+  return { name, schema, args, return_type: row.return_type, description: row.description, variables, body, calls, callers, tables_used };
 }
 
 // --- Format ---
@@ -66,6 +69,10 @@ export function formatFunction(fn: FunctionDetail): string {
   const parts: string[] = [];
 
   parts.push(`${fn.schema}.${fn.name}(${argsStr}) -> ${fn.return_type}`);
+
+  if (fn.description) {
+    parts.push(`  doc: ${fn.description}`);
+  }
 
   parts.push(fn.variables.length > 0
     ? `  vars: ${fn.variables.map((v) => `${v.name} ${v.type}`).join(", ")}`

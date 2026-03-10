@@ -1,4 +1,4 @@
--- CAD 2D — DDL
+-- CAD 2D/3D — DDL
 
 CREATE SCHEMA IF NOT EXISTS cad_ut;
 
@@ -46,7 +46,30 @@ CREATE INDEX IF NOT EXISTS idx_shape_drawing ON cad.shape(drawing_id);
 CREATE INDEX IF NOT EXISTS idx_shape_layer ON cad.shape(layer_id);
 CREATE INDEX IF NOT EXISTS idx_shape_type ON cad.shape(type);
 
+-- Pièces 3D (PostGIS + SFCGAL)
+CREATE TABLE IF NOT EXISTS cad.piece (
+  id serial PRIMARY KEY,
+  drawing_id int NOT NULL REFERENCES cad.drawing(id) ON DELETE CASCADE,
+  label text,
+  role text,                           -- montant, traverse, chevron, lisse, poteau
+  wood_type text NOT NULL DEFAULT 'pin',
+  section text NOT NULL,               -- "60x60", "45x90", "60x120"
+  length_mm real NOT NULL,
+
+  -- Géométrie PostGIS
+  profile geometry(POLYGONZ, 0),       -- section 2D positionnée en Z=0
+  geom geometry(POLYHEDRALSURFACEZ, 0),-- solide 3D extrudé
+
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_piece_drawing ON cad.piece(drawing_id);
+CREATE INDEX IF NOT EXISTS idx_piece_geom ON cad.piece USING gist(geom);
+
 -- Permissions
+GRANT SELECT, INSERT, UPDATE, DELETE ON cad.piece TO web_anon;
+GRANT USAGE ON SEQUENCE cad.piece_id_seq TO web_anon;
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON cad.drawing TO web_anon;
 GRANT USAGE ON SEQUENCE cad.drawing_id_seq TO web_anon;
 

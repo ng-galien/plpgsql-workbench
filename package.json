@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "plpgsql-mcp": "dist/index.js"
+    "plpgsql-mcp": "dist/index.js",
+    "pgm": "dist/pgm/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -22,6 +23,7 @@
     "@libpg-query/parser": "^17.6.3",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "awilix": "^13.0.3",
+    "commander": "^14.0.3",
     "express": "^5.2.1",
     "googleapis": "^171.4.0",
     "pg": "^8.20.0",
