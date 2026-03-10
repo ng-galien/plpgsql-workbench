@@ -24,9 +24,9 @@ function extractBody(ddl: string): { body: string; bodyStart: number } | null {
   // Find the AS keyword followed by a dollar-quoted tag
   // Dollar-quote tags: $ followed by optional identifier followed by $
   const asMatch = ddl.match(/AS\s+(\$(?:[a-zA-Z_][a-zA-Z0-9_]*)?\$)/i);
-  if (!asMatch) return null;
-  const tag = asMatch[0].slice(asMatch[0].indexOf("$")); // extract just the $tag$ part
-  const tagStart = ddl.indexOf(tag);
+  if (!asMatch || asMatch.index === undefined) return null;
+  const tag = asMatch[1]; // capture group = just the $tag$ part
+  const tagStart = asMatch.index + asMatch[0].indexOf(tag);
   const openIdx = tagStart + tag.length;
   // Find closing tag — must be the same tag, search from after the opening
   const closeIdx = ddl.indexOf(tag, openIdx);
@@ -199,24 +199,31 @@ export async function runCoverage(
     return { runId: "", schema, name, points, hit: new Set(), totalPoints: 0, coveredPoints: 0, percentage: 100 };
   }
 
-  // Persist
+  // Instrument — check before persisting to avoid orphaned rows
+  const extracted = extractBody(originalDdl);
+  if (!extracted) return null;
+
+  // Persist in a single transaction
   await ensureCovTables(client);
   const runId = crypto.randomUUID().slice(0, 8);
 
-  await client.query(
-    `INSERT INTO workbench.cov_run (id, schema_name, fn_name) VALUES ($1, $2, $3)`,
-    [runId, schema, name],
-  );
-  for (const p of points) {
+  await client.query("SAVEPOINT cov_persist");
+  try {
     await client.query(
-      `INSERT INTO workbench.cov_point (run_id, id, line, kind, label) VALUES ($1, $2, $3, $4, $5)`,
-      [runId, p.id, p.line, p.kind, p.label],
+      `INSERT INTO workbench.cov_run (id, schema_name, fn_name) VALUES ($1, $2, $3)`,
+      [runId, schema, name],
     );
+    for (const p of points) {
+      await client.query(
+        `INSERT INTO workbench.cov_point (run_id, id, line, kind, label) VALUES ($1, $2, $3, $4, $5)`,
+        [runId, p.id, p.line, p.kind, p.label],
+      );
+    }
+    await client.query("RELEASE SAVEPOINT cov_persist");
+  } catch (err) {
+    await client.query("ROLLBACK TO SAVEPOINT cov_persist").catch(() => {});
+    throw err;
   }
-
-  // Instrument
-  const extracted = extractBody(originalDdl);
-  if (!extracted) return null;
 
   const instrumentedBody = instrumentBody(extracted.body, points);
   const instrumentedDdl =

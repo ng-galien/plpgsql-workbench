@@ -164,30 +164,22 @@ export function createPackTool({ withClient, moduleRegistry }: {
 
         const allFns = await querySchemaFunctions(client, schemas);
 
-        // Extract deps via AST for each function
+        // Extract deps via AST for each function (single pass, cached)
         const edges: Edge[] = [];
         const knownNames = new Set(allFns.map((f) => `${f.schema}.${f.name}`));
+        const boundaryViolations: { caller: string; callee: string }[] = [];
 
         for (const fn of allFns) {
           const calls = await extractFuncDeps(fn);
+          const callerName = `${fn.schema}.${fn.name}`;
           for (const callee of calls) {
             if (knownNames.has(callee)) {
-              edges.push({ caller: `${fn.schema}.${fn.name}`, callee });
+              edges.push({ caller: callerName, callee });
             }
-          }
-        }
-
-        // Detect cross-module calls to _* internal functions
-        const boundaryViolations: { caller: string; callee: string }[] = [];
-        for (const fn of allFns) {
-          const calls = await extractFuncDeps(fn);
-          for (const callee of calls) {
-            const [calleeSchema, calleeName] = callee.split(".");
-            if (calleeName?.startsWith("_") && !schemas.includes(calleeSchema)) {
-              boundaryViolations.push({
-                caller: `${fn.schema}.${fn.name}`,
-                callee,
-              });
+            // Detect cross-module calls to _* internal functions
+            const [calleeSchema, calleeFnName] = callee.split(".");
+            if (calleeFnName?.startsWith("_") && !schemas.includes(calleeSchema)) {
+              boundaryViolations.push({ caller: callerName, callee });
             }
           }
         }

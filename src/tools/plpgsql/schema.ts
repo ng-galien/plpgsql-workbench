@@ -90,6 +90,12 @@ async function applyMigrations(
     try {
       await client.query("BEGIN");
       await client.query(content);
+      // Track migration inside the same transaction for atomicity
+      await client.query(
+        `INSERT INTO workbench.applied_migration (filename, hash, commit_hash) VALUES ($1, $2, $3)
+         ON CONFLICT (filename) DO UPDATE SET hash = $2, commit_hash = $3, applied_at = now()`,
+        [file, hash, commit],
+      );
       await client.query("COMMIT");
       await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
     } catch (err: unknown) {
@@ -98,12 +104,6 @@ async function applyMigrations(
       results.push({ filename: file, status: "error", message: msg });
       continue;
     }
-
-    await client.query(
-      `INSERT INTO workbench.applied_migration (filename, hash, commit_hash) VALUES ($1, $2, $3)
-       ON CONFLICT (filename) DO UPDATE SET hash = $2, commit_hash = $3, applied_at = now()`,
-      [file, hash, commit],
-    );
 
     results.push({ filename: file, status: "applied" });
   }

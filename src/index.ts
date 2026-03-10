@@ -147,7 +147,10 @@ const DESTRUCTIVE_PATTERN = /\b(DROP\s+FUNCTION|TRUNCATE|GRANT\s+|REVOKE\s+)\b/i
 // Detect cross-module calls to _prefix internal functions in SQL body
 const INTERNAL_CALL_RE = /\b(\w+)\._(\w+)\s*\(/g;
 
-const moduleRegistry: import("./pgm/registry.js").ModuleRegistry = container.resolve("moduleRegistry");
+// moduleRegistry is registered as a Promise — await it once at startup
+let moduleRegistry: import("./pgm/registry.js").ModuleRegistry | null = null;
+const moduleRegistryPromise: Promise<import("./pgm/registry.js").ModuleRegistry> = container.resolve("moduleRegistry");
+moduleRegistryPromise.then((r) => { moduleRegistry = r; }).catch(() => {});
 
 function deny(res: import("express").Response, reason: string) {
   res.json({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } });
@@ -159,6 +162,10 @@ function allow(res: import("express").Response) {
 app.post("/hooks/:module", (req, res) => {
   const mod = req.params.module;
   const { tool_name, tool_input } = req.body ?? {};
+  if (!moduleRegistry) {
+    // Registry not loaded yet — allow (fail-open during startup)
+    return allow(res);
+  }
   const mapping = moduleRegistry.resolve([mod]) ?? moduleRegistry.resolve([`${mod}_ut`]);
   const schemas = mapping?.schemas ?? [mod];
 
@@ -245,6 +252,10 @@ function esc(s: string): string {
 }
 
 app.get("/api/browse", async (req, res) => {
+  // Only available in dev mode — blocks unauthenticated filesystem access in production
+  if (process.env.WORKBENCH_MODE !== "dev") {
+    return res.status(403).send("Forbidden: /api/browse only available in WORKBENCH_MODE=dev");
+  }
   let dir = (req.query.path as string) || os.homedir();
   // Walk up to a valid directory if the path doesn't exist
   let resolved = path.resolve(dir);

@@ -92,7 +92,10 @@ export function createGmailClient({ withClient }: {
         refresh_token: client.credentials.refresh_token,
       });
       ensureDir(cfg.tokenPath);
-      fs.writeFileSync(cfg.tokenPath, payload);
+      // Atomic write: temp file + rename, restricted permissions
+      const tmpPath = cfg.tokenPath + ".tmp";
+      fs.writeFileSync(tmpPath, payload, { mode: 0o600 });
+      fs.renameSync(tmpPath, cfg.tokenPath);
     }
     auth = client;
     connected = true;

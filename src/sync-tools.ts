@@ -11,6 +11,7 @@ import { Pool } from "pg";
 import { buildContainer, type ToolPack, type ToolHandler } from "./container.js";
 import { plpgsqlPack } from "./packs/plpgsql.js";
 import { docstorePack } from "./packs/docstore.js";
+import { googlePack } from "./packs/google.js";
 import { docmanPack } from "./packs/docman.js";
 
 const connectionString =
@@ -21,11 +22,13 @@ const connectionString =
 const packConfigs: Record<string, Record<string, unknown>> = {
   plpgsql: {},
   docstore: {},
+  google: {},
   docman: {},
 };
 const packImpls: Record<string, ToolPack> = {
   plpgsql: plpgsqlPack,
   docstore: docstorePack,
+  google: googlePack,
   docman: docmanPack,
 };
 

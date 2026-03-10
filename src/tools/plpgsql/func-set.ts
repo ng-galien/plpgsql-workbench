@@ -216,10 +216,13 @@ export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
       return text(`completeness: full\n\n✗ ${formatErrorTriplet(err)}`);
     }
 
-    // Apply for real
+    // Apply for real — in a transaction for atomicity
     try {
+      await client.query("BEGIN");
       await client.query(content);
+      await client.query("COMMIT");
     } catch (err: unknown) {
+      await client.query("ROLLBACK").catch(() => {});
       return text(`completeness: full\n\n✗ deploy failed after dry-run\n${formatErrorTriplet(err, content, `${parsed.schema}.${parsed.name}`)}`);
     }
 

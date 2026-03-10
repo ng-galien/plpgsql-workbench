@@ -23,15 +23,15 @@ export interface CoveragePoint {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Stmt = any;
 
-let nextId = 0;
-function pointId(): string { return `p${nextId++}`; }
-
 /**
  * Parse a CREATE FUNCTION DDL and extract all coverage points from the body.
  */
 export async function extractCoveragePoints(ddl: string): Promise<CoveragePoint[]> {
   await ensureModule();
-  nextId = 0;
+
+  // Counter is local to each call — safe under concurrency
+  let nextId = 0;
+  const pointId = (): string => `p${nextId++}`;
 
   const result: Stmt = await parsePlPgSQL(ddl);
   const func = result.plpgsql_funcs?.[0]?.PLpgSQL_function;
@@ -39,15 +39,15 @@ export async function extractCoveragePoints(ddl: string): Promise<CoveragePoint[
 
   const points: CoveragePoint[] = [];
   const body = func.action?.PLpgSQL_stmt_block?.body;
-  if (body) walkStmts(body, points);
+  if (body) walkStmts(body, points, pointId);
   return points;
 }
 
-function walkStmts(stmts: Stmt[], points: CoveragePoint[]): void {
-  for (const stmt of stmts) walkStmt(stmt, points);
+function walkStmts(stmts: Stmt[], points: CoveragePoint[], pointId: () => string): void {
+  for (const stmt of stmts) walkStmt(stmt, points, pointId);
 }
 
-function walkStmt(stmt: Stmt, points: CoveragePoint[]): void {
+function walkStmt(stmt: Stmt, points: CoveragePoint[], pointId: () => string): void {
   // --- Leaf statements (block coverage) ---
   for (const key of [
     "PLpgSQL_stmt_assign",
@@ -72,7 +72,7 @@ function walkStmt(stmt: Stmt, points: CoveragePoint[]): void {
     if (s.then_body?.length > 0) {
       const firstLine = firstLineno(s.then_body);
       if (firstLine) points.push({ id: pointId(), line: firstLine, kind: "branch", label: `IF true @${ifLine}`, inject: "before" });
-      walkStmts(s.then_body, points);
+      walkStmts(s.then_body, points, pointId);
     }
 
     // ELSIF branches
@@ -81,7 +81,7 @@ function walkStmt(stmt: Stmt, points: CoveragePoint[]): void {
       if (el?.stmts?.length > 0) {
         const firstLine = firstLineno(el.stmts);
         if (firstLine) points.push({ id: pointId(), line: firstLine, kind: "branch", label: `ELSIF true @${el.lineno}`, inject: "before" });
-        walkStmts(el.stmts, points);
+        walkStmts(el.stmts, points, pointId);
       }
     }
 
@@ -89,7 +89,7 @@ function walkStmt(stmt: Stmt, points: CoveragePoint[]): void {
     if (s.else_body?.length > 0) {
       const firstLine = firstLineno(s.else_body);
       if (firstLine) points.push({ id: pointId(), line: firstLine, kind: "branch", label: `ELSE @${ifLine}`, inject: "before" });
-      walkStmts(s.else_body, points);
+      walkStmts(s.else_body, points, pointId);
     }
 
     // IF without ELSE → inject synthetic ELSE before END IF
@@ -115,13 +115,13 @@ function walkStmt(stmt: Stmt, points: CoveragePoint[]): void {
       if (cw?.stmts?.length > 0) {
         const firstLine = firstLineno(cw.stmts);
         if (firstLine) points.push({ id: pointId(), line: firstLine, kind: "branch", label: `WHEN @${cw.lineno}`, inject: "before" });
-        walkStmts(cw.stmts, points);
+        walkStmts(cw.stmts, points, pointId);
       }
     }
     if (s.else_stmts?.length > 0) {
       const firstLine = firstLineno(s.else_stmts);
       if (firstLine) points.push({ id: pointId(), line: firstLine, kind: "branch", label: `CASE ELSE @${s.lineno}`, inject: "before" });
-      walkStmts(s.else_stmts, points);
+      walkStmts(s.else_stmts, points, pointId);
     }
   }
 
@@ -140,7 +140,7 @@ function walkStmt(stmt: Stmt, points: CoveragePoint[]): void {
       if (s.body?.length > 0) {
         const firstLine = firstLineno(s.body);
         if (firstLine) points.push({ id: pointId(), line: firstLine, kind: "branch", label: `loop enter @${s.lineno}`, inject: "before" });
-        walkStmts(s.body, points);
+        walkStmts(s.body, points, pointId);
       }
       // "loop skipped" — inject marker after END LOOP
       if (s.lineno && key !== "PLpgSQL_stmt_loop") {
@@ -160,7 +160,7 @@ function walkStmt(stmt: Stmt, points: CoveragePoint[]): void {
   // --- Nested block + exception handlers ---
   if (stmt.PLpgSQL_stmt_block) {
     const s = stmt.PLpgSQL_stmt_block;
-    if (s.body) walkStmts(s.body, points);
+    if (s.body) walkStmts(s.body, points, pointId);
     if (s.exceptions?.PLpgSQL_exception_block?.exc_list) {
       for (const exc of s.exceptions.PLpgSQL_exception_block.exc_list) {
         const e = exc.PLpgSQL_exception;
@@ -170,7 +170,7 @@ function walkStmt(stmt: Stmt, points: CoveragePoint[]): void {
             .map((c: Stmt) => c.PLpgSQL_condition?.condname ?? "?")
             .join(", ");
           if (firstLine) points.push({ id: pointId(), line: firstLine, kind: "branch", label: `EXCEPTION ${condNames}`, inject: "before" });
-          walkStmts(e.action, points);
+          walkStmts(e.action, points, pointId);
         }
       }
     }

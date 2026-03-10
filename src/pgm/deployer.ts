@@ -231,49 +231,64 @@ async function deployModule(
   const moduleDir = path.join(modulesDir, manifest.name);
   const files: DeployResult["files"] = [];
 
-  // Install required extensions
-  for (const ext of manifest.extensions) {
-    try {
-      await client.query(`CREATE EXTENSION IF NOT EXISTS ${ext}`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      files.push({ name: `extension:${ext}`, ok: false, error: msg });
-      return { module: manifest.name, version: manifest.version, files, ok: false };
-    }
-  }
+  const qi = (id: string) => `"${id.replace(/"/g, '""')}"`;
 
-  for (const sqlFile of manifest.sql) {
-    const src = path.join(moduleDir, sqlFile);
-    const basename = path.basename(sqlFile);
+  // Wrap entire module in a transaction for atomicity
+  await client.query("BEGIN");
 
-    let content: string;
-    try {
-      content = await fs.readFile(src, "utf-8");
-    } catch {
-      files.push({ name: basename, ok: false, error: "file not found" });
-      return { module: manifest.name, version: manifest.version, files, ok: false };
-    }
-
-    try {
-      await client.query(content);
-      files.push({ name: basename, ok: true });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      files.push({ name: basename, ok: false, error: msg });
-      return { module: manifest.name, version: manifest.version, files, ok: false };
-    }
-  }
-
-  // Apply GRANTs
-  for (const [role, schemas] of Object.entries(manifest.grants ?? {})) {
-    for (const schema of schemas) {
+  try {
+    // Install required extensions
+    for (const ext of manifest.extensions) {
       try {
-        await client.query(`GRANT USAGE ON SCHEMA ${schema} TO ${role}`);
-        await client.query(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schema} TO ${role}`);
-      } catch {
-        // Role might not exist yet — non-fatal
+        await client.query(`CREATE EXTENSION IF NOT EXISTS ${qi(ext)}`);
+      } catch (err: unknown) {
+        await client.query("ROLLBACK");
+        const msg = err instanceof Error ? err.message : String(err);
+        files.push({ name: `extension:${ext}`, ok: false, error: msg });
+        return { module: manifest.name, version: manifest.version, files, ok: false };
       }
     }
+
+    for (const sqlFile of manifest.sql) {
+      const src = path.join(moduleDir, sqlFile);
+      const basename = path.basename(sqlFile);
+
+      let content: string;
+      try {
+        content = await fs.readFile(src, "utf-8");
+      } catch {
+        await client.query("ROLLBACK");
+        files.push({ name: basename, ok: false, error: "file not found" });
+        return { module: manifest.name, version: manifest.version, files, ok: false };
+      }
+
+      try {
+        await client.query(content);
+        files.push({ name: basename, ok: true });
+      } catch (err: unknown) {
+        await client.query("ROLLBACK");
+        const msg = err instanceof Error ? err.message : String(err);
+        files.push({ name: basename, ok: false, error: msg });
+        return { module: manifest.name, version: manifest.version, files, ok: false };
+      }
+    }
+
+    // Apply GRANTs
+    for (const [role, schemas] of Object.entries(manifest.grants ?? {})) {
+      for (const schema of schemas) {
+        try {
+          await client.query(`GRANT USAGE ON SCHEMA ${qi(schema)} TO ${qi(role)}`);
+          await client.query(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${qi(schema)} TO ${qi(role)}`);
+        } catch {
+          // Role might not exist yet — non-fatal
+        }
+      }
+    }
+
+    await client.query("COMMIT");
+  } catch (err: unknown) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
   }
 
   return { module: manifest.name, version: manifest.version, files, ok: true };

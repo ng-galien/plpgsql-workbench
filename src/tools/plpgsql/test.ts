@@ -91,21 +91,24 @@ export async function runTests(
   const ql = (s: string) => `'${s.replace(/'/g, "''")}'`;
   const qi = (s: string) => `"${s.replace(/"/g, '""')}"`;
 
-  await client.query(`SET search_path TO ${qi(testSchema)}, ${qi(sourceSchema)}, public`);
+  // Use SAVEPOINT + SET LOCAL so search_path is automatically restored
+  // on RELEASE/ROLLBACK — no state leak on the pooled connection
+  await client.query("SAVEPOINT test_run");
+  await client.query(`SET LOCAL search_path TO ${qi(testSchema)}, ${qi(sourceSchema)}, public`);
   try {
     const { rows } = await client.query<{ runtests: string }>(
       `SELECT * FROM runtests(${ql(testSchema)}::name, ${ql(filter)}::text)`,
     );
+    await client.query("RELEASE SAVEPOINT test_run");
     if (rows.length === 0) return { passed: 0, failed: 0, total: 0, results: [] };
     return parseTap(rows);
   } catch (err: unknown) {
+    await client.query("ROLLBACK TO SAVEPOINT test_run").catch(() => {});
     const msg = err instanceof Error ? err.message : String(err);
     return {
       passed: 0, failed: 1, total: 1,
       results: [{ ok: false, description: `test execution error: ${msg}` }],
     };
-  } finally {
-    await client.query(`SET search_path TO "$user", public`);
   }
 }
 

@@ -31,13 +31,14 @@ export function createDocImportTool({
       let dir = args.path as string | undefined;
       if (!dir) {
         dir = await withClient(async (client) => {
-          const res = await client.query(
-            `SELECT value FROM workbench.config WHERE app = 'docman' AND key = 'documentsRoot'`
+          const res = await client.query<{ value: string }>(
+            `SELECT value FROM workbench.config WHERE app = $1 AND key = $2`,
+            ["docman", "documentsRoot"],
           );
           if (res.rows.length === 0) {
             throw new Error("Config missing: workbench.config(docman, documentsRoot). Set it with pg_query.");
           }
-          return res.rows[0].value as string;
+          return res.rows[0].value;
         });
       }
 

@@ -63,15 +63,20 @@ export async function computeContextToken(
     calleeKey = calleeRows.map((r) => r.h).join(",");
   }
 
-  // Get caller names
+  // Get caller names — escape function name for safe regex use
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Scope to the same schema family (base + _ut/_it/_qa) to avoid false positives
+  const schemaBase = schema.replace(/_(ut|it|qa)$/, "");
+  const schemaPattern = `^${schemaBase}(_ut|_it|_qa)?$`;
   const { rows: callerRows } = await client.query<{ caller: string }>(
     `SELECT n.nspname || '.' || p.proname AS caller
      FROM pg_proc p
      JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE p.prosrc ~ $1
+     WHERE n.nspname ~ $4
+       AND p.prosrc ~ $1
        AND NOT (n.nspname = $2 AND p.proname = $3)
      ORDER BY caller`,
-    [`\\m${name}\\M`, schema, name],
+    [`\\m${escapedName}\\M`, schema, name, schemaPattern],
   );
   const callerKey = callerRows.map((r) => r.caller).join(",");
 

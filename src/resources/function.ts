@@ -98,14 +98,19 @@ export function formatFunction(fn: FunctionDetail): string {
 
 // --- Helpers ---
 
+const ARG_MODES = new Set(["IN", "OUT", "INOUT", "VARIADIC"]);
+
 function parseArgs(argsStr: string): { name: string; type: string }[] {
   if (!argsStr.trim()) return [];
   return argsStr.split(",").map((a) => {
     const parts = a.trim().split(/\s+/);
-    if (parts.length >= 2) {
-      return { name: parts[0], type: parts.slice(1).join(" ") };
+    // Skip mode keywords (OUT, INOUT, VARIADIC)
+    let i = 0;
+    if (parts.length > 1 && ARG_MODES.has(parts[0].toUpperCase())) i++;
+    if (parts.length - i >= 2) {
+      return { name: parts[i], type: parts.slice(i + 1).join(" ") };
     }
-    return { name: "", type: parts[0] };
+    return { name: "", type: parts.slice(i).join(" ") };
   });
 }
 
@@ -164,8 +169,9 @@ async function findTablesUsed(
     const esc = t.relname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(`\\b${esc}\\b`, "i");
     if (re.test(body)) {
-      const hasWrite = new RegExp(`(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\s+.*\\b${esc}\\b`, "i").test(body);
-      const hasRead = new RegExp(`(FROM|JOIN)\\s+.*\\b${esc}\\b`, "i").test(body);
+      // Use [^\n]* instead of .* to avoid matching across lines
+      const hasWrite = new RegExp(`(INSERT\\s+INTO|UPDATE|DELETE\\s+FROM)\\s+[^\\n]*\\b${esc}\\b`, "i").test(body);
+      const hasRead = new RegExp(`(FROM|JOIN)\\s+[^\\n]*\\b${esc}\\b`, "i").test(body);
       used.push({ name: t.relname, mode: hasWrite && hasRead ? "RW" : hasWrite ? "W" : "R" });
     }
   }

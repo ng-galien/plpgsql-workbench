@@ -95,7 +95,10 @@ export async function mountTools(server: McpServer, container: AwilixContainer, 
       if (toolNames.length > 0) {
         allowedTools = new Set(toolNames);
       }
-    } catch {
+    } catch (err: unknown) {
+      // Only swallow "undefined table" — surface real DB errors
+      const code = (err as { code?: string })?.code;
+      if (code !== "42P01") throw err;
       // Table doesn't exist yet — mount everything
     }
   }
