@@ -25,6 +25,3 @@ GRANT web_anon TO authenticator;
 CREATE SCHEMA IF NOT EXISTS pgv;
 GRANT USAGE ON SCHEMA pgv TO web_anon;
 
--- workbench config access
-GRANT USAGE ON SCHEMA workbench TO web_anon;
-GRANT SELECT, INSERT, UPDATE ON workbench.config TO web_anon;

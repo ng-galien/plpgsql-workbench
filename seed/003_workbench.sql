@@ -24,3 +24,7 @@ CREATE TABLE IF NOT EXISTS workbench.config (
   value TEXT NOT NULL,
   PRIMARY KEY (app, key)
 );
+
+-- Grants for PostgREST
+GRANT USAGE ON SCHEMA workbench TO web_anon;
+GRANT SELECT, INSERT, UPDATE ON workbench.config TO web_anon;

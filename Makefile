@@ -18,19 +18,27 @@ image:
 
 .PHONY: dev-up dev-down dev-clean dev-init dev-sync
 
-dev-up: image
+dev-up: image dev-env
 	docker compose up -d
 	@echo ""
 	@echo "  postgres  → localhost:5433"
-	@echo "  postgrest → localhost:3000"
+	@echo "  postgrest → localhost:3000  (schemas: $$(cat .env 2>/dev/null | grep PGRST_DB_SCHEMAS | cut -d= -f2))"
 	@echo "  frontend  → http://localhost:8080"
+
+# Generate .env with PGRST_DB_SCHEMAS from modules/*/module.json
+dev-env:
+	@schemas=$$(python3 -c "import json,glob; \
+		s=[json.load(open(f)).get('schemas',{}).get('public','') for f in sorted(glob.glob('modules/*/module.json'))]; \
+		print(','.join(x for x in s if x))" 2>/dev/null || echo "pgv"); \
+	echo "PGRST_DB_SCHEMAS=$$schemas" > .env
 
 dev-down:
 	docker compose down
 
 dev-clean:
-	docker compose down -v
+	docker compose down
 	@rm -rf dev/frontend/*
+	@echo "Data preserved in data/pgdata/ — delete manually if needed"
 
 # Sync module frontend assets into dev/frontend/ for nginx
 dev-sync:

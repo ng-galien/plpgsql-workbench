@@ -271,6 +271,16 @@ app.delete("/mcp", async (_req, res) => {
   res.writeHead(405).end("Method Not Allowed");
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   log.info({ port: PORT }, "plpgsql-workbench MCP listening");
+
+  // Log database connection at startup
+  const connStr = process.env.PLPGSQL_CONNECTION ?? process.env.DATABASE_URL ?? "(default 5432)";
+  const pool: import("pg").Pool = container.resolve("pool");
+  try {
+    const { rows } = await pool.query("SELECT version(), inet_server_addr()::text AS addr, inet_server_port() AS port");
+    log.info({ db: rows[0].version.split(" on ")[0], addr: rows[0].addr, port: rows[0].port, connStr }, "Connected to database");
+  } catch (err) {
+    log.warn({ err, connStr }, "Could not connect to database");
+  }
 });
