@@ -1,0 +1,27 @@
+{
+  "name": "pgv",
+  "version": "1.0.0",
+  "description": "pgView — Server-Side Rendering framework for PostgreSQL apps. Alpine.js shell + PicoCSS + PostgREST + pgv.* UI primitives.",
+  "schemas": {
+    "public": "pgv",
+    "private": null
+  },
+  "dependencies": [],
+  "extensions": [
+    "plpgsql_check",
+    "pgtap"
+  ],
+  "sql": [
+    "sql/00-extensions.sql",
+    "sql/pgv.sql"
+  ],
+  "assets": {
+    "frontend": [
+      "frontend/index.html",
+      "frontend/pgview.css"
+    ]
+  },
+  "grants": {
+    "web_anon": ["pgv", "pgv_ut"]
+  }
+}

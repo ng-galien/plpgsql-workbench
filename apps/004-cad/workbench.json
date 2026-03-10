@@ -1,6 +1,7 @@
 {
   "name": "cad",
   "packs": ["plpgsql"],
+  "modules": ["pgv", "cad3d"],
   "connection": "postgresql://postgres:postgres@localhost:5444/postgres",
   "port": 3104
 }

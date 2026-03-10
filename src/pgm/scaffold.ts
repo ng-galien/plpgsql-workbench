@@ -1,0 +1,287 @@
+/**
+ * pgm scaffold — generates app files in the current directory.
+ * Auto-assigns ports by scanning existing apps.
+ */
+
+import fs from "fs/promises";
+import path from "path";
+import type { AppConfig } from "./resolver.js";
+
+interface Ports {
+  pg: number;
+  pgrst: number;
+  http: number;
+  mcp: number;
+}
+
+// --- Port auto-assignment ---
+
+export async function findNextPorts(wsRoot: string): Promise<Ports> {
+  const appsDir = path.join(wsRoot, "apps");
+  const used: Ports[] = [];
+
+  try {
+    const entries = await fs.readdir(appsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const configPath = path.join(appsDir, entry.name, "workbench.json");
+      try {
+        const raw = await fs.readFile(configPath, "utf-8");
+        const config = JSON.parse(raw) as AppConfig & { ports?: Ports };
+        if (config.ports) {
+          used.push(config.ports);
+        } else if (config.connection) {
+          // Parse port from connection string
+          const m = config.connection.match(/:(\d+)\//);
+          if (m) {
+            const pg = parseInt(m[1]);
+            used.push({ pg, pgrst: pg - 2440, http: pg + 2640, mcp: pg - 2340 });
+          }
+        }
+      } catch {
+        // skip
+      }
+    }
+  } catch {
+    // apps/ doesn't exist yet
+  }
+
+  // Find next available slot (starting from 1)
+  for (let n = 1; n < 100; n++) {
+    const candidate: Ports = {
+      pg: 5440 + n,
+      pgrst: 3000 + n,
+      http: 8080 + n,
+      mcp: 3100 + n,
+    };
+    const conflict = used.some((u) =>
+      u.pg === candidate.pg || u.pgrst === candidate.pgrst ||
+      u.http === candidate.http || u.mcp === candidate.mcp,
+    );
+    if (!conflict) return candidate;
+  }
+
+  throw new Error("Cannot find available ports");
+}
+
+// --- Scaffold ---
+
+export async function scaffold(appDir: string, name: string, ports: Ports, wsRoot: string): Promise<string[]> {
+  const created: string[] = [];
+
+  await fs.mkdir(path.join(appDir, "sql"), { recursive: true });
+  await fs.mkdir(path.join(appDir, "frontend"), { recursive: true });
+  await fs.mkdir(path.join(appDir, ".claude"), { recursive: true });
+
+  // workbench.json
+  const config: AppConfig & { ports: Ports } = {
+    name,
+    modules: ["pgv"],
+    packs: ["plpgsql"],
+    connection: `postgresql://postgres:postgres@localhost:${ports.pg}/postgres`,
+    port: ports.mcp,
+    ports,
+  };
+  await fs.writeFile(
+    path.join(appDir, "workbench.json"),
+    JSON.stringify(config, null, 2) + "\n",
+  );
+  created.push("workbench.json");
+
+  // docker-compose.yml
+  await fs.writeFile(path.join(appDir, "docker-compose.yml"), dockerCompose(name, ports));
+  created.push("docker-compose.yml");
+
+  // Makefile
+  const relPath = path.relative(appDir, wsRoot);
+  await fs.writeFile(path.join(appDir, "Makefile"), makefile(name, ports, relPath));
+  created.push("Makefile");
+
+  // sql/01-roles.sql
+  await fs.writeFile(path.join(appDir, "sql", "01-roles.sql"), rolesSql(name));
+  created.push("sql/01-roles.sql");
+
+  // frontend/nginx.conf
+  await fs.writeFile(path.join(appDir, "frontend", "nginx.conf"), nginxConf(ports));
+  created.push("frontend/nginx.conf");
+
+  // .mcp.json
+  await fs.writeFile(path.join(appDir, ".mcp.json"), mcpJson(ports));
+  created.push(".mcp.json");
+
+  // .claude/settings.local.json
+  await fs.writeFile(
+    path.join(appDir, ".claude", "settings.local.json"),
+    claudeSettings(ports),
+  );
+  created.push(".claude/settings.local.json");
+
+  return created;
+}
+
+// --- Templates ---
+
+function dockerCompose(name: string, ports: Ports): string {
+  return `# ${name}
+services:
+  postgres:
+    image: pg-workbench
+    ports:
+      - "${ports.pg}:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  postgrest:
+    image: postgrest/postgrest:v12.2.3
+    ports:
+      - "${ports.pgrst}:3000"
+    environment:
+      PGRST_DB_URI: postgres://authenticator:authenticator@postgres:5432/postgres
+      PGRST_DB_SCHEMAS: ${name}
+      PGRST_DB_ANON_ROLE: web_anon
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "${ports.http}:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - postgrest
+`;
+}
+
+function makefile(name: string, ports: Ports, relPath: string): string {
+  return `# ${name}
+COMPOSE := docker compose
+
+.PHONY: up down clean logs ps sync mcp image
+
+sync:
+\tnode ${relPath}/dist/pgm/cli.js install
+
+image:
+\t@docker image inspect pg-workbench > /dev/null 2>&1 || \\
+\t\t(echo "Building pg-workbench..." && docker build -t pg-workbench ${relPath}/docker/)
+
+up: image sync
+\t$(COMPOSE) up -d
+\t@echo ""
+\t@echo "  postgres  → localhost:${ports.pg}"
+\t@echo "  postgrest → localhost:${ports.pgrst}"
+\t@echo "  frontend  → http://localhost:${ports.http}"
+
+down:
+\t$(COMPOSE) down
+
+clean:
+\t$(COMPOSE) down -v
+
+logs:
+\t$(COMPOSE) logs -f
+
+ps:
+\t$(COMPOSE) ps
+
+mcp:
+\tcd ${relPath} && WORKBENCH_MODE=dev WORKBENCH_CONFIG=${path.relative(relPath, ".")}/workbench.json npx nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'
+`;
+}
+
+function rolesSql(name: string): string {
+  return `-- Roles, domain, schemas
+DO $$ BEGIN CREATE DOMAIN "text/html" AS TEXT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'authenticator'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN CREATE ROLE web_anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+GRANT web_anon TO authenticator;
+
+CREATE SCHEMA IF NOT EXISTS pgv;
+GRANT USAGE ON SCHEMA pgv TO web_anon;
+
+CREATE SCHEMA IF NOT EXISTS ${name};
+GRANT USAGE ON SCHEMA ${name} TO web_anon;
+`;
+}
+
+function nginxConf(ports: Ports): string {
+  return `server {
+    listen 80;
+
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /rpc/ {
+        proxy_pass http://postgrest:3000/rpc/;
+        proxy_set_header Host $host;
+        proxy_set_header Accept $http_accept;
+    }
+
+    location /api/ {
+        proxy_pass http://host.docker.internal:${ports.mcp}/api/;
+        proxy_set_header Host $host;
+    }
+}
+`;
+}
+
+function mcpJson(ports: Ports): string {
+  return JSON.stringify({
+    mcpServers: {
+      "plpgsql-workbench": {
+        type: "http",
+        url: `http://localhost:${ports.mcp}/mcp`,
+      },
+    },
+  }, null, 2) + "\n";
+}
+
+function claudeSettings(ports: Ports): string {
+  return JSON.stringify({
+    permissions: {
+      allow: [
+        "Bash(git:*)",
+        "Bash(make:*)",
+        "Bash(docker compose:*)",
+        "mcp__plpgsql-workbench__pg_query",
+        "mcp__plpgsql-workbench__pg_get",
+        "mcp__plpgsql-workbench__pg_set",
+        "mcp__plpgsql-workbench__pg_test",
+        "mcp__plpgsql-workbench__pg_explain",
+        "mcp__plpgsql-workbench__pg_search",
+        "mcp__plpgsql-workbench__pg_schema",
+        "mcp__plpgsql-workbench__pg_pack",
+        "mcp__plpgsql-workbench__pg_coverage",
+      ],
+    },
+    enableAllProjectMcpServers: true,
+    enabledMcpjsonServers: ["plpgsql-workbench"],
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "mcp__plpgsql-workbench__pg_query|Write",
+          hooks: [
+            {
+              type: "http",
+              url: `http://localhost:${ports.mcp}/claude-hook`,
+              timeout: 5,
+            },
+          ],
+        },
+      ],
+    },
+  }, null, 2) + "\n";
+}

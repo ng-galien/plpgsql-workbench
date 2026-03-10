@@ -1,0 +1,33 @@
+{
+  "name": "cad3d",
+  "version": "0.1.0",
+  "description": "CAD 3D engine for wood structures. PostGIS/SFCGAL geometry, Three.js viewer, wireframe rendering, bill of materials.",
+  "schemas": {
+    "public": "cad",
+    "private": "_cad"
+  },
+  "dependencies": [
+    "pgv"
+  ],
+  "extensions": [
+    "postgis",
+    "postgis_sfcgal"
+  ],
+  "sql": [
+    "sql/extensions.sql",
+    "sql/ddl.sql",
+    "sql/functions.sql"
+  ],
+  "assets": {
+    "frontend": [
+      "frontend/viewer.html"
+    ]
+  },
+  "grants": {
+    "web_anon": ["cad"]
+  },
+  "docker": {
+    "image": "postgis/postgis:17-3.5",
+    "note": "Requires PostGIS image (not supabase/postgres)"
+  }
+}

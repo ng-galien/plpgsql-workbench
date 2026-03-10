@@ -34,7 +34,7 @@ dev-clean:
 dev-init: dev-up
 	@echo "Waiting for DB..."
 	@sleep 2
-	PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f pgv/sql/pgv.sql -q
+	PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f modules/pgv/sql/pgv.sql -q
 	@echo "pgv loaded into dev DB"
 
 # --- App management ---
@@ -57,15 +57,17 @@ app-logs:
 	@test -n "$(APP)" || (echo "Usage: make app-logs APP=uxlab" && exit 1)
 	$(MAKE) -C apps/$(APP) logs
 
-# --- Sync pgv to all apps ---
+# --- Sync modules to all apps ---
 
-.PHONY: sync-pgv
+.PHONY: sync-pgv sync-modules
 
-sync-pgv:
+sync-pgv: sync-modules
+
+sync-modules:
 	@for app in apps/*/; do \
-		if [ -f "$$app/Makefile" ]; then \
-			echo "Syncing pgv → $$app"; \
-			$(MAKE) -C $$app sync 2>/dev/null || true; \
+		if [ -f "$$app/workbench.json" ]; then \
+			echo "Syncing modules → $$app"; \
+			(cd "$$app" && node ../../dist/pgm/cli.js install) || true; \
 		fi; \
 	done
 

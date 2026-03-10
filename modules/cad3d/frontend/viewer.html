@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CAD 3D Viewer</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a1a2e; overflow: hidden; font-family: system-ui, sans-serif; }
+    #viewer { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed; top: 12px; left: 12px;
+      background: rgba(0,0,0,0.6); color: #ccc; padding: 10px 14px;
+      border-radius: 8px; font-size: 13px; line-height: 1.6;
+      pointer-events: none; z-index: 10;
+    }
+    #hud b { color: #fff; }
+    #hud .label { color: #8888cc; }
+    #back {
+      position: fixed; top: 12px; right: 12px;
+      background: rgba(0,0,0,0.6); color: #ccc; padding: 6px 14px;
+      border-radius: 6px; font-size: 13px; text-decoration: none;
+      border: 1px solid #444; z-index: 10;
+    }
+    #back:hover { background: rgba(60,60,100,0.8); color: #fff; }
+    #info {
+      position: fixed; bottom: 12px; left: 12px;
+      background: rgba(0,0,0,0.75); color: #ccc; padding: 10px 14px;
+      border-radius: 8px; font-size: 13px; line-height: 1.6;
+      z-index: 10; display: none; min-width: 200px;
+      border: 1px solid #555;
+    }
+    #info b { color: #fff; }
+    #info .role { color: #d4a76a; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
+    #info .dim { color: #8888cc; }
+    #info .id { color: #666; font-size: 11px; }
+    #info .relation { color: #6c6; margin-top: 6px; padding-top: 6px; border-top: 1px solid #444; }
+    #info .copy-btn {
+      margin-top: 8px; padding: 4px 10px; background: #335; color: #aac;
+      border: 1px solid #556; border-radius: 4px; cursor: pointer; font-size: 12px;
+      display: inline-block;
+    }
+    #info .copy-btn:hover { background: #447; color: #fff; }
+    #info .copied { color: #6c6; font-size: 11px; margin-left: 8px; }
+  </style>
+</head>
+<body>
+  <div id="viewer"></div>
+  <div id="hud">Chargement...</div>
+  <a id="back" href="/">Retour</a>
+  <div id="info"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // Drawing ID from URL: /viewer.html?id=1
+    const params = new URLSearchParams(location.search);
+    const drawingId = parseInt(params.get('id')) || 1;
+
+    // Back link
+    document.getElementById('back').href = '/drawing/' + drawingId;
+
+    // Scene setup
+    const el = document.getElementById('viewer');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+
+    const camera = new THREE.PerspectiveCamera(50, el.clientWidth / el.clientHeight, 1, 100000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(el.clientWidth, el.clientHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    el.appendChild(renderer.domElement);
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dl1 = new THREE.DirectionalLight(0xffffff, 0.8);
+    dl1.position.set(3000, 5000, 4000);
+    scene.add(dl1);
+    const dl2 = new THREE.DirectionalLight(0xffffff, 0.3);
+    dl2.position.set(-2000, -3000, 1000);
+    scene.add(dl2);
+
+    // Grid (horizontal plane)
+    const grid = new THREE.GridHelper(6000, 60, 0x444466, 0x2a2a44);
+    scene.add(grid);
+
+    // Axes
+    const axes = new THREE.AxesHelper(500);
+    scene.add(axes);
+
+    // Controls
+    const ctrl = new OrbitControls(camera, renderer.domElement);
+    ctrl.enableDamping = true;
+    ctrl.dampingFactor = 0.08;
+
+    // Colors by role
+    const COLORS = {
+      poteau: 0xc8956c,
+      traverse: 0xa07850,
+      chevron: 0xd4a76a,
+      lisse: 0xb8925a,
+      montant: 0xc8956c,
+      default: 0xc8a882
+    };
+    const HIGHLIGHT = 0x66aaff;
+
+    // Selection state
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let selections = [];  // unlimited multi-select with shift
+    let lastMouseDown = { x: 0, y: 0 };
+
+    // Render loop
+    function animate() {
+      requestAnimationFrame(animate);
+      ctrl.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Track mousedown to distinguish click from drag
+    el.addEventListener('mousedown', function(e) {
+      lastMouseDown.x = e.clientX;
+      lastMouseDown.y = e.clientY;
+    });
+
+    // Click to select (ignore drag)
+    el.addEventListener('mouseup', function(e) {
+      var dx = e.clientX - lastMouseDown.x;
+      var dy = e.clientY - lastMouseDown.y;
+      if (dx * dx + dy * dy > 25) return; // dragged, not clicked
+
+      mouse.x = (e.clientX / el.clientWidth) * 2 - 1;
+      mouse.y = -(e.clientY / el.clientHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      var meshes = scene.children.filter(function(c) { return c.userData.piece; });
+      var hits = raycaster.intersectObjects(meshes);
+
+      if (hits.length > 0) {
+        var mesh = hits[0].object;
+        if (e.shiftKey) {
+          // Shift+click: toggle selection (add/remove)
+          var idx = selections.indexOf(mesh);
+          if (idx >= 0) {
+            removeSelection(idx);
+          } else {
+            addSelection(mesh);
+          }
+          updateInfoPanel();
+        } else {
+          // Normal click: single select
+          clearSelections();
+          addSelection(mesh);
+          updateInfoPanel();
+        }
+      } else {
+        clearSelections();
+      }
+    });
+
+    // Hover cursor
+    el.addEventListener('mousemove', function(e) {
+      mouse.x = (e.clientX / el.clientWidth) * 2 - 1;
+      mouse.y = -(e.clientY / el.clientHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      var meshes = scene.children.filter(function(c) { return c.userData.piece; });
+      var hits = raycaster.intersectObjects(meshes);
+      el.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+    });
+
+    function addSelection(mesh) {
+      if (selections.indexOf(mesh) >= 0) return;
+      mesh._origColor = mesh.material.color.getHex();
+      mesh.material.color.setHex(HIGHLIGHT);
+      mesh.material.emissive = new THREE.Color(0x223344);
+      selections.push(mesh);
+    }
+
+    function removeSelection(idx) {
+      var m = selections[idx];
+      m.material.color.setHex(m._origColor);
+      m.material.emissive = new THREE.Color(0x000000);
+      selections.splice(idx, 1);
+    }
+
+    function clearSelections() {
+      selections.forEach(function(m) {
+        m.material.color.setHex(m._origColor);
+        m.material.emissive = new THREE.Color(0x000000);
+      });
+      selections = [];
+      document.getElementById('info').style.display = 'none';
+    }
+
+    function pieceDesc(d) {
+      return '#' + d.id + ' ' + (d.label || '?') + ' [' + d.role + '] ' + d.section + ' ' + Math.round(d.length_mm) + 'mm ' + d.wood_type;
+    }
+
+    function pieceHtml(d) {
+      return '<span class="role">' + (d.role || '') + '</span><br>' +
+        '<b>' + (d.label || 'Sans nom') + '</b><br>' +
+        '<span class="dim">' + d.section + ' &mdash; ' + Math.round(d.length_mm) + ' mm &mdash; ' + d.wood_type + '</span><br>' +
+        '<span class="id">#' + d.id + '</span>';
+    }
+
+    function getMvpArray() {
+      camera.updateMatrixWorld();
+      var mvp = new THREE.Matrix4();
+      mvp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      return Array.from(mvp.elements); // column-major 16 floats
+    }
+
+    function updateInfoPanel(relationHtml, relationText) {
+      var info = document.getElementById('info');
+      if (selections.length === 0) { info.style.display = 'none'; return; }
+
+      info.style.display = 'block';
+      var html = '';
+      var maxShow = Math.min(selections.length, 4);
+      for (var i = 0; i < maxShow; i++) {
+        if (i > 0) html += '<hr style="border-color:#444;margin:6px 0">';
+        html += pieceHtml(selections[i].userData);
+      }
+      if (selections.length > maxShow) {
+        html += '<div style="color:#888;margin-top:4px">+ ' + (selections.length - maxShow) + ' autres</div>';
+      }
+
+      if (relationHtml) {
+        html += '<div class="relation">' + relationHtml + '</div>';
+      }
+
+      // Build context string for clipboard
+      var ctx = selections.map(function(s) { return pieceDesc(s.userData); }).join('\n');
+      if (relationText) {
+        ctx += '\n' + relationText;
+      }
+
+      // Build vue string (context + MVP matrix for render_perspective)
+      var pieceIds = selections.map(function(s) { return s.userData.id; });
+      var mvp = getMvpArray();
+      var vue = ctx + '\nmvp: ' + JSON.stringify(mvp) + '\npieces: ' + JSON.stringify(pieceIds);
+
+      html += '<div style="margin-top:8px">';
+      html += '<span class="copy-btn" id="copyCtx">Copier contexte</span>';
+      html += '<span class="copy-btn" id="copyVue" style="margin-left:4px">Copier vue</span>';
+      html += '<span class="copied" id="copiedMsg" style="display:none">copie!</span>';
+      html += '</div>';
+
+      info.innerHTML = html;
+
+      document.getElementById('copyCtx').addEventListener('click', function(e) {
+        e.stopPropagation();
+        navigator.clipboard.writeText(ctx).then(function() {
+          showCopied();
+        });
+      });
+
+      document.getElementById('copyVue').addEventListener('click', function(e) {
+        e.stopPropagation();
+        navigator.clipboard.writeText(vue).then(function() {
+          showCopied();
+        });
+      });
+    }
+
+    function showCopied() {
+      var el = document.getElementById('copiedMsg');
+      if (el) { el.style.display = 'inline'; setTimeout(function() { if (el) el.style.display = 'none'; }, 1500); }
+    }
+
+    function fetchRelation(idA, idB) {
+      // Call measure + faces via PostgREST
+      Promise.all([
+        fetch('/rpc/measure', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ p_a: idA, p_b: idB })
+        }).then(function(r) { return r.json(); }),
+        fetch('/rpc/neighbors', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ p_piece_id: idA })
+        }).then(function(r) { return r.json(); }),
+        fetch('/rpc/faces', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ p_piece_id: idA })
+        }).then(function(r) { return r.json(); }),
+        fetch('/rpc/faces', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ p_piece_id: idB })
+        }).then(function(r) { return r.json(); })
+      ]).then(function(results) {
+        var measureText = typeof results[0] === 'string' ? results[0] : JSON.stringify(results[0]);
+        var neighborsText = typeof results[1] === 'string' ? results[1] : JSON.stringify(results[1]);
+        var facesA = typeof results[2] === 'string' ? results[2] : JSON.stringify(results[2]);
+        var facesB = typeof results[3] === 'string' ? results[3] : JSON.stringify(results[3]);
+
+        var relHtml = measureText.replace(/\n/g, '<br>');
+        var relText = 'measure: ' + measureText + '\nfaces A: ' + facesA + '\nfaces B: ' + facesB;
+        updateInfoPanel(relHtml, relText);
+      }).catch(function() {
+        updateInfoPanel('(erreur de chargement)', '');
+      });
+    }
+
+    // Load scene from PostgREST
+    let lastJson = '';
+    let cameraSet = false;
+
+    async function loadScene() {
+      try {
+        const r = await fetch('/rpc/scene_json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ p_drawing_id: drawingId })
+        });
+        const raw = await r.text();
+        if (raw === lastJson) return;
+        lastJson = raw;
+        const pieces = JSON.parse(raw);
+
+        // Clear old meshes
+        clearSelections();
+        scene.children
+          .filter(c => c.userData.piece)
+          .forEach(c => { scene.remove(c); c.geometry.dispose(); c.material.dispose(); });
+
+        // Build meshes
+        const allVerts = [];
+        pieces.forEach(p => {
+          const verts = [];
+          if (p.mesh && p.mesh.geometries) {
+            p.mesh.geometries.forEach(g => {
+              if (g.coordinates && g.coordinates[0]) {
+                const ring = g.coordinates[0];
+                if (ring.length >= 3) {
+                  // GeoJSON [x,y,z] -> Three.js [x,z,-y] (Y-up)
+                  verts.push(ring[0][0], ring[0][2], -ring[0][1]);
+                  verts.push(ring[1][0], ring[1][2], -ring[1][1]);
+                  verts.push(ring[2][0], ring[2][2], -ring[2][1]);
+                }
+              }
+            });
+          }
+          if (verts.length === 0) return;
+
+          const geom = new THREE.BufferGeometry();
+          geom.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+          geom.computeVertexNormals();
+
+          const color = COLORS[p.role] || COLORS.default;
+          const mat = new THREE.MeshPhongMaterial({ color, flatShading: true, side: THREE.DoubleSide });
+          const mesh = new THREE.Mesh(geom, mat);
+          mesh.userData.piece = true;
+          mesh.userData.id = p.id;
+          mesh.userData.label = p.label;
+          mesh.userData.role = p.role;
+          mesh.userData.section = p.section;
+          mesh.userData.length_mm = p.length_mm;
+          mesh.userData.wood_type = p.wood_type;
+          scene.add(mesh);
+          allVerts.push(...verts);
+        });
+
+        // Center camera (only first load)
+        if (allVerts.length > 0 && !cameraSet) {
+          const box = new THREE.Box3();
+          for (let i = 0; i < allVerts.length; i += 3) {
+            box.expandByPoint(new THREE.Vector3(allVerts[i], allVerts[i+1], allVerts[i+2]));
+          }
+          const center = box.getCenter(new THREE.Vector3());
+          const size = box.getSize(new THREE.Vector3()).length();
+          ctrl.target.copy(center);
+          camera.position.copy(center.clone().add(new THREE.Vector3(size * 0.8, size * 0.6, size * 0.8)));
+          camera.lookAt(center);
+          ctrl.update();
+          cameraSet = true;
+        }
+
+        // Update HUD
+        updateHUD(pieces);
+      } catch (e) {
+        document.getElementById('hud').textContent = 'Erreur: ' + e.message;
+      }
+    }
+
+    function updateHUD(pieces) {
+      const total = pieces.length;
+      const volume = pieces.reduce((sum, p) => {
+        const s = p.section.split('x');
+        return sum + (parseFloat(s[0]) * parseFloat(s[1]) * p.length_mm);
+      }, 0);
+      const hud = document.getElementById('hud');
+      hud.innerHTML =
+        '<b>' + total + '</b> <span class="label">pieces</span><br>' +
+        '<b>' + (volume / 1e9).toFixed(4) + '</b> <span class="label">m\u00b3 bois</span><br>' +
+        pieces.map(p => p.label || p.section).join(', ');
+    }
+
+    // Initial load + polling
+    loadScene();
+    setInterval(loadScene, 1500);
+
+    // Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = el.clientWidth / el.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(el.clientWidth, el.clientHeight);
+    });
+  </script>
+</body>
+</html>
