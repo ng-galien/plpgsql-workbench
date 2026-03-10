@@ -26,7 +26,8 @@ npm run dev:uxlab        # packs + DB from apps/uxlab/workbench.json, port 3101
 npm run build            # tsc -> dist/
 
 # Scaffold a new app
-mkdir apps/myapp && cd apps/myapp && pgm init   # or: node ../../dist/pgm/cli.js init
+mkdir apps/myapp && cd apps/myapp && pgm app init   # scaffold new app
+pgm module new mymod                                # scaffold new module
 ```
 
 No test framework is configured in this repo — testing happens via pgTAP inside PostgreSQL.
@@ -71,10 +72,10 @@ Apps live in `apps/`. Each has its own `docker-compose.yml`, `Makefile`, `sql/`,
 ```bash
 cd apps/001-uxlab && make up         # Start app stack
 npm run dev:uxlab                    # Start MCP for this app
-mkdir apps/billing && cd apps/billing && pgm init   # Scaffold new app
+mkdir apps/billing && cd apps/billing && pgm app init   # Scaffold new app
 ```
 
-The pgView framework and other modules live in `modules/` and are distributed to apps via `pgm install`. See `docs/PGM.md`.
+The pgView framework and other modules live in `modules/` and are distributed to apps via `pgm app install`. See `docs/PGM.md`.
 
 ## Environment Variables (infra bootstrap only)
 

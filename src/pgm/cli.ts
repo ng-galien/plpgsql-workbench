@@ -3,13 +3,15 @@
  * pgm — PostgreSQL Module Manager
  *
  * Usage:
- *   pgm init                 Initialize a new app in current directory
- *   pgm install [module]     Install modules (copy files to app)
- *   pgm deploy [module]      Deploy SQL to DB (dry run by default, --apply to execute)
- *   pgm remove <module>      Remove module from workbench.json
- *   pgm list                 Show installed modules tree
- *   pgm info <module>        Show module details
- *   pgm available            List all modules in workspace
+ *   pgm app init              Initialize a new app in current directory
+ *   pgm app install [module]  Install modules (copy files to app)
+ *   pgm app deploy [module]   Deploy SQL to DB (dry run, --apply to execute)
+ *   pgm app remove <module>   Remove module from workbench.json
+ *   pgm app list              Show installed modules tree
+ *
+ *   pgm module new <name>     Scaffold a new module
+ *   pgm module info <name>    Show module details
+ *   pgm module list           List all available modules
  */
 
 import { Command } from "commander";
@@ -26,7 +28,7 @@ import {
 } from "./resolver.js";
 import { installModules } from "./installer.js";
 import { checkModules, deployModules } from "./deployer.js";
-import { findNextPorts, scaffold } from "./scaffold.js";
+import { findNextPorts, scaffoldApp, scaffoldModule } from "./scaffold.js";
 
 const program = new Command();
 
@@ -35,37 +37,42 @@ program
   .description("PostgreSQL Module Manager")
   .version("0.1.0");
 
-// --- init ---
+// ── pgm app ──────────────────────────────────────────────────────
 
-program
+const app = program
+  .command("app")
+  .description("App lifecycle (init, install, deploy, remove, list)");
+
+// --- app init ---
+
+app
   .command("init")
   .description("Initialize a new app in the current directory")
   .action(async () => {
     const cwd = process.cwd();
     const name = path.basename(cwd);
 
-    // Check if already initialized
     try {
       await fs.access(path.join(cwd, "workbench.json"));
       console.error("workbench.json already exists — this directory is already an app");
       process.exit(1);
     } catch {
-      // good, not initialized
+      // good
     }
 
     const wsRoot = await findWorkspaceRoot(cwd);
     const ports = await findNextPorts(wsRoot);
 
-    console.log(`Initializing ${name}...\n`);
+    console.log(`Initializing app ${name}...\n`);
     console.log(`  ports: PG=${ports.pg} PostgREST=${ports.pgrst} HTTP=${ports.http} MCP=${ports.mcp}\n`);
 
-    const created = await scaffold(cwd, name, ports, wsRoot);
+    const created = await scaffoldApp(cwd, name, ports, wsRoot);
     for (const f of created) {
       console.log(`  ${f}`);
     }
 
     console.log(`\nDone. Next:`);
-    console.log(`  pgm install        # sync modules`);
+    console.log(`  pgm app install    # sync modules`);
     console.log(`  make up            # start stack`);
   });
 
@@ -99,8 +106,6 @@ function printDeployResults(results: Awaited<ReturnType<typeof deployModules>>) 
   }
 }
 
-// --- deploy (shared) ---
-
 async function runDeploy(
   ctx: Awaited<ReturnType<typeof resolveContext>>,
   moduleName: string | undefined,
@@ -118,7 +123,6 @@ async function runDeploy(
 
   const plan = await resolve(ctx.modulesDir, ctx.config.modules);
 
-  // Show deploy plan
   if (moduleName) {
     const found = plan.order.find((m) => m.name === moduleName);
     if (!found) {
@@ -140,7 +144,6 @@ async function runDeploy(
     }
   }
 
-  // Check dependencies against live DB
   console.log("\nChecking dependencies...\n");
   const checks = await checkModules(plan, ctx.config.connection, moduleName);
   let hasIssues = false;
@@ -174,9 +177,9 @@ async function runDeploy(
   console.log(`\n${results.length} module(s) deployed`);
 }
 
-// --- install ---
+// --- app install ---
 
-program
+app
   .command("install [module]")
   .description("Install modules (copy files, optionally deploy to DB)")
   .option("-d, --deploy", "Also deploy SQL to the database after copying (dry run first)")
@@ -220,9 +223,9 @@ program
     }
   });
 
-// --- deploy ---
+// --- app deploy ---
 
-program
+app
   .command("deploy [module]")
   .description("Show deploy plan (dry run by default). Use --apply to execute.")
   .option("--apply", "Actually execute SQL against the database")
@@ -231,9 +234,9 @@ program
     await runDeploy(ctx, moduleName, !!opts.apply);
   });
 
-// --- remove ---
+// --- app remove ---
 
-program
+app
   .command("remove <module>")
   .description("Remove a module from workbench.json")
   .action(async (moduleName: string) => {
@@ -247,12 +250,12 @@ program
     ctx.config.modules = ctx.config.modules.filter((m) => m !== moduleName);
     await saveAppConfig(ctx.appDir, ctx.config);
     console.log(`Removed "${moduleName}" from workbench.json`);
-    console.log("Run 'pgm install' to re-sync files");
+    console.log("Run 'pgm app install' to re-sync files");
   });
 
-// --- list ---
+// --- app list ---
 
-program
+app
   .command("list")
   .description("Show installed modules tree")
   .action(async () => {
@@ -275,10 +278,47 @@ program
     }
   });
 
-// --- info ---
+// ── pgm module ───────────────────────────────────────────────────
 
-program
-  .command("info <module>")
+const mod = program
+  .command("module")
+  .description("Module development (new, info, list)");
+
+// --- module new ---
+
+mod
+  .command("new <name>")
+  .description("Scaffold a new module")
+  .option("-s, --schema <name>", "Public schema name (default: module name)")
+  .action(async (moduleName: string, opts: { schema?: string }) => {
+    const wsRoot = await findWorkspaceRoot(process.cwd());
+    const modulesDir = path.join(wsRoot, "modules");
+    const moduleDir = path.join(modulesDir, moduleName);
+
+    try {
+      await fs.access(moduleDir);
+      console.error(`modules/${moduleName} already exists`);
+      process.exit(1);
+    } catch {
+      // good
+    }
+
+    const schemaName = opts.schema ?? moduleName;
+
+    console.log(`Creating module ${moduleName}...\n`);
+
+    const created = await scaffoldModule(moduleDir, moduleName, schemaName, wsRoot);
+    for (const f of created) {
+      console.log(`  ${f}`);
+    }
+
+    console.log(`\nDone. Start dev DB (make dev-up) then iterate with pg_func_set.`);
+  });
+
+// --- module info ---
+
+mod
+  .command("info <name>")
   .description("Show module details")
   .action(async (moduleName: string) => {
     const wsRoot = await findWorkspaceRoot(process.cwd());
@@ -306,10 +346,10 @@ program
     }
   });
 
-// --- available ---
+// --- module list ---
 
-program
-  .command("available")
+mod
+  .command("list")
   .description("List all available modules in the workspace")
   .action(async () => {
     const wsRoot = await findWorkspaceRoot(process.cwd());

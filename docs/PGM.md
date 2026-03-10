@@ -13,53 +13,46 @@ Ou sans link : `node dist/pgm/cli.js <commande>`
 
 ## Commandes
 
-### pgm init
+Le CLI est organisé en deux groupes : **app** (lifecycle d'une application) et **module** (développement de modules).
+
+### pgm app init
 
 Initialise une nouvelle app dans le dossier courant. Auto-assigne les ports en scannant les apps existantes.
 
 ```bash
 mkdir apps/billing && cd apps/billing
-pgm init
-# Initializing billing...
+pgm app init
+# Initializing app billing...
 #   ports: PG=5445 PostgREST=3005 HTTP=8085 MCP=3105
 #   workbench.json
 #   docker-compose.yml
 #   Makefile
 #   sql/01-roles.sql
 #   frontend/nginx.conf
-#   .mcp.json
-#   .claude/settings.local.json
+#   .mcp.json                    ← MCP → app server (port MCP)
+#   .claude/settings.local.json  ← permissions app + hooks
 ```
 
-Fichiers générés :
-- `workbench.json` — config app avec modules `["pgv"]` par défaut
-- `docker-compose.yml` — postgres + postgrest + nginx
-- `Makefile` — targets up/down/clean/sync/mcp
-- `sql/01-roles.sql` — roles, domain text/html, schemas
-- `frontend/nginx.conf` — proxy PostgREST + MCP
-- `.mcp.json` — config MCP pour Claude Code
-- `.claude/settings.local.json` — permissions + hooks
-
-### pgm install
+### pgm app install
 
 Copie les fichiers SQL, assets, scripts et styles des modules dans le dossier de l'app. Génère `pgv-modules.js` pour le chargement des composants Alpine.js.
 
 ```bash
-pgm install              # installe tous les modules de workbench.json
-pgm install cad3d        # ajoute cad3d à workbench.json + installe
-pgm install -d           # installe + dry run du déploiement
-pgm install -d --apply   # installe + déploie en base
+pgm app install              # installe tous les modules de workbench.json
+pgm app install cad3d        # ajoute cad3d à workbench.json + installe
+pgm app install -d           # installe + dry run du déploiement
+pgm app install -d --apply   # installe + déploie en base
 ```
 
-### pgm deploy
+### pgm app deploy
 
 Vérifie les dépendances en base et applique le SQL. Dry run par défaut.
 
 ```bash
-pgm deploy               # dry run : plan + check extensions/schemas
-pgm deploy cad3d         # dry run pour un seul module
-pgm deploy --apply       # vérifie puis exécute le SQL
-pgm deploy cad3d --apply # vérifie puis exécute un seul module
+pgm app deploy               # dry run : plan + check extensions/schemas
+pgm app deploy cad3d         # dry run pour un seul module
+pgm app deploy --apply       # vérifie puis exécute le SQL
+pgm app deploy cad3d --apply # vérifie puis exécute un seul module
 ```
 
 Le check vérifie :
@@ -68,23 +61,52 @@ Le check vérifie :
 
 Si une dépendance manque, le déploiement est bloqué.
 
-### pgm list
+### pgm app list
 
-Affiche l'arbre des modules installés.
+Affiche l'arbre des modules installés dans l'app courante.
 
 ```bash
-pgm list
+pgm app list
 # cad
 # ├── pgv@1.0.0
 # └── cad3d@0.1.0 (needs: pgv)
 ```
 
-### pgm info
+### pgm app remove
+
+Retire un module de workbench.json.
+
+```bash
+pgm app remove cad3d
+# Removed "cad3d" from workbench.json
+# Run 'pgm app install' to re-sync files
+```
+
+### pgm module new
+
+Scaffold un nouveau module dans `modules/`.
+
+```bash
+pgm module new billing
+# Creating module billing...
+#   module.json
+#   sql/functions.sql
+#   .mcp.json                    ← MCP → dev server (port 3100)
+#   .claude/settings.local.json  ← permissions dev (pg_func_set, pg_pack, pg_test...)
+```
+
+Le module généré :
+- Dépend de `pgv` par défaut
+- `.mcp.json` pointe vers le serveur dev (port 3100, dev DB sur 5433)
+- `.claude/settings.local.json` inclut les tools de développement (pas de docker, pas de deploy)
+- Option `--schema <name>` pour un nom de schema différent du nom du module
+
+### pgm module info
 
 Affiche les détails d'un module.
 
 ```bash
-pgm info cad3d
+pgm module info cad3d
 # cad3d@0.1.0
 #   CAD 3D engine for wood structures...
 #   schemas:
@@ -93,30 +115,19 @@ pgm info cad3d
 #   dependencies: pgv
 #   extensions: postgis, postgis_sfcgal
 #   sql: sql/extensions.sql, sql/ddl.sql, sql/functions.sql
-#   assets: frontend/viewer.html
 #   scripts: frontend/cad3d.js
 #   styles: frontend/cad3d.css
 #   docker: postgis/postgis:17-3.5
 ```
 
-### pgm available
+### pgm module list
 
 Liste tous les modules disponibles dans le workspace.
 
 ```bash
-pgm available
+pgm module list
 #   cad3d@0.1.0  CAD 3D engine for wood structures...
 #   pgv@1.0.0    pgView — Server-Side Rendering framework...
-```
-
-### pgm remove
-
-Retire un module de workbench.json.
-
-```bash
-pgm remove cad3d
-# Removed "cad3d" from workbench.json
-# Run 'pgm install' to re-sync files
 ```
 
 ## Concepts
@@ -384,84 +395,74 @@ Le shell `index.html` le charge avant Alpine.js :
 
 ## Workflow
 
+### Créer un module
+
+```bash
+pgm module new billing           # scaffold dans modules/billing/
+pgm module new billing -s bill   # schema "bill" au lieu de "billing"
+# → module.json, sql/functions.sql, .mcp.json (dev), .claude/settings.local.json (dev)
+```
+
+Puis itérer avec le MCP workbench (connecté à la dev DB, port 5433) :
+
+```bash
+# L'agent Claude Code utilise les MCP tools :
+pg_func_set ...          # créer/modifier des fonctions
+pg_test ...              # valider
+
+# Exporter (auto-résolu via module registry) :
+pg_pack schemas: "billing,billing_ut"   # → modules/billing/sql/functions.sql
+pg_func_save target: "plpgsql://billing" # → modules/billing/sql/billing/*.sql
+```
+
 ### Créer une app
 
 ```bash
 mkdir apps/billing && cd apps/billing
-pgm init                 # scaffold + ports auto
-pgm install cad3d        # ajoute un module
-make up                  # démarre postgres + postgrest + nginx
-pgm deploy               # dry run (check deps en base)
-pgm deploy --apply       # applique le SQL
-```
-
-### Développer
-
-```bash
-# 1. Itérer avec le MCP workbench
-pg_func_set ...          # créer/modifier des fonctions
-pg_test ...              # valider
-
-# 2. Exporter dans le module (auto-résolu, pas de path)
-pg_pack schemas: "cad,cad_ut"       # → modules/cad3d/sql/functions.sql
-pg_func_save target: "plpgsql://cad" # → modules/cad3d/sql/cad/*.sql
-
-# 3. Distribuer aux apps
-pgm install              # sync fichiers module → app
-pgm deploy --apply       # appliquer en base
+pgm app init                 # scaffold + ports auto
+pgm app install cad3d        # ajoute un module
+make up                      # démarre postgres + postgrest + nginx
+pgm app deploy               # dry run (check deps en base)
+pgm app deploy --apply       # applique le SQL
 ```
 
 ### Pipeline complet
 
 ```
-pg_func_set          dev itératif dans la DB
+pgm module new       scaffold module (module.json, .mcp.json dev, .claude)
       ↓
-pg_pack              auto → modules/cad3d/sql/functions.sql
-pg_func_save         auto → modules/cad3d/sql/cad/*.sql
+pg_func_set          dev itératif dans la dev DB (MCP tools)
+pg_test              validation pgTAP
       ↓
-pgm install          modules/ → apps/*/sql/ + frontend/
+pg_pack              auto → modules/{mod}/sql/functions.sql
+pg_func_save         auto → modules/{mod}/sql/{schema}/*.sql
       ↓
-pgm deploy --apply   SQL → DB live (en ordre de deps)
+pgm app install      modules/ → apps/*/sql/ + frontend/
+      ↓
+pgm app deploy       SQL → DB live (en ordre de deps, --apply)
 ```
 
 Impossible de sauver au mauvais endroit : les tools MCP connaissent le module registry et résolvent automatiquement le chemin de sortie.
 
-### Depuis un dossier d'app
+### Contextes MCP
 
-pgm détecte le contexte en remontant l'arborescence :
+| Contexte | `.mcp.json` pointe vers | DB | Cas d'usage |
+|----------|------------------------|----|-------------|
+| Module (`modules/cad3d/`) | dev server (port 3100) | dev DB (5433) | Développement itératif |
+| App (`apps/004-cad/`) | app server (port 3104) | app DB (5444) | Intégration, déploiement |
 
-```bash
-cd apps/billing
-pgm list                 # trouve workbench.json → app root
-                         # remonte pour trouver modules/ → workspace root
-```
-
-### Makefile
-
-Chaque app a un target `sync` qui appelle pgm :
-
-```makefile
-sync:
-    node ../../dist/pgm/cli.js install
-```
-
-Au niveau root :
-
-```makefile
-sync-modules:
-    @for app in apps/*/; do \
-        (cd "$$app" && node ../../dist/pgm/cli.js install) || true; \
-    done
-```
+Chaque contexte a ses propres permissions Claude Code (`.claude/settings.local.json`) :
+- **Module** : tools dev (pg_func_set, pg_pack, pg_test, pg_doc...), pas de docker/deploy
+- **App** : tools app (pg_query, pg_schema, pg_pack...) + docker compose + hooks
 
 ## Architecture
 
 ```
 src/pgm/
-  cli.ts          # Entry point CLI (commander.js)
+  cli.ts          # Entry point CLI (pgm app ..., pgm module ...)
   resolver.ts     # Lecture module.json, résolution deps (topo sort)
   installer.ts    # Copie fichiers + génération pgv-modules.js
   deployer.ts     # Check deps en base + exécution SQL
-  scaffold.ts     # Génération fichiers app (pgm init)
+  scaffold.ts     # Génération fichiers app + module
   registry.ts     # Mapping schema → module (injecté dans MCP tools)
 ```

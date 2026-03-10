@@ -67,7 +67,7 @@ sync-modules:
 	@for app in apps/*/; do \
 		if [ -f "$$app/workbench.json" ]; then \
 			echo "Syncing modules → $$app"; \
-			(cd "$$app" && node ../../dist/pgm/cli.js install) || true; \
+			(cd "$$app" && node ../../dist/pgm/cli.js app install) || true; \
 		fi; \
 	done
 
