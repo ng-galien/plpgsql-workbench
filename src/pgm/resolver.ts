@@ -16,7 +16,7 @@ export interface ModuleManifest {
   dependencies: string[];
   extensions: string[];
   sql: string[];
-  assets: { frontend?: string[] };
+  assets: { frontend?: string[]; scripts?: string[]; styles?: string[] };
   grants: Record<string, string[]>;
   docker?: { image: string; note?: string };
 }

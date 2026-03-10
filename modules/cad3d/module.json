@@ -21,6 +21,12 @@
   "assets": {
     "frontend": [
       "frontend/viewer.html"
+    ],
+    "scripts": [
+      "frontend/cad3d.js"
+    ],
+    "styles": [
+      "frontend/cad3d.css"
     ]
   },
   "grants": {
