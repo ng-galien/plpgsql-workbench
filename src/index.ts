@@ -141,8 +141,11 @@ const WORKFLOW = [
   "  4. pg_query -> SELECT ad-hoc et DML donnees uniquement",
 ].join("\n");
 
-const DDL_PATTERN = /^\s*(CREATE\s+(SCHEMA|TABLE|INDEX|EXTENSION|TYPE)|ALTER\s+(TABLE|SCHEMA|TYPE)|DROP\s+(SCHEMA|TABLE|INDEX|TYPE|EXTENSION))/im;
-const FUNC_PATTERN = /^\s*CREATE\s+(OR\s+REPLACE\s+)?FUNCTION/im;
+const DDL_PATTERN = /\b(CREATE\s+(SCHEMA|TABLE|INDEX|EXTENSION|TYPE)|ALTER\s+(TABLE|SCHEMA|TYPE)|DROP\s+(SCHEMA|TABLE|INDEX|TYPE|EXTENSION))\b/i;
+const FUNC_PATTERN = /\bCREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i;
+const DESTRUCTIVE_PATTERN = /\b(DROP\s+FUNCTION|TRUNCATE|GRANT\s+|REVOKE\s+)\b/i;
+// Detect cross-module calls to _prefix internal functions in SQL body
+const INTERNAL_CALL_RE = /\b(\w+)\._(\w+)\s*\(/g;
 
 const moduleRegistry: import("./pgm/registry.js").ModuleRegistry = container.resolve("moduleRegistry");
 
@@ -159,7 +162,7 @@ app.post("/hooks/:module", (req, res) => {
   const mapping = moduleRegistry.resolve([mod]) ?? moduleRegistry.resolve([`${mod}_ut`]);
   const schemas = mapping?.schemas ?? [mod];
 
-  // Rule: pg_query must not do DDL or function management
+  // Rule: pg_query must not do DDL, function management, or destructive ops
   if (tool_name === "mcp__plpgsql-workbench__pg_query") {
     const sql = (tool_input?.sql ?? "") as string;
     if (FUNC_PATTERN.test(sql)) {
@@ -170,22 +173,26 @@ app.post("/hooks/:module", (req, res) => {
       log.warn({ mod, sql: sql.slice(0, 80) }, "hook: blocked DDL in pg_query");
       return deny(res, "pg_query interdit pour le DDL. Ecris un fichier SQL + pg_schema.\n\n" + WORKFLOW);
     }
+    if (DESTRUCTIVE_PATTERN.test(sql)) {
+      log.warn({ mod, sql: sql.slice(0, 80) }, "hook: blocked destructive op in pg_query");
+      return deny(res, "pg_query interdit pour DROP FUNCTION / TRUNCATE / GRANT / REVOKE. Utilise les outils dedies.\n\n" + WORKFLOW);
+    }
   }
 
-  // Rule: Write must stay within module directory and respect workflow
-  if (tool_name === "Write") {
-    const filePath = (tool_input?.file_path ?? "") as string;
-    const content = (tool_input?.content ?? "") as string;
+  // Rule: Write/Edit must stay within module directory and respect workflow
+  if (tool_name === "Write" || tool_name === "Edit") {
+    const filePath = path.resolve((tool_input?.file_path ?? "") as string);
+    const content = (tool_input?.content ?? tool_input?.new_string ?? "") as string;
     const modulePath = mapping?.modulePath;
-    if (modulePath && !filePath.startsWith(modulePath)) {
-      log.warn({ mod, file: filePath, allowed: modulePath }, "hook: blocked Write outside module");
-      return deny(res, `Module ${mod}: Write interdit hors du repertoire du module (${modulePath}). Travaille uniquement dans le repertoire du module.`);
+    if (modulePath && !filePath.startsWith(path.resolve(modulePath))) {
+      log.warn({ mod, file: filePath, allowed: modulePath }, "hook: blocked file op outside module");
+      return deny(res, `Module ${mod}: ${tool_name} interdit hors du repertoire du module (${modulePath}). Travaille uniquement dans le repertoire du module.`);
     }
     if (filePath.endsWith(".func.sql")) {
-      log.warn({ mod, file: filePath }, "hook: blocked direct Write to .func.sql");
+      log.warn({ mod, file: filePath }, "hook: blocked direct write to .func.sql");
       return deny(res, "*.func.sql est genere par pg_pack. Utilise pg_func_set pour iterer, puis pg_pack pour exporter.\n\n" + WORKFLOW);
     }
-    if (filePath.endsWith(".sql") && FUNC_PATTERN.test(content)) {
+    if (tool_name === "Write" && filePath.endsWith(".sql") && FUNC_PATTERN.test(content)) {
       log.warn({ mod, file: filePath }, "hook: blocked Write of SQL function file");
       return deny(res, "Interdit d'ecrire des fonctions dans des fichiers SQL. Utilise pg_func_set + pg_test, puis pg_func_save quand stable.\n\n" + WORKFLOW);
     }
@@ -198,10 +205,34 @@ app.post("/hooks/:module", (req, res) => {
       log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_set");
       return deny(res, `Module ${mod}: pg_func_set interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`);
     }
+    // Check function body for cross-module _internal() calls
+    const body = (tool_input?.body ?? "") as string;
+    const internalCalls: string[] = [];
+    let match: RegExpExecArray | null;
+    const re = new RegExp(INTERNAL_CALL_RE.source, INTERNAL_CALL_RE.flags);
+    while ((match = re.exec(body)) !== null) {
+      const callSchema = match[1];
+      if (!schemas.includes(callSchema)) {
+        internalCalls.push(`${callSchema}._${match[2]}`);
+      }
+    }
+    if (internalCalls.length > 0) {
+      log.warn({ mod, calls: internalCalls }, "hook: blocked cross-module _internal calls");
+      return deny(res, `Module ${mod}: appel a des fonctions internes d'un autre module interdit.\nViolations: ${internalCalls.join(", ")}\n\nConvention: schema._name() = interne, cross-module interdit.`);
+    }
     // pgv-specific: no inline styles
-    if (schema === "pgv" && /style\s*=\s*"/.test((tool_input?.body ?? "") as string)) {
+    if (schema === "pgv" && /style\s*=\s*"/.test(body)) {
       log.warn({ mod }, "hook: blocked inline style in pgv function");
       return deny(res, "Les fonctions pgv ne doivent pas contenir de style inline (style=\"...\"). Utilise class=\"pgv-*\" et definis les styles dans pgview.css.");
+    }
+  }
+
+  // Rule: pg_func_edit must target a schema owned by this module
+  if (tool_name === "mcp__plpgsql-workbench__pg_func_edit") {
+    const schema = (tool_input?.schema ?? "") as string;
+    if (schema && !schemas.includes(schema)) {
+      log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_edit");
+      return deny(res, `Module ${mod}: pg_func_edit interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`);
     }
   }
 

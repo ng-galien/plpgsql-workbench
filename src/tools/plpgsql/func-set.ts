@@ -28,6 +28,15 @@ export function createSetFunction({ runTests, formatTestReport }: {
   formatTestReport: FormatTestReportFn;
 }): SetFunctionFn {
   return async (client, schema, name, content, description?) => {
+    // Count existing overloads before deploy
+    const beforeCount = await client.query<{ count: string }>(
+      `SELECT count(*)::text FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = $1 AND p.proname = $2`,
+      [schema, name],
+    );
+    const overloadsBefore = parseInt(beforeCount.rows[0]?.count ?? "0");
+
     await client.query("BEGIN");
 
     try {
@@ -35,6 +44,27 @@ export function createSetFunction({ runTests, formatTestReport }: {
     } catch (err: unknown) {
       await client.query("ROLLBACK");
       return text(`completeness: full\n\n✗ deploy failed\n${formatErrorTriplet(err, content, `${schema}.${name}`)}`);
+    }
+
+    // Detect new overloads
+    const afterCount = await client.query<{ count: string }>(
+      `SELECT count(*)::text FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = $1 AND p.proname = $2`,
+      [schema, name],
+    );
+    const overloadsAfter = parseInt(afterCount.rows[0]?.count ?? "0");
+    if (overloadsAfter > 1 && overloadsAfter > overloadsBefore) {
+      await client.query("ROLLBACK");
+      return text(
+        `completeness: full\n\n` +
+        `✗ overload interdit: ${schema}.${name} a deja ${overloadsBefore} signature(s).\n` +
+        `  Ce deploy cree une nouvelle surcharge (${overloadsAfter} total).\n` +
+        `  Les overloads causent des bugs de routing implicite.\n` +
+        `  fix_hint: renomme la fonction ou supprime l'ancienne signature d'abord.\n` +
+        `  Use pg_get plpgsql://${schema}/function/${name} to see existing signatures.\n\n` +
+        `deploy rolled back`,
+      );
     }
 
     // Validation: plpgsql_check only works on plpgsql functions
@@ -82,6 +112,36 @@ export function createSetFunction({ runTests, formatTestReport }: {
     if (hasErrors) {
       await client.query("ROLLBACK");
       return text(`completeness: full\n\n${validation}\n\ndeploy rolled back (fix errors and retry)`);
+    }
+
+    // Boundary check: detect cross-schema calls to _internal() functions
+    try {
+      await client.query("SAVEPOINT boundary_check");
+      const deps = await client.query<{ type: string; schema: string; name: string }>(
+        `SELECT type, schema, name FROM plpgsql_show_dependency_tb(
+          (SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+           WHERE n.nspname = $1 AND p.proname = $2 LIMIT 1)
+        )`,
+        [schema, name],
+      );
+      await client.query("RELEASE SAVEPOINT boundary_check");
+
+      const violations = deps.rows.filter(
+        (d) => d.type === "FUNCTION" && d.schema !== schema && d.name.startsWith("_"),
+      );
+      if (violations.length > 0) {
+        const details = violations.map((v) => `  ${v.schema}.${v.name}`).join("\n");
+        await client.query("ROLLBACK");
+        return text(
+          `completeness: full\n\n${validation}\n\n` +
+          `✗ boundary violation: cross-schema calls to internal (_prefix) functions:\n${details}\n\n` +
+          `Convention: schema._name() = interne, cross-module interdit.\n` +
+          `deploy rolled back`,
+        );
+      }
+    } catch {
+      await client.query("ROLLBACK TO SAVEPOINT boundary_check").catch(() => {});
+      // plpgsql_check not available — skip boundary check
     }
 
     // Auto-run unit tests inside the transaction (before commit)

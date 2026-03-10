@@ -273,7 +273,7 @@ function claudeSettings(appName: string, ports: Ports): string {
     hooks: {
       PreToolUse: [
         {
-          matcher: "mcp__plpgsql-workbench__pg_query|Write",
+          matcher: "mcp__plpgsql-workbench__pg_query|mcp__plpgsql-workbench__pg_func_set|mcp__plpgsql-workbench__pg_func_edit|Write|Edit",
           hooks: [
             {
               type: "http",
@@ -383,7 +383,7 @@ function moduleClaudeSettings(moduleName: string, mcpPort: number): string {
     hooks: {
       PreToolUse: [
         {
-          matcher: "mcp__plpgsql-workbench__pg_query|mcp__plpgsql-workbench__pg_func_set|Write",
+          matcher: "mcp__plpgsql-workbench__pg_query|mcp__plpgsql-workbench__pg_func_set|mcp__plpgsql-workbench__pg_func_edit|Write|Edit",
           hooks: [
             {
               type: "http",
