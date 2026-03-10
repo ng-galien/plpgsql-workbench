@@ -148,6 +148,17 @@ async function deployModule(
   const moduleDir = path.join(modulesDir, manifest.name);
   const files: DeployResult["files"] = [];
 
+  // Install required extensions
+  for (const ext of manifest.extensions) {
+    try {
+      await client.query(`CREATE EXTENSION IF NOT EXISTS ${ext}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      files.push({ name: `extension:${ext}`, ok: false, error: msg });
+      return { module: manifest.name, version: manifest.version, files, ok: false };
+    }
+  }
+
   for (const sqlFile of manifest.sql) {
     const src = path.join(moduleDir, sqlFile);
     const basename = path.basename(sqlFile);

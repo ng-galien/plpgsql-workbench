@@ -5,11 +5,6 @@ import { text } from "../../helpers.js";
 import fs from "fs/promises";
 import path from "path";
 
-function resolveDir(dir: string): string {
-  if (path.isAbsolute(dir)) return dir;
-  return path.resolve(process.cwd(), dir);
-}
-
 interface LoadResult {
   filename: string;
   status: "loaded" | "error";
@@ -20,19 +15,17 @@ async function loadFunctions(
   client: DbClient,
   dir: string,
 ): Promise<string> {
-  const resolved = resolveDir(dir);
-
   let entries: string[];
   try {
-    entries = await fs.readdir(resolved);
+    entries = await fs.readdir(dir);
   } catch {
-    return `problem: directory not found: ${resolved}\nwhere: pg_func_load\nfix_hint: check the path argument`;
+    return `problem: directory not found: ${dir}\nwhere: pg_func_load\nfix_hint: check the target schema`;
   }
 
   // Collect .sql files recursively (schema/function.sql)
   const sqlFiles: { relPath: string; fullPath: string }[] = [];
   for (const entry of entries.sort()) {
-    const entryPath = path.join(resolved, entry);
+    const entryPath = path.join(dir, entry);
     const stat = await fs.stat(entryPath);
     if (stat.isDirectory()) {
       const subEntries = await fs.readdir(entryPath);
@@ -47,7 +40,7 @@ async function loadFunctions(
   }
 
   if (sqlFiles.length === 0) {
-    return `no .sql files in ${resolved}`;
+    return `no .sql files in ${dir}`;
   }
 
   const results: LoadResult[] = [];
@@ -58,6 +51,7 @@ async function loadFunctions(
       await client.query("BEGIN");
       await client.query(content);
       await client.query("COMMIT");
+      await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
       results.push({ filename: relPath, status: "loaded" });
     } catch (err: unknown) {
       await client.query("ROLLBACK").catch(() => {});
@@ -76,18 +70,18 @@ function formatResults(results: LoadResult[], dir: string): string {
   const parts: string[] = [];
 
   if (errors.length > 0) {
-    parts.push(`✗ ${loaded.length} loaded, ${errors.length} failed (${dir})`);
+    parts.push(`${loaded.length} loaded, ${errors.length} failed (${dir})`);
   } else {
-    parts.push(`✓ ${loaded.length} function${loaded.length !== 1 ? "s" : ""} loaded (${dir})`);
+    parts.push(`${loaded.length} function${loaded.length !== 1 ? "s" : ""} loaded (${dir})`);
   }
   parts.push(`completeness: full`);
   parts.push("");
 
   for (const r of results) {
     if (r.status === "loaded") {
-      parts.push(`  ✓ ${r.filename}`);
+      parts.push(`  ok ${r.filename}`);
     } else {
-      parts.push(`  ✗ ${r.filename}`);
+      parts.push(`  FAIL ${r.filename}`);
       parts.push(`    problem: ${r.message}`);
     }
   }
@@ -95,24 +89,43 @@ function formatResults(results: LoadResult[], dir: string): string {
   return parts.join("\n");
 }
 
-export function createFuncLoadTool({ withClient }: {
+export function createFuncLoadTool({ withClient, moduleRegistry }: {
   withClient: WithClient;
+  moduleRegistry: Promise<import("../../pgm/registry.js").ModuleRegistry>;
 }): ToolHandler {
   return {
     metadata: {
       name: "pg_func_load",
       description:
-        "Load function SQL files from disk into the database.\n" +
+        "Load function SQL files from module src/ into the database.\n" +
         "Executes each .sql file (CREATE OR REPLACE FUNCTION) in its own transaction.\n" +
-        "Idempotent: safe to re-run. Reads {path}/{schema}/{function}.sql structure.",
+        "Path is auto-resolved from module registry (schema → module → src/).",
       schema: z.object({
-        path: z.string().describe("Directory containing function .sql files (relative to project root or absolute)"),
+        target: z
+          .string()
+          .describe("plpgsql:// URI scope. plpgsql://schema to load all functions from src/schema/"),
       }),
     },
     handler: async (args, _extra) => {
-      const dir = args.path as string;
+      const target = args.target as string;
+      const schemaMatch = target.match(/^plpgsql:\/\/(\w+)\/?$/);
+      if (!schemaMatch) {
+        return text(`problem: invalid target: ${target}\nwhere: pg_func_load\nfix_hint: expected plpgsql://schema`);
+      }
+
+      const schema = schemaMatch[1];
+      const registry = await moduleRegistry;
+      const srcDir = registry.savePath(schema);
+      if (!srcDir) {
+        return text(
+          `problem: no module owns schema "${schema}"\n` +
+          `where: pg_func_load\n` +
+          `fix_hint: check modules/*/module.json schemas field`,
+        );
+      }
+
       return withClient(async (client) => {
-        const result = await loadFunctions(client, dir);
+        const result = await loadFunctions(client, srcDir);
         return text(result);
       });
     },
