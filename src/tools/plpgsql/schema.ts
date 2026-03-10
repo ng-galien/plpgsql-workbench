@@ -91,6 +91,7 @@ async function applyMigrations(
       await client.query("BEGIN");
       await client.query(content);
       await client.query("COMMIT");
+      await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
     } catch (err: unknown) {
       await client.query("ROLLBACK").catch(() => {});
       const msg = err instanceof Error ? err.message : String(err);

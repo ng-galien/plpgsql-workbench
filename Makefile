@@ -1,13 +1,12 @@
 # plpgsql-workbench — Platform Makefile
 #
-# Dev DB:     make dev-up / make dev-down / make dev-clean
+# Dev stack:  make dev-up / make dev-down / make dev-clean
 # Apps:       make app-up APP=uxlab / make app-down APP=docman
 # MCP:        npm run dev          (all packs, dev DB)
-#             npm run dev:docman   (docman packs, docman DB)
 
 PGV_IMAGE := pg-workbench
 
-# --- Docker image (postgres + plpgsql_check + pgtap) ---
+# --- Docker image (postgres + postgis + plpgsql_check + pgtap) ---
 
 .PHONY: image
 
@@ -15,27 +14,46 @@ image:
 	@docker image inspect $(PGV_IMAGE) > /dev/null 2>&1 || \
 		(echo "Building $(PGV_IMAGE)..." && docker build -t $(PGV_IMAGE) docker/)
 
-# --- Dev DB (port 5433) ---
+# --- Dev stack (postgres:5433 + postgrest:3000 + nginx:8080) ---
 
-.PHONY: dev-up dev-down dev-clean dev-init
+.PHONY: dev-up dev-down dev-clean dev-init dev-sync
 
 dev-up: image
 	docker compose up -d
 	@echo ""
-	@echo "  Dev DB → localhost:5433"
+	@echo "  postgres  → localhost:5433"
+	@echo "  postgrest → localhost:3000"
+	@echo "  frontend  → http://localhost:8080"
 
 dev-down:
 	docker compose down
 
 dev-clean:
 	docker compose down -v
+	@rm -rf dev/frontend/*
 
-# Load pgv framework into dev DB (after fresh start)
-dev-init: dev-up
+# Sync module frontend assets into dev/frontend/ for nginx
+dev-sync:
+	@echo "Syncing module assets → dev/frontend/"
+	@mkdir -p dev/frontend
+	@for mod in modules/*/; do \
+		if [ -d "$$mod/frontend" ]; then \
+			cp -r "$$mod/frontend/"* dev/frontend/ 2>/dev/null || true; \
+		fi; \
+	done
+	@echo "Done"
+
+# Deploy all modules to dev DB (after fresh start)
+dev-init: dev-up dev-sync
 	@echo "Waiting for DB..."
 	@sleep 2
-	PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f modules/pgv/sql/functions.sql -q
-	@echo "pgv loaded into dev DB"
+	@for mod in modules/*/; do \
+		for sql in "$$mod"sql/*.sql; do \
+			[ -f "$$sql" ] && echo "  Loading $$sql" && \
+			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f "$$sql" -q 2>&1 | grep -v "^$$" || true; \
+		done; \
+	done
+	@echo "All modules loaded into dev DB"
 
 # --- App management ---
 
@@ -59,9 +77,7 @@ app-logs:
 
 # --- Sync modules to all apps ---
 
-.PHONY: sync-pgv sync-modules
-
-sync-pgv: sync-modules
+.PHONY: sync-modules
 
 sync-modules:
 	@for app in apps/*/; do \
@@ -81,6 +97,7 @@ build:
 check:
 	npx tsc --noEmit
 
-# --- New app scaffold ---
-# Use: pgm init (from the target app directory)
-# See: docs/PGM.md
+# --- Scaffold ---
+# App:    pgm app init (from target directory)
+# Module: pgm module new <name> [--port <mcp_port>]
+# See:    docs/PGM.md

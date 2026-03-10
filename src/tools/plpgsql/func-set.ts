@@ -98,6 +98,9 @@ export function createSetFunction({ runTests, formatTestReport }: {
 
     await client.query("COMMIT");
 
+    // Notify PostgREST to reload schema cache
+    await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
+
     // Apply COMMENT ON FUNCTION if description provided
     if (description) {
       const { rows: [{ ident }] } = await client.query<{ ident: string }>(

@@ -32,30 +32,32 @@ pgm module new mymod                                # scaffold new module
 
 No test framework is configured in this repo — testing happens via pgTAP inside PostgreSQL.
 
-### Dev Database
+### Dev Stack
 
-The dev database uses `supabase/postgres:17.6.1.093` (same as production target).
+Shared dev environment for module development. Custom image `pg-workbench` based on `postgis/postgis:17-3.5` with `plpgsql_check` + `pgtap`.
 
 ```bash
-make dev-up              # Start (port 5433)
+make dev-up              # Start stack (postgres:5433, postgrest:3000, nginx:8080)
 make dev-down            # Stop (data persists in pgdata volume)
-make dev-clean           # Stop + wipe data (triggers fresh initdb on next up)
-make dev-init            # Start + load pgv into dev DB
+make dev-clean           # Stop + wipe data
+make dev-init            # Start + deploy all modules into dev DB
+make dev-sync            # Copy module frontend assets into dev/frontend/
 ```
 
 **Connection:** `postgresql://postgres:postgres@localhost:5433/postgres`
 
-**Auto-initialized on first start** (via `seed/` mounted into `init-scripts/`):
-- `plpgsql_check` + `pgtap` extensions
+**Auto-initialized on first start** (via `seed/`):
+- Extensions: `plpgsql_check`, `pgtap`, `postgis`, `postgis_sfcgal`
+- Roles: `authenticator`, `web_anon`, domain `text/html`
 - `workbench` schema (toolbox, toolbox_tool, tenant tables)
-- Run `make dev-init` after fresh start to also load pgv framework
+- Run `make dev-init` after fresh start to deploy all modules (pgv, cad3d, etc.)
+
+**PostgREST** auto-reloads schema cache via `NOTIFY pgrst, 'reload schema'`.
 
 **Sync tools to DB** (after code changes):
 ```bash
 npm run sync-tools    # Populates workbench.toolbox_tool from code registry
 ```
-
-**Supabase extensions available** (pre-installed in image): `pgcrypto`, `uuid-ossp`, `pg_graphql`, `pg_net`, `pg_cron`, `pgjwt`, `supabase_vault`, `pg_stat_statements`, and more.
 
 ### Apps
 
