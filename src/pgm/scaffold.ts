@@ -289,13 +289,11 @@ function claudeSettings(ports: Ports): string {
 
 // ── Module scaffold ──────────────────────────────────────────────
 
-const DEV_MCP_PORT = 3100;
-
 export async function scaffoldModule(
   moduleDir: string,
   name: string,
   schemaName: string,
-  _wsRoot: string,
+  mcpPort: number,
 ): Promise<string[]> {
   const created: string[] = [];
 
@@ -328,31 +326,31 @@ export async function scaffoldModule(
   );
   created.push("sql/functions.sql");
 
-  // .mcp.json — points to dev server (port 3100)
+  // .mcp.json
   await fs.writeFile(
     path.join(moduleDir, ".mcp.json"),
     JSON.stringify({
       mcpServers: {
         "plpgsql-workbench": {
           type: "http",
-          url: `http://localhost:${DEV_MCP_PORT}/mcp`,
+          url: `http://localhost:${mcpPort}/mcp`,
         },
       },
     }, null, 2) + "\n",
   );
   created.push(".mcp.json");
 
-  // .claude/settings.local.json — dev-focused permissions
+  // .claude/settings.local.json — dev-focused permissions + hooks
   await fs.writeFile(
     path.join(moduleDir, ".claude", "settings.local.json"),
-    moduleClaudeSettings(),
+    moduleClaudeSettings(mcpPort),
   );
   created.push(".claude/settings.local.json");
 
   return created;
 }
 
-function moduleClaudeSettings(): string {
+function moduleClaudeSettings(mcpPort: number): string {
   return JSON.stringify({
     permissions: {
       allow: [
@@ -373,5 +371,19 @@ function moduleClaudeSettings(): string {
     },
     enableAllProjectMcpServers: true,
     enabledMcpjsonServers: ["plpgsql-workbench"],
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: "mcp__plpgsql-workbench__pg_query|Write",
+          hooks: [
+            {
+              type: "http",
+              url: `http://localhost:${mcpPort}/claude-hook`,
+              timeout: 5,
+            },
+          ],
+        },
+      ],
+    },
   }, null, 2) + "\n";
 }
