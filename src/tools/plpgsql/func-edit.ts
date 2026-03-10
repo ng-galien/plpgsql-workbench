@@ -22,6 +22,7 @@ export function createFuncEditTool({ withClient, setFunction }: {
           old: z.string().describe("Exact text to find in the function source"),
           new: z.string().describe("Replacement text"),
         })).describe("List of old->new replacements, applied sequentially"),
+        context_token: z.string().optional().describe("Context token from pg_get. Required for modifying existing functions."),
       }),
     },
     handler: async (args, _extra) => {
@@ -49,7 +50,8 @@ export function createFuncEditTool({ withClient, setFunction }: {
           patched = patched.replace(oldStr, newStr);
         }
 
-        return await setFunction(client, parsed.schema, parsed.name!, patched);
+        const contextToken = args.context_token as string | undefined;
+        return await setFunction(client, parsed.schema, parsed.name!, patched, undefined, contextToken);
       });
     },
   };

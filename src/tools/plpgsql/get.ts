@@ -10,6 +10,7 @@ import { queryTable, formatTable } from "../../resources/table.js";
 import { queryTrigger, formatTrigger } from "../../resources/trigger.js";
 import { queryType, formatType } from "../../resources/type.js";
 import { resolveDoc, resolveDocIndex } from "../../workbench.js";
+import { computeContextToken } from "../../context-token.js";
 
 // --- Shared service (registered in container, injected into set) ---
 
@@ -74,6 +75,7 @@ export async function resolveUri(uri: string, client: DbClient): Promise<string>
     case "function": {
       const fn = await queryFunction(client, parsed.schema, parsed.name!);
       if (!fn) return `function ${parsed.schema}.${parsed.name} not found`;
+      const token = await computeContextToken(client, parsed.schema, parsed.name!);
       const next: string[] = [];
       for (const t of fn.tables_used) next.push(`pg_get ${PlUri.table(fn.schema, t.name)}`);
       for (const c of fn.callers.slice(0, 3)) {
@@ -82,7 +84,8 @@ export async function resolveUri(uri: string, client: DbClient): Promise<string>
         next.push(`pg_get ${PlUri.fn(schema, name)}`);
       }
       if (next.length === 0) next.push(`pg_search content:${fn.name}`);
-      return wrap(uri, "full", formatFunction(fn), next);
+      const formatted = formatFunction(fn) + (token ? `\n  context_token: ${token}` : "");
+      return wrap(uri, "full", formatted, next);
     }
     case "table": {
       const tbl = await queryTable(client, parsed.schema, parsed.name!);

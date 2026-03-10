@@ -5,12 +5,13 @@ import type { ToolResult } from "../../helpers.js";
 import { text, formatErrorTriplet } from "../../helpers.js";
 import { PlUri } from "../../uri.js";
 import { queryFunction, formatFunction } from "../../resources/function.js";
+import { computeContextToken, validateContextToken } from "../../context-token.js";
 import type { TestReport } from "./test.js";
 
 // --- Service types ---
 
 export type SetFunctionFn = (
-  client: DbClient, schema: string, name: string, content: string, description?: string,
+  client: DbClient, schema: string, name: string, content: string, description?: string, contextToken?: string,
 ) => Promise<ToolResult>;
 
 type RunTestsFn = (
@@ -27,7 +28,13 @@ export function createSetFunction({ runTests, formatTestReport }: {
   runTests: RunTestsFn;
   formatTestReport: FormatTestReportFn;
 }): SetFunctionFn {
-  return async (client, schema, name, content, description?) => {
+  return async (client, schema, name, content, description?, contextToken?) => {
+    // Validate context token (proves agent has read the function)
+    const tokenCheck = await validateContextToken(client, schema, name, contextToken);
+    if (!tokenCheck.valid) {
+      return text(`completeness: full\n\n✗ ${tokenCheck.reason}`);
+    }
+
     // Count existing overloads before deploy
     const beforeCount = await client.query<{ count: string }>(
       `SELECT count(*)::text FROM pg_proc p
@@ -175,10 +182,12 @@ export function createSetFunction({ runTests, formatTestReport }: {
       }
     }
 
-    // Return deployed state
+    // Return deployed state with new context token
     const fn = await queryFunction(client, schema, name);
     const state = fn ? formatFunction(fn) : "";
-    return text(`completeness: full\n\n${validation}\n---\n${state}${testSection}`);
+    const newToken = await computeContextToken(client, schema, name);
+    const tokenLine = newToken ? `\n  context_token: ${newToken}` : "";
+    return text(`completeness: full\n\n${validation}\n---\n${state}${tokenLine}${testSection}`);
   };
 }
 
@@ -229,12 +238,14 @@ export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
         uri: z.string().describe("Target URI. Ex: plpgsql://public/function/transfer"),
         content: z.string().describe("Full SQL statement. Ex: CREATE OR REPLACE FUNCTION ..."),
         description: z.string().optional().describe("Function doc (COMMENT ON FUNCTION). Short description of what the function does."),
+        context_token: z.string().optional().describe("Context token from pg_get. Required when modifying an existing function. Proves the function was read before modification."),
       }),
     },
     handler: async (args, _extra) => {
       const uri = args.uri as string;
       const content = args.content as string;
       const description = args.description as string | undefined;
+      const contextToken = args.context_token as string | undefined;
       const parsed = PlUri.parse(uri);
       if (!parsed || !parsed.kind || !parsed.name) {
         return text(`problem: invalid URI: ${uri}\nwhere: pg_func_set\nfix_hint: use plpgsql://schema/kind/name`);
@@ -242,7 +253,7 @@ export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
 
       return withClient(async (client) => {
         if (parsed.kind === "function") {
-          return await setFunction(client, parsed.schema, parsed.name!, content, description);
+          return await setFunction(client, parsed.schema, parsed.name!, content, description, contextToken);
         } else {
           return await setDdl(client, parsed, content);
         }
