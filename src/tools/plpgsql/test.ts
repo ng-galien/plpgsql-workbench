@@ -86,24 +86,46 @@ export async function runTests(
   if (!extCheck[0].exists) return null;
 
   const sourceSchema = testSchema.replace(/_(ut|it)$/, "");
+  const isIntegration = testSchema.endsWith("_it");
 
   const filter = pattern ?? `^test_`;
   const ql = (s: string) => `'${s.replace(/'/g, "''")}'`;
   const qi = (s: string) => `"${s.replace(/"/g, '""')}"`;
 
-  // Use SAVEPOINT + SET LOCAL so search_path is automatically restored
-  // on RELEASE/ROLLBACK — no state leak on the pooled connection
-  await client.query("SAVEPOINT test_run");
-  await client.query(`SET LOCAL search_path TO ${qi(testSchema)}, ${qi(sourceSchema)}, public`);
+  // Integration tests get pgv_ut in search_path (for assert_page and other test helpers)
+  const extraSchemas = isIntegration ? `, ${qi("pgv_ut")}, ${qi("pgv")}` : "";
+
+  // Detect if we're already inside a transaction (e.g. called from pg_func_set)
+  const { rows: txCheck } = await client.query<{ in_tx: boolean }>(
+    `SELECT now() != statement_timestamp() AS in_tx`,
+  );
+  const inTransaction = txCheck[0]?.in_tx ?? false;
+
+  // Use SET LOCAL inside a transaction so search_path is automatically
+  // restored on COMMIT/ROLLBACK — no state leak on the pooled connection
+  if (inTransaction) {
+    await client.query("SAVEPOINT test_run");
+  } else {
+    await client.query("BEGIN");
+  }
+  await client.query(`SET LOCAL search_path TO ${qi(testSchema)}, ${qi(sourceSchema)}${extraSchemas}, public`);
   try {
     const { rows } = await client.query<{ runtests: string }>(
       `SELECT * FROM runtests(${ql(testSchema)}::name, ${ql(filter)}::text)`,
     );
-    await client.query("RELEASE SAVEPOINT test_run");
+    if (inTransaction) {
+      await client.query("RELEASE SAVEPOINT test_run");
+    } else {
+      await client.query("ROLLBACK");
+    }
     if (rows.length === 0) return { passed: 0, failed: 0, total: 0, results: [] };
     return parseTap(rows);
   } catch (err: unknown) {
-    await client.query("ROLLBACK TO SAVEPOINT test_run").catch(() => {});
+    if (inTransaction) {
+      await client.query("ROLLBACK TO SAVEPOINT test_run").catch(() => {});
+    } else {
+      await client.query("ROLLBACK").catch(() => {});
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return {
       passed: 0, failed: 1, total: 1,
