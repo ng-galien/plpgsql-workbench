@@ -177,6 +177,21 @@ export function createPackTool({ withClient, moduleRegistry }: {
           }
         }
 
+        // Detect cross-module calls to _* internal functions
+        const boundaryViolations: { caller: string; callee: string }[] = [];
+        for (const fn of allFns) {
+          const calls = await extractFuncDeps(fn);
+          for (const callee of calls) {
+            const [calleeSchema, calleeName] = callee.split(".");
+            if (calleeName?.startsWith("_") && !schemas.includes(calleeSchema)) {
+              boundaryViolations.push({
+                caller: `${fn.schema}.${fn.name}`,
+                callee,
+              });
+            }
+          }
+        }
+
         const sorted = topoSort(allFns, edges);
 
         const sections: string[] = [];
@@ -257,6 +272,18 @@ export function createPackTool({ withClient, moduleRegistry }: {
         for (const s of schemas) {
           const count = sorted.filter((f) => f.schema === s).length;
           parts.push(`  ${s}: ${count} functions`);
+        }
+
+        if (boundaryViolations.length > 0) {
+          parts.push("");
+          parts.push("boundaries: VIOLATION");
+          parts.push("  cross-module calls to internal (_prefix) functions:");
+          for (const v of boundaryViolations) {
+            parts.push(`    - ${v.caller} -> ${v.callee}`);
+          }
+        } else {
+          parts.push("");
+          parts.push("boundaries: ok");
         }
 
         if (missing.length === 0 && extra.length === 0) {

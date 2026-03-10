@@ -185,11 +185,13 @@ export function createDocTool({ withClient }: {
         const schemasSet = new Set(schemas);
         const crossSchema = deps.filter(
           d => d.source_schema !== d.target_schema
-            && schemasSet.has(d.target_schema)
             && d.dep_type === "FUNCTION"
         );
-        const infraCalls = crossSchema.filter(d => infraSet.has(d.target_schema));
-        const violations = crossSchema.filter(d => !infraSet.has(d.target_schema));
+        // _prefix convention: cross-schema calls to _* functions are always violations
+        const privateViolations = crossSchema.filter(d => d.target.startsWith("_"));
+        const publicCross = crossSchema.filter(d => !d.target.startsWith("_"));
+        const infraCalls = publicCross.filter(d => infraSet.has(d.target_schema));
+        const violations = publicCross.filter(d => !infraSet.has(d.target_schema) && schemasSet.has(d.target_schema));
 
         const parts: string[] = [];
         parts.push(`# Dependency Graph: ${schemas.join(", ")}`);
@@ -209,6 +211,15 @@ export function createDocTool({ withClient }: {
         parts.push(`- **${fnCalls.length}** function calls`);
         parts.push(`- **${tblAccess.length}** table accesses`);
 
+        if (privateViolations.length > 0) {
+          parts.push("");
+          parts.push("## Private Function Violations");
+          parts.push("Cross-schema calls to internal (_prefix) functions:");
+          for (const v of privateViolations) {
+            parts.push(`- \`${v.source_schema}.${v.source}\` -> \`${v.target_schema}.${v.target}\` (internal)`);
+          }
+        }
+
         if (infraCalls.length > 0) {
           parts.push("");
           parts.push("## Cross-schema calls (infrastructure)");
@@ -224,7 +235,7 @@ export function createDocTool({ withClient }: {
           for (const v of violations) {
             parts.push(`- \`${v.source_schema}.${v.source}\` -> \`${v.target_schema}.${v.target}\``);
           }
-        } else if (schemas.length > 1) {
+        } else if (schemas.length > 1 && privateViolations.length === 0) {
           parts.push("");
           parts.push("## Boundaries");
           parts.push("No boundary violations detected.");

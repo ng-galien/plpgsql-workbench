@@ -11,7 +11,7 @@ import type { ModuleManifest, InstallPlan } from "./resolver.js";
 // --- Check types ---
 
 export interface CheckItem {
-  kind: "schema" | "extension";
+  kind: "schema" | "extension" | "conflict" | "grant";
   name: string;
   required_by: string;
   present: boolean;
@@ -40,45 +40,120 @@ export async function checkModules(
   connectionString: string,
   only?: string,
 ): Promise<CheckResult[]> {
+  const results: CheckResult[] = [];
+
+  // --- Static checks (no DB needed) ---
+
+  // 1. Schema ownership conflicts: no schema claimed by two modules
+  const schemaOwners = new Map<string, string>(); // schema → module name
+  for (const manifest of plan.order) {
+    for (const schema of [manifest.schemas.public, manifest.schemas.private].filter(Boolean) as string[]) {
+      const existing = schemaOwners.get(schema);
+      if (existing && existing !== manifest.name) {
+        // Both modules claim this schema — record conflict on both
+        const conflictItem: CheckItem = {
+          kind: "conflict",
+          name: schema,
+          required_by: `${manifest.name} vs ${existing}`,
+          present: false,
+        };
+        // Add to current module's result (will be created below)
+        const existingResult = results.find((r) => r.module === existing);
+        if (existingResult) {
+          existingResult.checks.push(conflictItem);
+          existingResult.ok = false;
+        }
+      }
+      schemaOwners.set(schema, manifest.name);
+    }
+  }
+
+  // 2. Grants reference only owned schemas
+  for (const manifest of plan.order) {
+    const ownedSchemas = new Set<string>();
+    if (manifest.schemas.public) ownedSchemas.add(manifest.schemas.public);
+    if (manifest.schemas.private) ownedSchemas.add(manifest.schemas.private);
+    // Test/QA schemas are also owned by convention
+    if (manifest.schemas.public) {
+      ownedSchemas.add(`${manifest.schemas.public}_ut`);
+      ownedSchemas.add(`${manifest.schemas.public}_it`);
+      ownedSchemas.add(`${manifest.schemas.public}_qa`);
+    }
+
+    const grantChecks: CheckItem[] = [];
+    for (const [, schemas] of Object.entries(manifest.grants ?? {})) {
+      for (const schema of schemas) {
+        if (!ownedSchemas.has(schema)) {
+          grantChecks.push({
+            kind: "grant",
+            name: schema,
+            required_by: manifest.name,
+            present: false,
+          });
+        }
+      }
+    }
+
+    // If there were conflicts from step 1, they're already added
+    const existingResult = results.find((r) => r.module === manifest.name);
+    if (existingResult) {
+      existingResult.checks.push(...grantChecks);
+      if (grantChecks.some((c) => !c.present)) existingResult.ok = false;
+    } else if (grantChecks.length > 0) {
+      results.push({
+        module: manifest.name,
+        version: manifest.version,
+        checks: grantChecks,
+        ok: grantChecks.every((c) => c.present),
+      });
+    }
+  }
+
+  // --- DB checks ---
+
   const client = new pg.Client({ connectionString });
   await client.connect();
 
   try {
-    // Query all existing schemas and extensions in one shot
     const { rows: schemaRows } = await client.query<{ nspname: string }>(
       `SELECT nspname FROM pg_namespace`,
     );
     const existingSchemas = new Set(schemaRows.map((r) => r.nspname));
 
+    // Check available extensions (can be installed), not just installed ones
+    const { rows: availRows } = await client.query<{ name: string }>(
+      `SELECT name FROM pg_available_extensions`,
+    );
+    const availableExtensions = new Set(availRows.map((r) => r.name));
+
     const { rows: extRows } = await client.query<{ extname: string }>(
       `SELECT extname FROM pg_extension`,
     );
-    const existingExtensions = new Set(extRows.map((r) => r.extname));
+    const installedExtensions = new Set(extRows.map((r) => r.extname));
 
-    // Track schemas that will be created by modules earlier in the plan
+    // Track what earlier modules in the plan will provide
     const willCreate = new Set<string>();
-
-    const results: CheckResult[] = [];
+    const willInstall = new Set<string>();
 
     for (const manifest of plan.order) {
-      if (only && manifest.name !== only) {
-        // Skipped modules must already exist in DB — don't assume they will be created
-        continue;
-      }
+      if (only && manifest.name !== only) continue;
 
       const checks: CheckItem[] = [];
 
-      // Check extensions required by this module
+      // Check extensions: available on server (or already installed, or will be installed upstream)
       for (const ext of manifest.extensions) {
+        const available = availableExtensions.has(ext)
+          || installedExtensions.has(ext)
+          || willInstall.has(ext);
         checks.push({
           kind: "extension",
           name: ext,
           required_by: manifest.name,
-          present: existingExtensions.has(ext),
+          present: available,
         });
       }
 
-      // Check dependency schemas (from other modules this one depends on)
+      // Check dependency schemas
       for (const dep of manifest.dependencies) {
         const depManifest = plan.order.find((m) => m.name === dep);
         if (!depManifest) continue;
@@ -94,12 +169,20 @@ export async function checkModules(
         }
       }
 
-      const ok = checks.every((c) => c.present);
-      results.push({ module: manifest.name, version: manifest.version, checks, ok });
+      // Merge with any static checks already recorded
+      const existingResult = results.find((r) => r.module === manifest.name);
+      if (existingResult) {
+        existingResult.checks.push(...checks);
+        if (checks.some((c) => !c.present)) existingResult.ok = false;
+      } else {
+        const ok = checks.every((c) => c.present);
+        results.push({ module: manifest.name, version: manifest.version, checks, ok });
+      }
 
-      // Register what this module will create (for downstream checks)
+      // Register what this module provides for downstream checks
       if (manifest.schemas.public) willCreate.add(manifest.schemas.public);
       if (manifest.schemas.private) willCreate.add(manifest.schemas.private);
+      for (const ext of manifest.extensions) willInstall.add(ext);
     }
 
     return results;
