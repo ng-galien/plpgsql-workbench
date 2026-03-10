@@ -56,7 +56,7 @@ dev-init: dev-up dev-sync
 	@echo "Waiting for DB..."
 	@sleep 2
 	@for mod in modules/*/; do \
-		for sql in "$$mod"sql/*.sql; do \
+		for sql in "$$mod"build/*.sql; do \
 			[ -f "$$sql" ] && echo "  Loading $$sql" && \
 			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f "$$sql" -q 2>&1 | grep -v "^$$" || true; \
 		done; \

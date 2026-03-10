@@ -14,9 +14,8 @@
     "postgis_sfcgal"
   ],
   "sql": [
-    "sql/extensions.sql",
-    "sql/ddl.sql",
-    "sql/functions.sql"
+    "build/cad.ddl.sql",
+    "build/cad.func.sql"
   ],
   "assets": {
     "frontend": [],

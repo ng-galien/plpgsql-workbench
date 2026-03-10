@@ -43,7 +43,7 @@ export async function buildModuleRegistry(workspaceRoot: string): Promise<Module
           schemas.push(`${manifest.schemas.public}_it`);
         }
 
-        const functionsFile = manifest.sql.find((f) => f.includes("functions")) ?? "";
+        const functionsFile = manifest.sql.find((f) => f.endsWith(".func.sql")) ?? "";
 
         mappings.push({
           module: manifest.name,
@@ -73,7 +73,7 @@ export async function buildModuleRegistry(workspaceRoot: string): Promise<Module
     savePath(schema: string): string | null {
       for (const m of mappings) {
         if (m.schemas.includes(schema)) {
-          return path.join(m.modulePath, "sql");
+          return path.join(m.modulePath, "src");
         }
       }
       return null;

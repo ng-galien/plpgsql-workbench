@@ -12,8 +12,7 @@
     "pgtap"
   ],
   "sql": [
-    "sql/00-extensions.sql",
-    "sql/functions.sql"
+    "build/pgv.func.sql"
   ],
   "assets": {
     "frontend": [

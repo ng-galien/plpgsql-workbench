@@ -107,7 +107,7 @@ export function createFuncSaveTool({ withClient, moduleRegistry }: {
         "Save functions from database to SQL files on disk for version control.\n" +
         "Creates one .sql file per function with full CREATE OR REPLACE DDL.\n" +
         "Output path is auto-resolved from module registry (schema → module dir).\n" +
-        "Structure: modules/{module}/sql/{schema}/{function_name}.sql",
+        "Structure: modules/{module}/src/{schema}/{function_name}.sql",
       schema: z.object({
         target: z
           .string()

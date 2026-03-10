@@ -47,22 +47,11 @@ export async function installModules(
       }
 
       let targetName: string;
-      if (manifest.name === "pgv") {
-        // pgv has reserved slots
-        const slot = String(PGV_SLOT).padStart(2, "0");
-        switch (basename) {
-          case "00-extensions.sql": targetName = "00-extensions.sql"; break;
-          case "functions.sql":     targetName = `${slot}-pgv.sql`; break;
-          default:                  targetName = `${slot}-${basename}`; break;
-        }
-      } else {
-        // Other modules get their slot
-        const slot = String(nextSlot).padStart(2, "0");
-        switch (basename) {
-          case "00-extensions.sql": targetName = `${slot}-${manifest.name}-extensions.sql`; break;
-          default:                  targetName = `${slot}-${manifest.name}-${basename}`; break;
-        }
-      }
+      const slot = manifest.name === "pgv"
+        ? String(PGV_SLOT).padStart(2, "0")
+        : String(nextSlot).padStart(2, "0");
+      // basename is already schema-prefixed (e.g. cad.ddl.sql, pgv.func.sql)
+      targetName = `${slot}-${basename}`;
 
       await fs.copyFile(src, path.join(appDir, "sql", targetName));
       files.push(`sql/${targetName}`);

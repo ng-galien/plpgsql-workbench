@@ -153,7 +153,7 @@ export function createPackTool({ withClient, moduleRegistry }: {
         return text(
           `problem: module "${mapping.module}" has no functions SQL file in module.json\n` +
           `where: pg_pack\n` +
-          `fix_hint: add a "sql/functions.sql" entry to module.json sql field`,
+          `fix_hint: add a "build/<schema>.func.sql" entry to module.json sql field`,
         );
       }
 
@@ -214,15 +214,69 @@ export function createPackTool({ withClient, moduleRegistry }: {
         await fs.mkdir(path.dirname(resolved), { recursive: true });
         await fs.writeFile(resolved, content, "utf-8");
 
+        // --- Coherence check: build/ vs src/ ---
+        const srcDir = path.join(mapping.modulePath, "src");
+        const missing: string[] = [];   // in DB but not in src/
+        const extra: string[] = [];     // in src/ but not in DB
+
+        const dbFuncs = new Map<string, Set<string>>(); // schema → Set<name>
+        for (const fn of sorted) {
+          if (!dbFuncs.has(fn.schema)) dbFuncs.set(fn.schema, new Set());
+          dbFuncs.get(fn.schema)!.add(fn.name);
+        }
+
+        // Check each packed function has a src/ file
+        for (const [schema, names] of dbFuncs) {
+          for (const name of names) {
+            const srcFile = path.join(srcDir, schema, `${name}.sql`);
+            try { await fs.access(srcFile); }
+            catch { missing.push(`${schema}/${name}.sql`); }
+          }
+        }
+
+        // Check for extra files in src/ not in DB
+        for (const schema of schemas) {
+          const schemaDir = path.join(srcDir, schema);
+          try {
+            const files = await fs.readdir(schemaDir);
+            const dbNames = dbFuncs.get(schema) ?? new Set();
+            for (const f of files) {
+              if (!f.endsWith(".sql")) continue;
+              const funcName = f.replace(/(_\d+)?\.sql$/, "");
+              if (!dbNames.has(funcName)) {
+                extra.push(`${schema}/${f}`);
+              }
+            }
+          } catch { /* src/schema/ doesn't exist yet */ }
+        }
+
         const parts: string[] = [];
         parts.push(`packed ${totalFunctions} functions from ${schemas.length} schema(s) -> ${mapping.module}/${mapping.functionsFile}`);
         parts.push(`deps: ${edges.length} edges resolved via AST`);
-        parts.push(`completeness: full`);
         parts.push("");
         for (const s of schemas) {
           const count = sorted.filter((f) => f.schema === s).length;
           parts.push(`  ${s}: ${count} functions`);
         }
+
+        if (missing.length === 0 && extra.length === 0) {
+          parts.push("");
+          parts.push("coherence: ok (build/ and src/ in sync)");
+        } else {
+          parts.push("");
+          parts.push("coherence: MISMATCH");
+          if (missing.length > 0) {
+            parts.push(`  missing from src/ (run pg_func_save):`);
+            for (const m of missing) parts.push(`    - ${m}`);
+          }
+          if (extra.length > 0) {
+            parts.push(`  extra in src/ (not in DB — deleted function?):`);
+            for (const e of extra) parts.push(`    - ${e}`);
+          }
+        }
+
+        parts.push("");
+        parts.push(`completeness: full`);
         return text(parts.join("\n"));
       });
     },
