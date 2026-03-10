@@ -6,6 +6,7 @@
   <title>pgView</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <link rel="stylesheet" href="/pgview.css">
+  <script src="/pgv-modules.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/panzoom@9/dist/panzoom.min.js"></script>
@@ -309,6 +310,8 @@
           else { s.textContent = old.textContent; }
           old.parentNode.replaceChild(s, old);
         });
+        // Initialize Alpine.js on new DOM (module fragments with x-data)
+        if (typeof Alpine !== 'undefined') Alpine.initTree(el);
       },
 
       /* ── Toast ─────────────────────────────────────── */

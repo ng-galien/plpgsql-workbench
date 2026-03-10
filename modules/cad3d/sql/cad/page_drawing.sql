@@ -83,7 +83,7 @@ BEGIN
 
   -- Liens
   v_body := v_body || format(
-    '<p><a href="/viewer.html?id=%s" target="_blank">Vue 3D</a> | <a href="/drawing/%s/bom">Liste de débit</a></p>', p_id, p_id);
+    '<p><a href="/drawing/%s/3d">Vue 3D</a> | <a href="/drawing/%s/bom">Liste de débit</a></p>', p_id, p_id);
 
   RETURN v_body;
 END;

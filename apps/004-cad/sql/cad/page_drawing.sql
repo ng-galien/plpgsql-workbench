@@ -13,8 +13,11 @@ BEGIN
     RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
   END IF;
 
-  -- Canvas SVG interactif (pan + zoom)
-  v_body := pgv.svg_canvas(cad.render_svg(p_id));
+  -- Layout: tree + canvas
+  v_body := '<div class="cad-layout">'
+    || cad.fragment_tree(p_id)
+    || '<div>' || pgv.svg_canvas(cad.render_svg(p_id)) || '</div>'
+    || '</div>';
 
   -- Stats
   v_body := v_body || pgv.grid(

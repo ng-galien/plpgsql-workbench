@@ -19,9 +19,7 @@
     "sql/functions.sql"
   ],
   "assets": {
-    "frontend": [
-      "frontend/viewer.html"
-    ],
+    "frontend": [],
     "scripts": [
       "frontend/cad3d.js"
     ],
