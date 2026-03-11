@@ -16,40 +16,33 @@
   var HIGHLIGHT = 0x66aaff;
 
   // --- 3D Viewer component ---
+  // Three.js objects stored outside Alpine reactivity to avoid Proxy conflicts.
+  // Alpine wraps this.* in Proxies; Three.js objects have non-configurable
+  // properties (modelViewMatrix, etc.) that break under Proxy.
   Alpine.data('cadViewer', function() {
+    var _gl = { scene: null, camera: null, renderer: null, controls: null,
+      raycaster: null, mouse: null, lastMouse: { x: 0, y: 0 },
+      cameraSet: false, selections: [] };
+    window._gl = _gl; // DEBUG
+
     return {
       drawingId: null,
-      pieces: [],
-      selections: [],
       wireframe: false,
-      scene: null,
-      camera: null,
-      renderer: null,
-      controls: null,
-      raycaster: null,
-      mouse: null,
-      _lastMouseDown: null,
-      _cameraSet: false,
+      selCount: 0,
       hud: 'Chargement...',
       info: null,
 
       load: function(id) {
         this.drawingId = id;
-        this._lastMouseDown = { x: 0, y: 0 };
         var self = this;
         var container = this.$refs.viewport;
         if (!container) return;
 
-        // Lazy-load Three.js (UMD r160)
+        // Lazy-load Three.js + OrbitControls (UMD bundle r183)
         if (typeof THREE === 'undefined') {
           var s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js';
-          s.onload = function() {
-            var s2 = document.createElement('script');
-            s2.src = 'https://cdn.jsdelivr.net/npm/three@0.160/examples/js/controls/OrbitControls.js';
-            s2.onload = function() { self._init3d(container); self._loadScene(); };
-            document.head.appendChild(s2);
-          };
+          s.src = 'https://cdn.jsdelivr.net/gh/paulmasson/threejs-with-controls@r183/build/three.min.js';
+          s.onload = function() { self._init3d(container); self._loadScene(); };
           document.head.appendChild(s);
         } else {
           this._init3d(container);
@@ -58,69 +51,70 @@
       },
 
       _init3d: function(container) {
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x1a1a2e);
+        var scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a2e);
+        _gl.scene = scene;
 
         var w = container.clientWidth;
         var h = container.clientHeight;
-        this.camera = new THREE.PerspectiveCamera(50, w / h, 1, 100000);
-        this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.renderer.setSize(w, h);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        container.appendChild(this.renderer.domElement);
+        var camera = new THREE.PerspectiveCamera(50, w / h, 1, 100000);
+        _gl.camera = camera;
+
+        var renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(w, h);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+        _gl.renderer = renderer;
 
         // Controls
-        this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableDamping = true;
-        this.controls.dampingFactor = 0.08;
+        var controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        _gl.controls = controls;
 
         // Lights
-        this.scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
         var dl1 = new THREE.DirectionalLight(0xffffff, 0.8);
         dl1.position.set(3000, 5000, 4000);
-        this.scene.add(dl1);
+        scene.add(dl1);
         var dl2 = new THREE.DirectionalLight(0xffffff, 0.3);
         dl2.position.set(-2000, -3000, 1000);
-        this.scene.add(dl2);
+        scene.add(dl2);
 
         // Grid + axes
-        this.scene.add(new THREE.GridHelper(6000, 60, 0x444466, 0x2a2a44));
-        this.scene.add(new THREE.AxesHelper(500));
+        scene.add(new THREE.GridHelper(6000, 60, 0x444466, 0x2a2a44));
+        scene.add(new THREE.AxesHelper(500));
 
         // Raycaster
-        this.raycaster = new THREE.Raycaster();
-        this.mouse = new THREE.Vector2();
+        _gl.raycaster = new THREE.Raycaster();
+        _gl.mouse = new THREE.Vector2();
 
         // Events
         var self = this;
-        var renderer = this.renderer;
-        var camera = this.camera;
-        var scene = this.scene;
-        var ctrl = this.controls;
         var canvas = renderer.domElement;
 
         canvas.addEventListener('mousedown', function(e) {
-          self._lastMouseDown.x = e.clientX;
-          self._lastMouseDown.y = e.clientY;
+          _gl.lastMouse.x = e.clientX;
+          _gl.lastMouse.y = e.clientY;
         });
 
         canvas.addEventListener('mouseup', function(e) {
-          var dx = e.clientX - self._lastMouseDown.x;
-          var dy = e.clientY - self._lastMouseDown.y;
+          var dx = e.clientX - _gl.lastMouse.x;
+          var dy = e.clientY - _gl.lastMouse.y;
           if (dx * dx + dy * dy > 25) return; // drag, not click
 
           var rect = canvas.getBoundingClientRect();
-          self.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-          self.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-          self.raycaster.setFromCamera(self.mouse, camera);
+          _gl.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          _gl.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          _gl.raycaster.setFromCamera(_gl.mouse, camera);
 
           var meshes = scene.children.filter(function(c) { return c.userData && c.userData.piece; });
-          var hits = self.raycaster.intersectObjects(meshes);
+          var hits = _gl.raycaster.intersectObjects(meshes);
 
           if (hits.length > 0) {
             var mesh = hits[0].object;
             if (e.shiftKey) {
-              var idx = self.selections.indexOf(mesh);
+              var idx = _gl.selections.indexOf(mesh);
               if (idx >= 0) { self._removeSelection(idx); }
               else { self._addSelection(mesh); }
             } else {
@@ -135,18 +129,18 @@
 
         canvas.addEventListener('mousemove', function(e) {
           var rect = canvas.getBoundingClientRect();
-          self.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-          self.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-          self.raycaster.setFromCamera(self.mouse, camera);
+          _gl.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          _gl.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          _gl.raycaster.setFromCamera(_gl.mouse, camera);
           var meshes = scene.children.filter(function(c) { return c.userData && c.userData.piece; });
-          var hits = self.raycaster.intersectObjects(meshes);
+          var hits = _gl.raycaster.intersectObjects(meshes);
           canvas.style.cursor = hits.length > 0 ? 'pointer' : 'default';
         });
 
         // Animate
         function animate() {
           requestAnimationFrame(animate);
-          ctrl.update();
+          controls.update();
           renderer.render(scene, camera);
         }
         animate();
@@ -167,13 +161,12 @@
         var self = this;
         fetch('/rpc/scene_json', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'cad' },
           body: JSON.stringify({ p_drawing_id: this.drawingId })
         })
         .then(function(r) { return r.json(); })
         .then(function(pieces) {
           if (!Array.isArray(pieces)) pieces = pieces.pieces || [];
-          self.pieces = pieces;
           self._buildMeshes(pieces);
           self._updateHud(pieces);
         })
@@ -181,7 +174,7 @@
       },
 
       _buildMeshes: function(pieces) {
-        var self = this;
+        var scene = _gl.scene;
         var allVerts = [];
 
         pieces.forEach(function(p) {
@@ -210,48 +203,55 @@
           var mesh = new THREE.Mesh(geom, mat);
           mesh.userData = { piece: true, id: p.id, label: p.label, role: p.role,
             section: p.section, length_mm: p.length_mm, wood_type: p.wood_type };
-          self.scene.add(mesh);
+          scene.add(mesh);
           allVerts.push.apply(allVerts, verts);
         });
 
         // Auto-center camera on first load
-        if (allVerts.length > 0 && !this._cameraSet) {
-          var box = new THREE.Box3();
-          for (var i = 0; i < allVerts.length; i += 3) {
-            box.expandByPoint(new THREE.Vector3(allVerts[i], allVerts[i+1], allVerts[i+2]));
-          }
-          var center = box.getCenter(new THREE.Vector3());
-          var size = box.getSize(new THREE.Vector3()).length();
-          this.controls.target.copy(center);
-          this.camera.position.copy(center.clone().add(new THREE.Vector3(size * 0.8, size * 0.6, size * 0.8)));
-          this.camera.lookAt(center);
-          this.controls.update();
-          this._cameraSet = true;
+        if (allVerts.length > 0 && !_gl.cameraSet) {
+          this._centerCamera(allVerts);
         }
       },
 
+      _centerCamera: function(allVerts) {
+        var box = new THREE.Box3();
+        for (var i = 0; i < allVerts.length; i += 3) {
+          box.expandByPoint(new THREE.Vector3(allVerts[i], allVerts[i+1], allVerts[i+2]));
+        }
+        var center = box.getCenter(new THREE.Vector3());
+        var size = box.getSize(new THREE.Vector3()).length();
+        _gl.controls.target.copy(center);
+        _gl.camera.position.copy(center.clone().add(new THREE.Vector3(size * 0.8, size * 0.6, size * 0.8)));
+        _gl.camera.lookAt(center);
+        _gl.controls.update();
+        _gl.cameraSet = true;
+      },
+
       _addSelection: function(mesh) {
-        if (this.selections.indexOf(mesh) >= 0) return;
+        if (_gl.selections.indexOf(mesh) >= 0) return;
         mesh._origColor = mesh.material.color.getHex();
         mesh.material.color.setHex(HIGHLIGHT);
         mesh.material.emissive = new THREE.Color(0x223344);
-        this.selections.push(mesh);
+        _gl.selections.push(mesh);
+        this.selCount = _gl.selections.length;
       },
 
       _removeSelection: function(idx) {
-        var m = this.selections[idx];
+        var m = _gl.selections[idx];
         m.material.color.setHex(m._origColor);
         m.material.emissive = new THREE.Color(0x000000);
-        this.selections.splice(idx, 1);
+        _gl.selections.splice(idx, 1);
+        this.selCount = _gl.selections.length;
         this._updateInfo();
       },
 
       _clearSelections: function() {
-        this.selections.forEach(function(m) {
+        _gl.selections.forEach(function(m) {
           m.material.color.setHex(m._origColor);
           m.material.emissive = new THREE.Color(0x000000);
         });
-        this.selections = [];
+        _gl.selections = [];
+        this.selCount = 0;
         this.info = null;
       },
 
@@ -265,11 +265,11 @@
       },
 
       _updateInfo: function() {
-        if (this.selections.length === 0) { this.info = null; return; }
+        if (_gl.selections.length === 0) { this.info = null; return; }
         var items = [];
-        var max = Math.min(this.selections.length, 4);
+        var max = Math.min(_gl.selections.length, 4);
         for (var i = 0; i < max; i++) {
-          var d = this.selections[i].userData;
+          var d = _gl.selections[i].userData;
           items.push({
             role: d.role || '',
             label: d.label || 'Sans nom',
@@ -281,15 +281,14 @@
         }
         this.info = {
           items: items,
-          extra: this.selections.length > max ? (this.selections.length - max) : 0
+          extra: _gl.selections.length > max ? (_gl.selections.length - max) : 0
         };
       },
 
       resetCamera: function() {
-        this._cameraSet = false;
-        // Re-center from current meshes
+        _gl.cameraSet = false;
         var allVerts = [];
-        this.scene.children.forEach(function(c) {
+        _gl.scene.children.forEach(function(c) {
           if (c.userData && c.userData.piece && c.geometry) {
             var pos = c.geometry.getAttribute('position');
             if (pos) {
@@ -300,30 +299,20 @@
           }
         });
         if (allVerts.length > 0) {
-          var box = new THREE.Box3();
-          for (var i = 0; i < allVerts.length; i += 3) {
-            box.expandByPoint(new THREE.Vector3(allVerts[i], allVerts[i+1], allVerts[i+2]));
-          }
-          var center = box.getCenter(new THREE.Vector3());
-          var size = box.getSize(new THREE.Vector3()).length();
-          this.controls.target.copy(center);
-          this.camera.position.copy(center.clone().add(new THREE.Vector3(size * 0.8, size * 0.6, size * 0.8)));
-          this.camera.lookAt(center);
-          this.controls.update();
-          this._cameraSet = true;
+          this._centerCamera(allVerts);
         }
       },
 
       toggleWireframe: function() {
         this.wireframe = !this.wireframe;
         var wf = this.wireframe;
-        this.scene.traverse(function(obj) {
+        _gl.scene.traverse(function(obj) {
           if (obj.isMesh && obj.material) obj.material.wireframe = wf;
         });
       },
 
       copyContext: function() {
-        var ctx = this.selections.map(function(s) {
+        var ctx = _gl.selections.map(function(s) {
           var d = s.userData;
           return '#' + d.id + ' ' + (d.label || '?') + ' [' + d.role + '] ' + d.section + ' ' + Math.round(d.length_mm) + 'mm ' + d.wood_type;
         }).join('\n');
@@ -336,6 +325,12 @@
   Alpine.data('cadTree', function() {
     return {
       selected: null,
+
+      init: function() {
+        this.$el.querySelectorAll('.cad-tree-swatch[data-color]').forEach(function(el) {
+          el.style.setProperty('--cad-swatch-color', el.dataset.color);
+        });
+      },
 
       select: function(shapeId) {
         if (this.selected) {

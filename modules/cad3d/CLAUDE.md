@@ -15,9 +15,10 @@
 
 ```
 build/cad.ddl.sql        # Schema + 4 tables + grants (88 lines)
-build/cad.func.sql       # pg_pack output (50 cad + 5 cad_ut, 2500 lines)
-src/cad/*.sql            # Individual function sources
-src/cad_ut/test_*.sql    # Test sources
+build/cad.func.sql       # pg_pack output (cad + cad_ut + cad_qa, dependency-sorted)
+src/cad/*.sql            # Function sources (pg_func_save)
+src/cad_ut/test_*.sql    # Test sources (pg_func_save)
+qa/cad_qa/*.sql          # QA/demo sources (pg_func_save — _qa suffix → qa/)
 frontend/cad3d.js        # Alpine.js: cadViewer (Three.js) + cadTree (shape explorer)
 frontend/cad3d.css       # Viewer + toolbar + info panel styles
 ```
@@ -106,10 +107,18 @@ ST_Tesselate(face.geom) -> triangles for GeoJSON
 
 ## Three.js Integration
 
-- `cad3d.js`: Alpine `cadViewer` component, lazy-loads Three.js r160 from CDN
+- `cad3d.js`: Alpine `cadViewer` component, lazy-loads Three.js r183 from CDN (`threejs-with-controls` UMD bundle — single script, includes OrbitControls)
 - `scene_json()` returns GeoJSON PolyhedralSurfaces (tesselated triangles)
 - Piece colors by role (hardcoded in JS, must match SVG wireframe legend)
 - Raycaster click selection (Shift = multi-select), OrbitControls with damping
+
+## File Export Convention
+
+`pg_func_save` auto-resolves output directories via module registry:
+- `cad`, `cad_ut` schemas → **`src/`** (`src/cad/*.sql`, `src/cad_ut/*.sql`)
+- `cad_qa` schema → **`qa/`** (`qa/cad_qa/*.sql`)
+
+NEVER move QA files from `qa/` to `src/`. The registry decides based on schema suffix `_qa`.
 
 ## Testing
 
@@ -121,6 +130,7 @@ Tests: add_shape, delete_shape, group_shapes, move_shape, render_svg. Cleanup vi
 
 ## Gotchas
 
+- **PostgREST Content-Profile:** Any direct `fetch('/rpc/...')` from JS must include `Content-Profile: cad` header, otherwise PostgREST looks in the default schema (pgv)
 - **Docker image:** Needs `postgis/postgis:17-3.5` (NOT Supabase image) for SFCGAL
 - **ST_Volume() returns mm³** — Divide by 1e9 for m³
 - **Overlap threshold:** < 100mm³ = contact (ok), > 100mm³ = collision (error in `check()`)

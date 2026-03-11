@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION cad.fragment_tree(p_drawing_id integer)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_html text := '';
@@ -16,7 +17,7 @@ BEGIN
   LOOP
     v_html := v_html || '<details open>'
       || '<summary>'
-      || '<span class="cad-tree-swatch" style="background:' || pgv.esc(v_layer.color) || '"></span>'
+      || '<span class="cad-tree-swatch" data-color="' || pgv.esc(v_layer.color) || '"></span>'
       || pgv.esc(v_layer.name)
       || ' <span class="cad-tree-props">(' || (
            SELECT count(*) FROM cad.shape WHERE layer_id = v_layer.id AND type <> 'group'
@@ -30,14 +31,10 @@ BEGIN
 
     FOR v_shape IN
       SELECT * FROM cad.shape
-      WHERE layer_id = v_layer.id AND parent_id IS NULL
+      WHERE layer_id = v_layer.id AND type <> 'group'
       ORDER BY sort_order, id
     LOOP
-      IF v_shape.type = 'group' THEN
-        v_html := v_html || cad._render_tree_group(v_shape.id);
-      ELSE
-        v_html := v_html || cad._render_tree_node(v_shape);
-      END IF;
+      v_html := v_html || cad._render_tree_node(v_shape);
     END LOOP;
 
     v_html := v_html || '</div></details>';

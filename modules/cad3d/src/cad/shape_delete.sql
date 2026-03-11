@@ -10,6 +10,6 @@ BEGIN
   PERFORM cad.delete_shape(shape_id);
 
   RETURN format('<template data-toast="success">Shape #%s supprimée</template>', shape_id)
-    || format('<template data-redirect="/drawing/%s"></template>', drawing_id);
+    || format('<template data-redirect="/drawing?p_id=%s"></template>', drawing_id);
 END;
 $function$;

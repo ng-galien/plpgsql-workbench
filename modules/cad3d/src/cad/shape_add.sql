@@ -26,6 +26,6 @@ BEGIN
   v_shape_id := cad.add_shape(drawing_id, layer_id, type, v_geometry, v_props, nullif(trim(COALESCE(label, '')), ''));
 
   RETURN format('<template data-toast="success">Shape #%s ajoutée</template>', v_shape_id)
-    || format('<template data-redirect="/drawing/%s"></template>', drawing_id);
+    || format('<template data-redirect="/drawing?p_id=%s"></template>', drawing_id);
 END;
 $function$;

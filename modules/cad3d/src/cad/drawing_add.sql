@@ -11,10 +11,9 @@ BEGIN
 
   INSERT INTO cad.drawing (name) VALUES (trim(name)) RETURNING id INTO v_id;
 
-  -- Créer un calque par défaut
   INSERT INTO cad.layer (drawing_id, name, color, stroke_width)
   VALUES (v_id, 'Structure', '#333333', 1.5);
 
-  RETURN format('<template data-redirect="/drawing/%s"></template>', v_id);
+  RETURN format('<template data-redirect="/drawing?p_id=%s"></template>', v_id);
 END;
 $function$;
