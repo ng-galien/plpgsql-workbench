@@ -11,7 +11,7 @@ BEGIN
     || '<div class="cad-toolbar">'
     || '<button @click="resetCamera()">Reset</button>'
     || '<button @click="toggleWireframe()" x-text="wireframe ? ''Solid'' : ''Wire''">Wire</button>'
-    || '<button @click="copyContext()" x-show="selections.length > 0">Copier</button>'
+    || '<button @click="copyContext()" x-show="selCount > 0">Copier</button>'
     || '</div>'
     -- Info panel
     || '<div class="cad-info" x-show="info" x-transition>'
