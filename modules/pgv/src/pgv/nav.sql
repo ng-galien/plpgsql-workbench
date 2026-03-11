@@ -16,7 +16,7 @@ BEGIN
   END IF;
 
   -- Brand + burger toggle
-  v_html := v_html || '<ul><li><a href="' || pgv.href('/') || '" class="pgv-brand"><strong>' || pgv.esc(p_brand) || '</strong></a></li>';
+  v_html := v_html || '<ul><li><a href="' || pgv.call_ref('get_index') || '" class="pgv-brand"><strong>' || pgv.esc(p_brand) || '</strong></a></li>';
   IF v_burger THEN
     v_html := v_html || '<li class="pgv-burger-li">'
       || '<button class="pgv-burger" @click="open = !open" aria-label="Menu">'

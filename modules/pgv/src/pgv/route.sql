@@ -47,7 +47,7 @@ BEGIN
   -- Full route path
   v_route := '/' || p_schema || p_path;
 
-  -- Set route prefix early (pgv.href() needs it)
+  -- Set route prefix early (pgv.call_ref() needs it)
   PERFORM set_config('pgv.route_prefix', '/' || p_schema, true);
 
   -- Prefix nav hrefs with schema
@@ -69,7 +69,12 @@ BEGIN
     AND p.pronargs <= 1;
 
   IF NOT FOUND THEN
-    PERFORM set_config('response.status', '404', true);
+    -- GET: return 200 with error page (shell renders HTML, no need for HTTP error)
+    -- POST: return 404 so shell shows toast via _err()
+    IF lower(p_method) = 'post' THEN
+      PERFORM set_config('response.status', '404', true);
+      RETURN '<template data-toast="error">Page non trouvee: ' || pgv.esc(p_method || ' ' || p_path) || '</template>';
+    END IF;
     RETURN pgv.page(v_brand, '404', v_route, v_nav,
       pgv.error('404', 'Page non trouvee', 'Le chemin ' || p_method || ' ' || p_path || ' n''existe pas.'), v_opts);
   END IF;
@@ -108,22 +113,25 @@ BEGIN
 EXCEPTION
   WHEN raise_exception THEN
     GET STACKED DIAGNOSTICS v_detail = MESSAGE_TEXT, v_hint = PG_EXCEPTION_HINT;
-    PERFORM set_config('response.status', '400', true);
+    PERFORM set_config('pgv.route_prefix', '/' || p_schema, true);
     IF lower(p_method) = 'post' THEN
+      PERFORM set_config('response.status', '400', true);
       RETURN '<template data-toast="error">' || pgv.esc(v_detail) || '</template>';
     END IF;
     RETURN pgv.page(v_brand, 'Erreur', v_route, v_nav, pgv.error('400', 'Erreur', v_detail, v_hint), v_opts);
   WHEN invalid_text_representation THEN
     GET STACKED DIAGNOSTICS v_detail = MESSAGE_TEXT;
-    PERFORM set_config('response.status', '400', true);
+    PERFORM set_config('pgv.route_prefix', '/' || p_schema, true);
     IF lower(p_method) = 'post' THEN
+      PERFORM set_config('response.status', '400', true);
       RETURN '<template data-toast="error">' || pgv.esc(v_detail) || '</template>';
     END IF;
     RETURN pgv.page(v_brand, 'Erreur', v_route, v_nav, pgv.error('400', 'Parametre invalide', v_detail), v_opts);
   WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_detail = MESSAGE_TEXT;
-    PERFORM set_config('response.status', '500', true);
+    PERFORM set_config('pgv.route_prefix', '/' || p_schema, true);
     IF lower(p_method) = 'post' THEN
+      PERFORM set_config('response.status', '500', true);
       RETURN '<template data-toast="error">Erreur interne</template>';
     END IF;
     RETURN pgv.page(v_brand, 'Erreur', v_route, v_nav, pgv.error('500', 'Erreur interne', 'Une erreur inattendue est survenue.'), v_opts);

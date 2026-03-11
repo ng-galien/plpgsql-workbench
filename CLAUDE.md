@@ -240,13 +240,18 @@ Tool outputs use LMNAV (LM-Navigable), a compact text format optimized for LLM c
 
 ## pgView Pattern
 
-Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, canonical source in `modules/pgv/`):
+Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, canonical source in `modules/pgv/`):
 
-- PostgreSQL generates HTML via `page(path, body) -> "text/html"` domain
-- PostgREST serves raw HTML (`Content-Type: text/html`) via domain trick
+- **Router**: `pgv.route(schema, path, method, params)` — generic, pg_proc introspection, zero config
+- **Convention**: `get_*()` = pages (GET), `post_*()` = actions (POST) — no CASE router to maintain
+- **Dispatch**: introspects function signature (0 args, jsonb, scalar cast, composite `jsonb_populate_record`)
+- **GET response**: wrapped in `pgv.page()` layout (nav + title + body)
+- **POST response**: raw HTML returned (toast/redirect templates, no layout)
 - **Alpine.js** shell (~150 lines) handles routing, events, toast, dialogs
 - **PicoCSS** classless styling, **marked.js** for Markdown tables in `<md>` blocks
 - `pgv.*` schema = reusable UI primitives styled via `pgview.css`
+- **pgv.href()** for route-aware links (auto-prefixes schema in dev/multi-module mode)
+- **Query params** for dynamic pages: `/drawing?id=42` not `/drawing/42`
 
 ### pgView Conventions (ENFORCED)
 
@@ -298,7 +303,8 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, canonical source in `mod
 - **ESM project** — `"type": "module"` in package.json, `Node16` module resolution
 - **Awilix DI** — Tool factories declare deps as named params, resolved by container. Registration names ending in `Tool` are auto-discovered.
 - **pgTAP test naming** — Unit tests: `{schema}_ut.test_{name}()`, Integration tests: `{schema}_it.test_{name}()`
-- **Schema = Module (DDD)** — Each PostgreSQL schema is a bounded context with its own tables, functions, router, and tests
+- **Schema = Module (DDD)** — Each PostgreSQL schema is a bounded context with its own tables, functions, and tests. Each module provides `nav_items()`, `brand()`, and `get_*/post_*` page functions. The router `pgv.route()` dispatches automatically via pg_proc introspection.
+- **pgView function naming** — `get_*()` for pages (GET), `post_*()` for actions (POST). Parameters via query string (`/drawing?id=42`), not path segments. Function signature determines dispatch (0 args, jsonb, scalar, composite type).
 - **PostgreSQL extensions** — `plpgsql_check` (static analysis), `pgtap` (testing) — both optional, server degrades gracefully
 - **Tool naming** — `{domain}_{action}`: `pg_*` (PostgreSQL), `fs_*` (filesystem/docstore), `gmail_*` (Google)
 - **Zero inline SQL in app tools** — App tools (doc_*, etc.) MUST NOT contain raw SQL. Business logic lives in PL/pgSQL functions deployed in the app schema (e.g. `docman.import()`, `docman.classify()`). App MCP tools are thin orchestrators: they read config from DB, call platform primitives (fs_*, gmail_*), and call app PL/pgSQL functions via `withClient`. SQL in TypeScript = bug.
@@ -309,8 +315,8 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, canonical source in `mod
 | File | Content |
 |------|---------|
 | `docs/LMNAV.md` | Output format specification with examples for every tool |
-| `docs/PGAPP.md` | Platform architecture: API router, pgView SSR, schema=module, VS Code extension, pgv primitives |
-| `docs/FRONTEND.md` | **UI/UX stack reference**: Alpine.js + PicoCSS + PostgREST + pgView primitives, shell, data-\* contract |
+| `docs/PGAPP.md` | Platform architecture: pgv.route(), pgView SSR, get\_/post\_ convention, schema=module, pgv primitives |
+| `docs/FRONTEND.md` | **UI/UX stack reference**: Alpine.js shell, data-\* contract, pgv.route() dispatch, tables (sort+pagination), CSS, PostgREST config |
 | `docs/BUSINESS.md` | Business plan for SaaS artisan ERP + toolbox packaging model |
 | `docs/AI-INTEGRATION.md` | 3-level AI integration: MCP (done), chat widget, autonomous agent |
 | `docs/PGM.md` | PostgreSQL Module Manager: module.json spec, pgm CLI, install/deploy workflow |

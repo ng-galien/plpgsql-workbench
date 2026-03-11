@@ -49,7 +49,7 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- 3. All href="/path" resolve to page_* functions (if schema known)
+  -- 3. All href="/path" resolve to get_* functions (if schema known)
   IF p_schema IS NOT NULL THEN
     FOR v_match IN
       SELECT regexp_matches(p_html, 'href="(/[^"]*)"', 'g')
@@ -59,24 +59,35 @@ BEGIN
       IF v_href LIKE '#%' OR v_href LIKE 'http%' THEN
         CONTINUE;
       END IF;
-      -- Derive expected function: /foo/bar -> page_foo_bar
-      IF v_href = '/' THEN
-        v_page_fn := 'page_index';
-      ELSE
-        v_page_fn := 'page_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_');
+
+      -- Strip schema prefix if present (e.g. /cad/drawing?id=1 → /drawing?id=1)
+      IF v_href LIKE '/' || p_schema || '/%' THEN
+        v_href := substr(v_href, length(p_schema) + 2);
+      ELSIF v_href = '/' || p_schema || '/' OR v_href = '/' || p_schema THEN
+        v_href := '/';
       END IF;
-      -- Strip numeric segments for parametric routes (e.g. /drawing/3/3d -> page_drawing_3d)
-      v_page_fn := regexp_replace(v_page_fn, '_\d+', '', 'g');
+
+      -- Strip query string (e.g. /drawing?id=42 → /drawing)
+      IF v_href LIKE '%?%' THEN
+        v_href := split_part(v_href, '?', 1);
+      END IF;
+
+      -- Derive expected function: /foo → get_foo, / → get_index
+      IF v_href = '/' THEN
+        v_page_fn := 'get_index';
+      ELSE
+        v_page_fn := 'get_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_');
+      END IF;
 
       IF EXISTS (
         SELECT 1 FROM pg_proc p
         JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = p_schema AND p.proname = v_page_fn
       ) THEN
-        RETURN NEXT ok(true, format('href "%s" -> %s.%s() exists', v_href, p_schema, v_page_fn));
+        RETURN NEXT ok(true, format('href "%s" -> %s.%s() exists', v_match[1], p_schema, v_page_fn));
       ELSE
         v_errors := v_errors + 1;
-        RETURN NEXT ok(false, format('href "%s" -> %s.%s() NOT FOUND', v_href, p_schema, v_page_fn));
+        RETURN NEXT ok(false, format('href "%s" -> %s.%s() NOT FOUND', v_match[1], p_schema, v_page_fn));
       END IF;
     END LOOP;
   END IF;

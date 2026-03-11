@@ -2,20 +2,21 @@
 
 ## Vision
 
-Construire des applications complètes avec PostgreSQL comme seul runtime.
-Trois couches, un seul modèle de navigation :
+Construire des applications completes avec PostgreSQL comme seul runtime.
+Trois couches, un seul modele de navigation :
 
 ```
-┌─────────────────────────────────────────────┐
-│  VS Code Extension (HATEOAS browser)        │  UI
-├─────────────────────────────────────────────┤
-│  PostgREST  →  api(method, path, body)      │  Transport
-├─────────────────────────────────────────────┤
-│  PL/pgSQL : router + fonctions métier       │  Backend
-│  PostgreSQL : tables + contraintes + RLS    │  Storage
-├─────────────────────────────────────────────┤
-│  MCP Workbench (plpgsql://)                 │  Dev/Ops
-└─────────────────────────────────────────────┘
++---------------------------------------------+
+|  Browser : Alpine.js shell (SPA)            |  UI
++---------------------------------------------+
+|  PostgREST  ->  pgv.route(schema, path,     |  Transport
+|                            method, params)   |
++---------------------------------------------+
+|  PL/pgSQL : router + get_*/post_* functions |  Backend
+|  PostgreSQL : tables + contraintes + RLS    |  Storage
++---------------------------------------------+
+|  MCP Workbench (plpgsql://)                 |  Dev/Ops
++---------------------------------------------+
 ```
 
 Pas de serveur applicatif. La DB est l'app.
@@ -264,61 +265,80 @@ Les deux systèmes partagent le même modèle mental : **des URIs navigables par
 
 ### Principe
 
-PostgreSQL génère le HTML. Pas de framework JS. Le navigateur est un afficheur.
+PostgreSQL genere le HTML. Pas de framework JS. Le navigateur est un afficheur.
 
 ```
-┌──────────────────────────────────────────────┐
-│  Browser : <div id="app"> + 40 lignes JS     │
-├──────────────────────────────────────────────┤
-│  PostgREST  →  POST /rpc/page                │
-├──────────────────────────────────────────────┤
-│  page(path, body) → TEXT (HTML)              │
-│  helpers : esc(), pgv_badge(), pgv_money()   │
-│  pages : pgv_dashboard(), pgv_products()...  │
-└──────────────────────────────────────────────┘
++----------------------------------------------+
+|  Browser : Alpine.js shell (~150 lignes JS)  |
++----------------------------------------------+
+|  PostgREST  ->  POST /rpc/route              |
+|    {schema, path, method, params}            |
++----------------------------------------------+
+|  pgv.route() -> introspect pg_proc           |
+|    -> dispatch get_*/post_* functions         |
+|    -> GET: pgv.page() layout wrapping         |
+|    -> POST: raw HTML (toast/redirect)         |
++----------------------------------------------+
 ```
 
-### Routeur HTML
+### Routeur pgv.route()
+
+Un routeur unique, generique, base sur pg_proc introspection :
 
 ```sql
-CREATE FUNCTION app.page(p_path text, p_body jsonb DEFAULT '{}')
-RETURNS text AS $$
-BEGIN
-  CASE
-    WHEN p_path LIKE '/clients%'   THEN RETURN clients.page(p_path, p_body);
-    WHEN p_path LIKE '/catalogue%' THEN RETURN catalogue.page(p_path, p_body);
-    WHEN p_path = '/'              THEN RETURN app.pgv_dashboard();
-    ELSE RETURN app.pgv_404(p_path);
-  END CASE;
-END;
-$$;
+pgv.route(p_schema text, p_path text, p_method text DEFAULT 'GET', p_params jsonb DEFAULT '{}')
+RETURNS "text/html"
 ```
 
-### Shell SPA (~40 lignes)
+Le routeur :
+1. Derive le nom de fonction : `lower(method) || '_' || path_segments`
+   - `GET /` -> `get_index`
+   - `GET /drawings` -> `get_drawings`
+   - `POST /save` -> `post_save`
+2. Charge `nav_items()`, `brand()`, `nav_options()` du schema cible
+3. Introspect la signature de la fonction via `pg_proc` (max 1 arg)
+4. Dispatch selon le type d'argument (0 args, jsonb, scalaire, composite)
+5. GET : emballe dans `pgv.page()` avec nav + titre
+6. POST : retourne le HTML brut (toast/redirect templates)
 
-Le frontend est un fichier HTML statique :
-- PicoCSS (ou DaisyUI/Tailwind) via CDN pour le style
-- `go(path)` : fetch → render HTML dans `#app`
-- `post(path, body)` : fetch avec body → render ou redirect
+**Pas de CASE, pas de routeur a maintenir.** Ajouter une page = creer une fonction `get_xxx()`.
+
+### Shell SPA (Alpine.js)
+
+Le frontend est un fichier HTML statique (`index.html`) :
+- **Alpine.js** — composant `pgview` (state, events, navigation)
+- **PicoCSS** via CDN pour le style classless
+- `go(path)` : fetch `/rpc/route` -> render HTML dans `#app`
+- `post(endpoint, data)` : fetch avec `Content-Profile` header
 - Interception des clics sur `<a href="/">` pour navigation SPA
-- Scripts inline `<script>` dans le HTML généré, exécutés au render
+- `_enhance()` : markdown, tables triables, rows cliquables, scripts inline
+- Toast, dialog, theme toggle
+- Deux modes : app (schema fixe) et dev (multi-schema)
 
-### Helpers HTML (fonctions SQL/PL/pgSQL)
+Voir [FRONTEND.md](FRONTEND.md) pour la reference complete.
+
+### Helpers HTML (fonctions pgv.*)
 
 ```sql
-esc(text)                     -- échappement HTML (XSS)
-pgv_money(numeric)            -- $1,299.00
-pgv_badge(text, variant)      -- <span> coloré (success/danger/warning/info)
-pgv_status(status)            -- badge adapté au statut
-pgv_nav(current_path)         -- barre de navigation avec lien actif
+pgv.esc(text)                     -- echappement HTML (XSS)
+pgv.badge(text, variant)          -- <span> colore (success/danger/warning/info)
+pgv.money(numeric)                -- 1 299,00 EUR
+pgv.date(date)                    -- 9 mars 2026
+pgv.href(text)                    -- lien route-aware (prefix schema en dev mode)
+pgv.card(title, body, footer)     -- article avec header/footer
+pgv.grid(VARIADIC items)          -- colonnes PicoCSS
+pgv.md_table(headers, rows)       -- table Markdown
+pgv.action(endpoint, label, ...)  -- bouton POST avec data-rpc
+pgv.nav(brand, items, current, options) -- navigation avec burger optionnel
 ```
 
 ### Avantages
 
-- **0 dépendances JS** — pas de build, pas de node_modules
-- **Hot reload** — `edit` la fonction, F5, c'est live
-- **Testable** — `query SELECT page('/clients/42')` dans le workbench
-- **Pérenne** — SQL ne vieillit pas, pas de breaking changes framework
+- **0 dependances build** — pas de npm, pas de bundler
+- **Hot reload** — `pg_func_set` la fonction, F5, c'est live
+- **Testable** — `pg_query SELECT pgv.route('cad', '/', 'GET')` dans le workbench
+- **Perenne** — SQL ne vieillit pas, pas de breaking changes framework
+- **Zero routing code** — pg_proc introspection, ajouter une page = creer une fonction
 
 ## 5. Architecture : Schema = Module (DDD)
 
@@ -329,38 +349,30 @@ Chaque schéma PostgreSQL est un **bounded context** — une unité fonctionnell
 ```
 clients/                       -- domaine clients
   ├── tables: clients, contacts, adresses
-  ├── fonctions: get_, list_, create_, update_
-  ├── page(): routeur HTML /clients/**
+  ├── fonctions: get_index, get_detail, post_create, post_update
+  ├── nav_items(), brand()     -- navigation
   └── clients_ut/              -- tests pgTAP
 
 catalogue/                     -- domaine produits
   ├── tables: modeles, nomenclature, options
-  ├── fonctions: get_, list_, calculer_prix
-  ├── page(): routeur HTML /catalogue/**
+  ├── fonctions: get_index, get_detail, get_pricing
+  ├── nav_items(), brand()
   └── catalogue_ut/
 
 commandes/                     -- workflow commandes
   ├── tables: devis, commandes, lignes
-  ├── fonctions: creer_devis, valider, annuler
-  ├── page(): routeur HTML /commandes/**
+  ├── fonctions: get_index, get_detail, post_valider, post_annuler
+  ├── nav_items(), brand()
   └── commandes_ut/
-
-compta/                        -- facturation + paiements
-  ├── tables: factures, paiements, ecritures
-  ├── page(): routeur HTML /compta/**
-  └── compta_ut/
 ```
 
-### Routeur top-level
+### Routage multi-schema
 
-Le schéma `app` ne contient que le dispatch + le dashboard :
+Le routeur `pgv.route()` est generique : il dispatch vers n'importe quel schema. Pas de routeur top-level a maintenir.
 
-```sql
--- app.page() dispatch vers les sous-routeurs
-WHEN p_path LIKE '/clients%'   THEN RETURN clients.page(p_path, p_body);
-WHEN p_path LIKE '/catalogue%' THEN RETURN catalogue.page(p_path, p_body);
-WHEN p_path LIKE '/commandes%' THEN RETURN commandes.page(p_path, p_body);
-```
+En mode dev (multi-schema), l'URL contient le schema : `/{schema}/path`. Le shell extrait le schema et appelle `pgv.route(schema, path, method, params)`.
+
+En mode app (single-schema), un `<meta name="pgv-schema" content="mon_app">` fixe le schema. Les URLs sont simples : `/path`.
 
 ### Dépendances explicites
 
@@ -557,12 +569,13 @@ pgv.select(p_name text, p_label text, p_options jsonb,
 #### Navigation
 
 ```sql
--- Navigation dynamique (remplace pgv_nav hard-codé)
-pgv.nav(p_brand text, p_items jsonb, p_current text) → text
+-- Navigation dynamique avec burger menu optionnel
+pgv.nav(p_brand text, p_items jsonb, p_current text, p_options jsonb DEFAULT '{}') -> text
 
 -- pgv.nav('Mon ERP',
 --   '[{"href":"/","label":"Dashboard"},{"href":"/clients","label":"Clients"}]',
---   '/clients')
+--   '/clients',
+--   '{"burger": true}')
 ```
 
 ```sql
@@ -576,20 +589,24 @@ pgv.breadcrumb(VARIADIC p_parts text[]) → text
 ```
 
 ```sql
--- Bouton d'action (POST via SPA)
-pgv.action(p_path text, p_label text, p_variant text DEFAULT 'primary',
-            p_confirm text DEFAULT NULL) → text
+-- Bouton d'action POST via data-rpc
+pgv.action(p_endpoint text, p_label text, p_variant text DEFAULT 'primary',
+           p_params text DEFAULT '{}', p_confirm text DEFAULT NULL) -> text
 
--- pgv.action('/orders/42/cancel', 'Annuler', 'danger', 'Confirmer l''annulation ?')
--- → <button onclick="if(!confirm('...'))return;post('/orders/42/cancel',{})" class="secondary">Annuler</button>
+-- pgv.action('page', 'Annuler', 'danger',
+--   '{"p_path":"/cancel","p_method":"POST","id":"42"}',
+--   'Confirmer l''annulation ?')
+-- -> <button data-rpc="page" data-params='...' data-confirm="..." class="secondary">Annuler</button>
 ```
 
 ### Composition
 
-Avec ces primitives, une page CRUD complète :
+Avec ces primitives, une page CRUD complete :
 
 ```sql
-CREATE FUNCTION clients.pgv_list() RETURNS text LANGUAGE plpgsql AS $$
+-- Fonction page : retourne juste le body HTML
+-- Le routeur pgv.route() emballe dans pgv.page() avec nav + titre
+CREATE FUNCTION clients.get_index() RETURNS text LANGUAGE plpgsql AS $$
 DECLARE
   v_rows text[][] := '{}';
   r record;
@@ -597,70 +614,77 @@ BEGIN
   FOR r IN SELECT id, name, email, tier FROM clients.clients ORDER BY name
   LOOP
     v_rows := v_rows || ARRAY[ARRAY[
-      format('<a href="/clients/%s">%s</a>', r.id, esc(r.name)),
-      esc(r.email),
-      pgv_tier(r.tier)
+      format('<a href="%s">%s</a>', pgv.href('/client?id=' || r.id), pgv.esc(r.name)),
+      pgv.esc(r.email),
+      pgv.badge(r.tier, 'gold')
     ]];
   END LOOP;
 
-  RETURN pgv.page('Clients', '/clients', app.nav_items(),
-    pgv.card('Liste des clients',
-      pgv.md_table(ARRAY['Nom','Email','Tier'], v_rows)
-    )
+  RETURN pgv.card('Liste des clients',
+    pgv.md_table(ARRAY['Nom','Email','Tier'], v_rows)
   );
 END;
 $$;
 ```
 
-vs **sans primitives** (pattern actuel) : ~40 lignes de `format()` et concaténation HTML.
+Note : la fonction retourne le **body** uniquement. Le routeur `pgv.route()` l'emballe dans `pgv.page()` (nav + titre + layout) automatiquement.
 
-### Migration depuis le pattern actuel
+vs **sans primitives** : ~40 lignes de `format()` et concatenation HTML.
 
-Les primitives sont **optionnelles et incrémentales**. Les pages existantes continuent de fonctionner. On migre page par page en remplaçant le HTML brut par les appels `pgv.*`.
+### Primitives = plateforme
 
-Le schéma `pgv` est **réutilisable entre apps** — le shop, l'app fumoir, ou tout futur ERP partage les mêmes primitives.
+Le schema `pgv` est **reutilisable entre modules et apps**. Chaque module utilise les memes primitives. `pgv` est distribue via `pgm install`.
 
 ## 8. Conventions
 
-### Nommage routes
+### Nommage routes (URL)
 
 ```
-GET    /ressources          → liste
-POST   /ressources          → créer
-GET    /ressources/:id      → détail
-PUT    /ressources/:id      → modifier
-DELETE /ressources/:id      → supprimer
-POST   /ressources/:id/action → action métier
-GET    /dashboard           → vue d'ensemble
+GET  /                     -> get_index()
+GET  /drawings             -> get_drawings()
+GET  /drawing?id=42        -> get_drawing(p_id integer)
+POST /save                 -> post_save(p_params jsonb)
+POST /delete               -> post_delete(p_id integer)
+GET  /settings             -> get_settings()
+POST /settings             -> post_settings(p_params jsonb)
 ```
+
+Les parametres dynamiques passent par query string (`?id=42`), pas par segments de path (`/drawing/42`).
 
 ### Nommage fonctions
 
 ```
-list_clients()              → GET /clients
-get_client(id)              → GET /clients/:id
-create_client(body)         → POST /clients
-update_client(id, body)     → PUT /clients/:id
-valider_devis(id)           → POST /devis/:id/valider
+{schema}.get_*()           -> pages GET (retournent du body HTML)
+{schema}.post_*()          -> actions POST (retournent toast/redirect)
+{schema}.nav_items()       -> items de navigation (jsonb)
+{schema}.brand()           -> nom du module (text)
+{schema}.nav_options()     -> options nav (jsonb, optionnel)
+pgv.*()                    -> primitives UI partagees
 ```
 
-### Schémas DB
+### Schemas DB
 
 ```
-app            — routeur top-level + dashboard
-<domaine>      — tables + fonctions + page() d'un bounded context
-<domaine>_ut   — tests unitaires du domaine
-<domaine>_it   — tests d'intégration (optionnel, run manuel)
+<domaine>      -- tables + get_*/post_* + nav_items() + brand()
+<domaine>_ut   -- tests unitaires du domaine
+<domaine>_it   -- tests d'integration (optionnel, run manuel)
+pgv            -- primitives UI, routeur, shell (plateforme, ne pas modifier)
+pgv_ut         -- tests pgv
 ```
 
-### Links obligatoires
+### Reponses POST
 
-Toute réponse doit contenir au minimum :
-- `self` — lien vers la ressource actuelle
-- Le lien parent ou `list` pour revenir en arrière
+Les fonctions `post_*` retournent des templates interpretes par le shell :
 
-Les actions disponibles sont exposées comme des liens avec `method` + `schema`.
-L'absence d'un lien signifie que l'action n'est pas disponible (ex: pas de lien `cancel` sur une commande déjà annulée).
+```sql
+-- Succes avec redirect
+RETURN '<template data-toast="success">Enregistre</template>'
+    || '<template data-redirect="/drawings"></template>';
+
+-- Erreur metier
+RAISE EXCEPTION 'Champ obligatoire manquant';
+-- Le routeur attrape et retourne: <template data-toast="error">...</template>
+```
 
 ## 9. Sécurité
 
@@ -712,24 +736,33 @@ v_html := v_html || '<figure><md>' || v_md || '</md></figure>';
 
 ### Shell SPA
 
-Le shell `pgview.html` (~50 lignes) charge `marked.js` et traite les `<md>` :
+Le shell Alpine.js (`index.html`) convertit les `<md>` via `_enhance()` :
 
 ```js
-// Convert <md> blocks (innerHTML preserves badges/links)
-app.querySelectorAll('md').forEach(function(el) {
+// _enhance() runs after each page render
+el.querySelectorAll('md').forEach(function(md) {
+  var pageSize = parseInt(md.dataset.page) || 0;
   var div = document.createElement('div');
-  div.innerHTML = marked.parse(el.innerHTML.trim());
-  el.parentNode.replaceChild(div, el);
+  div.innerHTML = marked.parse(md.innerHTML.trim());
+  // Tables get automatic sort + pagination
+  div.querySelectorAll('table').forEach(function(tbl) {
+    var wrap = document.createElement('div');
+    wrap.className = 'pgv-table';
+    tbl.parentNode.insertBefore(wrap, tbl);
+    wrap.appendChild(tbl);
+    self._initTable(wrap, tbl, pageSize);
+  });
+  md.parentNode.replaceChild(div, md);
 });
 
 // Make rows with internal links clickable
-app.querySelectorAll('tbody tr').forEach(function(tr) {
+el.querySelectorAll('tbody tr').forEach(function(tr) {
   var a = tr.querySelector('a[href^="/"]');
   if (!a) return;
   tr.style.cursor = 'pointer';
   tr.addEventListener('click', function(e) {
-    if (e.target.closest('a')) return;
-    go(a.getAttribute('href'));
+    if (e.target.closest('a, button')) return;
+    self.go(a.getAttribute('href'));
   });
 });
 ```
@@ -812,18 +845,20 @@ headers: {
 - Pro : 25$/mois, 8 GB DB, pas de pause, backups quotidiens
 - Multi-tenant RLS : 1 projet Pro pour N clients
 
-## Résumé
+## Resume
 
 Un pattern complet pour construire des apps avec PostgreSQL :
-- **Router PL/pgSQL** — un point d'entrée, HATEOAS
-- **pgView** — SSR en PL/pgSQL, Markdown hybride, hot reload instantané
-- **Schema = Module** — DDD dans PostgreSQL, bounded contexts isolés
-- **PostgREST** — transport HTTP, zéro code
-- **Extension VS Code** — UI générique qui suit les liens (alternative à pgView)
-- **MCP Workbench** — boucle de dev (edit → test → coverage → dump)
-- **Supabase** — déploiement cloud à 25$/mois, prêt pour la prod
-- **Même DB, mêmes fonctions, mêmes URIs** — trois interfaces, un seul backend
+- **Router pgv.route()** — generique, zero config, pg_proc introspection
+- **get_/post_ convention** — une fonction = une page ou action, pas de CASE a maintenir
+- **pgView** — SSR en PL/pgSQL, Markdown hybride, hot reload instantane
+- **Alpine.js shell** — SPA legere, data-* contract, toast/redirect, tables triables
+- **Schema = Module** — DDD dans PostgreSQL, bounded contexts isoles
+- **PostgREST** — transport HTTP, zero code
+- **Extension VS Code** — UI generique qui suit les liens (alternative a pgView)
+- **MCP Workbench** — boucle de dev (pg_func_set -> pg_test -> pg_pack)
+- **Meme DB, memes fonctions, memes URIs** — une seule source de verite
 
 Voir aussi :
-- [BUSINESS.md](BUSINESS.md) — business plan et projections financières
-- [AI-INTEGRATION.md](AI-INTEGRATION.md) — intégration LLM, chat widget, agent autonome
+- [FRONTEND.md](FRONTEND.md) — reference complete du shell Alpine.js, data-* contract, CSS
+- [BUSINESS.md](BUSINESS.md) — business plan et projections financieres
+- [AI-INTEGRATION.md](AI-INTEGRATION.md) — integration LLM, chat widget, agent autonome

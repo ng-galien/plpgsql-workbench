@@ -1,364 +1,387 @@
-# FRONTEND.md — pgView + htmx Reference
+# FRONTEND.md — pgView + Alpine.js Reference
 
-> Stack UI/UX définitive pour les applications pgView.
-> Ce document est la référence pour tout développement frontend sur la plateforme.
+> Stack UI/UX pour les applications pgView.
+> Ce document est la reference pour tout developpement frontend sur la plateforme.
 
 ## Stack
 
 ```
-htmx 2          (14 KB, CDN)      Interactions déclaratives, partials, navigation
+Alpine.js 3     (16 KB, CDN)      State reactif, event delegation, x-data / x-bind
 PicoCSS 2       (10 KB, CDN)      Style classless, responsive, dark mode
-marked.js       (8 KB, CDN)       Markdown → HTML (tables)
-pdf.js          (lazy, CDN)       Preview PDF inline (chargé à la demande)
-PostgREST 12+   (transport)       HTTP ↔ PL/pgSQL, zéro code serveur
-PL/pgSQL        (runtime)         Génère le HTML, routing, logique métier
+marked.js       (8 KB, CDN)       Markdown -> HTML (tables)
+panzoom         (9 KB, CDN)       Pan/zoom sur SVG/canvas (optionnel)
+PostgREST 12+   (transport)       HTTP <-> PL/pgSQL, zero code serveur
+PL/pgSQL        (runtime)         Genere le HTML, routing, logique metier
 ```
 
-**Zéro build, zéro npm, zéro framework JS.** Le shell HTML est un fichier statique < 100 lignes.
+**Zero build, zero npm, zero framework JS.** Le shell HTML est un fichier statique (~150 lignes JS).
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│  Browser : shell.html + htmx (déclaratif)                │
-├──────────────────────────────────────────────────────────┤
-│  PostgREST  →  POST /rpc/page, /rpc/frag_*               │
-│               Content-Type: text/html (domain trick)      │
-├──────────────────────────────────────────────────────────┤
-│  PL/pgSQL : page() → HTML complet                        │
-│             frag_*() → fragments HTML (partials htmx)    │
-│             pgv.* → primitives UI composables             │
-│             set_config('response.headers', ...) → HX-*   │
-├──────────────────────────────────────────────────────────┤
-│  PostgreSQL : tables + contraintes + RLS                  │
-└──────────────────────────────────────────────────────────┘
++--------------------------------------------------------------+
+|  Browser : index.html + Alpine.js (shell SPA)                 |
++--------------------------------------------------------------+
+|  PostgREST  ->  POST /rpc/route  {schema, path, method, params}|
+|                 Content-Type: text/html (domain trick)         |
++--------------------------------------------------------------+
+|  pgv.route(schema, path, method, params) -> "text/html"       |
+|    -> introspect pg_proc -> dispatch get_*/post_*              |
+|    -> GET: wrap in pgv.page() layout                          |
+|    -> POST: return raw (toast/redirect templates)             |
++--------------------------------------------------------------+
+|  pgv.* -> primitives UI composables                            |
+|  {schema}.get_*() -> pages (GET)                               |
+|  {schema}.post_*() -> actions (POST)                           |
++--------------------------------------------------------------+
+|  PostgreSQL : tables + contraintes + RLS                       |
++--------------------------------------------------------------+
 ```
 
 ## 1. Le Domain `text/html`
 
-PostgREST retourne du JSON par défaut. Pour retourner du HTML brut, créer un domain PostgreSQL :
+PostgREST retourne du JSON par defaut. Pour retourner du HTML brut, un domain PostgreSQL :
 
 ```sql
 CREATE DOMAIN "text/html" AS TEXT;
 ```
 
-Toute fonction retournant `"text/html"` envoie directement du HTML au navigateur :
+Toute fonction retournant `"text/html"` envoie directement du HTML au navigateur. Le routeur `pgv.route()` retourne ce type.
 
-```sql
-CREATE FUNCTION app.page(p_path text, p_body jsonb DEFAULT '{}')
-RETURNS "text/html" LANGUAGE plpgsql AS $$
-BEGIN
-  RETURN '<main class="container"><h2>Hello</h2></main>';
-END;
-$$;
-```
+## 2. Shell HTML (Alpine.js)
 
-PostgREST sert le résultat avec `Content-Type: text/html` — htmx le swap directement dans le DOM.
+Le shell est le seul fichier cote client. Il definit un composant Alpine `pgview` qui gere :
 
-## 2. Shell HTML
+- **Navigation SPA** — `go(path)` via `fetch()` + `history.pushState()`
+- **Actions POST** — `post(endpoint, data)` via `fetch()` avec `Content-Profile` header
+- **Rendu** — `_render(html)` parse les templates `data-toast` et `data-redirect`
+- **Enhancement** — `_enhance(el)` convertit `<md>`, tables triables/paginables, rows cliquables
+- **Toast** — notifications temporaires (success/error)
+- **Dialog** — dialog modale reusable (folder picker, etc.)
+- **Theme** — toggle light/dark, persiste en localStorage
 
-Le shell est le seul fichier côté client. htmx gère la navigation et les formulaires — le JS custom se limite à la conversion `<md>` et aux initialisations.
+### Structure du shell
 
 ```html
 <!DOCTYPE html>
 <html lang="fr" data-theme="light">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>App</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <script src="https://unpkg.com/htmx.org@2"></script>
-  <script src="https://unpkg.com/htmx-ext-response-targets@2/response-targets.js"></script>
-  <script src="https://unpkg.com/htmx-ext-preload@2/preload.js"></script>
+  <link rel="stylesheet" href="/pgview.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <style>
-    .htmx-indicator { opacity: 0; transition: opacity 200ms; }
-    .htmx-request .htmx-indicator { opacity: 1; }
-    .htmx-request.htmx-indicator { opacity: 1; }
-    tr[style*="cursor"]:hover { background: var(--pico-table-row-stripped-background-color); }
-    #error-toast:empty { display: none; }
-    #error-toast { position: fixed; bottom: 1rem; right: 1rem; z-index: 999; }
-  </style>
 </head>
-<body hx-ext="response-targets, preload"
-      hx-headers='{"Accept": "text/html"}'
-      hx-target="#app"
-      hx-swap="innerHTML show:window:top"
-      hx-target-error="#error-toast">
-
-  <div id="app"
-       hx-get="/rpc/page?p_path=/"
-       hx-trigger="load"
-       hx-push-url="/">
-    Chargement...
-  </div>
-
-  <div id="error-toast" role="alert"></div>
-
+<body x-data="pgview" x-init="boot()">
+  <div id="app">...</div>
+  <div id="toast" role="alert" x-show="toast.show" x-transition>...</div>
+  <dialog x-ref="dialog">...</dialog>
   <script>
-    // --- Markdown conversion + clickable rows after each swap ---
-    htmx.on('htmx:afterSwap', function(evt) {
-      var target = evt.detail.target;
-
-      // Convert <md> blocks to HTML tables
-      target.querySelectorAll('md').forEach(function(el) {
-        var div = document.createElement('div');
-        div.innerHTML = marked.parse(el.innerHTML.trim());
-        el.parentNode.replaceChild(div, el);
-      });
-
-      // Make table rows with internal links clickable
-      target.querySelectorAll('tbody tr').forEach(function(tr) {
-        var a = tr.querySelector('a[href^="/"]');
-        if (!a) return;
-        tr.style.cursor = 'pointer';
-        tr.addEventListener('click', function(e) {
-          if (e.target.closest('a, button')) return;
-          htmx.ajax('GET', '/rpc/page?p_path=' + encodeURIComponent(a.getAttribute('href')),
-            { target: '#app', swap: 'innerHTML', pushUrl: a.getAttribute('href') });
-        });
-      });
-    });
-
-    // --- Clear error toast on next successful request ---
-    htmx.on('htmx:afterRequest', function(evt) {
-      if (!evt.detail.failed) {
-        document.getElementById('error-toast').innerHTML = '';
-      }
+    document.addEventListener('alpine:init', function() {
+      Alpine.data('pgview', function() { return { /* ... */ }; });
     });
   </script>
 </body>
 </html>
 ```
 
-**~60 lignes.** htmx gère navigation, formulaires, partials, history. Le JS ne fait que `<md>` conversion et clickable rows.
+### Deux modes de fonctionnement
 
-## 3. Routing — Pages et Fragments
+Le shell detecte le mode au boot :
 
-### Pages (full page swap)
+| Mode | Detection | Route URL | RPC endpoint |
+|------|-----------|-----------|--------------|
+| **App** | `<meta name="pgv-schema" content="cad">` | `/path` | `/rpc/page` |
+| **Dev** | pas de meta tag | `/{schema}/path` | `/rpc/route` |
 
-`page(p_path, p_body)` retourne le HTML complet d'une page (nav + contenu). Appelé par htmx pour la navigation principale.
+**App mode** — un seul schema fixe, URLs simples (`/`, `/drawings`, `/settings`).
+**Dev mode** — multi-schema, URLs prefixees (`/pgv_qa/`, `/cad/drawings`).
 
-```sql
-CREATE FUNCTION app.page(p_path text, p_body jsonb DEFAULT '{}')
-RETURNS "text/html" LANGUAGE plpgsql AS $$
-BEGIN
-  CASE
-    WHEN p_path = '/'              THEN RETURN app.pgv_dashboard();
-    WHEN p_path LIKE '/docs%'      THEN RETURN docman.page(p_path, p_body);
-    WHEN p_path LIKE '/clients%'   THEN RETURN clients.page(p_path, p_body);
-    ELSE RETURN pgv.page('404', p_path, app.nav_items(),
-                  '<p>Page non trouvee : ' || pgv.esc(p_path) || '</p>');
-  END CASE;
-END;
-$$;
-```
+## 3. Routing — pgv.route()
 
-Appelé via htmx sur les liens :
-
-```html
-<a href="/docs"
-   hx-get="/rpc/page?p_path=/docs"
-   hx-push-url="/docs"
-   preload>Documents</a>
-```
-
-### Fragments (partial swap)
-
-Les fragments ne retournent qu'un morceau de HTML. htmx swap le fragment dans un `<div>` ciblé sans recharger la page entière.
+### Signature
 
 ```sql
--- Fragment : juste la liste filtrée, pas toute la page
-CREATE FUNCTION docman.frag_search(p_filters jsonb DEFAULT '{}')
-RETURNS "text/html" LANGUAGE plpgsql AS $$
-DECLARE
-  v_results jsonb;
-BEGIN
-  v_results := docman.search(p_filters);
-  RETURN docman.pgv_document_table(v_results);
-END;
-$$;
+pgv.route(p_schema text, p_path text, p_method text DEFAULT 'GET', p_params jsonb DEFAULT '{}')
+RETURNS "text/html"
 ```
 
-Appelé depuis un formulaire de recherche dans la page :
+### Convention get_/post_
 
-```html
-<form hx-post="/rpc/frag_search"
-      hx-target="#results"
-      hx-swap="innerHTML"
-      hx-replace-url="false">
-  <input name="p_filters" type="hidden" id="filters">
-  <input type="search" name="q" placeholder="Rechercher..."
-         hx-post="/rpc/frag_search"
-         hx-trigger="input changed delay:300ms"
-         hx-target="#results">
-</form>
-<div id="results">
-  <!-- htmx swap le fragment ici -->
-</div>
-```
-
-### Convention de nommage
+Le routeur derive le nom de fonction depuis la methode + le path :
 
 ```
-page(path, body)     → HTML complet (nav + contenu), pour la navigation
-frag_*(params)       → fragment HTML, pour les partials htmx
-pgv_*(data)          → composant HTML réutilisable (pas exposé via PostgREST)
+GET  /             -> get_index()
+GET  /drawings     -> get_drawings()
+GET  /settings     -> get_settings()
+POST /settings     -> post_settings()
+GET  /drawing      -> get_drawing(p_params)   -- avec ?id=42
+POST /save         -> post_save(p_params)
 ```
 
-## 4. Response Headers — Contrôle htmx depuis PL/pgSQL
+Les fonctions `get_*` retournent du HTML (body d'une page). Le routeur les emballe dans `pgv.page()` (nav + layout + titre).
 
-PostgREST lit `response.headers` pour ajouter des headers HTTP. Cela permet de piloter htmx depuis le serveur.
+Les fonctions `post_*` retournent des templates `data-toast` / `data-redirect`. Le routeur retourne le HTML brut sans layout.
+
+### Dispatch par introspection pg_proc
+
+Le routeur inspecte la signature de la fonction cible (max 1 argument) :
+
+| Signature | Dispatch |
+|-----------|----------|
+| `f()` — 0 args | Appel direct |
+| `f(p jsonb)` | Passe `p_params` tel quel |
+| `f(p_id integer)` | Cast `p_params->>'p_id'` en integer |
+| `f(p_id bigint)` | Cast `p_params->>'p_id'` en bigint |
+| `f(p_id text)` | Extract `p_params->>'p_id'` |
+| `f(p_id uuid)` | Cast `p_params->>'p_id'` en uuid |
+| `f(p composite_type)` | `jsonb_populate_record(NULL::type, p_params)` |
+
+Cela permet des fonctions typees sans passer du jsonb partout :
 
 ```sql
--- Redirect après un POST (ex: création)
-PERFORM set_config('response.headers',
-  '[{"HX-Redirect": "/docs/' || v_id || '"}]', true);
-RETURN '';
+-- Fonction avec parametre scalaire
+CREATE FUNCTION cad.get_drawing(p_id integer) RETURNS text ...
+-- Appelee via GET /cad/drawing?id=42
 
--- Redirect SPA (sans full reload)
-PERFORM set_config('response.headers',
-  '[{"HX-Location": "{\"path\":\"/docs\", \"target\":\"#app\"}"}]', true);
-
--- Trigger un événement côté client (toast, refresh d'un compteur)
-PERFORM set_config('response.headers',
-  '[{"HX-Trigger": "{\"showToast\":{\"level\":\"success\",\"message\":\"Document classifie\"}}"}]', true);
-
--- Changer la cible du swap (ex: erreur vers un toast)
-PERFORM set_config('response.headers',
-  '[{"HX-Retarget": "#error-toast"}, {"HX-Reswap": "innerHTML"}]', true);
-RETURN '<article class="pico-background-red-500">Erreur : document introuvable</article>';
-
--- Out-of-band : mettre à jour un compteur en plus du contenu principal
--- (inclure dans le HTML retourné)
--- <span id="inbox-count" hx-swap-oob="true">12</span>
+-- Fonction avec type composite
+CREATE TYPE cad.t_shape_input AS (drawing_id int, shape_type text, geometry jsonb);
+CREATE FUNCTION cad.post_add_shape(p cad.t_shape_input) RETURNS text ...
+-- Le routeur deserialise p_params en t_shape_input automatiquement
 ```
 
-### Patterns courants
+### GET vs POST — reponses
 
-| Action | Header | Exemple |
-|--------|--------|---------|
-| Redirect POST→GET | `HX-Redirect` | Après création de document |
-| SPA navigate | `HX-Location` | Navigation sans full reload |
-| Toast/notification | `HX-Trigger` | Confirmation d'action |
-| Forcer refresh | `HX-Refresh: true` | Après changement global |
-| Update compteur | `hx-swap-oob` dans le HTML | Badge inbox |
+| Methode | Layout | Usage |
+|---------|--------|-------|
+| GET | `pgv.page()` wrapping (nav + titre + body) | Pages, navigation |
+| POST | Raw HTML (pas de layout) | Actions, retour toast/redirect |
 
-## 5. Formulaires
+### Erreurs
 
-htmx gère les formulaires nativement. Plus besoin de `post()` custom.
+| Cas | GET | POST |
+|-----|-----|------|
+| 404 (fonction introuvable) | Page 404 avec layout | `<template data-toast="error">...` |
+| Erreur metier (RAISE) | Page erreur avec layout | `<template data-toast="error">...` |
+| Erreur interne | Page erreur 500 | `<template data-toast="error">Erreur interne` |
 
-### Formulaire simple
+## 4. data-* Contract
+
+PL/pgSQL genere du HTML pur avec des attributs `data-*`. Le shell les interprete.
+
+| Pattern | Qui genere | Action du shell |
+|---------|-----------|-----------------|
+| `<a href="/path">` | PL/pgSQL | `go(path)` navigation SPA |
+| `<form data-rpc="fn">` | PL/pgSQL | `post(fn, formData)` |
+| `<button data-rpc="fn" data-params='{}'>` | `pgv.action()` | `post(fn, params)` |
+| `<button data-rpc="fn" data-confirm="msg">` | `pgv.action()` | Confirm + `post(fn, params)` |
+| `<template data-toast="success\|error">msg` | retour POST | Toast notification |
+| `<template data-redirect="/path">` | retour POST | `go(path)` redirect |
+| `<button data-toggle-theme>` | `pgv.nav()` | Flip light/dark theme |
+| `<button data-dialog="name" data-src="url" data-target="id">` | PL/pgSQL | Open dialog |
+
+### Liens internes
+
+Tous les clics sur `<a href="/...">` dans `#app` sont interceptes par le shell. Pas besoin d'attributs speciaux :
 
 ```sql
--- Généré par PL/pgSQL :
-RETURN '
-<form hx-post="/rpc/page"
-      hx-vals=''{"p_path": "/docs/classify"}''
-      hx-target="#app">
-  <label>Type
-    <select name="doc_type">
-      <option value="facture">Facture</option>
-      <option value="contrat">Contrat</option>
-    </select>
-  </label>
-  <label>Date du document
-    <input type="date" name="document_date">
-  </label>
-  <label>Resume
-    <textarea name="summary" rows="3"></textarea>
-  </label>
-  <button type="submit">Classifier</button>
-</form>';
+-- Genere par PL/pgSQL :
+format('<a href="%s">%s</a>', pgv.href('/drawing?id=' || r.id), pgv.esc(r.name))
 ```
 
-### Formulaire avec partial (sans recharger la page)
+Le shell appelle `go(href)` qui fait un fetch vers `/rpc/route`.
+
+### Formulaires
 
 ```sql
-RETURN '
-<form hx-post="/rpc/frag_classify"
-      hx-target="#classification-result"
-      hx-swap="innerHTML"
-      hx-indicator="#classify-spinner">
-  <input type="hidden" name="p_doc_id" value="' || p_doc_id || '">
-  <select name="p_doc_type">...</select>
-  <button type="submit">
-    Classifier
-    <span id="classify-spinner" class="htmx-indicator" aria-busy="true"></span>
-  </button>
-</form>
-<div id="classification-result"></div>';
+-- Formulaire htmx-style avec data-rpc
+RETURN '<form data-rpc="page">'
+  || '<input type="hidden" name="p_path" value="/settings">'
+  || '<input type="hidden" name="p_method" value="POST">'
+  || '<label>Nom<input name="name" value="' || pgv.esc(v_name) || '"></label>'
+  || '<button type="submit">Enregistrer</button>'
+  || '</form>';
 ```
 
-### Loading state (PicoCSS natif)
+Le shell intercepte le `submit`, collecte les champs via `FormData`, et appelle `post(rpc, data)`.
 
-PicoCSS affiche un spinner natif sur tout element avec `aria-busy="true"` :
+### Actions (boutons POST)
 
-```html
-<button type="submit" class="htmx-indicator" aria-busy="true">
-  Classifier
-</button>
+```sql
+-- Genere par pgv.action() :
+pgv.action('page', 'Supprimer', 'danger',
+  '{"p_path": "/delete", "p_method": "POST", "id": "42"}',
+  'Confirmer la suppression ?')
+-- -> <button data-rpc="page" data-params='{"p_path":...}' data-confirm="...">Supprimer</button>
 ```
 
-htmx ajoute `.htmx-request` pendant la requête → le CSS `.htmx-request.htmx-indicator` rend l'élément visible → PicoCSS affiche le spinner via `aria-busy`.
+### Reponses POST
 
-### Confirmation
+Les fonctions `post_*` retournent des templates pour piloter le shell :
 
-```html
-<button hx-post="/rpc/frag_delete_doc"
-        hx-vals='{"p_doc_id": "abc-123"}'
-        hx-confirm="Supprimer ce document ?"
-        hx-target="#app"
-        class="secondary">
-  Supprimer
-</button>
+```sql
+-- Toast de succes
+RETURN '<template data-toast="success">Document enregistre</template>';
+
+-- Toast + redirect
+RETURN '<template data-toast="success">Cree avec succes</template>'
+    || '<template data-redirect="/drawings"></template>';
+
+-- Toast d'erreur (via RAISE dans le routeur)
+RAISE EXCEPTION 'Nom obligatoire' USING HINT = 'Remplir le champ nom';
+-- Le routeur attrape et retourne: <template data-toast="error">Nom obligatoire</template>
 ```
 
-## 6. Upload de fichiers
+## 5. pgv.href() — Liens route-aware
 
-```html
-<form hx-post="/rpc/frag_upload"
-      hx-encoding="multipart/form-data"
-      hx-target="#upload-result">
-  <input type="file" name="document" accept=".pdf,.jpg,.png">
-  <button type="submit">Importer</button>
-</form>
-<div id="upload-result"></div>
+```sql
+pgv.href(p_path text) RETURNS text
 ```
 
-Note : PostgREST ne gère pas nativement le multipart. Pour l'upload, deux options :
+Retourne `p_path` prefixe par le schema courant quand `pgv.route_prefix` est positionne (mode dev/multi-schema).
 
-1. **Supabase Storage** — upload vers le bucket, puis `pg_notify` ou appel RPC pour enregistrer
-2. **Base64 dans un champ** — petits fichiers uniquement
-3. **Endpoint Express dédié** — le serveur MCP workbench peut exposer un `/upload`
-
-Le pattern recommandé avec Supabase :
-
-```
-Browser → Supabase Storage (upload direct)
-       → POST /rpc/frag_import (enregistre dans docman)
+```sql
+pgv.href('/')            -- '/' en app mode, '/cad/' en dev mode
+pgv.href('/drawing?id=1') -- '/drawing?id=1' en app, '/cad/drawing?id=1' en dev
 ```
 
-## 7. pgView Primitives — Bibliothèque UI
+Le routeur positionne `pgv.route_prefix` automatiquement via `set_config()`. Les fonctions pages doivent utiliser `pgv.href()` pour generer des liens.
 
-Les primitives vivent dans le schéma `pgv`, réutilisable par toute app.
+## 6. Module Functions Contract
 
-### Atomes (formatage pur, IMMUTABLE)
+Chaque module doit fournir :
+
+### Obligatoire
+
+```sql
+-- Navigation items
+{schema}.nav_items() RETURNS jsonb
+-- Retourne: [{"href":"/","label":"Accueil"}, {"href":"/drawings","label":"Dessins"}]
+-- Note: les href sont relatifs (sans prefix schema), le routeur les prefixe
+
+-- Brand
+{schema}.brand() RETURNS text
+-- Retourne le nom affiche dans la nav (fallback: initcap(schema))
+```
+
+### Optionnel
+
+```sql
+-- Options de navigation
+{schema}.nav_options() RETURNS jsonb
+-- Retourne: {"burger": true} pour activer le burger menu responsive
+-- Fallback: {} (nav standard)
+```
+
+### Pages et actions
+
+```sql
+-- Pages GET (0 ou 1 argument)
+{schema}.get_index() RETURNS text
+{schema}.get_drawings() RETURNS text
+{schema}.get_drawing(p_id integer) RETURNS text
+
+-- Actions POST (0 ou 1 argument)
+{schema}.post_save(p_params jsonb) RETURNS text
+{schema}.post_delete(p_id integer) RETURNS text
+```
+
+## 7. Navigation
+
+### Navigation bar
+
+`pgv.nav()` genere une `<nav>` avec :
+- **Brand** — lien vers la racine du module (`pgv.href('/')`)
+- **Items** — liens avec `aria-current="page"` sur l'item actif
+- **Burger** — toggle responsive (optionnel, via `nav_options()`)
+- **Theme toggle** — switch light/dark
+
+```sql
+pgv.nav(p_brand text, p_items jsonb, p_current text, p_options jsonb DEFAULT '{}')
+```
+
+### Back/Forward navigateur
+
+Le shell gere le `popstate` via `window.onpopstate = function() { self.go(location.pathname, false); }`. Le second arg `false` evite un double `pushState`.
+
+### Deep links / refresh
+
+Le shell charge la page initiale via `boot()` qui appelle `go(location.pathname)`. Nginx doit etre configure avec un SPA fallback :
+
+```nginx
+location / {
+    root /usr/share/nginx/html;
+    try_files $uri $uri/ /index.html;
+}
+```
+
+## 8. Tables — Markdown avec sort + pagination
+
+Les tables sont generees en Markdown dans PL/pgSQL, converties cote client par `marked.js`. Le shell ajoute automatiquement le tri et la pagination.
+
+### Usage
+
+```sql
+-- Table simple (sortable)
+RETURN '<md>'
+  || E'| Nom | Prix | Stock |\n| --- | --- | --- |\n'
+  || format(E'| %s | %s | %s |\n', pgv.esc(r.name), pgv.money(r.price), pgv.badge('12','success'))
+  || '</md>';
+
+-- Table avec pagination (10 lignes/page)
+RETURN '<md data-page="10">'
+  || v_markdown_table
+  || '</md>';
+```
+
+### Enhancement automatique
+
+Le shell (`_enhance()`) :
+1. Convertit `<md>` en HTML via `marked.parse()`
+2. Emballe chaque `<table>` dans un `<div class="pgv-table">`
+3. Ajoute le tri par colonne (clic sur `<th>`, class `pgv-sortable`)
+4. Ajoute la pagination si `data-page` est specifie
+5. Rend les lignes cliquables si elles contiennent un `<a href="/...">` interne
+
+### Tri
+
+Tri automatique sur clic d'en-tete :
+- Detection numerique (ignore les symboles monnaie/separateurs)
+- Detection dates au format `dd/mm/yyyy`
+- Fallback : tri alphabetique `localeCompare()`
+
+### Pagination
+
+Avec `<md data-page="10">` :
+- Barre de pagination (prev/next + numeros de pages)
+- Ellipsis pour les grandes listes (> 7 pages)
+- Compteur "1-10 sur 42"
+
+## 9. pgView Primitives — Bibliotheque UI
+
+Les primitives vivent dans le schema `pgv`, reutilisable par tout module.
+
+### Atomes (formatage pur, IMMUTABLE/STABLE)
 
 ```sql
 pgv.esc(text) -> text                           -- HTML escape (XSS)
-pgv.badge(text, variant) -> text                -- <span> coloré
-pgv.money(numeric) -> text                      -- 1 299,00 €
+pgv.badge(text, variant) -> text                -- <span> colore
+pgv.money(numeric) -> text                      -- 1 299,00 EUR
 pgv.date(date) -> text                          -- 9 mars 2026
-pgv.status(text) -> text                        -- badge adapté au statut
+pgv.status(text) -> text                        -- badge adapte au statut
 pgv.filesize(bigint) -> text                    -- 2.4 MB
+pgv.href(text) -> text                          -- route-aware link prefix
 ```
 
 ### Molecules (structure, composent les atomes)
 
 ```sql
 -- Page complete : nav + container + contenu
-pgv.page(p_title text, p_path text, p_nav jsonb, p_body text) -> "text/html"
+pgv.page(p_brand text, p_title text, p_path text, p_nav jsonb, p_body text,
+         p_options jsonb DEFAULT '{}') -> "text/html"
+
+-- Navigation
+pgv.nav(p_brand text, p_items jsonb, p_current text,
+        p_options jsonb DEFAULT '{}') -> text
 
 -- Card : article avec header et footer optionnels
 pgv.card(p_title text, p_body text, p_footer text DEFAULT NULL) -> text
@@ -375,145 +398,80 @@ pgv.dl(VARIADIC p_pairs text[]) -> text
 -- KPI stat card
 pgv.stat(p_label text, p_value text, p_detail text DEFAULT NULL) -> text
 
--- Navigation avec lien actif
-pgv.nav(p_brand text, p_items jsonb, p_current text) -> text
-
 -- Breadcrumb
 pgv.breadcrumb(VARIADIC p_parts text[]) -> text
+
+-- Bouton d'action POST
+pgv.action(p_endpoint text, p_label text, p_variant text DEFAULT 'primary',
+           p_params text DEFAULT '{}', p_confirm text DEFAULT NULL) -> text
+
+-- Erreur formatee
+pgv.error(p_code text, p_title text, p_message text, p_hint text DEFAULT NULL) -> text
 ```
 
-### Formulaires (htmx-aware)
+### Formulaires
 
 ```sql
--- Formulaire htmx
 pgv.form(p_action text, p_target text, VARIADIC p_fields text[]) -> text
--- Genere : <form hx-post="{action}" hx-target="{target}">...
-
--- Champs
 pgv.input(p_name text, p_type text, p_label text,
           p_value text DEFAULT NULL, p_required boolean DEFAULT false) -> text
-
 pgv.select(p_name text, p_label text, p_options jsonb,
            p_selected text DEFAULT NULL) -> text
-
 pgv.textarea(p_name text, p_label text,
              p_value text DEFAULT NULL, p_rows int DEFAULT 3) -> text
-
--- Bouton d'action (POST htmx)
-pgv.action(p_endpoint text, p_label text,
-           p_target text DEFAULT '#app',
-           p_confirm text DEFAULT NULL,
-           p_variant text DEFAULT 'primary') -> text
--- Genere : <button hx-post="{endpoint}" hx-target="{target}"
---                  hx-confirm="{confirm}" class="{variant}">
 ```
 
 ### Composition d'une page
 
 ```sql
-CREATE FUNCTION docman.pgv_inbox() RETURNS text LANGUAGE plpgsql AS $$
+CREATE FUNCTION cad.get_drawings() RETURNS text LANGUAGE plpgsql AS $$
 DECLARE
-  v_docs jsonb;
   v_rows text[][] := '{}';
   r record;
 BEGIN
-  v_docs := docman.inbox();
-
-  FOR r IN SELECT * FROM jsonb_array_elements(v_docs)
+  FOR r IN SELECT id, name, scale FROM cad.drawing ORDER BY name
   LOOP
     v_rows := v_rows || ARRAY[ARRAY[
-      format('<a href="/docs/%s">%s</a>', r.value->>'id', pgv.esc(r.value->>'filename')),
-      pgv.badge(coalesce(r.value->>'doc_type', 'non classe'), 'warning'),
-      pgv.filesize((r.value->>'size_bytes')::bigint),
-      pgv.date((r.value->>'created_at')::date)
+      format('<a href="%s">%s</a>', pgv.href('/drawing?id=' || r.id), pgv.esc(r.name)),
+      r.scale::text
     ]];
   END LOOP;
 
-  RETURN pgv.page('Inbox', '/docs/inbox', app.nav_items(),
-    pgv.card('Documents non classes',
-      pgv.md_table(ARRAY['Fichier', 'Type', 'Taille', 'Date'], v_rows)
-    )
+  RETURN pgv.card('Dessins',
+    pgv.md_table(ARRAY['Nom', 'Echelle'], v_rows)
   );
 END;
 $$;
 ```
 
-## 8. Navigation htmx
+Note : la fonction retourne juste le body. Le routeur `pgv.route()` emballe dans `pgv.page()` avec la nav et le titre.
 
-### Liens internes
+## 10. CSS — pgview.css
 
-Tous les liens internes passent par `page()` avec `hx-push-url` pour le SPA routing :
+Les styles vivent dans `pgview.css` avec des CSS custom properties `--pgv-*`. Themes light/dark via selecteur `[data-theme]`.
 
-```html
-<!-- Genere par pgv.nav() -->
-<a href="/docs"
-   hx-get="/rpc/page?p_path=/docs"
-   hx-push-url="/docs"
-   preload>Documents</a>
+### Regles strictes
+
+- **CSS classes, JAMAIS inline styles** — les primitives `pgv.*` utilisent `class="pgv-*"`
+- **Pas de CSS custom** dans les modules — tout passe par les classes `pgv-*` existantes
+- **Ne jamais modifier** `pgview.css` depuis un module — c'est du code plateforme
+
+### Classes disponibles
+
 ```
-
-Le `preload` (extension htmx) precharge au hover pour une navigation instantanee.
-
-### Back/Forward navigateur
-
-htmx gere le `popstate` nativement quand `hx-push-url` est utilise. Rien a coder.
-
-### Deep links / refresh
-
-Le shell charge la page initiale via `hx-trigger="load"` sur `#app`. Pour supporter les deep links (ex: `/docs/abc-123`), le shell doit lire le hash ou le path :
-
-```html
-<div id="app"
-     hx-get="/rpc/page"
-     hx-vals='js:{"p_path": window.location.hash.slice(1) || "/"}'
-     hx-trigger="load"
-     hx-push-url="false">
-</div>
+pgv-brand          Brand link dans la nav
+pgv-badge-*        Badges colores (success, danger, warning, info, gold, silver)
+pgv-table          Wrapper table (overflow-x, borders)
+pgv-sortable       En-tete de colonne triable
+pgv-pager          Barre de pagination
+pgv-nav-burger     Nav avec burger menu
+pgv-burger         Bouton burger
+pgv-menu           Menu items (collapsed en mobile)
+pgv-menu-open      Menu ouvert
+pgv-theme-toggle   Bouton theme toggle
+toast-success      Toast succes
+toast-error        Toast erreur
 ```
-
-Ou avec un serveur statique qui redirige tout vers `index.html` (SPA fallback classique).
-
-## 9. Out-of-Band Updates
-
-Mettre a jour plusieurs zones de la page en une seule reponse :
-
-```sql
--- La reponse principale va dans hx-target
--- Les elements avec hx-swap-oob="true" sont swappe independamment
-RETURN '
-<div>Contenu principal mis a jour</div>
-<span id="inbox-count" hx-swap-oob="true">3</span>
-<span id="last-activity" hx-swap-oob="true">il y a 2 min</span>';
-```
-
-Utile pour : compteurs dans la nav, timestamps, statuts.
-
-## 10. Error Handling
-
-### Cote serveur
-
-```sql
--- Erreur metier → retourner du HTML d'erreur
-IF NOT FOUND THEN
-  PERFORM set_config('response.status', '404', true);
-  RETURN '<article style="color:var(--pico-del-color)">
-    <header>Document introuvable</header>
-    <p>Le document demande n''existe pas.</p>
-    <a href="/docs" hx-get="/rpc/page?p_path=/docs" hx-push-url="/docs">
-      Retour a la liste</a>
-  </article>';
-END IF;
-```
-
-### Cote client
-
-L'extension `response-targets` route les erreurs HTTP vers `#error-toast` :
-
-```html
-<body hx-target-error="#error-toast">
-```
-
-Le toast se vide automatiquement a la prochaine requete reussie (voir le script du shell).
 
 ## 11. PostgREST Configuration
 
@@ -523,107 +481,57 @@ postgrest:
   image: postgrest/postgrest:v12.2.3
   environment:
     PGRST_DB_URI: postgres://authenticator:authenticator@postgres:5432/postgres
-    PGRST_DB_SCHEMAS: app,docman            # schemas exposes
+    PGRST_DB_SCHEMAS: pgv,cad,cad_ut          # schemas exposes
     PGRST_DB_ANON_ROLE: web_anon
-    PGRST_SERVER_CORS_ALLOWED_ORIGINS: "*"  # restreindre en prod
 ```
 
 ### Grants
 
 ```sql
--- Seules les fonctions publiques sont exposees
-GRANT USAGE ON SCHEMA app TO web_anon;
-GRANT EXECUTE ON FUNCTION app.page(text, jsonb) TO web_anon;
+-- Le routeur est le seul point d'entree expose
+GRANT USAGE ON SCHEMA pgv TO web_anon;
+GRANT EXECUTE ON FUNCTION pgv.route(text, text, text, jsonb) TO web_anon;
 
--- Les fragments aussi
-GRANT EXECUTE ON FUNCTION docman.frag_search(jsonb) TO web_anon;
-GRANT EXECUTE ON FUNCTION docman.frag_classify(uuid, text, date, text) TO web_anon;
-
--- Les fonctions internes (pgv_*, metier) ne sont PAS exposees
--- PostgREST n'expose que ce qui a un GRANT
+-- Les fonctions internes (get_*, post_*, nav_items, etc.) ne sont PAS exposees directement
+-- Le routeur les appelle via EXECUTE format()
 ```
+
+### Content-Profile header
+
+Pour les actions POST via `data-rpc`, le shell envoie le header `Content-Profile` avec le schema courant. Cela permet a PostgREST de router vers le bon schema quand plusieurs schemas exposent une fonction du meme nom.
 
 ## 12. Conventions
 
 ### Nommage fonctions
 
 ```
-app.page(path, body)       → routeur top-level, retourne "text/html"
-{schema}.page(path, body)  → sous-routeur de domaine
-{schema}.frag_*(params)    → fragments htmx (partials)
-{schema}.pgv_*(data)       → composants HTML internes (pas exposes)
-pgv.*(params)              → primitives UI reusables (schema dedie)
+{schema}.get_*()          -> pages GET (retournent du body HTML)
+{schema}.post_*()         -> actions POST (retournent toast/redirect)
+{schema}.nav_items()      -> items de navigation (jsonb array)
+{schema}.brand()          -> nom du module (text)
+{schema}.nav_options()    -> options nav (jsonb, optionnel)
+pgv.*()                   -> primitives UI reusables (schema dedie)
 ```
 
-### Nommage routes
+### Nommage routes (URL)
 
 ```
-/                          → dashboard
-/{domaine}                 → liste
-/{domaine}/{id}            → detail
-/{domaine}/{id}/{action}   → action (POST)
-/{domaine}/inbox           → elements non traites
-/{domaine}/search          → recherche
+GET  /                    -> get_index()
+GET  /drawings            -> get_drawings()
+GET  /drawing?id=42       -> get_drawing(p_id integer)
+POST /save                -> post_save(p_params jsonb)
+POST /delete              -> post_delete(p_id integer)
+GET  /settings            -> get_settings()
+POST /settings            -> post_settings(p_params jsonb)
 ```
+
+Les parametres dynamiques passent par query string (`?id=42`), pas par segments de path (`/drawing/42`).
 
 ### HTML genere
 
 - Utiliser les balises semantiques PicoCSS : `<main>`, `<article>`, `<nav>`, `<header>`, `<footer>`
 - Tables via `<md>` Markdown (converti client-side par marked.js)
-- Pas de classes CSS custom — PicoCSS classless + attributs ARIA
+- Classes `pgv-*` du CSS partage, jamais d'inline styles
 - `pgv.esc()` sur tout contenu utilisateur (XSS)
-- Pas d'inline `onclick` — utiliser les attributs `hx-*`
-
-### Extensions htmx chargees
-
-| Extension | Usage |
-|-----------|-------|
-| `response-targets` | Route erreurs HTTP vers `#error-toast` |
-| `preload` | Precharge les liens au hover |
-
-Extensions optionnelles (ajouter si besoin) :
-
-| Extension | Quand |
-|-----------|-------|
-| `idiomorph` | Si on ajoute Alpine.js (preserve le DOM state) |
-| `sse` | Si on a besoin de temps reel (notifications) |
-| `head-support` | Si les fragments modifient le `<title>` |
-
-### Alpine.js
-
-**Pas dans la stack initiale.** A ajouter uniquement si on a besoin de :
-- Tabs, accordions (PicoCSS n'en a pas)
-- Toggle show/hide sans round-trip serveur
-- State local (panier, filtres multi-criteres)
-
-Si ajoute : utiliser `idiomorph` extension pour preserver le state Alpine lors des swaps htmx.
-
-## 13. Migration depuis le shell actuel
-
-| Ancien (pgview.html) | Nouveau (htmx) |
-|----------------------|-----------------|
-| `go(path)` | `hx-get="/rpc/page?p_path=/path" hx-push-url="/path"` |
-| `post(path, body)` | `hx-post="/rpc/page" hx-vals='{"p_path":"/path"}'` |
-| `render(html)` | htmx `hx-swap="innerHTML"` automatique |
-| `<!-- redirect:/path -->` | `set_config('response.headers', '[{"HX-Redirect":"/path"}]')` |
-| `<script>` inline | `HX-Trigger` events |
-| `fetch()` custom | Tout declaratif via attributs `hx-*` |
-
-## 14. Deploiement
-
-### Local (dev)
-
-```
-docker compose up -d    # PostgreSQL + PostgREST
-# shell.html servi par nginx ou fichier local
-```
-
-### Supabase (prod)
-
-```
-1. Deploy fonctions via pg_func_load
-2. GRANT sur page() et frag_*()
-3. shell.html sur Supabase Storage ou CDN
-4. Changer l'endpoint : /rest/v1/rpc/page + header apikey
-5. Auth JWT via current_setting('request.jwt.claims')
-```
+- Liens internes via `pgv.href()` pour le support multi-schema
+- Actions via `data-rpc` + `data-params`, pas de `onclick` inline
