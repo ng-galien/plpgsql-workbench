@@ -390,6 +390,80 @@ app.get("/api/browse", async (req, res) => {
   }
 });
 
+// --- Static assets for preview (pgview.css, module CSS/JS) ---
+if (process.env.WORKBENCH_MODE === "dev") {
+  const wsRoot = (() => {
+    let dir = process.cwd();
+    for (let i = 0; i < 10; i++) {
+      if (fsSync.existsSync(path.join(dir, "modules"))) return dir;
+      dir = path.dirname(dir);
+    }
+    return process.cwd();
+  })();
+  // Serve synced assets from dev/frontend/ (make dev-sync output)
+  const devFrontend = path.join(wsRoot, "dev", "frontend");
+  if (fsSync.existsSync(devFrontend)) {
+    app.use(express.static(devFrontend));
+  }
+  // Fallback: serve from each module's frontend/ directly
+  const modulesDir = path.join(wsRoot, "modules");
+  if (fsSync.existsSync(modulesDir)) {
+    for (const entry of fsSync.readdirSync(modulesDir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        const modFrontend = path.join(modulesDir, entry.name, "frontend");
+        if (fsSync.existsSync(modFrontend)) {
+          app.use(express.static(modFrontend));
+        }
+      }
+    }
+  }
+}
+
+// --- Preview endpoint — render SQL output in pgView shell ---
+app.get("/preview", async (req, res) => {
+  if (process.env.WORKBENCH_MODE !== "dev") {
+    return res.status(403).send("Forbidden: /preview only available in WORKBENCH_MODE=dev");
+  }
+  const sql = (req.query.sql as string) || "";
+  if (!sql) {
+    return res.status(400).send("Missing ?sql= parameter");
+  }
+  const pool: import("pg").Pool = container.resolve("pool");
+  try {
+    const { rows } = await pool.query(`SELECT (${sql})::text AS html`);
+    const html = rows[0]?.html ?? "";
+    // Wrap in minimal pgView shell
+    const page = `<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pg_preview</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="/pgview.css">
+  <style>body { padding: 2rem; }</style>
+</head>
+<body>
+  <main class="container">
+    ${html}
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    document.querySelectorAll('md').forEach(el => {
+      const div = document.createElement('div');
+      div.innerHTML = marked.parse(el.textContent);
+      el.replaceWith(div);
+    });
+  </script>
+</body>
+</html>`;
+    res.type("html").send(page);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(500).type("html").send(`<pre style="color:red">${esc(msg)}</pre>`);
+  }
+});
+
 app.get("/mcp", async (_req, res) => {
   res.writeHead(405).end("Method Not Allowed");
 });
