@@ -22,7 +22,8 @@
   Alpine.data('cadViewer', function() {
     var _gl = { scene: null, camera: null, renderer: null, controls: null,
       raycaster: null, mouse: null, lastMouse: { x: 0, y: 0 },
-      cameraSet: false, selections: [] };
+      cameraSet: false, selections: [],
+      groupMap: {} }; // group_id -> [mesh, mesh, ...]
     window._gl = _gl; // DEBUG
 
     return {
@@ -114,16 +115,40 @@
           if (hits.length > 0) {
             var mesh = hits[0].object;
             if (e.shiftKey) {
+              // Shift+click: toggle individual piece
               var idx = _gl.selections.indexOf(mesh);
               if (idx >= 0) { self._removeSelection(idx); }
               else { self._addSelection(mesh); }
             } else {
               self._clearSelections();
-              self._addSelection(mesh);
+              // Click on grouped piece: select entire group
+              var gid = mesh.userData.group_id;
+              if (gid && _gl.groupMap[gid]) {
+                _gl.groupMap[gid].forEach(function(m) { self._addSelection(m); });
+              } else {
+                self._addSelection(mesh);
+              }
             }
             self._updateInfo();
           } else {
             self._clearSelections();
+          }
+        });
+
+        // Double-click: select individual piece (override group)
+        canvas.addEventListener('dblclick', function(e) {
+          var rect = canvas.getBoundingClientRect();
+          _gl.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          _gl.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          _gl.raycaster.setFromCamera(_gl.mouse, camera);
+
+          var meshes = scene.children.filter(function(c) { return c.userData && c.userData.piece; });
+          var hits = _gl.raycaster.intersectObjects(meshes);
+
+          if (hits.length > 0) {
+            self._clearSelections();
+            self._addSelection(hits[0].object);
+            self._updateInfo();
           }
         });
 
@@ -165,8 +190,8 @@
           body: JSON.stringify({ p_drawing_id: this.drawingId })
         })
         .then(function(r) { return r.json(); })
-        .then(function(pieces) {
-          if (!Array.isArray(pieces)) pieces = pieces.pieces || [];
+        .then(function(data) {
+          var pieces = Array.isArray(data) ? data : (data.pieces || []);
           self._buildMeshes(pieces);
           self._updateHud(pieces);
         })
@@ -202,9 +227,16 @@
           var mat = new THREE.MeshPhongMaterial({ color: color, flatShading: true, side: THREE.DoubleSide });
           var mesh = new THREE.Mesh(geom, mat);
           mesh.userData = { piece: true, id: p.id, label: p.label, role: p.role,
-            section: p.section, length_mm: p.length_mm, wood_type: p.wood_type };
+            section: p.section, length_mm: p.length_mm, wood_type: p.wood_type,
+            group_id: p.group_id || null, group_label: p.group_label || null };
           scene.add(mesh);
           allVerts.push.apply(allVerts, verts);
+
+          // Build group map
+          if (p.group_id) {
+            if (!_gl.groupMap[p.group_id]) _gl.groupMap[p.group_id] = [];
+            _gl.groupMap[p.group_id].push(mesh);
+          }
         });
 
         // Auto-center camera on first load
@@ -265,24 +297,47 @@
       },
 
       _updateInfo: function() {
-        if (_gl.selections.length === 0) { this.info = null; return; }
+        if (_gl.selections.length === 0) {
+          this.info = null;
+          this.$dispatch('cad-select', { pieces: [], group: null });
+          return;
+        }
+
+        // Check if all selected pieces belong to the same group
+        var gid = _gl.selections[0].userData.group_id;
+        var allSameGroup = gid && _gl.selections.every(function(m) {
+          return m.userData.group_id === gid;
+        });
+
         var items = [];
+        var allItems = [];
         var max = Math.min(_gl.selections.length, 4);
-        for (var i = 0; i < max; i++) {
+        for (var i = 0; i < _gl.selections.length; i++) {
           var d = _gl.selections[i].userData;
-          items.push({
+          var item = {
             role: d.role || '',
             label: d.label || 'Sans nom',
             section: d.section,
             length_mm: Math.round(d.length_mm || 0),
             wood_type: d.wood_type || '',
             id: d.id
-          });
+          };
+          allItems.push(item);
+          if (i < max) items.push(item);
         }
         this.info = {
           items: items,
-          extra: _gl.selections.length > max ? (_gl.selections.length - max) : 0
+          extra: _gl.selections.length > max ? (_gl.selections.length - max) : 0,
+          group_label: allSameGroup ? _gl.selections[0].userData.group_label : null,
+          group_id: allSameGroup ? gid : null,
+          group_count: allSameGroup ? _gl.selections.length : 0
         };
+
+        // Dispatch event for other Alpine components on the page
+        this.$dispatch('cad-select', {
+          pieces: allItems,
+          group: allSameGroup ? { id: gid, label: _gl.selections[0].userData.group_label } : null
+        });
       },
 
       resetCamera: function() {
@@ -317,11 +372,158 @@
           return '#' + d.id + ' ' + (d.label || '?') + ' [' + d.role + '] ' + d.section + ' ' + Math.round(d.length_mm) + 'mm ' + d.wood_type;
         }).join('\n');
         navigator.clipboard.writeText(ctx);
+      },
+
+      // --- Methods called by cadPieceTree via events ---
+
+      selectByIds: function(detail) {
+        var ids = detail.pieceIds || [];
+        this._clearSelections();
+        var self = this;
+        _gl.scene.children.forEach(function(c) {
+          if (c.userData && c.userData.piece && ids.indexOf(c.userData.id) >= 0) {
+            self._addSelection(c);
+          }
+        });
+        this._updateInfo();
+      },
+
+      toggleById: function(detail) {
+        var pieceId = detail.pieceId;
+        var visible = detail.visible;
+        _gl.scene.children.forEach(function(c) {
+          if (c.userData && c.userData.piece && c.userData.id === pieceId) {
+            c.visible = visible;
+          }
+        });
+      },
+
+      toggleGroupById: function(detail) {
+        var groupId = detail.groupId;
+        var visible = detail.visible;
+        if (_gl.groupMap[groupId]) {
+          _gl.groupMap[groupId].forEach(function(m) { m.visible = visible; });
+        }
       }
     };
   });
 
-  // --- Tree Explorer component ---
+  // --- 3D Piece Tree component ---
+  Alpine.data('cadPieceTree', function() {
+    return {
+      selectedIds: [],
+      hiddenPieces: {},
+      hiddenGroups: {},
+
+      init: function() {
+        var self = this;
+        this.$el.querySelectorAll('.cad-tree-swatch[data-color]').forEach(function(el) {
+          el.style.setProperty('--cad-swatch-color', el.dataset.color);
+        });
+        // Group selection via summary click delegation
+        this.$el.addEventListener('click', function(e) {
+          var summary = e.target.closest('summary');
+          if (summary) {
+            var groupLi = summary.closest('[data-group]');
+            if (groupLi) {
+              self.selectGroup(parseInt(groupLi.dataset.group));
+            }
+          }
+        });
+      },
+
+      selectPiece: function(pieceId) {
+        this._clearTreeHighlight();
+        this.selectedIds = [pieceId];
+        this._highlightNode(pieceId);
+        this.$dispatch('cad-piece-select', { pieceIds: [pieceId] });
+      },
+
+      selectGroup: function(groupId) {
+        this._clearTreeHighlight();
+        var ids = [];
+        var container = this.$el.querySelector('[data-group="' + groupId + '"]');
+        if (container) {
+          container.querySelectorAll('[data-piece-id]').forEach(function(el) {
+            var id = parseInt(el.dataset.pieceId);
+            ids.push(id);
+            el.classList.add('cad-tree-active');
+          });
+        }
+        this.selectedIds = ids;
+        this.$dispatch('cad-piece-select', { pieceIds: ids });
+      },
+
+      togglePiece: function(pieceId) {
+        var wasHidden = !!this.hiddenPieces[pieceId];
+        if (wasHidden) {
+          delete this.hiddenPieces[pieceId];
+        } else {
+          this.hiddenPieces[pieceId] = true;
+        }
+        // Update eye icon
+        var btn = this.$el.querySelector('[data-piece-id="' + pieceId + '"] .cad-tree-eye');
+        if (btn) btn.textContent = wasHidden ? '\u25C9' : '\u25CB';
+        this.$dispatch('cad-piece-toggle', { pieceId: pieceId, visible: wasHidden });
+      },
+
+      toggleGroup: function(groupId) {
+        var wasHidden = !!this.hiddenGroups[groupId];
+        if (wasHidden) {
+          delete this.hiddenGroups[groupId];
+        } else {
+          this.hiddenGroups[groupId] = true;
+        }
+        // Update eye icons for all pieces in group
+        var self = this;
+        var container = this.$el.querySelector('[data-group="' + groupId + '"]');
+        if (container) {
+          container.querySelectorAll('.cad-tree-eye').forEach(function(btn) {
+            btn.textContent = wasHidden ? '\u25C9' : '\u25CB';
+          });
+          container.querySelectorAll('[data-piece-id]').forEach(function(el) {
+            var pid = parseInt(el.dataset.pieceId);
+            if (wasHidden) {
+              delete self.hiddenPieces[pid];
+            } else {
+              self.hiddenPieces[pid] = true;
+            }
+          });
+        }
+        this.$dispatch('cad-piece-toggle-group', { groupId: groupId, visible: wasHidden });
+      },
+
+      onViewerSelect: function(detail) {
+        this._clearTreeHighlight();
+        var pieces = detail.pieces || [];
+        var self = this;
+        var ids = [];
+        pieces.forEach(function(p) {
+          ids.push(p.id);
+          self._highlightNode(p.id);
+        });
+        this.selectedIds = ids;
+      },
+
+      _highlightNode: function(pieceId) {
+        var node = this.$el.querySelector('[data-piece-id="' + pieceId + '"]');
+        if (node) {
+          node.classList.add('cad-tree-active');
+          // Ensure parent details are open
+          var parent = node.closest('details');
+          if (parent) parent.open = true;
+        }
+      },
+
+      _clearTreeHighlight: function() {
+        this.$el.querySelectorAll('.cad-tree-active').forEach(function(el) {
+          el.classList.remove('cad-tree-active');
+        });
+      }
+    };
+  });
+
+  // --- Tree Explorer component (2D) ---
   Alpine.data('cadTree', function() {
     return {
       selected: null,

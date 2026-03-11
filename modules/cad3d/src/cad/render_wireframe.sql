@@ -15,6 +15,8 @@ DECLARE
   v_gx float; v_gy float;
   v_tick float;
   v_axis_labels text[];
+  v_grp_colors text[] := ARRAY['#6688cc','#cc8866','#66cc88','#cc66aa','#88cccc'];
+  v_grp_idx int := 0;
 BEGIN
   -- Bounds based on projection axis
   IF p_axis = 'front' THEN
@@ -104,6 +106,40 @@ BEGIN
       p_width - v_margin + 4, round(v_gy::numeric, 1) + 3
     );
   END IF;
+
+  -- Group bounding boxes (dashed, behind pieces)
+  FOR v_rec IN
+    SELECT g.id, g.label,
+      CASE p_axis WHEN 'front' THEN min(ST_XMin(p.geom)) WHEN 'top' THEN min(ST_XMin(p.geom)) ELSE min(ST_YMin(p.geom)) END AS gx1,
+      CASE p_axis WHEN 'front' THEN max(ST_XMax(p.geom)) WHEN 'top' THEN max(ST_XMax(p.geom)) ELSE max(ST_YMax(p.geom)) END AS gx2,
+      CASE p_axis WHEN 'front' THEN min(ST_ZMin(p.geom)) WHEN 'top' THEN min(ST_YMin(p.geom)) ELSE min(ST_ZMin(p.geom)) END AS gy1,
+      CASE p_axis WHEN 'front' THEN max(ST_ZMax(p.geom)) WHEN 'top' THEN max(ST_YMax(p.geom)) ELSE max(ST_ZMax(p.geom)) END AS gy2
+    FROM cad.piece_group g
+    JOIN cad.piece p ON p.group_id = g.id
+    WHERE g.drawing_id = p_drawing_id
+    GROUP BY g.id, g.label
+    ORDER BY g.label
+  LOOP
+    v_grp_idx := v_grp_idx + 1;
+    v_color := v_grp_colors[((v_grp_idx - 1) % array_length(v_grp_colors, 1)) + 1];
+
+    v_x1 := v_margin + (v_rec.gx1 - v_xmin) * v_sx - 4;
+    v_x2 := v_margin + (v_rec.gx2 - v_xmin) * v_sx + 4;
+    v_y1 := v_margin + (p_height - 2 * v_margin) * (1.0 - (v_rec.gy2 - v_ymin) / v_range_y) - 4;
+    v_y2 := v_margin + (p_height - 2 * v_margin) * (1.0 - (v_rec.gy1 - v_ymin) / v_range_y) + 4;
+
+    v_svg := v_svg || format(
+      '<rect x="%s" y="%s" width="%s" height="%s" fill="none" stroke="%s" stroke-width="1" stroke-dasharray="4,3" rx="3"/>',
+      round(least(v_x1, v_x2)::numeric, 1), round(least(v_y1, v_y2)::numeric, 1),
+      round(abs(v_x2 - v_x1)::numeric, 1), round(abs(v_y2 - v_y1)::numeric, 1),
+      v_color
+    );
+    v_svg := v_svg || format(
+      '<text x="%s" y="%s" fill="%s" font-family="monospace" font-size="9" font-style="italic">%s</text>',
+      round(least(v_x1, v_x2)::numeric, 1), round(least(v_y1, v_y2)::numeric, 1) - 3,
+      v_color, v_rec.label
+    );
+  END LOOP;
 
   -- Draw pieces (big first, small on top)
   FOR v_rec IN

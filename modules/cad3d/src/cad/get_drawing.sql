@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION cad.get_drawing(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_drawing cad.drawing;
@@ -14,8 +13,15 @@ BEGIN
     RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
   END IF;
 
+  -- Navigation
+  v_body := '<p>'
+    || '<strong>Vue 2D</strong>'
+    || ' | <a href="' || pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', p_id)) || '">Vue 3D</a>'
+    || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a>'
+    || '</p>';
+
   -- Layout: tree + canvas
-  v_body := '<div class="cad-layout">'
+  v_body := v_body || '<div class="cad-layout">'
     || cad.fragment_tree(p_id)
     || '<div>' || pgv.svg_canvas(cad.render_svg(p_id)) || '</div>'
     || '</div>';
@@ -81,13 +87,6 @@ BEGIN
     || '</details>'
     || '<button type="submit">Ajouter</button>'
     || '</form></details>';
-
-  -- Liens
-  v_body := v_body || '<p>'
-    || '<a href="' || pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', p_id)) || '">Vue 3D</a>'
-    || ' | '
-    || '<a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a>'
-    || '</p>';
 
   RETURN v_body;
 END;

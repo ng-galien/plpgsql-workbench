@@ -69,7 +69,26 @@ CREATE TABLE IF NOT EXISTS cad.piece (
 CREATE INDEX IF NOT EXISTS idx_piece_drawing ON cad.piece(drawing_id);
 CREATE INDEX IF NOT EXISTS idx_piece_geom ON cad.piece USING gist(geom);
 
+-- Groupes de pièces (sous-assemblages)
+CREATE TABLE IF NOT EXISTS cad.piece_group (
+  id serial PRIMARY KEY,
+  drawing_id int NOT NULL REFERENCES cad.drawing(id) ON DELETE CASCADE,
+  parent_id int REFERENCES cad.piece_group(id) ON DELETE CASCADE,
+  label text NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_piece_group_drawing ON cad.piece_group(drawing_id);
+CREATE INDEX IF NOT EXISTS idx_piece_group_parent ON cad.piece_group(parent_id);
+
+ALTER TABLE cad.piece ADD COLUMN IF NOT EXISTS group_id int
+  REFERENCES cad.piece_group(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_piece_group ON cad.piece(group_id);
+
 -- Permissions
+GRANT SELECT, INSERT, UPDATE, DELETE ON cad.piece_group TO web_anon;
+GRANT USAGE ON SEQUENCE cad.piece_group_id_seq TO web_anon;
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON cad.piece TO web_anon;
 GRANT USAGE ON SEQUENCE cad.piece_id_seq TO web_anon;
 

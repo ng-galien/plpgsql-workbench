@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION cad.get_drawing_3d(p_id integer)
+CREATE OR REPLACE FUNCTION cad_qa.get_drawing_3d(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
  STABLE

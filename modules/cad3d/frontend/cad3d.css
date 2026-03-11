@@ -104,6 +104,13 @@
   font-size: 0.75rem;
 }
 
+.cad-info-group {
+  border-bottom: 1px solid #555;
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.35rem;
+  color: #6688cc;
+}
+
 .cad-info-copy {
   margin-top: 0.4rem;
   padding: 0.2rem 0.5rem;
@@ -189,9 +196,24 @@
   background: var(--pico-primary-focus);
 }
 
-.cad-tree-node.cad-tree-active {
+.cad-tree-node.cad-tree-active,
+.cad-tree li.cad-tree-active {
   background: var(--pico-primary-background);
   color: var(--pico-primary-inverse);
+}
+
+/* pgv-tree inside cad-tree: clickable items */
+.cad-tree .pgv-tree > li {
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cad-tree .pgv-tree > li:hover {
+  background: var(--pico-primary-focus);
 }
 
 /* Layer color swatch */

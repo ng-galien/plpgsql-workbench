@@ -1,9 +1,14 @@
 CREATE OR REPLACE FUNCTION cad.fragment_viewer(p_drawing_id integer)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 BEGIN
-  RETURN '<div x-data="cadViewer" x-init="load(' || p_drawing_id || ')" class="cad-viewer">'
+  RETURN '<div x-data="cadViewer" x-init="load(' || p_drawing_id || ')"'
+    || ' @cad-piece-select.window="selectByIds($event.detail)"'
+    || ' @cad-piece-toggle.window="toggleById($event.detail)"'
+    || ' @cad-piece-toggle-group.window="toggleGroupById($event.detail)"'
+    || ' class="cad-viewer">'
     || '<div x-ref="viewport" class="cad-viewport"></div>'
     -- HUD
     || '<div class="cad-hud" x-text="hud"></div>'
@@ -15,6 +20,12 @@ BEGIN
     || '</div>'
     -- Info panel
     || '<div class="cad-info" x-show="info" x-transition>'
+    -- Group header (when a full group is selected)
+    || '<div class="cad-info-group" x-show="info && info.group_label">'
+    || '<strong x-text="info ? info.group_label : ''''"></strong>'
+    || '<span x-text="'' — '' + (info ? info.group_count : 0) + '' pieces''"></span>'
+    || '</div>'
+    -- Piece list
     || '<template x-for="(item, idx) in (info ? info.items : [])" :key="idx">'
     || '<div>'
     || '<hr class="cad-info-sep" x-show="idx > 0">'

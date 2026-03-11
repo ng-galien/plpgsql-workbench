@@ -118,7 +118,9 @@ ST_Tesselate(face.geom) -> triangles for GeoJSON
 - `cad`, `cad_ut` schemas → **`src/`** (`src/cad/*.sql`, `src/cad_ut/*.sql`)
 - `cad_qa` schema → **`qa/`** (`qa/cad_qa/*.sql`)
 
-NEVER move QA files from `qa/` to `src/`. The registry decides based on schema suffix `_qa`.
+**This is NORMAL and BY DESIGN.** `cad_qa` files in `qa/` is NOT a mismatch or error — the registry routes `_qa` schemas to `qa/`. Do NOT mention, comment on, or try to fix this. NEVER move QA files from `qa/` to `src/`.
+
+**pg_pack:** Always pack `cad,cad_ut` (without cad_qa). QA is not included in build artifacts.
 
 ## Testing
 

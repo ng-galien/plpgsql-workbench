@@ -9,7 +9,7 @@ BEGIN
   SELECT * INTO v_src FROM cad.piece WHERE id = p_piece_id;
   IF NOT FOUND THEN RETURN 'error: piece #' || p_piece_id || ' not found'; END IF;
 
-  INSERT INTO cad.piece (drawing_id, label, role, wood_type, section, length_mm, profile, geom)
+  INSERT INTO cad.piece (drawing_id, label, role, wood_type, section, length_mm, profile, geom, group_id)
   VALUES (
     v_src.drawing_id,
     coalesce(p_label, v_src.label || ' (copy)'),
@@ -18,7 +18,8 @@ BEGIN
     v_src.section,
     v_src.length_mm,
     ST_Translate(v_src.profile, p_dx, p_dy, p_dz),
-    ST_Translate(v_src.geom, p_dx, p_dy, p_dz)
+    ST_Translate(v_src.geom, p_dx, p_dy, p_dz),
+    v_src.group_id
   )
   RETURNING id INTO v_new_id;
 

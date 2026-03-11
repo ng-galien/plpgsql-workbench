@@ -9,6 +9,7 @@ DECLARE
   v_bbox text;
   v_total_vol real;
   v_count int;
+  v_group_count int;
 BEGIN
   -- Header
   SELECT count(*), round(sum(ST_Volume(geom))::numeric / 1e9, 4)
@@ -27,16 +28,39 @@ BEGIN
   ) INTO v_bbox
   FROM (SELECT ST_3DExtent(geom)::geometry AS ext FROM cad.piece WHERE drawing_id = p_drawing_id) sub;
 
-  v_out := format('model: %s pieces, %s m3 bois', v_count, v_total_vol) || E'\n' || v_bbox || E'\n\n';
+  v_out := format('model: %s pieces, %s m3 bois', v_count, v_total_vol) || E'\n' || v_bbox || E'\n';
+
+  -- Groupes
+  SELECT count(*) INTO v_group_count FROM cad.piece_group WHERE drawing_id = p_drawing_id;
+  IF v_group_count > 0 THEN
+    v_out := v_out || E'\n' || 'groups (' || v_group_count || '):' || E'\n';
+    FOR v_piece IN
+      SELECT g.id, g.label, g.parent_id,
+        (SELECT count(*) FROM cad.piece p WHERE p.group_id = g.id) AS cnt,
+        (SELECT round((sum(ST_Volume(p.geom)) / 1e9)::numeric, 4) FROM cad.piece p WHERE p.group_id = g.id) AS vol
+      FROM cad.piece_group g
+      WHERE g.drawing_id = p_drawing_id
+      ORDER BY g.id
+    LOOP
+      v_out := v_out || format('  #%s %s (%s pieces, %s m3)', v_piece.id, v_piece.label, v_piece.cnt, coalesce(v_piece.vol::text, '0'));
+      IF v_piece.parent_id IS NOT NULL THEN
+        v_out := v_out || ' -> parent #' || v_piece.parent_id;
+      END IF;
+      v_out := v_out || E'\n';
+    END LOOP;
+  END IF;
 
   -- Pieces
-  v_out := v_out || 'pieces:' || E'\n';
+  v_out := v_out || E'\n' || 'pieces:' || E'\n';
   FOR v_piece IN
-    SELECT id, label, role, wood_type, section, length_mm,
-      round(ST_XMin(geom)::numeric) AS x0, round(ST_YMin(geom)::numeric) AS y0, round(ST_ZMin(geom)::numeric) AS z0,
-      round(ST_XMax(geom)::numeric) AS x1, round(ST_YMax(geom)::numeric) AS y1, round(ST_ZMax(geom)::numeric) AS z1,
-      round((ST_Volume(geom) / 1e9)::numeric, 6) AS vol_m3
-    FROM cad.piece WHERE drawing_id = p_drawing_id ORDER BY id
+    SELECT p.id, p.label, p.role, p.wood_type, p.section, p.length_mm,
+      round(ST_XMin(p.geom)::numeric) AS x0, round(ST_YMin(p.geom)::numeric) AS y0, round(ST_ZMin(p.geom)::numeric) AS z0,
+      round(ST_XMax(p.geom)::numeric) AS x1, round(ST_YMax(p.geom)::numeric) AS y1, round(ST_ZMax(p.geom)::numeric) AS z1,
+      round((ST_Volume(p.geom) / 1e9)::numeric, 6) AS vol_m3,
+      g.label AS group_label
+    FROM cad.piece p
+    LEFT JOIN cad.piece_group g ON g.id = p.group_id
+    WHERE p.drawing_id = p_drawing_id ORDER BY p.id
   LOOP
     v_out := v_out || format('  #%s %s [%s] %s %smm  pos:[%s,%s,%s]->[%s,%s,%s]  vol:%s m3',
       v_piece.id, COALESCE(v_piece.label, '-'), v_piece.role,
@@ -44,7 +68,11 @@ BEGIN
       v_piece.x0, v_piece.y0, v_piece.z0,
       v_piece.x1, v_piece.y1, v_piece.z1,
       v_piece.vol_m3
-    ) || E'\n';
+    );
+    IF v_piece.group_label IS NOT NULL THEN
+      v_out := v_out || '  grp:' || v_piece.group_label;
+    END IF;
+    v_out := v_out || E'\n';
   END LOOP;
 
   -- Joints (touching pairs)

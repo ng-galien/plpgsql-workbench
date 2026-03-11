@@ -7,6 +7,7 @@ DECLARE
   v_dx float; v_dy float; v_dz float;
   v_start real[]; v_end real[];
   v_old_length float;
+  v_new_id int;
 BEGIN
   SELECT * INTO v_p FROM cad.piece WHERE id = p_piece_id;
   IF NOT FOUND THEN RETURN 'error: piece #' || p_piece_id || ' not found'; END IF;
@@ -20,25 +21,27 @@ BEGIN
 
   -- Rebuild start/end with new length, keeping origin
   IF v_dz > v_dx AND v_dz > v_dy THEN
-    -- Vertical (Z dominant)
     v_start := ARRAY[ST_XMin(v_p.geom), ST_YMin(v_p.geom), ST_ZMin(v_p.geom)]::real[];
     v_end := ARRAY[ST_XMin(v_p.geom), ST_YMin(v_p.geom), ST_ZMin(v_p.geom) + p_new_length_mm]::real[];
   ELSIF v_dx > v_dy THEN
-    -- Horizontal X dominant
     v_start := ARRAY[ST_XMin(v_p.geom), ST_YMin(v_p.geom), ST_ZMin(v_p.geom)]::real[];
     v_end := ARRAY[ST_XMin(v_p.geom) + p_new_length_mm, ST_YMin(v_p.geom), ST_ZMin(v_p.geom)]::real[];
   ELSE
-    -- Horizontal Y dominant
     v_start := ARRAY[ST_XMin(v_p.geom), ST_YMin(v_p.geom), ST_ZMin(v_p.geom)]::real[];
     v_end := ARRAY[ST_XMin(v_p.geom), ST_YMin(v_p.geom) + p_new_length_mm, ST_ZMin(v_p.geom)]::real[];
   END IF;
 
   -- Create new piece via add_beam
-  PERFORM cad.add_beam(
+  v_new_id := cad.add_beam(
     v_p.drawing_id, v_p.section,
     v_start, v_end,
     v_p.label, v_p.role, v_p.wood_type
   );
+
+  -- Restaurer le group_id sur la nouvelle pièce
+  IF v_p.group_id IS NOT NULL THEN
+    UPDATE cad.piece SET group_id = v_p.group_id WHERE id = v_new_id;
+  END IF;
 
   -- Remove old piece
   DELETE FROM cad.piece WHERE id = p_piece_id;
