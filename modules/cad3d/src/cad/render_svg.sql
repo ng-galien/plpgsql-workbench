@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION cad.render_svg(p_drawing_id integer)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_drawing cad.drawing;
@@ -29,10 +30,10 @@ BEGIN
       v_layer.id, v_layer.color, v_layer.stroke_width
     );
 
-    -- Shapes racines (sans parent) de ce layer
+    -- All shapes in this layer
     FOR v_shape IN
       SELECT * FROM cad.shape
-      WHERE layer_id = v_layer.id AND parent_id IS NULL
+      WHERE layer_id = v_layer.id
       ORDER BY sort_order
     LOOP
       IF v_shape.type = 'group' THEN
