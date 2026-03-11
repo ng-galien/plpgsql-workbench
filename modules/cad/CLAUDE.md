@@ -35,6 +35,28 @@ frontend/cad.css       # Viewer + toolbar + info panel styles
 
 Shape types: line, rect, circle, arc, polyline, text, dimension, group.
 
+## Multi-tenant (RLS)
+
+Toutes les tables métier portent un `tenant_id` pour l'isolation multi-tenant.
+
+| Table | Colonne | Default |
+|-------|---------|---------|
+| `cad.drawing` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `cad.layer` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `cad.shape` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `cad.piece` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `cad.piece_group` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+
+RLS activé sur les 5 tables :
+```sql
+CREATE POLICY tenant_isolation ON cad.drawing
+  USING (tenant_id = current_setting('app.tenant_id', true));
+```
+
+- En dev : `app.tenant_id = 'dev'`
+- En prod : extrait du JWT
+- Chaque table a son propre tenant_id + policy RLS
+
 ## Functions by Category
 
 **3D Geometry (core)**

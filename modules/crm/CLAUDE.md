@@ -36,6 +36,26 @@ Trigger `trg_client_updated_at` met à jour `updated_at` automatiquement sur UPD
 
 Types d'interaction : `call`, `visit`, `email`, `note` uniquement. Pas de devis/factures — bounded context séparé à venir.
 
+## Multi-tenant (RLS)
+
+Toutes les tables métier portent un `tenant_id` pour l'isolation multi-tenant.
+
+| Table | Colonne | Default |
+|-------|---------|---------|
+| `crm.client` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `crm.contact` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `crm.interaction` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+
+RLS activé sur les 3 tables :
+```sql
+CREATE POLICY tenant_isolation ON crm.client
+  USING (tenant_id = current_setting('app.tenant_id', true));
+```
+
+- En dev : `app.tenant_id = 'dev'` (set par PostgREST pre-request ou connexion)
+- En prod : extrait du JWT via `current_setting('request.jwt.claims')::json->>'tenant_id'`
+- Les FK CASCADE (contact → client, interaction → client) propagent la suppression mais le RLS filtre indépendamment sur chaque table
+
 ## Données personnelles (RGPD)
 
 Ce module stocke des données personnelles (nom, email, téléphone, adresse).

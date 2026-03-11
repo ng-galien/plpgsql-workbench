@@ -45,6 +45,27 @@ Chaque écriture a **au moins 2 lignes**. Total débit = Total crédit. Toujours
 - `entry_line`: `debit >= 0 AND credit >= 0 AND (debit > 0 OR credit > 0)` — une ligne est soit débit soit crédit, jamais les deux, jamais zéro
 - Équilibre vérifié applicativement : `SUM(debit) = SUM(credit)` par écriture — trigger/helper avant validation
 
+## Multi-tenant (RLS)
+
+Toutes les tables métier portent un `tenant_id` pour l'isolation multi-tenant.
+
+| Table | Colonne | Default |
+|-------|---------|---------|
+| `ledger.account` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `ledger.journal_entry` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `ledger.entry_line` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+
+RLS activé sur les 3 tables :
+```sql
+CREATE POLICY tenant_isolation ON ledger.account
+  USING (tenant_id = current_setting('app.tenant_id', true));
+```
+
+- En dev : `app.tenant_id = 'dev'`
+- En prod : extrait du JWT
+- Le plan comptable (PCG) est seedé par tenant — chaque tenant a ses propres comptes
+- Les triggers _protect_posted doivent fonctionner normalement avec RLS (le WHERE implicite filtre avant le trigger)
+
 ## Règles comptables
 
 ### Partie double (principe fondamental)

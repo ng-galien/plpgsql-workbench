@@ -37,6 +37,26 @@ qa/quote_qa/*.sql         # QA/demo sources (_qa → qa/)
 - `facture.paid_at` — NULL = pas encore payée
 - `ligne.devis_id` / `ligne.facture_id` — XOR constraint : exactement un parent
 
+## Multi-tenant (RLS)
+
+Toutes les tables métier portent un `tenant_id` pour l'isolation multi-tenant.
+
+| Table | Colonne | Default |
+|-------|---------|---------|
+| `quote.devis` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `quote.facture` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+| `quote.ligne` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+
+RLS activé sur les 3 tables :
+```sql
+CREATE POLICY tenant_isolation ON quote.devis
+  USING (tenant_id = current_setting('app.tenant_id', true));
+```
+
+- En dev : `app.tenant_id = 'dev'`
+- En prod : extrait du JWT
+- Le tenant_id est sur chaque table (y compris ligne) car PostgREST peut query chaque table indépendamment
+
 ## Règles comptables françaises
 
 ### Numérotation (obligation légale)
