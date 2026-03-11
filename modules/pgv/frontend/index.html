@@ -135,12 +135,14 @@
           // App mode: single schema, use page(p_path)
           rpcUrl = '/rpc/page';
           body = { p_path: path };
+          this._currentSchema = this._fixedSchema;
         } else {
-          // Dev mode: /{schema}/path → pgv.route(schema, path)
+          // Route mode: /{schema}/path → pgv.route(schema, path)
           var m = path.match(/^\/([a-z][a-z0-9_]*)(\/.*)?$/);
           if (m) {
             rpcUrl = '/rpc/route';
             body = { p_schema: m[1], p_path: m[2] || '/' };
+            this._currentSchema = m[1];
           } else {
             rpcUrl = '/rpc/page';
             body = { p_path: path };
@@ -168,9 +170,11 @@
       /* ── POST action ───────────────────────────────── */
       post: function(endpoint, data) {
         var self = this;
+        var headers = { 'Content-Type': 'application/json', 'Accept': 'text/html' };
+        if (this._currentSchema) headers['Content-Profile'] = this._currentSchema;
         return fetch('/rpc/' + endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          headers: headers,
           body: JSON.stringify(data)
         })
         .then(function(r) {
@@ -193,7 +197,13 @@
 
         // Extract <template data-redirect="/path"></template>
         var rm = html.match(/<template data-redirect="([^"]+)"><\/template>/);
-        if (rm) { this.go(rm[1]); return; }
+        if (rm) {
+          var rpath = rm[1];
+          // Prefix with schema if path is relative (no schema segment)
+          if (this._currentSchema && !rpath.match(/^\/[a-z][a-z0-9_]*\//))
+            rpath = '/' + this._currentSchema + rpath;
+          this.go(rpath); return;
+        }
 
         // Render page content
         if (!html.trim()) return;

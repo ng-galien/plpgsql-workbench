@@ -22,6 +22,6 @@
     ]
   },
   "grants": {
-    "web_anon": ["pgv", "pgv_ut"]
+    "web_anon": ["pgv", "pgv_ut", "pgv_qa"]
   }
 }

@@ -100,7 +100,7 @@
   --pgv-canvas-grid: #292524;
 }
 
-/* ── Global Refinements ────────────────────────────────────────── */
+/* ── Global ────────────────────────────────────────────────────── */
 body {
   background: var(--pgv-bg);
   color: var(--pgv-text);
@@ -125,30 +125,53 @@ code, kbd, pre {
   font-size: 0.8125rem;
 }
 
+p:last-child { margin-bottom: 0; }
+
+.container { --pico-container-max-width: 1100px; }
+.grid { gap: 0.75rem; }
+
+[aria-busy="true"] {
+  font-size: 0.85rem;
+  color: var(--pgv-muted);
+}
+
 /* ── Navigation ────────────────────────────────────────────────── */
 nav {
-  border-bottom: 1px solid var(--pgv-border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
   background: var(--pgv-surface);
-  padding: 0 !important;
+  border-bottom: 1px solid var(--pgv-border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  --pico-nav-element-spacing-vertical: 0;
+  --pico-nav-element-spacing-horizontal: 0;
+}
+
+nav > ul:first-child {
+  flex-shrink: 0;
+  margin-right: 0.5rem;
 }
 
 nav ul {
   margin: 0;
   padding: 0;
+  gap: 0;
 }
 
 nav li {
-  padding: 0.45rem 0;
+  padding: 0;
 }
 
 nav a {
-  font-size: 0.8125rem;
+  display: flex;
+  align-items: center;
+  font-size: 0.9375rem;
   font-weight: 500;
-  padding: 0.35rem 0.6rem;
-  border-radius: 0.2rem;
+  padding: 0.85rem 1rem;
   text-decoration: none;
   color: var(--pgv-muted);
-  transition: color 0.15s, background 0.15s;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
 }
 
 nav a:hover {
@@ -158,17 +181,92 @@ nav a:hover {
 
 nav a[aria-current="page"] {
   color: var(--pgv-accent);
-  background: var(--pgv-accent-subtle);
+  border-bottom-color: var(--pgv-accent);
+  font-weight: 600;
+}
+
+nav .pgv-brand {
+  text-decoration: none;
+  border-bottom: none;
 }
 
 nav strong {
-  font-size: 0.875rem;
+  font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
+  color: var(--pgv-accent);
+  padding: 0.75rem 0.25rem;
+}
+
+/* ── Burger Menu (responsive) ─────────────────────────────────── */
+.pgv-burger-li {
+  display: none;
+}
+
+.pgv-burger {
+  all: unset;
+  cursor: pointer;
+  font-size: 1.25rem;
+  padding: 0.5rem;
+  line-height: 1;
   color: var(--pgv-text);
 }
 
-/* ── Compact Buttons ───────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .pgv-nav-burger > ul:first-child {
+    flex: 1;
+    justify-content: space-between;
+  }
+
+  .pgv-nav-burger .pgv-burger-li {
+    display: flex;
+    align-items: center;
+  }
+
+  .pgv-nav-burger .pgv-menu {
+    display: none;
+  }
+
+  .pgv-nav-burger .pgv-menu.pgv-menu-open {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--pgv-surface);
+    border-bottom: 1px solid var(--pgv-border);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    z-index: 99;
+  }
+
+  .pgv-nav-burger .pgv-menu.pgv-menu-open a {
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--pgv-border);
+    border-left: 3px solid transparent;
+  }
+
+  .pgv-nav-burger .pgv-menu.pgv-menu-open a:hover {
+    border-left-color: var(--pgv-muted);
+  }
+
+  .pgv-nav-burger .pgv-menu.pgv-menu-open a[aria-current="page"] {
+    border-left-color: var(--pgv-accent);
+    border-bottom-color: var(--pgv-border);
+    background: var(--pgv-accent-subtle);
+  }
+
+  .pgv-nav-burger .pgv-menu.pgv-menu-open li:last-child a {
+    border-bottom: none;
+  }
+
+  /* Hide theme toggle on mobile (keep burger only) */
+  .pgv-nav-burger > ul:last-child {
+    display: none;
+  }
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
 button, [type="submit"], [type="button"], [role="button"],
 input[type="submit"], input[type="button"] {
   --pico-form-element-spacing-vertical: 0.35rem;
@@ -179,30 +277,23 @@ input[type="submit"], input[type="button"] {
   border-radius: 0.25rem;
 }
 
-button.secondary, [role="button"].secondary {
-  --pico-form-element-spacing-vertical: 0.35rem;
-  --pico-form-element-spacing-horizontal: 0.75rem;
-}
-
 button.outline, [role="button"].outline {
   --pico-form-element-spacing-vertical: 0.3rem;
   --pico-form-element-spacing-horizontal: 0.6rem;
   font-size: 0.75rem;
 }
 
-/* Danger variant for data-rpc buttons */
 button.secondary[data-rpc] {
   font-size: 0.75rem;
   --pico-form-element-spacing-vertical: 0.2rem;
   --pico-form-element-spacing-horizontal: 0.5rem;
 }
 
-/* Inline button groups */
 .grid button, fieldset[role="group"] button {
   margin-bottom: 0;
 }
 
-/* ── Compact Forms ─────────────────────────────────────────────── */
+/* ── Forms ────────────────────────────────────────────────────── */
 label {
   font-size: 0.8125rem;
   font-weight: 500;
@@ -237,14 +328,8 @@ details > summary {
   list-style-type: none;
 }
 
-details > summary::before {
-  content: '▸ ';
-  font-size: 0.7rem;
-}
-
-details[open] > summary::before {
-  content: '▾ ';
-}
+details > summary::before { content: '▸ '; font-size: 0.7rem; }
+details[open] > summary::before { content: '▾ '; }
 
 details[open] > summary {
   border-bottom: 1px solid var(--pgv-border);
@@ -260,36 +345,28 @@ article {
   border: 1px solid var(--pgv-border);
   border-radius: 0.375rem;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-  padding: 0;
+  --pico-block-spacing-vertical: 0.75rem;
+  --pico-block-spacing-horizontal: 0.85rem;
   margin-bottom: 0.75rem;
 }
 
 article > header {
-  padding: 0.6rem 0.85rem;
   font-size: 0.8125rem;
   font-weight: 600;
   background: var(--pgv-table-header-bg);
   border-bottom: 1px solid var(--pgv-border);
-  border-radius: 0.375rem 0.375rem 0 0;
-}
-
-article > *:not(header):not(footer) {
-  padding: 0.75rem 0.85rem;
 }
 
 article > footer {
-  padding: 0.5rem 0.85rem;
   font-size: 0.8125rem;
   background: var(--pgv-table-header-bg);
   border-top: 1px solid var(--pgv-border);
-  border-radius: 0 0 0.375rem 0.375rem;
 }
 
 article > footer a {
   font-size: 0.8125rem;
 }
 
-/* Grid cards */
 .grid > article {
   margin-bottom: 0;
 }
@@ -331,7 +408,8 @@ section > h4:first-child {
 /* ── Stat ──────────────────────────────────────────────────────── */
 .pgv-stat {
   text-align: center;
-  padding: 0.6rem 0.5rem !important;
+  --pico-block-spacing-vertical: 0.6rem;
+  --pico-block-spacing-horizontal: 0.5rem;
 }
 .pgv-stat small {
   color: var(--pgv-muted);
@@ -433,10 +511,6 @@ section > h4:first-child {
   background: var(--pgv-table-hover);
 }
 
-.pgv-table tbody tr[style*="cursor"]:hover td {
-  background: var(--pgv-table-hover);
-}
-
 .pgv-table tbody tr:last-child td:first-child { border-bottom-left-radius: 0.375rem; }
 .pgv-table tbody tr:last-child td:last-child  { border-bottom-right-radius: 0.375rem; }
 .pgv-table tbody tr:last-child td { border-bottom: none; }
@@ -504,7 +578,7 @@ section > h4:first-child {
 .pgv-sortable {
   cursor: pointer;
   user-select: none;
-  padding-right: 1.4rem !important;
+  padding-right: 1.4rem;
   position: relative;
 }
 .pgv-sortable::after {
@@ -617,7 +691,6 @@ dialog article {
   overflow: hidden;
   cursor: grab;
   position: relative;
-  /* Subtle grid pattern */
   background-image:
     linear-gradient(var(--pgv-canvas-grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--pgv-canvas-grid) 1px, transparent 1px);
@@ -625,13 +698,8 @@ dialog article {
   background-position: -1px -1px;
 }
 
-.pgv-canvas-vp:active {
-  cursor: grabbing;
-}
-
-.pgv-canvas-vp svg {
-  display: block;
-}
+.pgv-canvas-vp:active { cursor: grabbing; }
+.pgv-canvas-vp svg { display: block; }
 
 [data-theme="dark"] .pgv-canvas-vp svg {
   filter: invert(0.88) hue-rotate(180deg);
@@ -681,18 +749,4 @@ dialog article {
   height: 1rem;
   background: var(--pgv-border);
   margin: 0 0.2rem;
-}
-
-/* ── Utility ───────────────────────────────────────────────────── */
-.container { max-width: 1100px; }
-
-p:last-child { margin-bottom: 0; }
-
-/* Tighter grid gaps */
-.grid { gap: 0.75rem; }
-
-/* Loading state */
-[aria-busy="true"] {
-  font-size: 0.85rem;
-  color: var(--pgv-muted);
 }

@@ -4,12 +4,14 @@ CREATE OR REPLACE FUNCTION pgv.route(p_schema text, p_path text, p_body jsonb DE
 AS $function$
 DECLARE
   v_nav jsonb;
+  v_opts jsonb;
   v_brand text;
   v_title text;
   v_fname text;
   v_body text;
   v_detail text;
   v_hint text;
+  v_route text;
 BEGIN
   -- Get nav items
   EXECUTE format('SELECT %I.nav_items()', p_schema) INTO v_nav;
@@ -21,12 +23,33 @@ BEGIN
     v_brand := initcap(p_schema);
   END;
 
+  -- Get nav options (optional function, fallback to empty)
+  BEGIN
+    EXECUTE format('SELECT %I.nav_options()', p_schema) INTO v_opts;
+  EXCEPTION WHEN undefined_function THEN
+    v_opts := '{}'::jsonb;
+  END;
+
   -- Derive function name from path
   IF p_path = '/' THEN
     v_fname := 'page_index';
   ELSE
     v_fname := 'page_' || replace(replace(trim(BOTH '/' FROM p_path), '/', '_'), '-', '_');
   END IF;
+
+  -- Full route path (/{schema}{path})
+  v_route := '/' || p_schema || p_path;
+
+  -- Set route prefix early (pgv.href() and pgv.nav() need it)
+  PERFORM set_config('pgv.route_prefix', '/' || p_schema, true);
+
+  -- Prefix nav hrefs with schema for route-based navigation
+  v_nav := (
+    SELECT jsonb_agg(
+      jsonb_set(item, '{href}', to_jsonb('/' || p_schema || (item->>'href')))
+    )
+    FROM jsonb_array_elements(v_nav) AS item
+  );
 
   -- Check function exists (introspection)
   IF NOT EXISTS (
@@ -35,14 +58,14 @@ BEGIN
     WHERE n.nspname = p_schema AND p.proname = v_fname
   ) THEN
     PERFORM set_config('response.status', '404', true);
-    RETURN pgv.page(v_brand, '404', p_path, v_nav,
-      pgv.error('404', 'Page non trouvee', 'Le chemin ' || p_path || ' n''existe pas.'));
+    RETURN pgv.page(v_brand, '404', v_route, v_nav,
+      pgv.error('404', 'Page non trouvee', 'Le chemin ' || p_path || ' n''existe pas.'), v_opts);
   END IF;
 
   -- Find title from nav (href match)
   SELECT item->>'label' INTO v_title
   FROM jsonb_array_elements(v_nav) AS item
-  WHERE item->>'href' = p_path;
+  WHERE item->>'href' = v_route;
 
   -- Fallback title from function name
   IF v_title IS NULL THEN
@@ -53,20 +76,20 @@ BEGIN
   EXECUTE format('SELECT %I.%I()', p_schema, v_fname) INTO v_body;
 
   -- Wrap in page layout
-  RETURN pgv.page(v_brand, v_title, p_path, v_nav, v_body);
+  RETURN pgv.page(v_brand, v_title, v_route, v_nav, v_body, v_opts);
 
 EXCEPTION
   WHEN raise_exception THEN
     GET STACKED DIAGNOSTICS v_detail = MESSAGE_TEXT, v_hint = PG_EXCEPTION_HINT;
     PERFORM set_config('response.status', '400', true);
-    RETURN pgv.page(v_brand, 'Erreur', p_path, v_nav, pgv.error('400', 'Erreur', v_detail, v_hint));
+    RETURN pgv.page(v_brand, 'Erreur', v_route, v_nav, pgv.error('400', 'Erreur', v_detail, v_hint), v_opts);
   WHEN invalid_text_representation THEN
     GET STACKED DIAGNOSTICS v_detail = MESSAGE_TEXT;
     PERFORM set_config('response.status', '400', true);
-    RETURN pgv.page(v_brand, 'Erreur', p_path, v_nav, pgv.error('400', 'Parametre invalide', v_detail));
+    RETURN pgv.page(v_brand, 'Erreur', v_route, v_nav, pgv.error('400', 'Parametre invalide', v_detail), v_opts);
   WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_detail = MESSAGE_TEXT;
     PERFORM set_config('response.status', '500', true);
-    RETURN pgv.page(v_brand, 'Erreur', p_path, v_nav, pgv.error('500', 'Erreur interne', 'Une erreur inattendue est survenue.'));
+    RETURN pgv.page(v_brand, 'Erreur', v_route, v_nav, pgv.error('500', 'Erreur interne', 'Une erreur inattendue est survenue.'), v_opts);
 END;
 $function$;

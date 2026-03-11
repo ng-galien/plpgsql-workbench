@@ -31,6 +31,7 @@ dev-env:
 		s=[]; \
 		[s.extend([p, p+'_ut', p+'_qa']) for f in sorted(glob.glob('modules/*/module.json')) \
 		 for p in [json.load(open(f)).get('schemas',{}).get('public','')] if p]; \
+		s.sort(key=lambda x: (0 if x.startswith('pgv') else 1, x)); \
 		print(','.join(s))" 2>/dev/null || echo "pgv"); \
 	echo "PGRST_DB_SCHEMAS=$$schemas" > .env
 
@@ -51,6 +52,17 @@ dev-sync:
 			cp -r "$$mod/frontend/"* dev/frontend/ 2>/dev/null || true; \
 		fi; \
 	done
+	@echo "Generating dev index..."
+	@python3 -c "\
+	import json, glob; \
+	mods = []; \
+	[mods.append({'schema': m.get('schemas',{}).get('qa',''), 'name': m.get('name','?'), 'desc': m.get('description','')}) \
+	 for f in sorted(glob.glob('modules/*/module.json')) \
+	 for m in [json.load(open(f))] \
+	 if m.get('schemas',{}).get('qa')]; \
+	links = ''.join('<li><a href=\"/%s/\">%s</a><br><small>%s</small></li>' % (m['schema'], m['name'], m['desc']) for m in mods); \
+	print('<!DOCTYPE html><html lang=fr data-theme=light><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Dev — Modules</title><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css><link rel=stylesheet href=/pgview.css></head><body><main class=container><hgroup><h2>Dev — Modules</h2><p>Choisir un module pour voir sa QA</p></hgroup><ul>%s</ul></main></body></html>' % links)" \
+	> dev/frontend/dev-index.html
 	@echo "Done"
 
 # Deploy all modules to dev DB (after fresh start)
