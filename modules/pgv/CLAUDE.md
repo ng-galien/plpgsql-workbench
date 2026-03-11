@@ -6,8 +6,8 @@ Server-Side Rendering framework for PostgreSQL apps. Alpine.js shell + PicoCSS +
 
 | Schema | Role | Functions |
 |--------|------|-----------|
-| `pgv` | UI primitives + router | 21 |
-| `pgv_ut` | Unit tests + `assert_page()` helper | 16 |
+| `pgv` | UI primitives + router | 36 |
+| `pgv_ut` | Unit tests + `assert_page()` helper | 23 |
 | `pgv_qa` | Demo app showcasing all primitives | 18 |
 
 ## Layout
@@ -59,6 +59,20 @@ frontend/pgview.css      # Design tokens + component styles + light/dark themes
 - POST -> raw return (toast/redirect templates)
 - Errors: GET -> error page, POST -> `<template data-toast="error">`
 
+## Rôle : Reviewer UI/UX
+
+L'agent pgv est le **référent UI/UX** pour tous les modules. Quand un module a terminé ses pages, il doit demander une review à pgv :
+
+```
+pg_msg from:<module> to:pgv type:question subject:"Review UI/UX pages <module>"
+```
+
+L'agent pgv vérifiera :
+- `diagnose('schema', '*')` — les 8 checks automatiques
+- Cohérence des primitives (bon usage de dl, card, tabs, badge, etc.)
+- Ergonomie navigation (breadcrumb, liens, retours)
+- Respect des conventions (esc, call_ref, pas de style inline, md pour tables)
+
 ## Module Contract
 
 Any schema using `pgv.route()` MUST provide:
@@ -80,6 +94,35 @@ Optional: `{schema}.brand() -> text`, `{schema}.nav_options() -> jsonb`
 6. **Query params, not path segments** — `/page?id=42` not `/page/42`
 7. **Markdown tables over HTML** — `<md>` blocks with auto-sort/pagination, not raw `<table>`
 8. **POST returns** — `<template data-toast="level">msg</template>` or `<template data-redirect="/path">`
+
+## Search Convention
+
+- Type : `pgv.search_result` (href, icon, kind, label, detail, score)
+- Chaque module cherchable implémente `{schema}.search(p_query text, p_limit int, p_offset int) → SETOF pgv.search_result`
+- Dispatcher : `pgv.search(p_query, p_schema, p_limit, p_offset)` → HTML
+- Shell : Cmd+K overlay, debounce 200ms, navigation clavier ↑↓, Enter = navigate
+- Scoring libre par module (ILIKE, trigram, ts_vector). Le dispatcher trie par score DESC.
+
+## diagnose() — Validation HTML
+
+`pgv.diagnose(p_schema text, p_func text)` — 8 checks :
+1. Inline styles (`style="..."`)
+2. HTMX (`hx-*`)
+3. Raw `<table>` sans `<md>`
+4. RPC targets (`data-rpc` → fonction existe)
+5. Internal hrefs (lien → get_xxx() existe)
+6. Markdown blocks (`<md>` header valide)
+7. Form signatures (champs vs paramètres fonction)
+8. CSS classes (pgv-* connus dans le registre)
+
+Batch : `diagnose('schema', '*')` scanne toutes les pages nav_items.
+
+## Shell Architecture (index.html)
+
+- Event delegation sur `#app` (pas de listeners individuels)
+- `_enhance()` post-process après chaque render : markdown, tables sort+pagination, scripts, lazy
+- `_listen()` capture : links internes, data-rpc buttons, theme toggle, data-dialog
+- Lazy : `data-lazy="rpc"` + IntersectionObserver
 
 ## CSS Tokens
 
@@ -114,3 +157,9 @@ NEVER move QA files from `qa/` to `src/`. The registry decides based on schema s
 - `<md>` blocks need valid markdown header + separator row
 - POST error from RAISE EXCEPTION -> only message shown in toast (HINT not visible)
 - `pgv_qa` is demo-only — has its own `item` table, don't deploy as real app
+- **PicoCSS specificity** — PicoCSS utilise des sélecteurs haute spécificité (`nav[aria-label="breadcrumb"] li::after`). Les `.pgv-*` seuls perdent. Solution : matcher leur pattern (`nav.pgv-breadcrumb[aria-label]`)
+- **PostgREST content negotiation** — `RETURNS text` + `Accept: text/html` → PGRST107. Utiliser le domaine `"text/html"` pour les pages, `text` + `Accept: application/json` pour les utilitaires
+- **Inline styles interdit, dynamique via data-*** — `style="height:300px"` bloqué par hooks. Solution : `data-height="300"` + JS dans `_enhance()` qui lit `dataset.height`
+- **Alpine x-ref dans x-if** — `<template x-if>` retire le DOM → `$refs.xxx` undefined. Toujours `$nextTick()` après avoir mis la condition à true
+- **pg_pack après pg_func_save** — Si les deux tournent en parallèle, le coherence check peut échouer. Toujours re-pack APRÈS save
+- **POST vs GET response** — GET → wrappé dans `page()`. POST → raw HTML (`<template data-toast>` / `<template data-redirect>`). Ne JAMAIS wrapper un POST dans page()

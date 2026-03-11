@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "plpgsql-workbench": {
-      "type": "http",
-      "url": "http://localhost:3102/mcp"
-    }
-  }
-}

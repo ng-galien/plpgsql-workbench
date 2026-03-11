@@ -1,0 +1,10 @@
+-- ops — DDL (agent dashboard)
+
+CREATE SCHEMA IF NOT EXISTS ops;
+CREATE SCHEMA IF NOT EXISTS ops_ut;
+CREATE SCHEMA IF NOT EXISTS ops_qa;
+
+-- Grants
+GRANT USAGE ON SCHEMA ops TO web_anon;
+GRANT USAGE ON SCHEMA ops_ut TO web_anon;
+GRANT USAGE ON SCHEMA ops_qa TO web_anon;

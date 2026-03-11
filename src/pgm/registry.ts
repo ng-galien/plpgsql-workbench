@@ -17,7 +17,7 @@ export interface ModuleMapping {
 export interface ModuleRegistry {
   /** Resolve a list of schemas to a module. Returns null if no module owns ALL schemas. */
   resolve(schemas: string[]): ModuleMapping | null;
-  /** Resolve by module name (e.g. "cad3d"). */
+  /** Resolve by module name (e.g. "cad"). */
   resolveByName(name: string): ModuleMapping | null;
   /** Get the module path for pg_func_save given a schema. */
   savePath(schema: string): string | null;

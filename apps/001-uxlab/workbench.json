@@ -1,6 +1,0 @@
-{
-  "name": "uxlab",
-  "packs": ["plpgsql"],
-  "connection": "postgresql://postgres:postgres@localhost:5441/postgres",
-  "port": 3101
-}

@@ -5,9 +5,12 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import fsSync from "fs";
 import fs from "fs/promises";
+import http from "http";
 import os from "os";
 import path from "path";
 import pino from "pino";
+import { WebSocketServer, WebSocket } from "ws";
+import pty from "node-pty";
 import { buildContainer, mountTools, type ToolPack } from "./container.js";
 import { plpgsqlPack } from "./packs/plpgsql.js";
 import { docstorePack } from "./packs/docstore.js";
@@ -153,10 +156,23 @@ let moduleRegistry: import("./pgm/registry.js").ModuleRegistry | null = null;
 const moduleRegistryPromise: Promise<import("./pgm/registry.js").ModuleRegistry> = container.resolve("moduleRegistry");
 moduleRegistryPromise.then((r) => { moduleRegistry = r; }).catch(() => {});
 
-function deny(res: import("express").Response, reason: string) {
+function logHook(mod: string, tool: string, action: string, allowed: boolean, reason?: string) {
+  try {
+    const pool: import("pg").Pool = container.resolve("pool");
+    pool.query(
+      `INSERT INTO workbench.hook_log (module, tool, action, allowed, reason)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [mod, tool, action, allowed, reason ?? null],
+    ).catch(() => {}); // fire-and-forget, table may not exist
+  } catch { /* pool not ready */ }
+}
+
+function deny(res: import("express").Response, reason: string, mod?: string, tool?: string, action?: string) {
+  if (mod && tool) logHook(mod, tool, action ?? "", false, reason);
   res.json({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } });
 }
-function allow(res: import("express").Response) {
+function allow(res: import("express").Response, mod?: string, tool?: string, action?: string) {
+  if (mod && tool) logHook(mod, tool, action ?? "", true);
   res.json({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" } });
 }
 
@@ -165,7 +181,7 @@ app.post("/hooks/:module", (req, res) => {
   const { tool_name, tool_input } = req.body ?? {};
   if (!moduleRegistry) {
     // Registry not loaded yet — allow (fail-open during startup)
-    return allow(res);
+    return allow(res, mod, tool_name, "startup");
   }
   const mapping = moduleRegistry.resolveByName(mod) ?? moduleRegistry.resolve([mod]) ?? moduleRegistry.resolve([`${mod}_ut`]);
   const schemas = mapping?.schemas ?? [mod];
@@ -175,15 +191,15 @@ app.post("/hooks/:module", (req, res) => {
     const sql = (tool_input?.sql ?? "") as string;
     if (FUNC_PATTERN.test(sql)) {
       log.warn({ mod, sql: sql.slice(0, 80) }, "hook: blocked CREATE FUNCTION in pg_query");
-      return deny(res, "pg_query interdit pour les fonctions. Utilise pg_func_set + pg_test.\n\n" + WORKFLOW);
+      return deny(res, "pg_query interdit pour les fonctions. Utilise pg_func_set + pg_test.\n\n" + WORKFLOW, mod, tool_name, sql.slice(0, 120));
     }
     if (DDL_PATTERN.test(sql)) {
       log.warn({ mod, sql: sql.slice(0, 80) }, "hook: blocked DDL in pg_query");
-      return deny(res, "pg_query interdit pour le DDL. Ecris un fichier SQL + pg_schema.\n\n" + WORKFLOW);
+      return deny(res, "pg_query interdit pour le DDL. Ecris un fichier SQL + pg_schema.\n\n" + WORKFLOW, mod, tool_name, sql.slice(0, 120));
     }
     if (DESTRUCTIVE_PATTERN.test(sql)) {
       log.warn({ mod, sql: sql.slice(0, 80) }, "hook: blocked destructive op in pg_query");
-      return deny(res, "pg_query interdit pour DROP FUNCTION / TRUNCATE / GRANT / REVOKE. Utilise pg_func_del pour supprimer une fonction.\n\n" + WORKFLOW);
+      return deny(res, "pg_query interdit pour DROP FUNCTION / TRUNCATE / GRANT / REVOKE. Utilise pg_func_del pour supprimer une fonction.\n\n" + WORKFLOW, mod, tool_name, sql.slice(0, 120));
     }
   }
 
@@ -194,15 +210,15 @@ app.post("/hooks/:module", (req, res) => {
     const modulePath = mapping?.modulePath;
     if (modulePath && !filePath.startsWith(path.resolve(modulePath))) {
       log.warn({ mod, file: filePath, allowed: modulePath }, "hook: blocked file op outside module");
-      return deny(res, `Module ${mod}: ${tool_name} interdit hors du repertoire du module (${modulePath}). Travaille uniquement dans le repertoire du module.`);
+      return deny(res, `Module ${mod}: ${tool_name} interdit hors du repertoire du module (${modulePath}). Travaille uniquement dans le repertoire du module.`, mod, tool_name, filePath);
     }
     if (filePath.endsWith(".func.sql")) {
       log.warn({ mod, file: filePath }, "hook: blocked direct write to .func.sql");
-      return deny(res, "*.func.sql est genere par pg_pack. Utilise pg_func_set pour iterer, puis pg_pack pour exporter.\n\n" + WORKFLOW);
+      return deny(res, "*.func.sql est genere par pg_pack. Utilise pg_func_set pour iterer, puis pg_pack pour exporter.\n\n" + WORKFLOW, mod, tool_name, filePath);
     }
     if (tool_name === "Write" && filePath.endsWith(".sql") && FUNC_PATTERN.test(content)) {
       log.warn({ mod, file: filePath }, "hook: blocked Write of SQL function file");
-      return deny(res, "Interdit d'ecrire des fonctions dans des fichiers SQL. Utilise pg_func_set + pg_test, puis pg_func_save quand stable.\n\n" + WORKFLOW);
+      return deny(res, "Interdit d'ecrire des fonctions dans des fichiers SQL. Utilise pg_func_set + pg_test, puis pg_func_save quand stable.\n\n" + WORKFLOW, mod, tool_name, filePath);
     }
   }
 
@@ -211,7 +227,7 @@ app.post("/hooks/:module", (req, res) => {
     const schema = (tool_input?.schema ?? "") as string;
     if (schema && !schemas.includes(schema)) {
       log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_set");
-      return deny(res, `Module ${mod}: pg_func_set interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`);
+      return deny(res, `Module ${mod}: pg_func_set interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`, mod, tool_name, schema);
     }
     // Check function body for cross-module _internal() calls
     const body = (tool_input?.body ?? "") as string;
@@ -226,12 +242,12 @@ app.post("/hooks/:module", (req, res) => {
     }
     if (internalCalls.length > 0) {
       log.warn({ mod, calls: internalCalls }, "hook: blocked cross-module _internal calls");
-      return deny(res, `Module ${mod}: appel a des fonctions internes d'un autre module interdit.\nViolations: ${internalCalls.join(", ")}\n\nConvention: schema._name() = interne, cross-module interdit.`);
+      return deny(res, `Module ${mod}: appel a des fonctions internes d'un autre module interdit.\nViolations: ${internalCalls.join(", ")}\n\nConvention: schema._name() = interne, cross-module interdit.`, mod, tool_name, internalCalls.join(","));
     }
     // pgv-specific: no inline styles
     if (schema === "pgv" && /style\s*=\s*"/.test(body)) {
       log.warn({ mod }, "hook: blocked inline style in pgv function");
-      return deny(res, "Les fonctions pgv ne doivent pas contenir de style inline (style=\"...\"). Utilise class=\"pgv-*\" et definis les styles dans pgview.css.");
+      return deny(res, "Les fonctions pgv ne doivent pas contenir de style inline (style=\"...\"). Utilise class=\"pgv-*\" et definis les styles dans pgview.css.", mod, tool_name, "inline-style");
     }
   }
 
@@ -240,7 +256,7 @@ app.post("/hooks/:module", (req, res) => {
     const schema = (tool_input?.schema ?? "") as string;
     if (schema && !schemas.includes(schema)) {
       log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_edit");
-      return deny(res, `Module ${mod}: pg_func_edit interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`);
+      return deny(res, `Module ${mod}: pg_func_edit interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`, mod, tool_name, schema);
     }
   }
 
@@ -251,11 +267,11 @@ app.post("/hooks/:module", (req, res) => {
     const schema = match?.[1] ?? "";
     if (schema && !schemas.includes(schema)) {
       log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_del");
-      return deny(res, `Module ${mod}: pg_func_del interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`);
+      return deny(res, `Module ${mod}: pg_func_del interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`, mod, tool_name, schema);
     }
   }
 
-  allow(res);
+  allow(res, mod, tool_name);
 });
 
 // --- SessionStart hook — inject inbox on agent startup ---
@@ -263,11 +279,11 @@ app.post("/hooks/:module/session", async (req, res) => {
   const names = req.params.module.split(",");
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const placeholders = names.map((_, i) => `$${i + 1}`).join(", ");
+    const ph = names.map((_, i) => `$${i + 1}`).join(", ");
     const { rows } = await pool.query(
       `SELECT id, from_module, msg_type, subject
        FROM workbench.agent_message
-       WHERE (to_module IN (${placeholders}) OR to_module = '*') AND status IN ('new', 'acknowledged')
+       WHERE to_module IN (${ph}) AND status IN ('new', 'acknowledged')
        ORDER BY created_at LIMIT 10`,
       names,
     );
@@ -298,13 +314,13 @@ app.post("/hooks/:module/stop", async (req, res) => {
   const mod = names[0];
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const placeholders = names.map((_, i) => `$${i + 1}`).join(", ");
+    const ph = names.map((_, i) => `$${i + 1}`).join(", ");
 
     // 1. New messages for this module
     const inbox = await pool.query(
       `SELECT id, from_module, msg_type, subject
        FROM workbench.agent_message
-       WHERE (to_module IN (${placeholders}) OR to_module = '*') AND status = 'new'
+       WHERE to_module IN (${ph}) AND status = 'new'
        ORDER BY created_at LIMIT 10`,
       names,
     );
@@ -313,7 +329,7 @@ app.post("/hooks/:module/stop", async (req, res) => {
     const resolved = await pool.query(
       `UPDATE workbench.agent_message
        SET acknowledged_at = resolved_at
-       WHERE from_module IN (${placeholders}) AND status = 'resolved'
+       WHERE from_module IN (${ph}) AND status = 'resolved'
          AND (acknowledged_at IS NULL OR resolved_at > acknowledged_at)
        RETURNING id, to_module, msg_type, subject, resolution`,
       names,
@@ -472,7 +488,209 @@ app.delete("/mcp", async (_req, res) => {
   res.writeHead(405).end("Method Not Allowed");
 });
 
-app.listen(PORT, async () => {
+// --- WebSocket terminal server (agent terminals for ops dashboard) ---
+const httpServer = http.createServer(app);
+const wss = new WebSocketServer({ noServer: true });
+
+// Active terminal sessions: module -> { pty, clients }
+const terminals = new Map<string, { proc: pty.IPty; clients: Set<WebSocket>; sessionId: number | null }>();
+
+async function createAgentSession(mod: string): Promise<number | null> {
+  try {
+    const pool: import("pg").Pool = container.resolve("pool");
+    const { rows } = await pool.query(
+      `INSERT INTO workbench.agent_session (module, status, pid, started_at)
+       VALUES ($1, 'running', $2, now()) RETURNING id`,
+      [mod, process.pid],
+    );
+    return rows[0]?.id ?? null;
+  } catch { return null; }
+}
+
+async function endAgentSession(sessionId: number | null, status: string) {
+  if (!sessionId) return;
+  try {
+    const pool: import("pg").Pool = container.resolve("pool");
+    await pool.query(
+      `UPDATE workbench.agent_session SET status = $1, ended_at = now() WHERE id = $2`,
+      [status, sessionId],
+    );
+  } catch { /* silent */ }
+}
+
+function resolveModulePath(mod: string): string {
+  const wsRoot = (() => {
+    let dir = process.cwd();
+    for (let i = 0; i < 10; i++) {
+      if (fsSync.existsSync(path.join(dir, "modules"))) return dir;
+      dir = path.dirname(dir);
+    }
+    return process.cwd();
+  })();
+  return path.join(wsRoot, "modules", mod);
+}
+
+httpServer.on("upgrade", (req, socket, head) => {
+  // Only handle /ws/terminal/:module
+  const match = req.url?.match(/^\/ws\/terminal\/([a-z0-9_-]+)$/);
+  if (!match) {
+    socket.destroy();
+    return;
+  }
+  if (process.env.WORKBENCH_MODE !== "dev") {
+    socket.destroy();
+    return;
+  }
+  const mod = match[1];
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit("connection", ws, req, mod);
+  });
+});
+
+wss.on("connection", async (ws: WebSocket, _req: http.IncomingMessage, mod: string) => {
+  let term = terminals.get(mod);
+
+  if (!term || term.proc.pid <= 0) {
+    // Spawn new terminal for this module
+    const modPath = resolveModulePath(mod);
+    if (!fsSync.existsSync(modPath)) {
+      ws.send(`\r\n\x1b[31mModule directory not found: ${modPath}\x1b[0m\r\n`);
+      ws.close();
+      return;
+    }
+
+    const sessionId = await createAgentSession(mod);
+    const shell = process.env.SHELL ?? "/bin/zsh";
+    const proc = pty.spawn(shell, [], {
+      name: "xterm-256color",
+      cols: 120,
+      rows: 40,
+      cwd: modPath,
+      env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
+    });
+
+    term = { proc, clients: new Set(), sessionId };
+    terminals.set(mod, term);
+
+    proc.onData((data: string) => {
+      for (const client of term!.clients) {
+        if (client.readyState === 1) client.send(data);
+      }
+    });
+
+    proc.onExit(({ exitCode }) => {
+      log.info({ mod, exitCode }, "Agent terminal exited");
+      void endAgentSession(term!.sessionId, exitCode === 0 ? "done" : "error");
+      for (const client of term!.clients) {
+        client.send(`\r\n\x1b[33m[Terminal exited with code ${exitCode}]\x1b[0m\r\n`);
+      }
+      terminals.delete(mod);
+    });
+
+    log.info({ mod, pid: proc.pid, cwd: modPath }, "Spawned agent terminal");
+  }
+
+  term.clients.add(ws);
+
+  ws.on("message", (data: Buffer | string) => {
+    const msg = typeof data === "string" ? data : data.toString();
+    // Handle resize messages
+    try {
+      const parsed = JSON.parse(msg);
+      if (parsed.type === "resize" && parsed.cols && parsed.rows) {
+        term!.proc.resize(parsed.cols, parsed.rows);
+        return;
+      }
+    } catch { /* not JSON, treat as input */ }
+    term!.proc.write(msg.toString());
+  });
+
+  ws.on("close", () => {
+    term?.clients.delete(ws);
+    // Don't kill terminal when last client disconnects — keep it alive
+  });
+});
+
+// --- REST API for ops dashboard ---
+app.get("/api/agents", async (_req, res) => {
+  if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
+  try {
+    const pool: import("pg").Pool = container.resolve("pool");
+    const { rows } = await pool.query(
+      `SELECT module, status, pid, started_at, ended_at, last_activity
+       FROM workbench.agent_session
+       ORDER BY started_at DESC LIMIT 50`,
+    );
+    // Annotate with live terminal status
+    for (const row of rows) {
+      row.has_terminal = terminals.has(row.module);
+    }
+    res.json(rows);
+  } catch (err) {
+    res.json([]);
+  }
+});
+
+app.get("/api/hooks", async (req, res) => {
+  if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
+  const mod = req.query.module as string | undefined;
+  try {
+    const pool: import("pg").Pool = container.resolve("pool");
+    const where = mod ? "WHERE module = $1" : "";
+    const params = mod ? [mod] : [];
+    const { rows } = await pool.query(
+      `SELECT id, module, tool, action, allowed, reason, created_at
+       FROM workbench.hook_log ${where}
+       ORDER BY created_at DESC LIMIT 100`,
+      params,
+    );
+    res.json(rows);
+  } catch {
+    res.json([]);
+  }
+});
+
+app.get("/api/messages", async (req, res) => {
+  if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
+  const mod = req.query.module as string | undefined;
+  try {
+    const pool: import("pg").Pool = container.resolve("pool");
+    const where = mod
+      ? "WHERE from_module = $1 OR to_module = $1 OR ',' || to_module || ',' LIKE '%,' || $1 || ',%'"
+      : "";
+    const params = mod ? [mod] : [];
+    const { rows } = await pool.query(
+      `SELECT id, from_module, to_module, msg_type, subject, status, resolution, created_at, resolved_at
+       FROM workbench.agent_message ${where}
+       ORDER BY created_at DESC LIMIT 100`,
+      params,
+    );
+    res.json(rows);
+  } catch {
+    res.json([]);
+  }
+});
+
+app.post("/api/agents/:module/spawn", async (req, res) => {
+  if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
+  const mod = req.params.module;
+  if (terminals.has(mod)) {
+    return res.json({ status: "already_running", module: mod });
+  }
+  // The terminal will be created on first WebSocket connection
+  res.json({ status: "ready", module: mod, ws: `/ws/terminal/${mod}` });
+});
+
+app.post("/api/agents/:module/kill", async (req, res) => {
+  if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
+  const mod = req.params.module;
+  const term = terminals.get(mod);
+  if (!term) return res.json({ status: "not_running", module: mod });
+  term.proc.kill();
+  res.json({ status: "killed", module: mod });
+});
+
+httpServer.listen(PORT, async () => {
   log.info({ port: PORT }, "plpgsql-workbench MCP listening");
 
   // Log database connection at startup

@@ -1,0 +1,29 @@
+{
+  "name": "quote",
+  "version": "0.1.0",
+  "description": "Devis & factures pour artisans — lignes, TVA, numerotation",
+  "schemas": {
+    "public": "quote",
+    "private": null,
+    "qa": "quote_qa"
+  },
+  "dependencies": [
+    "pgv",
+    "crm"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/quote.ddl.sql",
+    "build/quote.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "quote"
+    ]
+  }
+}

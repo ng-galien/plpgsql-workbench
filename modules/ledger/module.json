@@ -1,0 +1,30 @@
+{
+  "name": "ledger",
+  "version": "0.1.0",
+  "description": "Comptabilité en partie double pour artisan français",
+  "schemas": {
+    "public": "ledger",
+    "private": null,
+    "test": "ledger_ut",
+    "qa": "ledger_qa"
+  },
+  "dependencies": [
+    "pgv",
+    "quote"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/ledger.ddl.sql",
+    "build/ledger.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "ledger"
+    ]
+  }
+}

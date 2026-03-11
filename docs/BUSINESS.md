@@ -37,25 +37,66 @@ Un logiciel **simple, pas cher, spécifique au métier** qui fait devis → comm
 
 ## 2. Le Produit
 
-### Fonctionnalités
+### Modules
 
-| Module | Fonctionnalités |
-|--------|----------------|
-| **Clients** | Fiche client, historique commandes, tier fidélité |
-| **Catalogue** | Produits/services, prix, stock |
-| **Devis** | Création, envoi, suivi, conversion en commande |
-| **Commandes** | Workflow (pending → confirmed → shipped), annulation avec restore stock |
-| **Facturation** | Génération facture, codes promo, remises fidélité |
-| **Dashboard** | KPIs temps réel, top produits, alertes stock |
-| **Remises** | Codes promo (%, fixe, buy-x-get-y), remises par tier |
+#### Existants
+
+| Module | Schema | Statut | Description |
+|--------|--------|--------|-------------|
+| **pgv** | pgv | Fait | Framework SSR — primitives UI, router, shell Alpine.js |
+| **cad** | cad | Fait | CAD 3D bois — PostGIS/SFCGAL, Three.js, wireframe, BOM |
+| **crm** | crm | En cours | Clients (particuliers + entreprises), contacts, interactions |
+| **quote** | quote | En cours | Devis, factures, lignes, TVA, numerotation |
+| **ledger** | ledger | En cours | Compta double entree, PCG simplifie, journaux |
+| **ops** | ops | En cours | Dashboard agents, hooks, messages, terminals xterm.js |
+
+#### Phase 1 — Core ERP (ferme la boucle devis → compta)
+
+| Module | Schema | Description |
+|--------|--------|-------------|
+| **stock** | stock | Stocks materiaux/fournitures, entrees/sorties, inventaire, seuils alerte, multi-depots |
+| **purchase** | purchase | Commandes fournisseurs, bons de commande, reception, rapprochement factures fournisseurs |
+| **project** | project | Chantiers/projets, suivi avancement, jalons, affectation ressources, facturation de situation |
+
+Boucle complete : devis (quote) → commande fournisseur (purchase) → stock (stock) → chantier (project) → facture (quote) → compta (ledger)
+
+#### Phase 2 — Productivite
+
+| Module | Schema | Description |
+|--------|--------|-------------|
+| **planning** | planning | Agenda/calendrier partage, planification chantiers, affectation equipes par jour |
+| **hr** | hr | Salaries, conges, absences, heures travaillees, registre du personnel |
+| **expense** | expense | Notes de frais, deplacements, remboursements (lie a ledger) |
+
+#### Phase 3 — Specialisation BTP / artisans
+
+| Module | Schema | Description |
+|--------|--------|-------------|
+| **situation** | situation | Factures de situation (avancement %) — tres courant BTP, lie a project + quote |
+| **catalog** | catalog | Catalogue produits/services avec tarifs, unites, categories (alimente quote + stock) |
+| **doc** | doc | GED — stockage documents (contrats, plans, photos chantier, attestations), lie aux clients/projets |
+| **subcontract** | subcontract | Sous-traitance — contrats, attestations, suivi paiements |
+| **compliance** | compliance | Decennale, qualifications (RGE, Qualibat), KBIS, attestations a jour |
+
+### Activation par offre
+
+| Offre | Modules inclus |
+|-------|----------------|
+| **Solo** (19€) | crm, quote, ledger |
+| **Pro** (39€) | Solo + stock, purchase, catalog, planning |
+| **Equipe** (69€) | Pro + project, hr, expense, situation, doc, subcontract, compliance |
+
+Gere par `workbench.tenant_module` — activation/desactivation par tenant, sans redeploy.
 
 ### Roadmap
 
 ```
-V1 (Semaine 1-4)      Clients, catalogue, devis, factures, dashboard
-V2 (Mois 2-3)         Export comptable, TVA, facture électronique
-V3 (Mois 4-6)         Planning chantiers, agenda, notifications
-V4 (Mois 6+)          PWA mobile, mode hors-ligne, intégration Stripe
+V1 (Semaine 1-4)      crm, quote, ledger — devis + factures + compta
+V2 (Mois 2-3)         stock, purchase, catalog — achats + inventaire
+V3 (Mois 3-4)         project, situation — chantiers + facturation avancement
+V4 (Mois 4-6)         planning, hr, expense — equipes + agenda
+V5 (Mois 6+)          doc, subcontract, compliance — GED + conformite
+                       PWA mobile, facture electronique 2027, Stripe
 ```
 
 ### Stack technique
@@ -89,9 +130,9 @@ Supabase             Hébergement managé (DB + PostgREST + Auth + Storage)
 
 | Offre | Prix/mois | Cible | Fonctionnalités |
 |-------|-----------|-------|----------------|
-| **Solo** | 19€ | Artisan seul | 1 user, devis + factures + clients |
-| **Pro** | 39€ | TPE 2-5 pers. | 3 users, + dashboard, + exports, + remises |
-| **Équipe** | 69€ | PME | Illimité, + multi-chantier, + compta |
+| **Solo** | 19€ | Artisan seul | 1 user, crm + quote + ledger |
+| **Pro** | 39€ | TPE 2-5 pers. | 3 users, Solo + stock + purchase + catalog + planning |
+| **Équipe** | 69€ | PME | Illimité, Pro + project + hr + expense + situation + doc + compliance |
 
 - Sans engagement, mensuel
 - Essai gratuit 14 jours
@@ -336,14 +377,19 @@ workbench.toolbox_tool     (toolbox_name, tool_name)     -- N:N, quels tools dan
 workbench.tenant           (id, name, toolbox_name)      -- chaque tenant → 1 toolbox
 ```
 
-**Exemple de packaging par offre :**
+**Double packaging : modules UI + tools MCP**
 
-| Toolbox | Tools | Offre |
-|---------|-------|-------|
-| `solo` | pg_query, pg_get, pg_search | 19€/mois |
-| `pro` | solo + pg_explain, pg_doc, fs_peek | 39€/mois |
-| `equipe` | pro + pg_coverage, pg_test, pg_func_save | 69€/mois |
-| `admin` | tous (15 tools) | dev / administration |
+L'offre combine deux axes d'activation :
+
+1. **Modules UI** (`workbench.tenant_module`) — quelles pages/fonctionnalités le tenant voit dans l'app
+2. **Tools MCP** (`workbench.toolbox_tool`) — quels outils MCP le tenant peut utiliser via AI
+
+| Offre | Modules UI | Tools MCP |
+|-------|-----------|-----------|
+| `solo` | crm, quote, ledger | pg_query, pg_get, pg_search |
+| `pro` | solo + stock, purchase, catalog, planning | solo + pg_explain, pg_doc, fs_peek |
+| `equipe` | pro + project, hr, expense, situation, doc, compliance | pro + pg_coverage, pg_test, pg_func_save |
+| `admin` | tous | tous (dev / administration) |
 
 **Principes :**
 

@@ -39,7 +39,7 @@ Copie les fichiers SQL, assets, scripts et styles des modules dans le dossier de
 
 ```bash
 pgm app install              # installe tous les modules de workbench.json
-pgm app install cad3d        # ajoute cad3d à workbench.json + installe
+pgm app install cad        # ajoute cad à workbench.json + installe
 pgm app install -d           # installe + dry run du déploiement
 pgm app install -d --apply   # installe + déploie en base
 ```
@@ -50,9 +50,9 @@ Vérifie les dépendances en base et applique le SQL. Dry run par défaut.
 
 ```bash
 pgm app deploy               # dry run : plan + check extensions/schemas
-pgm app deploy cad3d         # dry run pour un seul module
+pgm app deploy cad         # dry run pour un seul module
 pgm app deploy --apply       # vérifie puis exécute le SQL
-pgm app deploy cad3d --apply # vérifie puis exécute un seul module
+pgm app deploy cad --apply # vérifie puis exécute un seul module
 ```
 
 Le check vérifie :
@@ -69,7 +69,7 @@ Affiche l'arbre des modules installés dans l'app courante.
 pgm app list
 # cad
 # ├── pgv@1.0.0
-# └── cad3d@0.1.0 (needs: pgv)
+# └── cad@0.1.0 (needs: pgv)
 ```
 
 ### pgm app remove
@@ -77,8 +77,8 @@ pgm app list
 Retire un module de workbench.json.
 
 ```bash
-pgm app remove cad3d
-# Removed "cad3d" from workbench.json
+pgm app remove cad
+# Removed "cad" from workbench.json
 # Run 'pgm app install' to re-sync files
 ```
 
@@ -106,8 +106,8 @@ Le module généré :
 Affiche les détails d'un module.
 
 ```bash
-pgm module info cad3d
-# cad3d@0.1.0
+pgm module info cad
+# cad@0.1.0
 #   CAD 3D engine for wood structures...
 #   schemas:
 #     public:  cad
@@ -115,8 +115,8 @@ pgm module info cad3d
 #   dependencies: pgv
 #   extensions: postgis, postgis_sfcgal
 #   sql: sql/extensions.sql, sql/ddl.sql, sql/functions.sql
-#   scripts: frontend/cad3d.js
-#   styles: frontend/cad3d.css
+#   scripts: frontend/cad.js
+#   styles: frontend/cad.css
 #   docker: postgis/postgis:17-3.5
 ```
 
@@ -126,7 +126,7 @@ Liste tous les modules disponibles dans le workspace.
 
 ```bash
 pgm module list
-#   cad3d@0.1.0  CAD 3D engine for wood structures...
+#   cad@0.1.0  CAD 3D engine for wood structures...
 #   pgv@1.0.0    pgView — Server-Side Rendering framework...
 ```
 
@@ -146,7 +146,7 @@ modules/
     frontend/
       index.html
       pgview.css
-  cad3d/
+  cad/
     module.json
     sql/
       extensions.sql
@@ -157,8 +157,8 @@ modules/
         ...
     frontend/
       viewer.html
-      cad3d.js          ← Alpine.js components
-      cad3d.css          ← module styles
+      cad.js          ← Alpine.js components
+      cad.css          ← module styles
 ```
 
 ### module.json
@@ -167,7 +167,7 @@ Manifeste déclaratif d'un module :
 
 ```json
 {
-  "name": "cad3d",
+  "name": "cad",
   "version": "0.1.0",
   "description": "CAD 3D engine for wood structures.",
   "schemas": {
@@ -183,8 +183,8 @@ Manifeste déclaratif d'un module :
   ],
   "assets": {
     "frontend": ["frontend/viewer.html"],
-    "scripts": ["frontend/cad3d.js"],
-    "styles": ["frontend/cad3d.css"]
+    "scripts": ["frontend/cad.js"],
+    "styles": ["frontend/cad.css"]
   },
   "grants": {
     "web_anon": ["cad"]
@@ -219,7 +219,7 @@ Une application vit dans `apps/` et déclare ses modules dans `workbench.json` :
 {
   "name": "cad",
   "packs": ["plpgsql"],
-  "modules": ["pgv", "cad3d"],
+  "modules": ["pgv", "cad"],
   "connection": "postgresql://postgres:postgres@localhost:5444/postgres",
   "port": 3104
 }
@@ -230,9 +230,9 @@ Une application vit dans `apps/` et déclare ses modules dans `workbench.json` :
 pgm résout les dépendances par tri topologique (algorithme de Kahn) :
 
 ```
-workbench.json: modules: ["cad3d"]
-  → cad3d dépend de pgv
-  → ordre d'installation/déploiement : pgv → cad3d
+workbench.json: modules: ["cad"]
+  → cad dépend de pgv
+  → ordre d'installation/déploiement : pgv → cad
 ```
 
 Si un module échoue au déploiement, les modules qui en dépendent ne sont pas exécutés.
@@ -257,9 +257,9 @@ sql/
   00-extensions.sql          ← pgv
   01-roles.sql               ← app
   02-pgv.sql                 ← pgv
-  05-cad3d-extensions.sql    ← cad3d
-  05-cad3d-ddl.sql           ← cad3d
-  05-cad3d-functions.sql     ← cad3d
+  05-cad-extensions.sql    ← cad
+  05-cad-ddl.sql           ← cad
+  05-cad-functions.sql     ← cad
   05-groups.sql              ← app
 ```
 
@@ -275,8 +275,8 @@ Au démarrage, le MCP server :
 3. Construit un mapping `schema → module → paths`
 
 Quand un tool est appelé :
-- `pg_pack schemas: "cad,cad_ut"` → le registry résout : schema `cad` → module `cad3d` → `modules/cad3d/sql/functions.sql`
-- `pg_func_save target: "plpgsql://cad"` → le registry résout : schema `cad` → module `cad3d` → `modules/cad3d/sql/`
+- `pg_pack schemas: "cad,cad_ut"` → le registry résout : schema `cad` → module `cad` → `modules/cad/sql/functions.sql`
+- `pg_func_save target: "plpgsql://cad"` → le registry résout : schema `cad` → module `cad` → `modules/cad/sql/`
 
 ### pg_pack (module-aware)
 
@@ -284,11 +284,11 @@ Exporte les fonctions d'un ou plusieurs schemas dans le fichier `functions.sql` 
 
 ```
 pg_pack schemas: "cad,cad_ut"
-# → packed 54 functions from 2 schema(s) -> cad3d/sql/functions.sql
+# → packed 54 functions from 2 schema(s) -> cad/sql/functions.sql
 # → deps: 35 edges resolved via AST
 ```
 
-Plus de paramètre `path`. Le registry sait que `cad` + `cad_ut` appartiennent au module `cad3d` et écrit dans `modules/cad3d/sql/functions.sql`.
+Plus de paramètre `path`. Le registry sait que `cad` + `cad_ut` appartiennent au module `cad` et écrit dans `modules/cad/sql/functions.sql`.
 
 Si les schemas ne correspondent à aucun module :
 ```
@@ -302,10 +302,10 @@ Sauvegarde les fonctions individuelles dans le dossier SQL du module.
 
 ```
 pg_func_save target: "plpgsql://cad"
-# → dumped 49 functions to modules/cad3d/sql/cad/
+# → dumped 49 functions to modules/cad/sql/cad/
 ```
 
-Plus de paramètre `path`. Le registry résout `cad` → `modules/cad3d/sql/`.
+Plus de paramètre `path`. Le registry résout `cad` → `modules/cad/sql/`.
 
 ### Mapping des schemas
 
@@ -324,8 +324,8 @@ Les modules peuvent fournir des **fragments** : des composants Alpine.js réutil
 
 ```
 module.json                      pgv-modules.js            Alpine.js
-  assets.scripts: [cad3d.js]  →    <script src=cad3d.js>  →  Alpine.data('cadViewer')
-  assets.styles: [cad3d.css]  →    <link href=cad3d.css>
+  assets.scripts: [cad.js]  →    <script src=cad.js>  →  Alpine.data('cadViewer')
+  assets.styles: [cad.css]  →    <link href=cad.css>
 
 PL/pgSQL fragment                 Shell _enhance()
   cad.fragment_viewer(id)     →    Alpine.initTree(el)    →  x-data="cadViewer" activé
@@ -338,7 +338,7 @@ PL/pgSQL fragment                 Shell _enhance()
 
 ### Exemple
 
-Module JS (`frontend/cad3d.js`) :
+Module JS (`frontend/cad.js`) :
 ```js
 document.addEventListener('alpine:init', function() {
   Alpine.data('cadViewer', function() {
@@ -379,10 +379,10 @@ Fichier auto-généré par `pgm install`. Charge les scripts et styles de tous l
 // Auto-generated by pgm install — DO NOT EDIT
 (function() {
   var l = document.createElement('link');
-  l.rel = 'stylesheet'; l.href = '/cad3d.css';
+  l.rel = 'stylesheet'; l.href = '/cad.css';
   document.head.appendChild(l);
   var s = document.createElement('script');
-  s.src = '/cad3d.js';
+  s.src = '/cad.js';
   document.head.appendChild(s);
 })();
 ```
@@ -420,7 +420,7 @@ pg_func_save target: "plpgsql://billing" # → modules/billing/sql/billing/*.sql
 ```bash
 mkdir apps/billing && cd apps/billing
 pgm app init                 # scaffold + ports auto
-pgm app install cad3d        # ajoute un module
+pgm app install cad        # ajoute un module
 make up                      # démarre postgres + postgrest + nginx
 pgm app deploy               # dry run (check deps en base)
 pgm app deploy --apply       # applique le SQL
@@ -448,7 +448,7 @@ Impossible de sauver au mauvais endroit : les tools MCP connaissent le module re
 
 | Contexte | `.mcp.json` pointe vers | DB | Cas d'usage |
 |----------|------------------------|----|-------------|
-| Module (`modules/cad3d/`) | dev server (port 3100) | dev DB (5433) | Développement itératif |
+| Module (`modules/cad/`) | dev server (port 3100) | dev DB (5433) | Développement itératif |
 | App (`apps/004-cad/`) | app server (port 3104) | app DB (5444) | Intégration, déploiement |
 
 Chaque contexte a ses propres permissions Claude Code (`.claude/settings.local.json`) :

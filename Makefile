@@ -25,11 +25,11 @@ dev-up: image dev-env
 	@echo "  postgrest → localhost:3000  (schemas: $$(cat .env 2>/dev/null | grep PGRST_DB_SCHEMAS | cut -d= -f2))"
 	@echo "  frontend  → http://localhost:8080"
 
-# Generate .env with PGRST_DB_SCHEMAS from modules/*/module.json (includes _ut, _qa)
+# Generate .env with PGRST_DB_SCHEMAS from modules/*/module.json (public + _ut only, NO _qa)
 dev-env:
 	@schemas=$$(python3 -c "import json,glob; \
 		s=[]; \
-		[s.extend([p, p+'_ut', p+'_qa']) for f in sorted(glob.glob('modules/*/module.json')) \
+		[s.extend([p, p+'_ut']) for f in sorted(glob.glob('modules/*/module.json')) \
 		 for p in [json.load(open(f)).get('schemas',{}).get('public','')] if p]; \
 		s.sort(key=lambda x: (0 if x.startswith('pgv') else 1, x)); \
 		print(','.join(s))" 2>/dev/null || echo "pgv"); \
@@ -67,12 +67,12 @@ dev-sync:
 	@python3 -c "\
 	import json, glob; \
 	mods = []; \
-	[mods.append({'schema': m.get('schemas',{}).get('qa',''), 'name': m.get('name','?'), 'desc': m.get('description','')}) \
+	[mods.append({'schema': m.get('schemas',{}).get('public',''), 'name': m.get('name','?'), 'desc': m.get('description','')}) \
 	 for f in sorted(glob.glob('modules/*/module.json')) \
 	 for m in [json.load(open(f))] \
-	 if m.get('schemas',{}).get('qa')]; \
+	 if m.get('schemas',{}).get('public')]; \
 	links = ''.join('<li><a href=\"/%s/\">%s</a><br><small>%s</small></li>' % (m['schema'], m['name'], m['desc']) for m in mods); \
-	print('<!DOCTYPE html><html lang=fr data-theme=light><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Dev — Modules</title><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css><link rel=stylesheet href=/pgview.css></head><body><main class=container><hgroup><h2>Dev — Modules</h2><p>Choisir un module pour voir sa QA</p></hgroup><ul>%s</ul></main></body></html>' % links)" \
+	print('<!DOCTYPE html><html lang=fr data-theme=light><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Dev — Modules</title><link rel=stylesheet href=https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css><link rel=stylesheet href=/pgview.css></head><body><main class=container><hgroup><h2>Dev — Modules</h2><p>Choisir un module</p></hgroup><ul>%s</ul></main></body></html>' % links)" \
 	> dev/frontend/dev-index.html
 	@echo "Done"
 

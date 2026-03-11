@@ -1,0 +1,268 @@
+/* cad — Module-specific styles */
+
+/* ── Page sections spacing ── */
+.cad-layout { margin-bottom: 1.5rem; }
+
+/* ── 3D Viewer container ── */
+.cad-viewer {
+  position: relative;
+  width: 100%;
+  height: 500px;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: var(--pico-border-radius);
+  overflow: hidden;
+  background: #1a1a2e;
+}
+
+.cad-viewport {
+  width: 100%;
+  height: 100%;
+}
+
+/* HUD overlay */
+.cad-hud {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  background: rgba(0,0,0,0.6);
+  color: #ccc;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Toolbar overlay */
+.cad-toolbar {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.25rem;
+  z-index: 10;
+}
+
+.cad-toolbar button {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  margin: 0;
+  background: rgba(0,0,0,0.6);
+  color: #ccc;
+  border: 1px solid #444;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.cad-toolbar button:hover {
+  background: rgba(60,60,100,0.8);
+  color: #fff;
+}
+
+/* Info panel (selected piece) */
+.cad-info {
+  position: absolute;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  background: rgba(0,0,0,0.75);
+  color: #ccc;
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  max-width: 300px;
+  z-index: 10;
+}
+
+.cad-info-role {
+  color: #d4a76a;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  letter-spacing: 1px;
+}
+
+.cad-info-label {
+  color: #fff;
+  font-weight: 600;
+}
+
+.cad-info-dim {
+  color: #8888cc;
+}
+
+.cad-info-id {
+  color: #666;
+  font-size: 0.7rem;
+}
+
+.cad-info-sep {
+  border: none;
+  border-top: 1px solid #444;
+  margin: 0.35rem 0;
+}
+
+.cad-info-extra {
+  color: #888;
+  font-size: 0.75rem;
+}
+
+.cad-info-group {
+  border-bottom: 1px solid #555;
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.35rem;
+  color: #6688cc;
+}
+
+.cad-info-copy {
+  margin-top: 0.4rem;
+  padding: 0.2rem 0.5rem;
+  background: #335;
+  color: #aac;
+  border: 1px solid #556;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+
+.cad-info-copy:hover {
+  background: #447;
+  color: #fff;
+}
+
+/* ── Drawing layout: tree + canvas ── */
+.cad-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 1rem;
+  min-height: 500px;
+}
+
+@media (max-width: 768px) {
+  .cad-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Tree explorer ── */
+.cad-tree {
+  font-size: 0.8rem;
+  overflow-y: auto;
+  max-height: 70vh;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: var(--pico-border-radius);
+  padding: 0.5rem;
+}
+
+.cad-tree details {
+  margin: 0;
+  border: none;
+}
+
+.cad-tree summary {
+  cursor: pointer;
+  padding: 0.25rem 0.35rem;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  user-select: none;
+  list-style: none;
+}
+
+.cad-tree summary::-webkit-details-marker { display: none; }
+
+.cad-tree summary:hover {
+  background: var(--pico-primary-focus);
+}
+
+.cad-tree details > div {
+  padding-left: 1rem;
+  border-left: 1px solid var(--pico-muted-border-color);
+  margin-left: 0.5rem;
+}
+
+/* Tree node (leaf shape) */
+.cad-tree-node {
+  padding: 0.2rem 0.35rem;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cad-tree-node:hover {
+  background: var(--pico-primary-focus);
+}
+
+.cad-tree-node.cad-tree-active,
+.cad-tree li.cad-tree-active {
+  background: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
+}
+
+/* pgv-tree inside cad-tree: clickable items */
+.cad-tree .pgv-tree > li {
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cad-tree .pgv-tree > li:hover {
+  background: var(--pico-primary-focus);
+}
+
+/* Layer color swatch */
+.cad-tree-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  background: var(--cad-swatch-color, var(--pico-muted-color));
+}
+
+/* Eye toggle */
+.cad-tree-eye {
+  cursor: pointer;
+  font-size: 0.7rem;
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--pico-muted-color);
+}
+
+.cad-tree-eye:hover {
+  color: var(--pico-color);
+}
+
+/* Type icons */
+.cad-tree-icon {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  width: 1.2em;
+  text-align: center;
+  color: var(--pico-muted-color);
+}
+
+/* Shape props (section, wood) */
+.cad-tree-props {
+  font-size: 0.7rem;
+  color: var(--pico-muted-color);
+  margin-left: 0.25rem;
+}
+
+/* SVG highlight on selected shape */
+.cad-highlight {
+  filter: drop-shadow(0 0 3px var(--pico-primary));
+  stroke-width: 3 !important;
+}

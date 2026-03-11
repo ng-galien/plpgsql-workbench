@@ -1,6 +1,0 @@
-{
-  "name": "demo",
-  "packs": ["plpgsql"],
-  "connection": "postgresql://postgres:postgres@localhost:5442/postgres",
-  "port": 3102
-}

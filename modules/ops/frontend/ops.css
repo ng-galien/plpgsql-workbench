@@ -1,0 +1,45 @@
+/* ops.css — Agent Dashboard layout */
+
+/* Agent grid */
+.ops-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--pgv-spacing, 1rem);
+  margin: var(--pgv-spacing, 1rem) 0;
+}
+
+.ops-agent-grid > article {
+  border-left: 4px solid var(--pico-muted-border-color);
+  transition: border-color 0.2s;
+}
+
+.ops-agent-grid > article:has(.pgv-badge-success) {
+  border-left-color: var(--pico-ins-color, #2ea043);
+}
+
+.ops-agent-grid > article:has(.pgv-badge-danger) {
+  border-left-color: var(--pico-del-color, #cf222e);
+}
+
+/* Terminal container — height driven by data-height attribute */
+.ops-terminal {
+  position: relative;
+  height: 50vh;
+  border-radius: var(--pico-border-radius);
+  overflow: hidden;
+  margin: var(--pgv-spacing, 1rem) 0;
+  background: #1a1b26;
+}
+
+.ops-terminal > [x-ref="terminal"] {
+  height: 100%;
+}
+
+.ops-terminal-status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--pico-muted-color);
+  font-size: 0.875rem;
+}

@@ -1,0 +1,28 @@
+{
+  "name": "crm",
+  "version": "0.1.0",
+  "description": "Client management — individuals, companies, contacts, interactions",
+  "schemas": {
+    "public": "crm",
+    "test": "crm_ut",
+    "qa": "crm_qa"
+  },
+  "dependencies": [
+    "pgv"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/crm.ddl.sql",
+    "build/crm.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "crm"
+    ]
+  }
+}

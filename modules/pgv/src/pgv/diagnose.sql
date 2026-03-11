@@ -21,13 +21,22 @@ DECLARE
   v_pages text[];
   v_page text;
   v_reports text := '';
+  v_css_ok boolean;
 BEGIN
   -- If path is '*', diagnose all nav pages
   IF p_path = '*' THEN
-    EXECUTE format(
-      'SELECT array_agg(item->>''href'') FROM jsonb_array_elements(%I.nav_items()) AS item WHERE NOT (item->>''href'') ~ ''^https?://''',
-      p_schema
-    ) INTO v_pages;
+    BEGIN
+      EXECUTE format(
+        'SELECT array_agg(item->>''href'') FROM jsonb_array_elements(%I.nav_items()) AS item WHERE NOT (item->>''href'') ~ ''^https?://''',
+        p_schema
+      ) INTO v_pages;
+    EXCEPTION WHEN OTHERS THEN
+      -- nav_items() may return TABLE(label, href, icon) instead of jsonb
+      EXECUTE format(
+        'SELECT array_agg(href) FROM %I.nav_items() WHERE NOT href ~ ''^https?://''',
+        p_schema
+      ) INTO v_pages;
+    END;
   ELSE
     v_pages := ARRAY[p_path];
   END IF;
@@ -159,6 +168,37 @@ BEGIN
         END IF;
       END IF;
     END LOOP;
+
+    -- 8. CSS class validation
+    v_css_ok := true;
+    FOR v_rec IN
+      SELECT DISTINCT cls FROM (
+        SELECT unnest(string_to_array(x[1], ' ')) AS cls
+        FROM regexp_matches(v_html, 'class="([^"]*pgv-[^"]*)"', 'g') t(x)
+      ) sub WHERE cls LIKE 'pgv-%'
+    LOOP
+      IF v_rec.cls NOT IN (
+        'pgv-lazy','pgv-brand','pgv-burger-li','pgv-burger','pgv-nav-burger',
+        'pgv-menu','pgv-menu-open',
+        'pgv-badge','pgv-badge-success','pgv-badge-danger','pgv-badge-warning','pgv-badge-info','pgv-badge-primary',
+        'pgv-stat','pgv-stat-value','pgv-dl','pgv-error',
+        'pgv-alert','pgv-alert-success','pgv-alert-danger','pgv-alert-warning','pgv-alert-info',
+        'pgv-empty','pgv-progress','pgv-avatar',
+        'pgv-tabs','pgv-tabs-nav','pgv-accordion','pgv-breadcrumb',
+        'pgv-tree','pgv-tree-icon','pgv-theme-toggle',
+        'pgv-table','pgv-pager','pgv-pager-info','pgv-pager-btns','pgv-pager-dots',
+        'pgv-sortable','pgv-canvas','pgv-canvas-vp','pgv-canvas-bar','pgv-canvas-btn','pgv-canvas-zoom','pgv-canvas-sep',
+        'pgv-search-results','pgv-search-item','pgv-search-icon','pgv-search-body','pgv-search-more'
+      ) THEN
+        v_rows := v_rows || '| ' || pgv.badge('WARN', 'warning') || ' | CSS | classe `' || pgv.esc(v_rec.cls) || '` inconnue |' || chr(10);
+        v_warn := v_warn + 1;
+        v_css_ok := false;
+      END IF;
+    END LOOP;
+    IF v_css_ok THEN
+      v_rows := v_rows || '| ' || pgv.badge('OK', 'success') || ' | CSS | toutes les classes pgv-* connues |' || chr(10);
+      v_ok := v_ok + 1;
+    END IF;
 
     -- Page report
     v_reports := v_reports || pgv.dl(

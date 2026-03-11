@@ -1,0 +1,25 @@
+CREATE OR REPLACE FUNCTION crm.post_contact_add(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_client_id int := (p_data->>'client_id')::int;
+BEGIN
+  IF trim(COALESCE(p_data->>'name', '')) = '' THEN
+    RETURN '<template data-toast="error">Le nom est obligatoire.</template>';
+  END IF;
+
+  INSERT INTO crm.contact (client_id, name, role, email, phone, is_primary)
+  VALUES (
+    v_client_id,
+    trim(p_data->>'name'),
+    COALESCE(p_data->>'role', ''),
+    NULLIF(trim(p_data->>'email'), ''),
+    NULLIF(trim(p_data->>'phone'), ''),
+    COALESCE((p_data->>'is_primary')::boolean, false)
+  );
+
+  RETURN '<template data-toast="success">Contact ajouté.</template>'
+      || '<template data-redirect="' || pgv.call_ref('get_client', jsonb_build_object('p_id', v_client_id)) || '"></template>';
+END;
+$function$;

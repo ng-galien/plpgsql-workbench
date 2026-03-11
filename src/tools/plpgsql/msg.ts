@@ -1,11 +1,13 @@
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
+import type { ModuleRegistry } from "../../pgm/registry.js";
 
 const MSG_TYPES = ["feature_request", "bug_report", "breaking_change", "question", "info"] as const;
 
-export function createMsgTool({ withClient }: {
+export function createMsgTool({ withClient, moduleRegistry }: {
   withClient: WithClient;
+  moduleRegistry: Promise<ModuleRegistry>;
 }): ToolHandler {
   return {
     metadata: {
@@ -15,7 +17,7 @@ export function createMsgTool({ withClient }: {
         "Use for cross-module requests, notifications, and coordination.\n" +
         "Target a specific module or '*' for broadcast.",
       schema: z.object({
-        from: z.string().describe("Your module name. Ex: cad3d, pgv"),
+        from: z.string().describe("Your module name. Ex: cad, pgv"),
         to: z.string().describe("Target module name, or '*' for broadcast"),
         type: z.enum(MSG_TYPES).describe("Message category"),
         subject: z.string().describe("Short summary (one line)"),
@@ -31,19 +33,61 @@ export function createMsgTool({ withClient }: {
 
       return withClient(async (client) => {
         await ensureTable(client);
-        const { rows } = await client.query(
-          `INSERT INTO workbench.agent_message (from_module, to_module, msg_type, subject, body)
-           VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at`,
-          [from, to, type, subject, body],
-        );
-        const msg = rows[0];
+
+        // Fan-out: resolve target list
+        let targets: string[];
+        if (to === "*") {
+          // Broadcast: use module registry to find all module names
+          const registry = await moduleRegistry;
+          const { rows: modRows } = await client.query(
+            `SELECT DISTINCT n.nspname AS schema
+             FROM pg_proc p
+             JOIN pg_namespace n ON p.pronamespace = n.oid
+             WHERE p.proname = 'nav_items'
+               AND n.nspname NOT LIKE '%\\_ut'
+               AND n.nspname NOT LIKE '%\\_qa'`,
+          );
+          // Map schema names to module names via registry
+          const moduleNames = new Set<string>();
+          for (const r of modRows) {
+            const mapping = registry.resolve([r.schema]);
+            if (mapping && mapping.module !== from) {
+              moduleNames.add(mapping.module);
+            }
+          }
+          // Also include 'workbench' and 'lead' as special targets
+          for (const special of ["workbench", "lead"]) {
+            if (special !== from) moduleNames.add(special);
+          }
+          targets = [...moduleNames];
+        } else if (to.includes(",")) {
+          targets = to.split(",").map(s => s.trim()).filter(Boolean);
+        } else {
+          targets = [to];
+        }
+
+        if (targets.length === 0) {
+          return text("problem: no target modules found for broadcast");
+        }
+
+        // Insert one message per target
+        const ids: number[] = [];
+        for (const target of targets) {
+          const { rows } = await client.query(
+            `INSERT INTO workbench.agent_message (from_module, to_module, msg_type, subject, body)
+             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+            [from, target, type, subject, body],
+          );
+          ids.push(rows[0].id);
+        }
+
         const lines = [
-          `msg #${msg.id} sent`,
-          `from: ${from} -> ${to}`,
+          `msg #${ids.join(", #")} sent`,
+          `from: ${from} -> ${targets.join(", ")}`,
           `type: ${type}`,
           `subject: ${subject}`,
           `status: new`,
-          `created_at: ${msg.created_at}`,
+          `targets: ${targets.length}`,
           "",
           `next: pg_msg_inbox module:${from}`,
         ];
@@ -65,7 +109,7 @@ export function createMsgInboxTool({ withClient }: {
         "With resolve: marks a message as resolved with optional note.\n" +
         "With sent: true, shows messages YOU sent and their resolution status.",
       schema: z.object({
-        module: z.string().describe("Your module name (comma-separated for aliases). Ex: cad3d, pgv, lead,workbench"),
+        module: z.string().describe("Your module name (comma-separated for aliases). Ex: cad, pgv, lead,workbench"),
         resolve: z.number().optional().describe("Message ID to mark as resolved"),
         resolution: z.string().optional().describe("Resolution note (when resolving)"),
         sent: z.boolean().optional().describe("Show messages sent by you (track resolutions)"),
@@ -92,7 +136,7 @@ export function createMsgInboxTool({ withClient }: {
           const { rows } = await client.query(
             `UPDATE workbench.agent_message
              SET status = 'resolved', resolved_at = now(), resolution = $1
-             WHERE id = $2 AND (to_module IN (${ph}) OR to_module = '*')
+             WHERE id = $2 AND to_module IN (${ph})
              RETURNING id, from_module, to_module, msg_type, subject, resolution`,
             [resolution, resolveId, ...names],
           );
@@ -164,7 +208,7 @@ export function createMsgInboxTool({ withClient }: {
         const { rows } = await client.query(
           `SELECT id, from_module, msg_type, subject, body, status, created_at
            FROM workbench.agent_message
-           WHERE (to_module IN (${ph}) OR to_module = '*') AND ${statusClause}
+           WHERE to_module IN (${ph}) AND ${statusClause}
            ORDER BY created_at DESC LIMIT $${names.length + 1}`,
           [...names, limit],
         );

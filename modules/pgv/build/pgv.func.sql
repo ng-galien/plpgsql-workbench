@@ -289,10 +289,10 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION pgv.lazy(text,jsonb,text) IS 'Lazy container: defers content loading via IntersectionObserver + RPC';
 
-CREATE OR REPLACE FUNCTION pgv.md_table(p_headers text[], p_rows text[])
+CREATE OR REPLACE FUNCTION pgv.md_table(p_headers text[], p_rows text[], p_page_size integer DEFAULT 0)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
+ IMMUTABLE
 AS $function$
 DECLARE
   v_md text;
@@ -317,10 +317,10 @@ BEGIN
       v_md := v_md || '| ' || array_to_string(p_rows[i * v_ncols + 1 : (i + 1) * v_ncols], ' | ') || E' |\n';
     END LOOP;
   END IF;
-  RETURN '<figure><md>' || v_md || '</md></figure>';
+  RETURN '<figure><md' || CASE WHEN p_page_size > 0 THEN ' data-page="' || p_page_size || '"' ELSE '' END || '>' || v_md || '</md></figure>';
 END;
 $function$;
-COMMENT ON FUNCTION pgv.md_table(text[],text[]) IS 'Generate markdown table from PL/pgSQL arrays (headers + flat rows)';
+COMMENT ON FUNCTION pgv.md_table(text[],text[],integer) IS 'Generate markdown table from PL/pgSQL arrays (headers + flat rows). Optional p_page_size for client-side pagination.';
 
 CREATE OR REPLACE FUNCTION pgv.money(p_amount numeric)
  RETURNS text
@@ -602,13 +602,22 @@ DECLARE
   v_pages text[];
   v_page text;
   v_reports text := '';
+  v_css_ok boolean;
 BEGIN
   -- If path is '*', diagnose all nav pages
   IF p_path = '*' THEN
-    EXECUTE format(
-      'SELECT array_agg(item->>''href'') FROM jsonb_array_elements(%I.nav_items()) AS item WHERE NOT (item->>''href'') ~ ''^https?://''',
-      p_schema
-    ) INTO v_pages;
+    BEGIN
+      EXECUTE format(
+        'SELECT array_agg(item->>''href'') FROM jsonb_array_elements(%I.nav_items()) AS item WHERE NOT (item->>''href'') ~ ''^https?://''',
+        p_schema
+      ) INTO v_pages;
+    EXCEPTION WHEN OTHERS THEN
+      -- nav_items() may return TABLE(label, href, icon) instead of jsonb
+      EXECUTE format(
+        'SELECT array_agg(href) FROM %I.nav_items() WHERE NOT href ~ ''^https?://''',
+        p_schema
+      ) INTO v_pages;
+    END;
   ELSE
     v_pages := ARRAY[p_path];
   END IF;
@@ -741,6 +750,37 @@ BEGIN
       END IF;
     END LOOP;
 
+    -- 8. CSS class validation
+    v_css_ok := true;
+    FOR v_rec IN
+      SELECT DISTINCT cls FROM (
+        SELECT unnest(string_to_array(x[1], ' ')) AS cls
+        FROM regexp_matches(v_html, 'class="([^"]*pgv-[^"]*)"', 'g') t(x)
+      ) sub WHERE cls LIKE 'pgv-%'
+    LOOP
+      IF v_rec.cls NOT IN (
+        'pgv-lazy','pgv-brand','pgv-burger-li','pgv-burger','pgv-nav-burger',
+        'pgv-menu','pgv-menu-open',
+        'pgv-badge','pgv-badge-success','pgv-badge-danger','pgv-badge-warning','pgv-badge-info','pgv-badge-primary',
+        'pgv-stat','pgv-stat-value','pgv-dl','pgv-error',
+        'pgv-alert','pgv-alert-success','pgv-alert-danger','pgv-alert-warning','pgv-alert-info',
+        'pgv-empty','pgv-progress','pgv-avatar',
+        'pgv-tabs','pgv-tabs-nav','pgv-accordion','pgv-breadcrumb',
+        'pgv-tree','pgv-tree-icon','pgv-theme-toggle',
+        'pgv-table','pgv-pager','pgv-pager-info','pgv-pager-btns','pgv-pager-dots',
+        'pgv-sortable','pgv-canvas','pgv-canvas-vp','pgv-canvas-bar','pgv-canvas-btn','pgv-canvas-zoom','pgv-canvas-sep',
+        'pgv-search-results','pgv-search-item','pgv-search-icon','pgv-search-body','pgv-search-more'
+      ) THEN
+        v_rows := v_rows || '| ' || pgv.badge('WARN', 'warning') || ' | CSS | classe `' || pgv.esc(v_rec.cls) || '` inconnue |' || chr(10);
+        v_warn := v_warn + 1;
+        v_css_ok := false;
+      END IF;
+    END LOOP;
+    IF v_css_ok THEN
+      v_rows := v_rows || '| ' || pgv.badge('OK', 'success') || ' | CSS | toutes les classes pgv-* connues |' || chr(10);
+      v_ok := v_ok + 1;
+    END IF;
+
     -- Page report
     v_reports := v_reports || pgv.dl(
       'Page', p_schema || ' : ' || v_page,
@@ -769,6 +809,75 @@ CREATE OR REPLACE FUNCTION pgv.script(p_js text)
 AS $function$
   SELECT '<script>' || p_js || '</script>';
 $function$;
+
+CREATE OR REPLACE FUNCTION pgv.search_item(p_result pgv.search_result)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<li class="pgv-search-item" data-href="' || pgv.esc(p_result.href) || '">'
+    || CASE WHEN p_result.icon IS NOT NULL THEN '<span class="pgv-search-icon">' || p_result.icon || '</span> ' ELSE '' END
+    || '<span class="pgv-search-body">'
+    || '<strong>' || pgv.esc(p_result.label) || '</strong>'
+    || CASE WHEN p_result.kind IS NOT NULL THEN ' ' || pgv.badge(p_result.kind) ELSE '' END
+    || CASE WHEN p_result.detail IS NOT NULL THEN '<small>' || pgv.esc(p_result.detail) || '</small>' ELSE '' END
+    || '</span>'
+    || '</li>';
+$function$;
+COMMENT ON FUNCTION pgv.search_item(pgv.search_result) IS 'Render a single search result as an HTML list item with data-href for shell navigation.';
+
+CREATE OR REPLACE FUNCTION pgv.search(p_query text, p_schema text, p_limit integer DEFAULT 12, p_offset integer DEFAULT 0)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  v_results pgv.search_result[];
+  v_r pgv.search_result;
+  v_html text := '';
+  v_count int := 0;
+  v_total int := 0;
+BEGIN
+  -- Check module has a search provider
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = p_schema AND p.proname = 'search'
+  ) THEN
+    RETURN '<div class="pgv-empty"><h4>Recherche non disponible</h4><p>Le module ' || pgv.esc(p_schema) || ' n''a pas de fonction search().</p></div>';
+  END IF;
+
+  -- Call module search provider
+  EXECUTE format(
+    'SELECT array_agg(r ORDER BY r.score DESC) FROM %I.search($1, $2, $3) r',
+    p_schema
+  ) USING p_query, p_limit + 1, p_offset
+  INTO v_results;
+
+  IF v_results IS NULL OR array_length(v_results, 1) = 0 THEN
+    RETURN '<div class="pgv-empty"><h4>Aucun resultat</h4><p>Aucune entite ne correspond a "' || pgv.esc(p_query) || '".</p></div>';
+  END IF;
+
+  v_total := array_length(v_results, 1);
+
+  -- Render results (limit to p_limit, use +1 to detect hasMore)
+  v_html := '<ul class="pgv-search-results">';
+  FOREACH v_r IN ARRAY v_results LOOP
+    v_count := v_count + 1;
+    IF v_count > p_limit THEN EXIT; END IF;
+    v_html := v_html || pgv.search_item(v_r);
+  END LOOP;
+  v_html := v_html || '</ul>';
+
+  -- Has more indicator
+  IF v_total > p_limit THEN
+    v_html := v_html || '<div class="pgv-search-more" data-offset="' || (p_offset + p_limit) || '">...</div>';
+  END IF;
+
+  RETURN v_html;
+END;
+$function$;
+COMMENT ON FUNCTION pgv.search(text,text,integer,integer) IS 'Search dispatcher: calls {schema}.search() convention, renders results as HTML. Returns empty state if no results.';
 
 CREATE OR REPLACE FUNCTION pgv.sel(p_name text, p_label text, p_options jsonb, p_selected text DEFAULT NULL::text)
  RETURNS text
@@ -864,7 +973,7 @@ BEGIN
         oy=(vh-bb.height*sc)/2-bb.y*sc;
     pz.zoomAbs(0,0,sc);pz.moveTo(ox,oy);upd();
   };
-  if(fb)fb.onclick();
+  if(fb){if(vp.clientWidth>0)fb.onclick();else{var io=new IntersectionObserver(function(es){if(es[0].isIntersecting&&vp.clientWidth>0){fb.onclick();io.disconnect();}});io.observe(vp);}}
 })();
 $JS$;
 
@@ -1517,6 +1626,49 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_route() IS 'Unit tests for pgv.route: page rendering, nav prefixing, rpc targets, typed dispatch';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_search()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_item text;
+  v_html text;
+BEGIN
+  -- search_item renders correctly
+  v_item := pgv.search_item(ROW('/test?id=1', '📄', 'document', 'Mon doc', 'Detail ici', 0.9)::pgv.search_result);
+  RETURN NEXT ok(v_item LIKE '%pgv-search-item%', 'search_item has pgv-search-item class');
+  RETURN NEXT ok(v_item LIKE '%data-href="/test?id=1"%', 'search_item has data-href');
+  RETURN NEXT ok(v_item LIKE '%pgv-search-icon%', 'search_item has icon');
+  RETURN NEXT ok(v_item LIKE '%<strong>Mon doc</strong>%', 'search_item has label');
+  RETURN NEXT ok(v_item LIKE '%pgv-badge%', 'search_item has kind badge');
+  RETURN NEXT ok(v_item LIKE '%<small>Detail ici</small>%', 'search_item has detail');
+
+  -- search_item escapes label
+  v_item := pgv.search_item(ROW('/x', NULL, NULL, '<script>xss</script>', NULL, 0.5)::pgv.search_result);
+  RETURN NEXT ok(v_item NOT LIKE '%<script>%', 'search_item escapes label');
+
+  -- search_item without optional fields
+  v_item := pgv.search_item(ROW('/x', NULL, NULL, 'Simple', NULL, 0.5)::pgv.search_result);
+  RETURN NEXT ok(v_item NOT LIKE '%pgv-search-icon%', 'search_item without icon omits icon span');
+  RETURN NEXT ok(v_item NOT LIKE '%pgv-badge%', 'search_item without kind omits badge');
+  RETURN NEXT ok(v_item NOT LIKE '%<small>%', 'search_item without detail omits small');
+
+  -- search dispatcher finds pgv_qa.search()
+  v_html := pgv.search('doc', 'pgv_qa');
+  RETURN NEXT ok(v_html LIKE '%pgv-search-results%', 'search returns results list');
+  RETURN NEXT ok(v_html LIKE '%Premier document%', 'search finds matching item');
+
+  -- search with no matches
+  v_html := pgv.search('zzzznotfound', 'pgv_qa');
+  RETURN NEXT ok(v_html LIKE '%pgv-empty%', 'search no match returns empty state');
+
+  -- search on schema without search() function
+  v_html := pgv.search('test', 'pgv_ut');
+  RETURN NEXT ok(v_html LIKE '%non disponible%', 'search on schema without provider returns message');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_search() IS 'Tests for pgv.search_item() and pgv.search() dispatcher';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_stat()
  RETURNS SETOF text

@@ -31,6 +31,26 @@
     </article>
   </div>
 
+  <!-- Search Overlay (Cmd+K) -->
+  <template x-if="search.open">
+    <div>
+      <div class="pgv-search-backdrop" @click="searchClose()"></div>
+      <div class="pgv-search-palette" @keydown.escape.prevent="searchClose()" @keydown.arrow-down.prevent="searchNav(1)" @keydown.arrow-up.prevent="searchNav(-1)" @keydown.enter.prevent="searchSelect()">
+        <div class="pgv-search-input-row">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="15" y2="15"/></svg>
+          <input class="pgv-search-input" type="text" placeholder="Rechercher..." x-ref="searchInput" x-model="search.query" @input.debounce.200ms="searchExec()" autofocus>
+          <span class="pgv-search-hint">ESC</span>
+        </div>
+        <div x-ref="searchResults" @click="var it=event.target.closest('.pgv-search-item');if(it){search.idx=[].indexOf.call($refs.searchResults.querySelectorAll('.pgv-search-item'),it);searchSelect();}"></div>
+        <div class="pgv-search-footer">
+          <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> naviguer</span>
+          <span><kbd>Enter</kbd> ouvrir</span>
+          <span><kbd>Esc</kbd> fermer</span>
+        </div>
+      </div>
+    </div>
+  </template>
+
   <!-- Dialog (shell-owned, reusable) -->
   <dialog x-ref="dialog">
     <article style="width:min(90vw,520px);margin:0">
@@ -51,6 +71,7 @@
     Alpine.data('pgview', function() { return {
       toast: { show: false, msg: '', level: 'success', detail: '' },
       dlg:   { title: '', target: '' },
+      search: { open: false, query: '', idx: 0 },
       _tt: null,
 
       /* ── Bootstrap ─────────────────────────────────── */
@@ -71,6 +92,15 @@
       _listen: function() {
         var self = this;
         var app = document.getElementById('app');
+
+        // Cmd+K / Ctrl+K → toggle search overlay
+        document.addEventListener('keydown', function(e) {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            if (self.search.open) self.searchClose();
+            else self.searchOpen();
+          }
+        });
 
         app.addEventListener('click', function(e) {
           // Internal links
@@ -408,6 +438,73 @@
         }).catch(function() {
           self.showToast('Erreur ' + status, 'error');
         });
+      },
+
+      /* ── Search Overlay ────────────────────────────── */
+      searchOpen: function() {
+        this.search = { open: true, query: '', idx: 0 };
+        var self = this;
+        this.$nextTick(function() {
+          if (self.$refs.searchInput) self.$refs.searchInput.focus();
+          if (self.$refs.searchResults) self.$refs.searchResults.innerHTML = '';
+        });
+      },
+
+      searchClose: function() {
+        this.search.open = false;
+      },
+
+      searchExec: function() {
+        var q = this.search.query.trim();
+        var self = this;
+        if (!q) {
+          if (self.$refs.searchResults) self.$refs.searchResults.innerHTML = '';
+          return;
+        }
+        var schema = this._currentSchema || 'pgv_qa';
+        fetch('/rpc/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
+          body: JSON.stringify({ p_query: q, p_schema: schema })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(html) {
+          if (!self.search.open) return;
+          self.$refs.searchResults.innerHTML = html;
+          self.search.idx = 0;
+          self._searchHighlight();
+        })
+        .catch(function() {
+          if (self.$refs.searchResults) self.$refs.searchResults.innerHTML = '<div class="pgv-empty"><h4>Erreur</h4></div>';
+        });
+      },
+
+      searchNav: function(dir) {
+        var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll('.pgv-search-item') : [];
+        if (!items.length) return;
+        this.search.idx = Math.max(0, Math.min(items.length - 1, this.search.idx + dir));
+        this._searchHighlight();
+      },
+
+      searchSelect: function() {
+        var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll('.pgv-search-item') : [];
+        if (!items.length) return;
+        var item = items[this.search.idx];
+        if (!item) return;
+        var href = item.dataset.href;
+        if (!href) return;
+        this.searchClose();
+        // Prefix with schema if needed
+        if (this._currentSchema && href.charAt(0) === '/' && !href.match(/^\/[a-z][a-z0-9_]*\//))
+          href = '/' + this._currentSchema + href;
+        this.go(href);
+      },
+
+      _searchHighlight: function() {
+        var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll('.pgv-search-item') : [];
+        items.forEach(function(el, i) {
+          el.classList.toggle('active', i === this.search.idx);
+        }.bind(this));
       },
 
       /* ── Dialog ────────────────────────────────────── */

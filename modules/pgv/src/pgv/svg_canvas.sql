@@ -57,7 +57,7 @@ BEGIN
         oy=(vh-bb.height*sc)/2-bb.y*sc;
     pz.zoomAbs(0,0,sc);pz.moveTo(ox,oy);upd();
   };
-  if(fb)fb.onclick();
+  if(fb){if(vp.clientWidth>0)fb.onclick();else{var io=new IntersectionObserver(function(es){if(es[0].isIntersecting&&vp.clientWidth>0){fb.onclick();io.disconnect();}});io.observe(vp);}}
 })();
 $JS$;
 

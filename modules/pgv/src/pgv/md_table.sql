@@ -1,7 +1,7 @@
-CREATE OR REPLACE FUNCTION pgv.md_table(p_headers text[], p_rows text[])
+CREATE OR REPLACE FUNCTION pgv.md_table(p_headers text[], p_rows text[], p_page_size integer DEFAULT 0)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
+ IMMUTABLE
 AS $function$
 DECLARE
   v_md text;
@@ -26,6 +26,6 @@ BEGIN
       v_md := v_md || '| ' || array_to_string(p_rows[i * v_ncols + 1 : (i + 1) * v_ncols], ' | ') || E' |\n';
     END LOOP;
   END IF;
-  RETURN '<figure><md>' || v_md || '</md></figure>';
+  RETURN '<figure><md' || CASE WHEN p_page_size > 0 THEN ' data-page="' || p_page_size || '"' ELSE '' END || '>' || v_md || '</md></figure>';
 END;
 $function$;

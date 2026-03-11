@@ -13,6 +13,7 @@
     "pgtap"
   ],
   "sql": [
+    "build/pgv.ddl.sql",
     "build/pgv.func.sql"
   ],
   "assets": {
