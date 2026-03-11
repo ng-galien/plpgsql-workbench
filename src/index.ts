@@ -144,6 +144,7 @@ const WORKFLOW = [
 const DDL_PATTERN = /\b(CREATE\s+(SCHEMA|TABLE|INDEX|EXTENSION|TYPE)|ALTER\s+(TABLE|SCHEMA|TYPE)|DROP\s+(SCHEMA|TABLE|INDEX|TYPE|EXTENSION))\b/i;
 const FUNC_PATTERN = /\bCREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i;
 const DESTRUCTIVE_PATTERN = /\b(DROP\s+FUNCTION|TRUNCATE|GRANT\s+|REVOKE\s+)\b/i;
+// Note: DROP FUNCTION stays blocked in pg_query — agents must use pg_func_del instead
 // Detect cross-module calls to _prefix internal functions in SQL body
 const INTERNAL_CALL_RE = /\b(\w+)\._(\w+)\s*\(/g;
 
@@ -182,7 +183,7 @@ app.post("/hooks/:module", (req, res) => {
     }
     if (DESTRUCTIVE_PATTERN.test(sql)) {
       log.warn({ mod, sql: sql.slice(0, 80) }, "hook: blocked destructive op in pg_query");
-      return deny(res, "pg_query interdit pour DROP FUNCTION / TRUNCATE / GRANT / REVOKE. Utilise les outils dedies.\n\n" + WORKFLOW);
+      return deny(res, "pg_query interdit pour DROP FUNCTION / TRUNCATE / GRANT / REVOKE. Utilise pg_func_del pour supprimer une fonction.\n\n" + WORKFLOW);
     }
   }
 
@@ -240,6 +241,17 @@ app.post("/hooks/:module", (req, res) => {
     if (schema && !schemas.includes(schema)) {
       log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_edit");
       return deny(res, `Module ${mod}: pg_func_edit interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`);
+    }
+  }
+
+  // Rule: pg_func_del must target a schema owned by this module
+  if (tool_name === "mcp__plpgsql-workbench__pg_func_del") {
+    const uri = (tool_input?.uri ?? "") as string;
+    const match = uri.match(/^plpgsql:\/\/([^/]+)/);
+    const schema = match?.[1] ?? "";
+    if (schema && !schemas.includes(schema)) {
+      log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_del");
+      return deny(res, `Module ${mod}: pg_func_del interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`);
     }
   }
 
