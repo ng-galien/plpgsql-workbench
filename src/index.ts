@@ -167,7 +167,7 @@ app.post("/hooks/:module", (req, res) => {
     // Registry not loaded yet — allow (fail-open during startup)
     return allow(res);
   }
-  const mapping = moduleRegistry.resolve([mod]) ?? moduleRegistry.resolve([`${mod}_ut`]);
+  const mapping = moduleRegistry.resolveByName(mod) ?? moduleRegistry.resolve([mod]) ?? moduleRegistry.resolve([`${mod}_ut`]);
   const schemas = mapping?.schemas ?? [mod];
 
   // Rule: pg_query must not do DDL, function management, or destructive ops
@@ -256,6 +256,92 @@ app.post("/hooks/:module", (req, res) => {
   }
 
   allow(res);
+});
+
+// --- SessionStart hook — inject inbox on agent startup ---
+app.post("/hooks/:module/session", async (req, res) => {
+  const names = req.params.module.split(",");
+  try {
+    const pool: import("pg").Pool = container.resolve("pool");
+    const placeholders = names.map((_, i) => `$${i + 1}`).join(", ");
+    const { rows } = await pool.query(
+      `SELECT id, from_module, msg_type, subject
+       FROM workbench.agent_message
+       WHERE (to_module IN (${placeholders}) OR to_module = '*') AND status IN ('new', 'acknowledged')
+       ORDER BY created_at LIMIT 10`,
+      names,
+    );
+    if (rows.length > 0) {
+      const mod = names[0];
+      const lines = rows.map((r: any) =>
+        `  #${r.id} [${r.msg_type}] from ${r.from_module}: ${r.subject}`
+      );
+      return res.json({
+        hookSpecificOutput: {
+          hookEventName: "SessionStart",
+          additionalContext:
+            `[INBOX] You have ${rows.length} pending message(s). ` +
+            `Use pg_msg_inbox module:${mod} to read details and resolve.\n` +
+            lines.join("\n"),
+        },
+      });
+    }
+  } catch {
+    // Table might not exist yet — silent
+  }
+  res.json({ hookSpecificOutput: { hookEventName: "SessionStart" } });
+});
+
+// --- Stop hook — block if pending messages, let pass otherwise ---
+app.post("/hooks/:module/stop", async (req, res) => {
+  const names = req.params.module.split(",");
+  const mod = names[0];
+  try {
+    const pool: import("pg").Pool = container.resolve("pool");
+    const placeholders = names.map((_, i) => `$${i + 1}`).join(", ");
+
+    // 1. New messages for this module
+    const inbox = await pool.query(
+      `SELECT id, from_module, msg_type, subject
+       FROM workbench.agent_message
+       WHERE (to_module IN (${placeholders}) OR to_module = '*') AND status = 'new'
+       ORDER BY created_at LIMIT 10`,
+      names,
+    );
+
+    // 2. Messages SENT by this module that were resolved (unseen) — auto-ack
+    const resolved = await pool.query(
+      `UPDATE workbench.agent_message
+       SET acknowledged_at = resolved_at
+       WHERE from_module IN (${placeholders}) AND status = 'resolved'
+         AND (acknowledged_at IS NULL OR resolved_at > acknowledged_at)
+       RETURNING id, to_module, msg_type, subject, resolution`,
+      names,
+    );
+
+    const parts: string[] = [];
+
+    if (inbox.rows.length > 0) {
+      parts.push(`[INBOX] ${inbox.rows.length} new message(s). Use pg_msg_inbox module:${mod} to read and resolve.`);
+      for (const r of inbox.rows) {
+        parts.push(`  #${r.id} [${r.msg_type}] from ${r.from_module}: ${r.subject}`);
+      }
+    }
+
+    if (resolved.rows.length > 0) {
+      parts.push(`[RESOLVED] ${resolved.rows.length} of your message(s) were resolved:`);
+      for (const r of resolved.rows) {
+        parts.push(`  #${r.id} -> ${r.to_module}: ${r.subject}${r.resolution ? ` — ${r.resolution}` : ""}`);
+      }
+    }
+
+    if (parts.length > 0) {
+      return res.json({ decision: "block", reason: parts.join("\n") });
+    }
+  } catch {
+    // Table might not exist yet — silent
+  }
+  res.json({});
 });
 
 // --- Filesystem browse API (for folder picker) ---

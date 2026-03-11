@@ -17,6 +17,8 @@ export interface ModuleMapping {
 export interface ModuleRegistry {
   /** Resolve a list of schemas to a module. Returns null if no module owns ALL schemas. */
   resolve(schemas: string[]): ModuleMapping | null;
+  /** Resolve by module name (e.g. "cad3d"). */
+  resolveByName(name: string): ModuleMapping | null;
   /** Get the module path for pg_func_save given a schema. */
   savePath(schema: string): string | null;
 }
@@ -69,6 +71,10 @@ export async function buildModuleRegistry(workspaceRoot: string): Promise<Module
         }
       }
       return null;
+    },
+
+    resolveByName(name: string): ModuleMapping | null {
+      return mappings.find((m) => m.module === name) ?? null;
     },
 
     savePath(schema: string): string | null {

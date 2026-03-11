@@ -25,6 +25,25 @@ CREATE TABLE IF NOT EXISTS workbench.config (
   PRIMARY KEY (app, key)
 );
 
+-- Inter-agent messaging
+CREATE TABLE IF NOT EXISTS workbench.agent_message (
+  id              SERIAL PRIMARY KEY,
+  from_module     TEXT NOT NULL,
+  to_module       TEXT NOT NULL,  -- module name or '*' for broadcast
+  msg_type        TEXT NOT NULL CHECK (msg_type IN (
+                    'feature_request','bug_report','breaking_change','question','info')),
+  subject         TEXT NOT NULL,
+  body            TEXT,
+  status          TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','acknowledged','resolved')),
+  resolution      TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  acknowledged_at TIMESTAMPTZ,
+  resolved_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_message_inbox
+  ON workbench.agent_message (to_module, status) WHERE status != 'resolved';
+
 -- Grants for PostgREST
 GRANT USAGE ON SCHEMA workbench TO web_anon;
 GRANT SELECT, INSERT, UPDATE ON workbench.config TO web_anon;

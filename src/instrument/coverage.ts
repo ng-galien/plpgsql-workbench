@@ -203,11 +203,11 @@ export async function runCoverage(
   const extracted = extractBody(originalDdl);
   if (!extracted) return null;
 
-  // Persist in a single transaction
+  // Persist coverage metadata
   await ensureCovTables(client);
   const runId = crypto.randomUUID().slice(0, 8);
 
-  await client.query("SAVEPOINT cov_persist");
+  await client.query("BEGIN");
   try {
     await client.query(
       `INSERT INTO workbench.cov_run (id, schema_name, fn_name) VALUES ($1, $2, $3)`,
@@ -219,9 +219,9 @@ export async function runCoverage(
         [runId, p.id, p.line, p.kind, p.label],
       );
     }
-    await client.query("RELEASE SAVEPOINT cov_persist");
+    await client.query("COMMIT");
   } catch (err) {
-    await client.query("ROLLBACK TO SAVEPOINT cov_persist").catch(() => {});
+    await client.query("ROLLBACK").catch(() => {});
     throw err;
   }
 
