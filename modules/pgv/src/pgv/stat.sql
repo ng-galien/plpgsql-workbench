@@ -4,8 +4,8 @@ CREATE OR REPLACE FUNCTION pgv.stat(p_label text, p_value text, p_detail text DE
  IMMUTABLE
 AS $function$
   SELECT '<article class="pgv-stat">'
-    || '<small>' || p_label || '</small>'
+    || '<small>' || pgv.esc(p_label) || '</small>'
     || '<p class="pgv-stat-value">' || p_value || '</p>'
-    || CASE WHEN p_detail IS NOT NULL THEN '<small>' || p_detail || '</small>' ELSE '' END
+    || CASE WHEN p_detail IS NOT NULL THEN '<small>' || pgv.esc(p_detail) || '</small>' ELSE '' END
     || '</article>';
 $function$;

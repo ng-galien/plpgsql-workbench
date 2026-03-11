@@ -36,6 +36,9 @@ BEGIN
   -- Build query string from params
   FOR v_key, v_val IN SELECT k, v FROM jsonb_each_text(p_params) AS x(k, v)
   LOOP
+    -- Percent-encode critical query string characters
+    v_val := replace(replace(replace(replace(replace(
+      v_val, '%', '%25'), '&', '%26'), '=', '%3D'), '+', '%2B'), ' ', '%20');
     IF v_qs = '' THEN
       v_qs := '?' || v_key || '=' || v_val;
     ELSE

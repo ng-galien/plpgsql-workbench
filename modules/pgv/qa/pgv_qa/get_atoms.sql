@@ -37,8 +37,19 @@ BEGIN
     || '| ' || pgv.money(99999.99) || ' | ' || pgv.filesize(5242880) || ' |' || chr(10)
     || '| ' || pgv.money(1000000) || ' | ' || pgv.filesize(1073741824) || ' |' || chr(10)
     || '</md></section>'
+    || '<section><h4>pgv.md_table</h4>'
+    || pgv.md_table(
+        ARRAY['Produit', 'Prix', 'Stock'],
+        ARRAY['Widget A', pgv.money(29.99), '142',
+              'Widget B', pgv.money(59.50), '38',
+              'Widget C', pgv.money(149.00), '7'])
+    || '</section>'
     || '<section><h4>pgv.error</h4>'
     || pgv.error('404', 'Page non trouvee', 'Le chemin /exemple n''existe pas.', 'Verifiez l''URL.')
+    || '</section>'
+    || '<section><h4>pgv.card (imbrication)</h4>'
+    || pgv.card('Utilisateur', pgv.dl('Nom', 'Marie Durand', 'Role', pgv.badge('admin', 'primary'), 'Email', 'marie@example.com'),
+        pgv.action('toast_success', 'Contacter', NULL::jsonb, NULL, 'outline'))
     || '</section>';
 END;
 $function$;

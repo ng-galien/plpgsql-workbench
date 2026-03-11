@@ -6,6 +6,7 @@ AS $function$
   SELECT '[
     {"href": "/", "label": "Dashboard"},
     {"href": "/atoms", "label": "Composants"},
+    {"href": "/tables", "label": "Tables"},
     {"href": "/forms", "label": "Formulaires"},
     {"href": "/dialogs", "label": "Dialogs"},
     {"href": "/toast", "label": "Toasts"},
