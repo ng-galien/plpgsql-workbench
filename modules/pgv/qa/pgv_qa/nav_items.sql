@@ -13,6 +13,7 @@ AS $function$
     {"href": "/svg", "label": "SVG"},
     {"href": "/errors", "label": "Erreurs"},
     {"href": "/settings", "label": "Config"},
-    {"href": "/diagnostics", "label": "Diagnostics"}
+    {"href": "/diagnostics", "label": "Diagnostics"},
+    {"href": "http://localhost:8080/", "label": "Accueil"}
   ]'::jsonb;
 $function$;

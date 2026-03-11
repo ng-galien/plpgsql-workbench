@@ -67,6 +67,57 @@ BEGIN
     || '<section><h4>pgv.card (imbrication)</h4>'
     || pgv.card('Utilisateur', pgv.dl('Nom', 'Marie Durand', 'Role', pgv.badge('admin', 'primary'), 'Email', 'marie@example.com'),
         pgv.action('toast_success', 'Contacter', NULL::jsonb, NULL, 'outline'))
+    || '</section>'
+    || '<section><h4>pgv.alert</h4>'
+    || pgv.alert('Ceci est une information.', 'info')
+    || pgv.alert('Operation terminee avec succes.', 'success')
+    || pgv.alert('Attention, espace disque faible.', 'warning')
+    || pgv.alert('Echec de la synchronisation.', 'danger')
+    || '</section>'
+    || '<section><h4>pgv.empty</h4>'
+    || pgv.empty('Aucun document', 'Importez un fichier pour commencer.')
+    || '</section>'
+    || '<section><h4>pgv.progress</h4>'
+    || pgv.progress(75, 100, 'Import')
+    || pgv.progress(3, 10, 'Etapes')
+    || pgv.progress(100, 100, 'Termine')
+    || '</section>'
+    || '<section><h4>pgv.avatar</h4>'
+    || '<p>'
+    || pgv.avatar('Jean Dupont') || ' '
+    || pgv.avatar('Marie Durand') || ' '
+    || pgv.avatar('Alice Martin') || ' '
+    || pgv.avatar('Admin')
+    || '</p></section>'
+    || '<section><h4>pgv.tabs</h4>'
+    || pgv.tabs(
+        'Resume', pgv.dl('Nom', 'Jean Dupont', 'Role', pgv.badge('admin', 'primary')),
+        'Activite', pgv.alert('3 actions cette semaine.', 'info'),
+        'Stats', pgv.grid(pgv.stat('Vues', '142'), pgv.stat('Actions', '38')))
+    || '</section>'
+    || '<section><h4>pgv.accordion</h4>'
+    || pgv.accordion(
+        'Details techniques', pgv.dl('Version', '0.1.0', 'PostgreSQL', '17.2', 'Extensions', 'plpgsql_check, pgtap'),
+        'Configuration', pgv.dl('Mode', pgv.badge('dev', 'warning'), 'Port', '5433'),
+        'Notes', '<p>Aucune note particuliere.</p>')
+    || '</section>'
+    || '<section><h4>pgv.breadcrumb</h4>'
+    || pgv.breadcrumb('Dashboard', pgv.call_ref('get_index'), 'Composants', pgv.call_ref('get_atoms'), 'Detail')
+    || '</section>'
+    || '<section><h4>pgv.tree</h4>'
+    || pgv.tree('[{"label": "Documents", "children": [
+        {"label": "Factures", "children": [
+          {"label": "2025", "href": "/factures?year=2025"},
+          {"label": "2026", "href": "/factures?year=2026"}
+        ]},
+        {"label": "Contrats", "href": "/contrats"},
+        {"label": "Devis", "href": "/devis"}
+      ]},
+      {"label": "Configuration", "open": true, "children": [
+        {"label": "Utilisateurs", "href": "/users"},
+        {"label": "Roles", "href": "/roles"}
+      ]},
+      {"label": "A propos"}]'::jsonb)
     || '</section>';
 END;
 $function$;

@@ -53,7 +53,10 @@ BEGIN
   -- Prefix nav hrefs with schema
   v_nav := (
     SELECT jsonb_agg(
-      jsonb_set(item, '{href}', to_jsonb('/' || p_schema || (item->>'href')))
+      CASE WHEN (item->>'href') ~ '^https?://'
+        THEN item
+        ELSE jsonb_set(item, '{href}', to_jsonb('/' || p_schema || (item->>'href')))
+      END
     )
     FROM jsonb_array_elements(v_nav) AS item
   );

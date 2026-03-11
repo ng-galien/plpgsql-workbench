@@ -4,6 +4,16 @@
 -- Schema: pgv
 CREATE SCHEMA IF NOT EXISTS pgv;
 
+CREATE OR REPLACE FUNCTION pgv.alert(p_message text, p_level text DEFAULT 'info'::text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<div class="pgv-alert pgv-alert-' || p_level || '" role="alert">'
+    || p_message || '</div>';
+$function$;
+COMMENT ON FUNCTION pgv.alert(text,text) IS 'Inline banner/callout (info/success/warning/danger) — not transient like toast';
+
 CREATE OR REPLACE FUNCTION pgv.call_ref(p_fname text, p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
@@ -84,6 +94,26 @@ AS $function$
     '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '"', '&quot;'), '''', '&#39;');
 $function$;
 
+CREATE OR REPLACE FUNCTION pgv.accordion(VARIADIC p_items text[])
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_count int := array_length(p_items, 1) / 2;
+  v_html text := '';
+BEGIN
+  FOR i IN 0..v_count-1 LOOP
+    v_html := v_html || '<details class="pgv-accordion">'
+      || '<summary>' || pgv.esc(p_items[i*2+1]) || '</summary>'
+      || '<div>' || p_items[i*2+2] || '</div>'
+      || '</details>';
+  END LOOP;
+  RETURN v_html;
+END;
+$function$;
+COMMENT ON FUNCTION pgv.accordion(text[]) IS 'Collapsible sections via native details/summary (VARIADIC title/content pairs)';
+
 CREATE OR REPLACE FUNCTION pgv.action(p_rpc text, p_label text, p_params jsonb DEFAULT NULL::jsonb, p_confirm text DEFAULT NULL::text, p_variant text DEFAULT 'primary'::text)
  RETURNS text
  LANGUAGE sql
@@ -98,6 +128,18 @@ AS $function$
     || '>' || pgv.esc(p_label) || '</button>';
 $function$;
 
+CREATE OR REPLACE FUNCTION pgv.avatar(p_name text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<span class="pgv-avatar" title="' || pgv.esc(p_name) || '">'
+    || upper(left(split_part(p_name, ' ', 1), 1)
+    || coalesce(nullif(left(split_part(p_name, ' ', 2), 1), ''), ''))
+    || '</span>';
+$function$;
+COMMENT ON FUNCTION pgv.avatar(text) IS 'Initials circle for user display';
+
 CREATE OR REPLACE FUNCTION pgv.badge(p_text text, p_variant text DEFAULT 'default'::text)
  RETURNS text
  LANGUAGE sql
@@ -107,6 +149,40 @@ AS $function$
     || CASE WHEN p_variant <> 'default' THEN ' pgv-badge-' || p_variant ELSE '' END
     || '">' || pgv.esc(p_text) || '</span>';
 $function$;
+
+CREATE OR REPLACE FUNCTION pgv.breadcrumb(VARIADIC p_items text[])
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_total int := array_length(p_items, 1);
+  v_pairs int := v_total / 2;
+  v_html text := '<nav class="pgv-breadcrumb" aria-label="breadcrumb"><ul>';
+BEGIN
+  -- Render label/href pairs as links
+  FOR i IN 0..v_pairs-1 LOOP
+    v_html := v_html || '<li><a href="' || p_items[i*2+2] || '">' || pgv.esc(p_items[i*2+1]) || '</a></li>';
+  END LOOP;
+  -- Odd count: last item is current page (text only)
+  IF v_total % 2 = 1 THEN
+    v_html := v_html || '<li>' || pgv.esc(p_items[v_total]) || '</li>';
+  END IF;
+  RETURN v_html || '</ul></nav>';
+END;
+$function$;
+COMMENT ON FUNCTION pgv.breadcrumb(text[]) IS 'Breadcrumb navigation trail (VARIADIC label/href pairs, last item is current page)';
+
+CREATE OR REPLACE FUNCTION pgv.checkbox(p_name text, p_label text, p_checked boolean DEFAULT false)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<label><input type="checkbox" name="' || p_name || '"'
+    || CASE WHEN p_checked THEN ' checked' ELSE '' END
+    || '> ' || pgv.esc(p_label) || '</label>';
+$function$;
+COMMENT ON FUNCTION pgv.checkbox(text,text,boolean) IS 'Checkbox input (PicoCSS native styling)';
 
 CREATE OR REPLACE FUNCTION pgv.dl(VARIADIC p_pairs text[])
  RETURNS text
@@ -121,6 +197,17 @@ BEGIN
   RETURN v_html || '</dl>';
 END;
 $function$;
+
+CREATE OR REPLACE FUNCTION pgv.empty(p_title text, p_detail text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<div class="pgv-empty"><h4>' || pgv.esc(p_title) || '</h4>'
+    || CASE WHEN p_detail IS NOT NULL THEN '<p>' || pgv.esc(p_detail) || '</p>' ELSE '' END
+    || '</div>';
+$function$;
+COMMENT ON FUNCTION pgv.empty(text,text) IS 'Empty state placeholder when no data to display';
 
 CREATE OR REPLACE FUNCTION pgv.error(p_status text, p_title text, p_detail text DEFAULT NULL::text, p_hint text DEFAULT NULL::text)
  RETURNS text
@@ -205,27 +292,35 @@ COMMENT ON FUNCTION pgv.lazy(text,jsonb,text) IS 'Lazy container: defers content
 CREATE OR REPLACE FUNCTION pgv.md_table(p_headers text[], p_rows text[])
  RETURNS text
  LANGUAGE plpgsql
- IMMUTABLE
+ STABLE
 AS $function$
 DECLARE
   v_md text;
   v_sep text;
-  i int;
+  v_ncols int;
+  v_nrows int;
 BEGIN
+  v_ncols := array_length(p_headers, 1);
+  IF p_rows IS NOT NULL AND array_length(p_rows, 1) % v_ncols <> 0 THEN
+    RAISE EXCEPTION 'md_table: p_rows length % is not a multiple of % columns',
+      array_length(p_rows, 1), v_ncols;
+  END IF;
   v_md := '| ' || array_to_string(p_headers, ' | ') || E' |\n';
   v_sep := '|';
-  FOR i IN 1..array_length(p_headers, 1) LOOP
+  FOR i IN 1..v_ncols LOOP
     v_sep := v_sep || ' --- |';
   END LOOP;
   v_md := v_md || v_sep || E'\n';
   IF p_rows IS NOT NULL AND array_length(p_rows, 1) > 0 THEN
-    FOR i IN 1..array_length(p_rows, 1) LOOP
-      v_md := v_md || '| ' || array_to_string(p_rows[i:i][1:array_length(p_headers, 1)], ' | ') || E' |\n';
+    v_nrows := array_length(p_rows, 1) / v_ncols;
+    FOR i IN 0..v_nrows - 1 LOOP
+      v_md := v_md || '| ' || array_to_string(p_rows[i * v_ncols + 1 : (i + 1) * v_ncols], ' | ') || E' |\n';
     END LOOP;
   END IF;
   RETURN '<figure><md>' || v_md || '</md></figure>';
 END;
 $function$;
+COMMENT ON FUNCTION pgv.md_table(text[],text[]) IS 'Generate markdown table from PL/pgSQL arrays (headers + flat rows)';
 
 CREATE OR REPLACE FUNCTION pgv.money(p_amount numeric)
  RETURNS text
@@ -271,7 +366,9 @@ BEGIN
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
     v_href  := v_item->>'href';
     v_label := v_item->>'label';
-    IF v_href = p_current THEN
+    IF v_href ~ '^https?://' THEN
+      v_html := v_html || format('<li><a href="%s" target="_blank" rel="noopener">%s</a></li>', v_href, pgv.esc(v_label));
+    ELSIF v_href = p_current THEN
       v_html := v_html || format('<li><a href="%s" aria-current="page">%s</a></li>', v_href, pgv.esc(v_label));
     ELSE
       v_html := v_html || format('<li><a href="%s">%s</a></li>', v_href, pgv.esc(v_label));
@@ -302,6 +399,41 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv.page(text,text,text,jsonb,text,jsonb) IS 'Wrap body in nav + main layout. Options forwarded to pgv.nav().';
+
+CREATE OR REPLACE FUNCTION pgv.progress(p_value numeric, p_max numeric DEFAULT 100, p_label text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<div class="pgv-progress">'
+    || CASE WHEN p_label IS NOT NULL
+         THEN '<label>' || pgv.esc(p_label) || ' <small>' || round(p_value / p_max * 100) || '%</small></label>'
+         ELSE '' END
+    || '<progress value="' || p_value || '" max="' || p_max || '"></progress>'
+    || '</div>';
+$function$;
+COMMENT ON FUNCTION pgv.progress(numeric,numeric,text) IS 'Progress bar with optional label (PicoCSS native styling)';
+
+CREATE OR REPLACE FUNCTION pgv.radio(p_name text, p_label text, p_options jsonb, p_selected text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+DECLARE
+  v_html text;
+  v_opt text;
+BEGIN
+  v_html := '<fieldset><legend>' || pgv.esc(p_label) || '</legend>';
+  FOR v_opt IN SELECT jsonb_array_elements_text(p_options)
+  LOOP
+    v_html := v_html || '<label><input type="radio" name="' || p_name || '" value="' || pgv.esc(v_opt) || '"'
+      || CASE WHEN v_opt = p_selected THEN ' checked' ELSE '' END
+      || '> ' || pgv.esc(v_opt) || '</label>';
+  END LOOP;
+  RETURN v_html || '</fieldset>';
+END;
+$function$;
+COMMENT ON FUNCTION pgv.radio(text,text,jsonb,text) IS 'Radio button group (PicoCSS native styling)';
 
 CREATE OR REPLACE FUNCTION pgv.route(p_schema text, p_path text, p_method text DEFAULT 'GET'::text, p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS "text/html"
@@ -358,7 +490,10 @@ BEGIN
   -- Prefix nav hrefs with schema
   v_nav := (
     SELECT jsonb_agg(
-      jsonb_set(item, '{href}', to_jsonb('/' || p_schema || (item->>'href')))
+      CASE WHEN (item->>'href') ~ '^https?://'
+        THEN item
+        ELSE jsonb_set(item, '{href}', to_jsonb('/' || p_schema || (item->>'href')))
+      END
     )
     FROM jsonb_array_elements(v_nav) AS item
   );
@@ -720,6 +855,28 @@ $JS$;
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION pgv.tabs(VARIADIC p_items text[])
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_count int := array_length(p_items, 1) / 2;
+  v_nav text := '';
+  v_panels text := '';
+BEGIN
+  FOR i IN 0..v_count-1 LOOP
+    v_nav := v_nav || '<button @click="tab=' || i || '" :class="tab===' || i || ' && ''active''">'
+      || pgv.esc(p_items[i*2+1]) || '</button>';
+    v_panels := v_panels || '<div x-show="tab===' || i || '">' || p_items[i*2+2] || '</div>';
+  END LOOP;
+  RETURN '<div class="pgv-tabs" x-data="{tab:0}">'
+    || '<nav class="pgv-tabs-nav">' || v_nav || '</nav>'
+    || v_panels || '</div>';
+END;
+$function$;
+COMMENT ON FUNCTION pgv.tabs(text[]) IS 'Tabbed panels with Alpine.js state (VARIADIC label/content pairs)';
+
 CREATE OR REPLACE FUNCTION pgv.textarea(p_name text, p_label text, p_value text DEFAULT NULL::text, p_rows integer DEFAULT 3)
  RETURNS text
  LANGUAGE sql
@@ -730,6 +887,93 @@ AS $function$
     || coalesce(pgv.esc(p_value), '')
     || '</textarea></label>';
 $function$;
+
+CREATE OR REPLACE FUNCTION pgv.toggle(p_name text, p_label text, p_checked boolean DEFAULT false)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT '<label><input type="checkbox" name="' || p_name || '" role="switch"'
+    || CASE WHEN p_checked THEN ' checked' ELSE '' END
+    || '> ' || pgv.esc(p_label) || '</label>';
+$function$;
+COMMENT ON FUNCTION pgv.toggle(text,text,boolean) IS 'Switch on/off toggle (PicoCSS role=switch)';
+
+CREATE OR REPLACE FUNCTION pgv.tree(p_items jsonb, p_open boolean DEFAULT false, p_depth integer DEFAULT 0, p_root_attrs text DEFAULT ''::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_html text;
+  v_item jsonb;
+  v_label text;
+  v_href text;
+  v_open boolean;
+  v_icon text;
+  v_badge text;
+  v_action jsonb;
+  v_attrs text;
+  v_prefix text;
+  v_suffix text;
+  v_li_open text;
+BEGIN
+  IF p_depth = 0 THEN
+    v_html := '<ul class="pgv-tree"' || CASE WHEN p_root_attrs <> '' THEN ' ' || p_root_attrs ELSE '' END || '>';
+  ELSE
+    v_html := '<ul>';
+  END IF;
+
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
+    v_label := v_item->>'label';
+    v_href := v_item->>'href';
+    v_open := coalesce((v_item->>'open')::boolean, p_open);
+    v_icon := v_item->>'icon';
+    v_badge := v_item->>'badge';
+    v_action := v_item->'action';
+    v_attrs := coalesce(v_item->>'attrs', '');
+
+    -- Build prefix (icon = raw HTML, caller is responsible for content)
+    v_prefix := CASE WHEN v_icon IS NOT NULL THEN '<span class="pgv-tree-icon">' || v_icon || '</span> ' ELSE '' END;
+    v_suffix := '';
+    IF v_badge IS NOT NULL THEN
+      v_suffix := v_suffix || ' ' || pgv.badge(v_badge);
+    END IF;
+    IF v_action IS NOT NULL THEN
+      IF jsonb_typeof(v_action) = 'string' THEN
+        -- Raw HTML string (e.g. Alpine button)
+        v_suffix := v_suffix || ' ' || (v_action #>> '{}');
+      ELSE
+        -- Object -> pgv.action()
+        v_suffix := v_suffix || ' ' || pgv.action(
+          v_action->>'rpc',
+          coalesce(v_action->>'label', v_action->>'rpc'),
+          CASE WHEN v_action ? 'params' THEN v_action->'params' ELSE NULL END,
+          v_action->>'confirm'
+        );
+      END IF;
+    END IF;
+
+    v_li_open := '<li' || CASE WHEN v_attrs <> '' THEN ' ' || v_attrs ELSE '' END || '>';
+
+    IF v_item ? 'children' THEN
+      v_html := v_html || v_li_open || '<details'
+        || CASE WHEN v_open THEN ' open' ELSE '' END
+        || '><summary>' || v_prefix || pgv.esc(v_label) || v_suffix || '</summary>'
+        || pgv.tree(v_item->'children', p_open, p_depth + 1)
+        || '</details></li>';
+    ELSIF v_href IS NOT NULL THEN
+      v_html := v_html || v_li_open || v_prefix || '<a href="' || v_href || '">' || pgv.esc(v_label) || '</a>' || v_suffix || '</li>';
+    ELSE
+      v_html := v_html || v_li_open || v_prefix || pgv.esc(v_label) || v_suffix || '</li>';
+    END IF;
+  END LOOP;
+
+  v_html := v_html || '</ul>';
+  RETURN v_html;
+END;
+$function$;
+COMMENT ON FUNCTION pgv.tree(jsonb,boolean,integer,text) IS 'Recursive treeview from jsonb array. Nodes: {label, href?, children?, open?, icon?, badge?, action?, attrs?}. icon=raw HTML, action=string(raw HTML) or object(pgv.action).';
 
 GRANT USAGE ON SCHEMA pgv TO web_anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv TO web_anon;
@@ -851,54 +1095,101 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.assert_page(text,text) IS 'Validate pgView HTML contract: data-rpc targets exist, href routes resolve to get_* functions, no inline styles, md blocks valid.';
 
-CREATE OR REPLACE FUNCTION pgv_ut.test_action_data_contract()
+CREATE OR REPLACE FUNCTION pgv_ut.test_accordion()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
-DECLARE v text;
+DECLARE
+  v_html text;
 BEGIN
-  v := pgv.action('do_thing', 'Click', '{"id":1}'::jsonb, 'Sure?');
-  RETURN NEXT ok(v LIKE '%data-rpc="do_thing"%', 'action has data-rpc');
-  RETURN NEXT ok(v LIKE '%data-params%',         'action has data-params');
-  RETURN NEXT ok(v LIKE '%data-confirm="Sure?"%', 'action has data-confirm');
+  v_html := pgv.accordion('Section1', '<p>Body1</p>', 'Section2', '<p>Body2</p>');
+  RETURN NEXT ok(v_html LIKE '%<details class="pgv-accordion">%', 'accordion uses details with class');
+  RETURN NEXT ok(v_html LIKE '%<summary>Section1</summary>%', 'accordion has summary');
+  RETURN NEXT ok(v_html LIKE '%Body2%', 'accordion has second body');
 END;
 $function$;
+COMMENT ON FUNCTION pgv_ut.test_accordion() IS 'Unit tests for pgv.accordion: details tag, summary, content';
 
-CREATE OR REPLACE FUNCTION pgv_ut.test_badge_css_classes()
+CREATE OR REPLACE FUNCTION pgv_ut.test_action()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  v_html := pgv.action('save', 'Sauvegarder');
+  RETURN NEXT ok(v_html LIKE '%data-rpc="save"%', 'action has data-rpc');
+
+  v_html := pgv.action('del', 'Supprimer', '{"id":1}'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%data-params%', 'action has data-params');
+
+  v_html := pgv.action('del', 'Supprimer', NULL::jsonb, 'Etes-vous sur?');
+  RETURN NEXT ok(v_html LIKE '%data-confirm%', 'action has data-confirm');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_action() IS 'Unit tests for pgv.action: data-rpc, data-params, data-confirm';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_alert()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  RETURN NEXT ok(
-    pgv.badge('test') LIKE '%class="pgv-badge%',
-    'badge(default) outputs class pgv-badge'
-  );
-  RETURN NEXT ok(
-    pgv.badge('test') NOT LIKE '%style=%',
-    'badge(default) has no inline style'
-  );
-  RETURN NEXT ok(
-    pgv.badge('ok', 'success') LIKE '%pgv-badge-success%',
-    'badge(success) outputs pgv-badge-success'
-  );
-  RETURN NEXT ok(
-    pgv.badge('ko', 'danger') LIKE '%pgv-badge-danger%',
-    'badge(danger) outputs pgv-badge-danger'
-  );
-  RETURN NEXT ok(
-    pgv.badge('w', 'warning') LIKE '%pgv-badge-warning%',
-    'badge(warning) outputs pgv-badge-warning'
-  );
-  RETURN NEXT ok(
-    pgv.badge('i', 'info') LIKE '%pgv-badge-info%',
-    'badge(info) outputs pgv-badge-info'
-  );
-  RETURN NEXT ok(
-    pgv.badge('p', 'primary') LIKE '%pgv-badge-primary%',
-    'badge(primary) outputs pgv-badge-primary'
-  );
+  RETURN NEXT ok(pgv.alert('msg', 'info') LIKE '%pgv-alert-info%', 'alert info has class');
+  RETURN NEXT ok(pgv.alert('msg', 'success') LIKE '%pgv-alert-success%', 'alert success has class');
+  RETURN NEXT ok(pgv.alert('msg', 'warning') LIKE '%pgv-alert-warning%', 'alert warning has class');
+  RETURN NEXT ok(pgv.alert('msg', 'danger') LIKE '%pgv-alert-danger%', 'alert danger has class');
+  RETURN NEXT ok(pgv.alert('msg') LIKE '%pgv-alert%', 'alert default has class');
+  RETURN NEXT ok(pgv.alert('<b>rich</b>') LIKE '%<b>rich</b>%', 'alert preserves HTML content');
 END;
 $function$;
+COMMENT ON FUNCTION pgv_ut.test_alert() IS 'Unit tests for pgv.alert: CSS variants, HTML content';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_avatar()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN NEXT ok(pgv.avatar('Jean Dupont') LIKE '%pgv-avatar%', 'avatar has pgv-avatar class');
+  RETURN NEXT ok(pgv.avatar('Jean Dupont') LIKE '%JD%', 'avatar extracts initials JD');
+  RETURN NEXT ok(pgv.avatar('Alice') LIKE '%A%', 'single name takes first char');
+  RETURN NEXT ok(pgv.avatar('Marie Claire Durand') LIKE '%MC%', 'three names takes first two words');
+  RETURN NEXT ok(pgv.avatar('<script>') NOT LIKE '%<script>%', 'avatar escapes name');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_avatar() IS 'Unit tests for pgv.avatar: initials extraction, CSS class, XSS';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_badge()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN NEXT ok(pgv.badge('x') LIKE '%pgv-badge%', 'badge(default) has pgv-badge class');
+  RETURN NEXT ok(pgv.badge('x') NOT LIKE '%style=%', 'badge(default) has no inline style');
+  RETURN NEXT ok(pgv.badge('x', 'success') LIKE '%pgv-badge-success%', 'badge(success) has class');
+  RETURN NEXT ok(pgv.badge('x', 'danger') LIKE '%pgv-badge-danger%', 'badge(danger) has class');
+  RETURN NEXT ok(pgv.badge('x', 'warning') LIKE '%pgv-badge-warning%', 'badge(warning) has class');
+  RETURN NEXT ok(pgv.badge('x', 'info') LIKE '%pgv-badge-info%', 'badge(info) has class');
+  RETURN NEXT ok(pgv.badge('x', 'primary') LIKE '%pgv-badge-primary%', 'badge(primary) has class');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_badge() IS 'Unit tests for pgv.badge: CSS classes, no inline style';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_breadcrumb()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  PERFORM set_config('pgv.route_prefix', '/pgv_qa', true);
+  v_html := pgv.breadcrumb('Home', '/pgv_qa/', 'Page', '/pgv_qa/page', 'Current');
+  RETURN NEXT ok(v_html LIKE '%pgv-breadcrumb%', 'breadcrumb has class');
+  RETURN NEXT ok(v_html LIKE '%<a href="/pgv_qa/">Home</a>%', 'breadcrumb first item is link');
+  RETURN NEXT ok(v_html LIKE '%>Current<%', 'breadcrumb last item is text');
+  RETURN NEXT ok(v_html LIKE '%<li>Current</li>%', 'breadcrumb last item is plain li');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_breadcrumb() IS 'Unit tests for pgv.breadcrumb: class, links, current page text';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_call_ref()
  RETURNS SETOF text
@@ -940,257 +1231,399 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_call_ref() IS 'Tests for pgv.call_ref: path generation, prefix handling, dead link detection';
 
-CREATE OR REPLACE FUNCTION pgv_ut.test_dl_css_class()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  RETURN NEXT ok(
-    pgv.dl('k', 'v') LIKE '%class="pgv-dl"%',
-    'dl outputs class pgv-dl'
-  );
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION pgv_ut.test_error_css_classes()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  RETURN NEXT ok(
-    pgv.error('404', 'Not found') LIKE '%class="pgv-error"%',
-    'error outputs class pgv-error'
-  );
-  RETURN NEXT ok(
-    pgv.error('404', 'Not found') NOT LIKE '%style=%',
-    'error has no inline style'
-  );
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION pgv_ut.test_href_with_prefix()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  -- External URLs pass through
-  RETURN NEXT is(pgv.href('https://example.com'), 'https://example.com', 'href passes https');
-  RETURN NEXT is(pgv.href('http://localhost:3000'), 'http://localhost:3000', 'href passes http');
-  RETURN NEXT is(pgv.href('//cdn.example.com/lib.js'), '//cdn.example.com/lib.js', 'href passes protocol-relative');
-  RETURN NEXT is(pgv.href('mailto:test@example.com'), 'mailto:test@example.com', 'href passes mailto');
-  RETURN NEXT is(pgv.href('tel:+33123456789'), 'tel:+33123456789', 'href passes tel');
-
-  -- Internal paths return NULL (use call_ref instead)
-  RETURN NEXT is(pgv.href('/atoms'), NULL, 'href rejects internal path /atoms');
-  RETURN NEXT is(pgv.href('/'), NULL, 'href rejects internal path /');
-END;
-$function$;
-COMMENT ON FUNCTION pgv_ut.test_href_with_prefix() IS 'Test pgv.href: external URLs pass through, internal paths return NULL';
-
-CREATE OR REPLACE FUNCTION pgv_ut.test_nav_theme_toggle()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-DECLARE v text;
-BEGIN
-  v := pgv.nav('B', '[{"href":"/","label":"H"}]'::jsonb, '/');
-  RETURN NEXT ok(v LIKE '%data-toggle-theme%', 'nav has theme toggle');
-  RETURN NEXT ok(v LIKE '%pgv-theme-toggle%', 'theme toggle has CSS class');
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION pgv_ut.test_no_htmx()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-DECLARE v text;
-BEGIN
-  v := pgv.badge('x') || pgv.stat('l','v') || pgv.card('t','b')
-    || pgv.action('fn', 'btn', NULL::jsonb) || pgv.error('400','err')
-    || pgv.nav('B', '[{"href":"/","label":"H"}]'::jsonb, '/');
-  RETURN NEXT ok(
-    v NOT LIKE '%hx-get%' AND v NOT LIKE '%hx-post%'
-    AND v NOT LIKE '%hx-target%' AND v NOT LIKE '%hx-swap%'
-    AND v NOT LIKE '%hx-vals%' AND v NOT LIKE '%hx-trigger%',
-    'zero hx-* attributes in pgv output'
-  );
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION pgv_ut.test_page_no_inline_style()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  RETURN NEXT ok(
-    pgv.page('Test', 'T', '/', '[]'::jsonb, '<p>x</p>') NOT LIKE '%style=%',
-    'page has no inline style'
-  );
-END;
-$function$;
-
-CREATE OR REPLACE FUNCTION pgv_ut.test_route_all_pages_render()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_item jsonb;
-  v_href text;
-  v_html text;
-BEGIN
-  FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
-    v_href := v_item->>'href';
-    v_html := pgv.route('pgv_qa', v_href, 'GET');
-    RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 0,
-      format('route pgv_qa %s renders HTML', v_href));
-    RETURN NEXT ok(v_html LIKE '%<nav%',
-      format('route pgv_qa %s has nav', v_href));
-    RETURN NEXT ok(v_html LIKE '%<main%',
-      format('route pgv_qa %s has main', v_href));
-  END LOOP;
-END;
-$function$;
-COMMENT ON FUNCTION pgv_ut.test_route_all_pages_render() IS 'Test every nav page renders without error via pgv.route';
-
-CREATE OR REPLACE FUNCTION pgv_ut.test_route_nav_pages_exist()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_schema text := 'pgv_qa';
-  v_item jsonb;
-  v_href text;
-  v_fname text;
-BEGIN
-  FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
-    v_href := v_item->>'href';
-    IF v_href = '/' THEN
-      v_fname := 'get_index';
-    ELSE
-      v_fname := 'get_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_');
-    END IF;
-    RETURN NEXT ok(
-      EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-             WHERE n.nspname = v_schema AND p.proname = v_fname),
-      format('nav %s -> %s.%s() exists', v_href, v_schema, v_fname)
-    );
-  END LOOP;
-END;
-$function$;
-COMMENT ON FUNCTION pgv_ut.test_route_nav_pages_exist() IS 'Test every nav item points to an existing page function';
-
-CREATE OR REPLACE FUNCTION pgv_ut.test_route_prefixes_nav()
+CREATE OR REPLACE FUNCTION pgv_ut.test_checkbox()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
   v_html text;
 BEGIN
-  -- pgv_qa has nav_items with href="/atoms" etc.
-  v_html := pgv.route('pgv_qa', '/', 'GET');
+  v_html := pgv.checkbox('notify', 'Notifications');
+  RETURN NEXT ok(v_html LIKE '%type="checkbox"%', 'checkbox has type');
+  RETURN NEXT ok(v_html LIKE '%name="notify"%', 'checkbox has name');
+  RETURN NEXT ok(v_html LIKE '%Notifications%', 'checkbox has label');
+  RETURN NEXT ok(v_html NOT LIKE '%checked%', 'checkbox unchecked by default');
 
-  -- Nav links should be prefixed with /pgv_qa
-  RETURN NEXT ok(v_html LIKE '%href="/pgv_qa/"%', 'nav dashboard href prefixed');
-  RETURN NEXT ok(v_html LIKE '%href="/pgv_qa/atoms"%', 'nav atoms href prefixed');
-  RETURN NEXT ok(v_html LIKE '%href="/pgv_qa/forms"%', 'nav forms href prefixed');
-
-  -- route_prefix should be set for page functions
-  RETURN NEXT is(current_setting('pgv.route_prefix', true), '/pgv_qa', 'route_prefix set after route call');
+  v_html := pgv.checkbox('agree', 'Accept', true);
+  RETURN NEXT ok(v_html LIKE '%checked%', 'checkbox checked when p_checked=true');
 END;
 $function$;
-COMMENT ON FUNCTION pgv_ut.test_route_prefixes_nav() IS 'Test pgv.route prefixes nav hrefs and sets route_prefix';
+COMMENT ON FUNCTION pgv_ut.test_checkbox() IS 'Unit tests for pgv.checkbox: type, name, label, checked state';
 
-CREATE OR REPLACE FUNCTION pgv_ut.test_route_rpc_targets_exist()
+CREATE OR REPLACE FUNCTION pgv_ut.test_dl()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN NEXT ok(pgv.dl('K', 'V') LIKE '%pgv-dl%', 'dl has pgv-dl class');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_dl() IS 'Unit test for pgv.dl: CSS class';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_error()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_schema text := 'pgv_qa';
+  v_html text;
+BEGIN
+  v_html := pgv.error('404', 'Not found', 'Details');
+  RETURN NEXT ok(v_html LIKE '%pgv-error%', 'error has pgv-error class');
+  RETURN NEXT ok(v_html NOT LIKE '%style=%', 'error has no inline style');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_error() IS 'Unit tests for pgv.error: CSS class, no inline style';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_href()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN NEXT ok(pgv.href('https://example.com') = 'https://example.com', 'href passes https');
+  RETURN NEXT ok(pgv.href('http://example.com') = 'http://example.com', 'href passes http');
+  RETURN NEXT ok(pgv.href('//example.com') = '//example.com', 'href passes protocol-relative');
+  RETURN NEXT ok(pgv.href('mailto:a@b.com') = 'mailto:a@b.com', 'href passes mailto');
+  RETURN NEXT ok(pgv.href('tel:+33123') = 'tel:+33123', 'href passes tel');
+
+  RETURN NEXT ok(pgv.href('/atoms') IS NULL, 'href rejects internal path /atoms');
+  RETURN NEXT ok(pgv.href('/') IS NULL, 'href rejects internal path /');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_href() IS 'Unit tests for pgv.href: whitelist protocols, rejects internal paths with NULL';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_lazy()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  -- Basic lazy
+  v_html := pgv.lazy('load_data');
+  RETURN NEXT ok(v_html LIKE '%pgv-lazy%', 'lazy has pgv-lazy class');
+  RETURN NEXT ok(v_html LIKE '%data-lazy="load_data"%', 'lazy has data-lazy attr');
+  RETURN NEXT ok(v_html LIKE '%aria-busy="true"%', 'lazy has loading indicator');
+
+  -- With params
+  v_html := pgv.lazy('load_detail', '{"id": 42}'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%data-params%', 'lazy with params has data-params');
+  RETURN NEXT ok(v_html LIKE '%"id": 42%', 'lazy params contain value');
+
+  -- No params = no data-params attr
+  v_html := pgv.lazy('simple_load', '{}'::jsonb);
+  RETURN NEXT ok(v_html NOT LIKE '%data-params%', 'lazy with empty params omits data-params');
+
+  -- XSS in rpc name
+  v_html := pgv.lazy('"><script>');
+  RETURN NEXT ok(v_html NOT LIKE '%<script>%', 'lazy escapes rpc name');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_lazy() IS 'Unit tests for pgv.lazy: data-lazy, params, XSS';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_md_table()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+  v_ok boolean;
+BEGIN
+  -- Basic table
+  v_html := pgv.md_table(ARRAY['A', 'B'], ARRAY['1', '2', '3', '4']);
+  RETURN NEXT ok(v_html LIKE '%<md>%', 'md_table wraps in md tag');
+  RETURN NEXT ok(v_html LIKE '%| A | B |%', 'md_table has headers');
+  RETURN NEXT ok(v_html LIKE '%| 1 | 2 |%', 'md_table has first row');
+  RETURN NEXT ok(v_html LIKE '%| 3 | 4 |%', 'md_table has second row');
+
+  -- Empty rows
+  v_html := pgv.md_table(ARRAY['X', 'Y'], NULL);
+  RETURN NEXT ok(v_html LIKE '%| X | Y |%', 'md_table with null rows has headers');
+  RETURN NEXT ok(v_html LIKE '%| --- |%', 'md_table with null rows has separator');
+
+  -- Modulo assertion
+  BEGIN
+    v_html := pgv.md_table(ARRAY['A', 'B', 'C'], ARRAY['1', '2']);
+    v_ok := false;
+  EXCEPTION WHEN raise_exception THEN
+    v_ok := true;
+  END;
+  RETURN NEXT ok(v_ok, 'md_table raises on non-multiple row count');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_md_table() IS 'Unit tests for pgv.md_table: basic, empty, modulo assertion';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_nav()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  PERFORM set_config('pgv.route_prefix', '/test', true);
+  v_html := pgv.nav('Test', '[
+    {"href": "/test/", "label": "Home"},
+    {"href": "https://example.com", "label": "External"}
+  ]'::jsonb, '/test/');
+
+  -- Theme toggle
+  RETURN NEXT ok(v_html LIKE '%data-toggle-theme%', 'nav has theme toggle');
+  RETURN NEXT ok(v_html LIKE '%pgv-theme-toggle%', 'theme toggle has CSS class');
+
+  -- External link
+  RETURN NEXT ok(v_html LIKE '%target="_blank"%', 'external link has target=_blank');
+  RETURN NEXT ok(v_html LIKE '%rel="noopener"%', 'external link has rel=noopener');
+  RETURN NEXT ok(v_html LIKE '%href="https://example.com"%', 'external href preserved');
+
+  -- Current page
+  RETURN NEXT ok(v_html LIKE '%aria-current="page"%', 'current page has aria-current');
+
+  -- No htmx
+  RETURN NEXT ok(v_html NOT LIKE '%hx-%', 'nav has no hx-* attributes');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_nav() IS 'Unit tests for pgv.nav: theme toggle, external links, aria-current, no htmx';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_page()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  PERFORM set_config('pgv.route_prefix', '/test', true);
+  v_html := pgv.page('Brand', 'Title', '/test/', '[{"href":"/","label":"H"}]'::jsonb, '<p>Body</p>');
+  RETURN NEXT ok(v_html NOT LIKE '%style=%', 'page has no inline style');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_page() IS 'Unit test for pgv.page: no inline style';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_radio()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  v_html := pgv.radio('freq', 'Frequence', '["jour", "semaine", "mois"]'::jsonb, 'semaine');
+  RETURN NEXT ok(v_html LIKE '%type="radio"%', 'radio has type');
+  RETURN NEXT ok(v_html LIKE '%name="freq"%', 'radio has name');
+  RETURN NEXT ok(v_html LIKE '%checked%', 'radio has selected option');
+  RETURN NEXT ok(v_html LIKE '%jour%', 'radio has first option');
+  RETURN NEXT ok(v_html LIKE '%mois%', 'radio has last option');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_radio() IS 'Unit tests for pgv.radio: type, name, selected option, all options';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_route()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
   v_item jsonb;
   v_href text;
   v_html text;
   v_rpc text;
+  v_schema text := 'pgv_qa';
+  v_fname text;
 BEGIN
+  -- All nav pages render
   FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
     v_href := v_item->>'href';
+    IF v_href ~ '^https?://' THEN CONTINUE; END IF;
     v_html := pgv.route(v_schema, v_href, 'GET');
-    -- Extract all data-rpc="xxx" values
-    FOR v_rpc IN
-      SELECT (regexp_matches(v_html, 'data-rpc="([^"]+)"', 'g'))[1]
-    LOOP
+    RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 0,
+      format('route %s %s renders HTML', v_schema, v_href));
+    RETURN NEXT ok(v_html LIKE '%<nav%',
+      format('route %s %s has nav', v_schema, v_href));
+    RETURN NEXT ok(v_html LIKE '%<main%',
+      format('route %s %s has main', v_schema, v_href));
+  END LOOP;
+
+  -- Nav pages exist as functions
+  FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
+    v_href := v_item->>'href';
+    IF v_href ~ '^https?://' THEN CONTINUE; END IF;
+    IF v_href = '/' THEN v_fname := 'get_index';
+    ELSE v_fname := 'get_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_');
+    END IF;
+    RETURN NEXT ok(
+      EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+             WHERE n.nspname = v_schema AND p.proname = v_fname),
+      format('nav %s -> %s.%s() exists', v_href, v_schema, v_fname));
+  END LOOP;
+
+  -- Nav hrefs prefixed with schema
+  v_html := pgv.route(v_schema, '/', 'GET');
+  RETURN NEXT ok(v_html LIKE '%href="/pgv_qa/"%', 'nav dashboard href prefixed');
+  RETURN NEXT ok(v_html LIKE '%href="/pgv_qa/atoms"%', 'nav atoms href prefixed');
+  RETURN NEXT ok(v_html LIKE '%href="/pgv_qa/forms"%', 'nav forms href prefixed');
+  RETURN NEXT is(current_setting('pgv.route_prefix', true), '/pgv_qa', 'route_prefix set after route call');
+
+  -- RPC targets exist
+  FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
+    v_href := v_item->>'href';
+    IF v_href ~ '^https?://' THEN CONTINUE; END IF;
+    v_html := pgv.route(v_schema, v_href, 'GET');
+    FOR v_rpc IN SELECT (regexp_matches(v_html, 'data-rpc="([^"]+)"', 'g'))[1] LOOP
       RETURN NEXT ok(
         EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
                WHERE n.nspname = v_schema AND p.proname = v_rpc),
-        format('data-rpc="%s" on %s -> %s.%s() exists', v_rpc, v_href, v_schema, v_rpc)
-      );
+        format('data-rpc="%s" on %s -> %s.%s() exists', v_rpc, v_href, v_schema, v_rpc));
     END LOOP;
   END LOOP;
+
+  -- Typed dispatch
+  EXECUTE $x$
+    CREATE OR REPLACE FUNCTION pgv_qa.get_test_param(p_id integer)
+    RETURNS text LANGUAGE sql AS $f$ SELECT '<p>ID=' || $1::text || '</p>'; $f$
+  $x$;
+  v_html := pgv.route(v_schema, '/test-param', 'GET', '{"p_id": "42"}'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%ID=42%', 'route dispatches get_ with scalar int param');
+  RETURN NEXT ok(v_html LIKE '%<nav%', 'scalar param page has layout');
+
+  v_html := pgv.route(v_schema, '/atoms', 'GET');
+  RETURN NEXT ok(v_html LIKE '%pgv-badge%', 'route dispatches get_ with 0 args');
+
+  EXECUTE $x$
+    CREATE OR REPLACE FUNCTION pgv_qa.post_test_action()
+    RETURNS text LANGUAGE sql AS $f$ SELECT '<template data-toast="success">Done</template>'; $f$
+  $x$;
+  v_html := pgv.route(v_schema, '/test-action', 'POST');
+  RETURN NEXT ok(v_html LIKE '%data-toast%', 'POST returns toast template');
+  RETURN NEXT ok(v_html NOT LIKE '%<nav%', 'POST has no layout wrapping');
+
+  DROP FUNCTION pgv_qa.get_test_param(integer);
+  DROP FUNCTION pgv_qa.post_test_action();
 END;
 $function$;
-COMMENT ON FUNCTION pgv_ut.test_route_rpc_targets_exist() IS 'Test every data-rpc target in rendered pages exists as a function in the schema';
+COMMENT ON FUNCTION pgv_ut.test_route() IS 'Unit tests for pgv.route: page rendering, nav prefixing, rpc targets, typed dispatch';
 
-CREATE OR REPLACE FUNCTION pgv_ut.test_route_typed_dispatch()
+CREATE OR REPLACE FUNCTION pgv_ut.test_stat()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
   v_html text;
 BEGIN
-  -- Test GET with scalar param: get_test_param(p_id int) should be callable
-  -- First create a temporary test function
-  EXECUTE $x$
-    CREATE OR REPLACE FUNCTION pgv_qa.get_test_param(p_id integer)
-    RETURNS text LANGUAGE sql AS $f$
-      SELECT '<p>ID=' || $1::text || '</p>';
-    $f$
-  $x$;
-
-  v_html := pgv.route('pgv_qa', '/test-param', 'GET', '{"p_id": "42"}'::jsonb);
-  RETURN NEXT ok(v_html LIKE '%ID=42%', 'route dispatches get_ with scalar int param');
-  RETURN NEXT ok(v_html LIKE '%<nav%', 'scalar param page has layout');
-
-  -- Test GET with 0 args still works
-  v_html := pgv.route('pgv_qa', '/atoms', 'GET');
-  RETURN NEXT ok(v_html LIKE '%pgv-badge%', 'route dispatches get_ with 0 args');
-
-  -- Test POST returns raw (no layout)
-  EXECUTE $x$
-    CREATE OR REPLACE FUNCTION pgv_qa.post_test_action()
-    RETURNS text LANGUAGE sql AS $f$
-      SELECT '<template data-toast="success">Done</template>';
-    $f$
-  $x$;
-
-  v_html := pgv.route('pgv_qa', '/test-action', 'POST');
-  RETURN NEXT ok(v_html LIKE '%data-toast%', 'POST returns toast template');
-  RETURN NEXT ok(v_html NOT LIKE '%<nav%', 'POST has no layout wrapping');
-
-  -- Cleanup
-  DROP FUNCTION pgv_qa.get_test_param(integer);
-  DROP FUNCTION pgv_qa.post_test_action();
+  v_html := pgv.stat('Label', '42', 'detail');
+  RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'stat has pgv-stat class');
+  RETURN NEXT ok(v_html LIKE '%pgv-stat-value%', 'stat has pgv-stat-value class');
+  RETURN NEXT ok(v_html NOT LIKE '%style=%', 'stat has no inline style');
 END;
 $function$;
-COMMENT ON FUNCTION pgv_ut.test_route_typed_dispatch() IS 'Test router dispatches get_ with scalar param and post_ with composite type';
+COMMENT ON FUNCTION pgv_ut.test_stat() IS 'Unit tests for pgv.stat: CSS classes, no inline style';
 
-CREATE OR REPLACE FUNCTION pgv_ut.test_stat_css_classes()
+CREATE OR REPLACE FUNCTION pgv_ut.test_tabs()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
+DECLARE
+  v_html text;
 BEGIN
-  RETURN NEXT ok(
-    pgv.stat('L', '42') LIKE '%class="pgv-stat"%',
-    'stat outputs class pgv-stat'
-  );
-  RETURN NEXT ok(
-    pgv.stat('L', '42') LIKE '%class="pgv-stat-value"%',
-    'stat outputs class pgv-stat-value'
-  );
-  RETURN NEXT ok(
-    pgv.stat('L', '42') NOT LIKE '%style=%',
-    'stat has no inline style'
-  );
+  v_html := pgv.tabs('Tab1', '<p>Content1</p>', 'Tab2', '<p>Content2</p>');
+  RETURN NEXT ok(v_html LIKE '%pgv-tabs-nav%', 'tabs has nav class');
+  RETURN NEXT ok(v_html LIKE '%x-data%', 'tabs has Alpine x-data');
+  RETURN NEXT ok(v_html LIKE '%Tab1%', 'tabs has first label');
+  RETURN NEXT ok(v_html LIKE '%Content2%', 'tabs has second content');
 END;
 $function$;
+COMMENT ON FUNCTION pgv_ut.test_tabs() IS 'Unit tests for pgv.tabs: nav class, Alpine x-data, labels, content';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_toggle()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  v_html := pgv.toggle('dark', 'Dark mode');
+  RETURN NEXT ok(v_html LIKE '%role="switch"%', 'toggle has role=switch');
+  RETURN NEXT ok(v_html LIKE '%name="dark"%', 'toggle has name');
+  RETURN NEXT ok(v_html NOT LIKE '%checked%', 'toggle unchecked by default');
+
+  v_html := pgv.toggle('auto', 'Auto', true);
+  RETURN NEXT ok(v_html LIKE '%checked%', 'toggle checked when p_checked=true');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_toggle() IS 'Unit tests for pgv.toggle: role=switch, name, checked state';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_tree()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  -- Leaf node
+  v_html := pgv.tree('[{"label": "Feuille"}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<ul class="pgv-tree">%', 'tree has pgv-tree class');
+  RETURN NEXT ok(v_html LIKE '%<li>Feuille</li>%', 'leaf node renders text');
+
+  -- Link node
+  v_html := pgv.tree('[{"label": "Lien", "href": "/page"}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<a href="/page">Lien</a>%', 'link node has href');
+
+  -- Branch node (closed by default)
+  v_html := pgv.tree('[{"label": "Parent", "children": [{"label": "Enfant"}]}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<details>%', 'branch has details tag');
+  RETURN NEXT ok(v_html LIKE '%<summary>Parent</summary>%', 'branch has summary');
+  RETURN NEXT ok(v_html NOT LIKE '%<details open%', 'branch closed by default');
+
+  -- Branch node (open)
+  v_html := pgv.tree('[{"label": "Ouvert", "open": true, "children": [{"label": "Visible"}]}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<details open%', 'open branch has details open');
+
+  -- Global open
+  v_html := pgv.tree('[{"label": "A", "children": [{"label": "B"}]}]'::jsonb, true);
+  RETURN NEXT ok(v_html LIKE '%<details open%', 'p_open=true opens all branches');
+
+  -- Nested depth (no pgv-tree class on inner ul)
+  v_html := pgv.tree('[{"label": "L1", "children": [{"label": "L2", "children": [{"label": "L3"}]}]}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<ul class="pgv-tree"><li><details><summary>L1</summary><ul><li>%',
+    'inner ul has no pgv-tree class');
+
+  -- XSS escape
+  v_html := pgv.tree('[{"label": "<script>alert(1)</script>"}]'::jsonb);
+  RETURN NEXT ok(v_html NOT LIKE '%<script>%', 'label is HTML-escaped');
+
+  -- Icon (raw HTML, not escaped)
+  v_html := pgv.tree('[{"label": "Fichier", "icon": "📄"}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<span class="pgv-tree-icon">%', 'icon has pgv-tree-icon class');
+  RETURN NEXT ok(v_html LIKE '%pgv-tree-icon">📄</span> Fichier%', 'icon before label');
+
+  v_html := pgv.tree('[{"label": "Pièce", "icon": "<span class=\"cad-swatch\" data-color=\"#c8956c\"></span>"}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<span class="cad-swatch"%', 'icon accepts raw HTML');
+
+  -- Badge
+  v_html := pgv.tree('[{"label": "Dossier", "badge": "3"}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%pgv-badge%', 'badge renders pgv-badge');
+  RETURN NEXT ok(v_html LIKE '%Dossier%pgv-badge%', 'badge after label');
+
+  -- Action (object -> pgv.action)
+  v_html := pgv.tree('[{"label": "Item", "action": {"rpc": "delete_item", "label": "Suppr", "params": {"id": 1}, "confirm": "Sûr?"}}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%data-rpc="delete_item"%', 'action object has data-rpc');
+  RETURN NEXT ok(v_html LIKE '%data-confirm="Sûr?"%', 'action object has data-confirm');
+  RETURN NEXT ok(v_html LIKE '%data-params%', 'action object has data-params');
+
+  -- Action (string -> raw HTML)
+  v_html := pgv.tree('[{"label": "Vis", "action": "<button class=\"cad-eye\" @click.stop=\"toggle(7)\">◉</button>"}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<button class="cad-eye"%', 'action string renders raw HTML');
+  RETURN NEXT ok(v_html LIKE '%@click.stop="toggle(7)"%', 'action string preserves Alpine attrs');
+
+  -- Attrs on li
+  v_html := pgv.tree('[{"label": "Pièce", "attrs": "data-id=\"42\" class=\"selected\""}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<li data-id="42" class="selected">%', 'attrs on li');
+
+  -- Root attrs
+  v_html := pgv.tree('[{"label": "A"}]'::jsonb, false, 0, 'id="my-tree" data-sync="viewer"');
+  RETURN NEXT ok(v_html LIKE '%<ul class="pgv-tree" id="my-tree" data-sync="viewer">%', 'root_attrs on ul');
+
+  -- Icon on branch summary
+  v_html := pgv.tree('[{"label": "Groupe", "icon": "📁", "children": [{"label": "Sub"}]}]'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%<summary><span class="pgv-tree-icon">📁</span> Groupe</summary>%', 'icon in branch summary');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_tree() IS 'Unit tests for pgv.tree: leaf, link, branch, open, depth, XSS, icon (raw HTML), badge, action (object + string), attrs, root_attrs';
 
 GRANT USAGE ON SCHEMA pgv_ut TO web_anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv_ut TO web_anon;
