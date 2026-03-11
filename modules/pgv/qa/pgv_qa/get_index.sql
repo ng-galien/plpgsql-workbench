@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv_qa.page_index()
+CREATE OR REPLACE FUNCTION pgv_qa.get_index()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$

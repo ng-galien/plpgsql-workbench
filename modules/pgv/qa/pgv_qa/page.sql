@@ -2,5 +2,5 @@ CREATE OR REPLACE FUNCTION pgv_qa.page(p_path text, p_body jsonb DEFAULT '{}'::j
  RETURNS "text/html"
  LANGUAGE sql
 AS $function$
-  SELECT pgv.route('pgv_qa', p_path, p_body);
+  SELECT pgv.route('pgv_qa', p_path, 'GET', p_body);
 $function$;

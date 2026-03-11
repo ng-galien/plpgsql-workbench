@@ -6,7 +6,7 @@ DECLARE
   v_html text;
 BEGIN
   -- pgv_qa has nav_items with href="/atoms" etc.
-  v_html := pgv.route('pgv_qa', '/');
+  v_html := pgv.route('pgv_qa', '/', 'GET');
 
   -- Nav links should be prefixed with /pgv_qa
   RETURN NEXT ok(v_html LIKE '%href="/pgv_qa/"%', 'nav dashboard href prefixed');

@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv_qa.page_atoms()
+CREATE OR REPLACE FUNCTION pgv_qa.get_atoms()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$

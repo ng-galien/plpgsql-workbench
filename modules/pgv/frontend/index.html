@@ -137,11 +137,13 @@
           body = { p_path: path };
           this._currentSchema = this._fixedSchema;
         } else {
-          // Route mode: /{schema}/path → pgv.route(schema, path)
-          var m = path.match(/^\/([a-z][a-z0-9_]*)(\/.*)?$/);
+          // Route mode: /{schema}/path?params → pgv.route(schema, path, method, params)
+          var m = path.match(/^\/([a-z][a-z0-9_]*)(\/[^?]*)?\??(.*)$/);
           if (m) {
             rpcUrl = '/rpc/route';
-            body = { p_schema: m[1], p_path: m[2] || '/' };
+            var params = {};
+            if (m[3]) new URLSearchParams(m[3]).forEach(function(v, k) { params[k] = v; });
+            body = { p_schema: m[1], p_path: m[2] || '/', p_method: 'GET', p_params: params };
             this._currentSchema = m[1];
           } else {
             rpcUrl = '/rpc/page';

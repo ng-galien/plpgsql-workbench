@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv_qa.page_toast()
+CREATE OR REPLACE FUNCTION pgv_qa.get_toast()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$

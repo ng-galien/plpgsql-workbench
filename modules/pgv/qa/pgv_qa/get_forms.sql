@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv_qa.page_forms()
+CREATE OR REPLACE FUNCTION pgv_qa.get_forms()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$

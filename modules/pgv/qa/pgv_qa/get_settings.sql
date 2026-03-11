@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv_qa.page_settings()
+CREATE OR REPLACE FUNCTION pgv_qa.get_settings()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$

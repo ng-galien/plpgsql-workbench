@@ -225,7 +225,7 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv.page(text,text,text,jsonb,text,jsonb) IS 'Wrap body in nav + main layout. Options forwarded to pgv.nav().';
 
-CREATE OR REPLACE FUNCTION pgv.route(p_schema text, p_path text, p_body jsonb DEFAULT '{}'::jsonb)
+CREATE OR REPLACE FUNCTION pgv.route(p_schema text, p_path text, p_method text DEFAULT 'GET'::text, p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS "text/html"
  LANGUAGE plpgsql
 AS $function$
@@ -239,38 +239,45 @@ DECLARE
   v_detail text;
   v_hint text;
   v_route text;
+  v_nargs int;
+  v_argtype text;
+  v_argname text;
 BEGIN
   -- Get nav items
-  EXECUTE format('SELECT %I.nav_items()', p_schema) INTO v_nav;
+  BEGIN
+    EXECUTE format('SELECT %I.nav_items()', p_schema) INTO v_nav;
+  EXCEPTION WHEN undefined_function THEN
+    RAISE EXCEPTION 'Module % has no nav_items() function', p_schema;
+  END;
 
-  -- Get brand (optional function, fallback to schema name)
+  -- Get brand (optional, fallback to schema name)
   BEGIN
     EXECUTE format('SELECT %I.brand()', p_schema) INTO v_brand;
   EXCEPTION WHEN undefined_function THEN
     v_brand := initcap(p_schema);
   END;
 
-  -- Get nav options (optional function, fallback to empty)
+  -- Get nav options (optional, fallback to empty)
   BEGIN
     EXECUTE format('SELECT %I.nav_options()', p_schema) INTO v_opts;
   EXCEPTION WHEN undefined_function THEN
     v_opts := '{}'::jsonb;
   END;
 
-  -- Derive function name from path
+  -- Derive function name: method + path
   IF p_path = '/' THEN
-    v_fname := 'page_index';
+    v_fname := lower(p_method) || '_index';
   ELSE
-    v_fname := 'page_' || replace(replace(trim(BOTH '/' FROM p_path), '/', '_'), '-', '_');
+    v_fname := lower(p_method) || '_' || replace(replace(trim(BOTH '/' FROM p_path), '/', '_'), '-', '_');
   END IF;
 
-  -- Full route path (/{schema}{path})
+  -- Full route path
   v_route := '/' || p_schema || p_path;
 
-  -- Set route prefix early (pgv.href() and pgv.nav() need it)
+  -- Set route prefix early (pgv.href() needs it)
   PERFORM set_config('pgv.route_prefix', '/' || p_schema, true);
 
-  -- Prefix nav hrefs with schema for route-based navigation
+  -- Prefix nav hrefs with schema
   v_nav := (
     SELECT jsonb_agg(
       jsonb_set(item, '{href}', to_jsonb('/' || p_schema || (item->>'href')))
@@ -278,29 +285,49 @@ BEGIN
     FROM jsonb_array_elements(v_nav) AS item
   );
 
-  -- Check function exists (introspection)
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = p_schema AND p.proname = v_fname
-  ) THEN
+  -- Introspect function signature (max 1 arg)
+  SELECT p.pronargs,
+         CASE WHEN p.pronargs > 0 THEN (p.proargtypes::oid[])[0]::regtype::text END,
+         CASE WHEN p.pronargs > 0 THEN p.proargnames[1] END
+  INTO v_nargs, v_argtype, v_argname
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = p_schema AND p.proname = v_fname AND p.prokind = 'f'
+    AND p.pronargs <= 1;
+
+  IF NOT FOUND THEN
     PERFORM set_config('response.status', '404', true);
     RETURN pgv.page(v_brand, '404', v_route, v_nav,
-      pgv.error('404', 'Page non trouvee', 'Le chemin ' || p_path || ' n''existe pas.'), v_opts);
+      pgv.error('404', 'Page non trouvee', 'Le chemin ' || p_method || ' ' || p_path || ' n''existe pas.'), v_opts);
   END IF;
 
-  -- Find title from nav (href match)
+  -- Execute based on signature
+  IF v_nargs = 0 THEN
+    EXECUTE format('SELECT %I.%I()', p_schema, v_fname) INTO v_body;
+  ELSIF v_argtype = 'jsonb' THEN
+    EXECUTE format('SELECT %I.%I($1)', p_schema, v_fname) USING p_params INTO v_body;
+  ELSIF v_argtype IN ('integer', 'bigint', 'text', 'uuid') THEN
+    EXECUTE format('SELECT %I.%I($1::%s)', p_schema, v_fname, v_argtype)
+      USING p_params->>v_argname INTO v_body;
+  ELSE
+    -- Composite type: deserialize jsonb into typed record
+    EXECUTE format('SELECT %I.%I(jsonb_populate_record(NULL::%s, $1))', p_schema, v_fname, v_argtype)
+      USING p_params INTO v_body;
+  END IF;
+
+  -- POST: return raw (toast/redirect templates, no layout)
+  IF lower(p_method) = 'post' THEN
+    RETURN v_body;
+  END IF;
+
+  -- GET: find title from nav
   SELECT item->>'label' INTO v_title
   FROM jsonb_array_elements(v_nav) AS item
   WHERE item->>'href' = v_route;
 
-  -- Fallback title from function name
   IF v_title IS NULL THEN
-    v_title := initcap(replace(replace(v_fname, 'page_', ''), '_', ' '));
+    v_title := initcap(replace(regexp_replace(v_fname, '^(get|post)_', ''), '_', ' '));
   END IF;
-
-  -- Call the page function
-  EXECUTE format('SELECT %I.%I()', p_schema, v_fname) INTO v_body;
 
   -- Wrap in page layout
   RETURN pgv.page(v_brand, v_title, v_route, v_nav, v_body, v_opts);
@@ -309,18 +336,27 @@ EXCEPTION
   WHEN raise_exception THEN
     GET STACKED DIAGNOSTICS v_detail = MESSAGE_TEXT, v_hint = PG_EXCEPTION_HINT;
     PERFORM set_config('response.status', '400', true);
+    IF lower(p_method) = 'post' THEN
+      RETURN '<template data-toast="error">' || pgv.esc(v_detail) || '</template>';
+    END IF;
     RETURN pgv.page(v_brand, 'Erreur', v_route, v_nav, pgv.error('400', 'Erreur', v_detail, v_hint), v_opts);
   WHEN invalid_text_representation THEN
     GET STACKED DIAGNOSTICS v_detail = MESSAGE_TEXT;
     PERFORM set_config('response.status', '400', true);
+    IF lower(p_method) = 'post' THEN
+      RETURN '<template data-toast="error">' || pgv.esc(v_detail) || '</template>';
+    END IF;
     RETURN pgv.page(v_brand, 'Erreur', v_route, v_nav, pgv.error('400', 'Parametre invalide', v_detail), v_opts);
   WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS v_detail = MESSAGE_TEXT;
     PERFORM set_config('response.status', '500', true);
+    IF lower(p_method) = 'post' THEN
+      RETURN '<template data-toast="error">Erreur interne</template>';
+    END IF;
     RETURN pgv.page(v_brand, 'Erreur', v_route, v_nav, pgv.error('500', 'Erreur interne', 'Une erreur inattendue est survenue.'), v_opts);
 END;
 $function$;
-COMMENT ON FUNCTION pgv.route(text,text,jsonb) IS 'Router: maps path to page function via introspection';
+COMMENT ON FUNCTION pgv.route(text,text,text,jsonb) IS 'Router: maps method+path to get_*/post_* functions via pg_proc introspection. Supports 0-arg, scalar, jsonb, and composite type parameters.';
 
 CREATE OR REPLACE FUNCTION pgv.script(p_js text)
  RETURNS text
@@ -698,7 +734,7 @@ DECLARE
 BEGIN
   FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
     v_href := v_item->>'href';
-    v_html := pgv.route('pgv_qa', v_href);
+    v_html := pgv.route('pgv_qa', v_href, 'GET');
     RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 0,
       format('route pgv_qa %s renders HTML', v_href));
     RETURN NEXT ok(v_html LIKE '%<nav%',
@@ -723,9 +759,9 @@ BEGIN
   FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
     v_href := v_item->>'href';
     IF v_href = '/' THEN
-      v_fname := 'page_index';
+      v_fname := 'get_index';
     ELSE
-      v_fname := 'page_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_');
+      v_fname := 'get_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_');
     END IF;
     RETURN NEXT ok(
       EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -745,7 +781,7 @@ DECLARE
   v_html text;
 BEGIN
   -- pgv_qa has nav_items with href="/atoms" etc.
-  v_html := pgv.route('pgv_qa', '/');
+  v_html := pgv.route('pgv_qa', '/', 'GET');
 
   -- Nav links should be prefixed with /pgv_qa
   RETURN NEXT ok(v_html LIKE '%href="/pgv_qa/"%', 'nav dashboard href prefixed');
@@ -771,7 +807,7 @@ DECLARE
 BEGIN
   FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
     v_href := v_item->>'href';
-    v_html := pgv.route(v_schema, v_href);
+    v_html := pgv.route(v_schema, v_href, 'GET');
     -- Extract all data-rpc="xxx" values
     FOR v_rpc IN
       SELECT (regexp_matches(v_html, 'data-rpc="([^"]+)"', 'g'))[1]
@@ -786,6 +822,49 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_route_rpc_targets_exist() IS 'Test every data-rpc target in rendered pages exists as a function in the schema';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_route_typed_dispatch()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  -- Test GET with scalar param: get_test_param(p_id int) should be callable
+  -- First create a temporary test function
+  EXECUTE $x$
+    CREATE OR REPLACE FUNCTION pgv_qa.get_test_param(p_id integer)
+    RETURNS text LANGUAGE sql AS $f$
+      SELECT '<p>ID=' || $1::text || '</p>';
+    $f$
+  $x$;
+
+  v_html := pgv.route('pgv_qa', '/test-param', 'GET', '{"p_id": "42"}'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%ID=42%', 'route dispatches get_ with scalar int param');
+  RETURN NEXT ok(v_html LIKE '%<nav%', 'scalar param page has layout');
+
+  -- Test GET with 0 args still works
+  v_html := pgv.route('pgv_qa', '/atoms', 'GET');
+  RETURN NEXT ok(v_html LIKE '%pgv-badge%', 'route dispatches get_ with 0 args');
+
+  -- Test POST returns raw (no layout)
+  EXECUTE $x$
+    CREATE OR REPLACE FUNCTION pgv_qa.post_test_action()
+    RETURNS text LANGUAGE sql AS $f$
+      SELECT '<template data-toast="success">Done</template>';
+    $f$
+  $x$;
+
+  v_html := pgv.route('pgv_qa', '/test-action', 'POST');
+  RETURN NEXT ok(v_html LIKE '%data-toast%', 'POST returns toast template');
+  RETURN NEXT ok(v_html NOT LIKE '%<nav%', 'POST has no layout wrapping');
+
+  -- Cleanup
+  DROP FUNCTION pgv_qa.get_test_param(integer);
+  DROP FUNCTION pgv_qa.post_test_action();
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_route_typed_dispatch() IS 'Test router dispatches get_ with scalar param and post_ with composite type';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_stat_css_classes()
  RETURNS SETOF text

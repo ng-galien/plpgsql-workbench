@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv_qa.page_dialogs()
+CREATE OR REPLACE FUNCTION pgv_qa.get_dialogs()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$

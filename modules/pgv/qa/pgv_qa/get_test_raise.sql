@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv_qa.page_test_raise()
+CREATE OR REPLACE FUNCTION pgv_qa.get_test_raise()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$

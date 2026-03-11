@@ -11,9 +11,9 @@ BEGIN
   FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
     v_href := v_item->>'href';
     IF v_href = '/' THEN
-      v_fname := 'page_index';
+      v_fname := 'get_index';
     ELSE
-      v_fname := 'page_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_');
+      v_fname := 'get_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_');
     END IF;
     RETURN NEXT ok(
       EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace

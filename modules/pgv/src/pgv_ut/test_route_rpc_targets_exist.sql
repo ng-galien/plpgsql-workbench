@@ -11,7 +11,7 @@ DECLARE
 BEGIN
   FOR v_item IN SELECT * FROM jsonb_array_elements(pgv_qa.nav_items()) LOOP
     v_href := v_item->>'href';
-    v_html := pgv.route(v_schema, v_href);
+    v_html := pgv.route(v_schema, v_href, 'GET');
     -- Extract all data-rpc="xxx" values
     FOR v_rpc IN
       SELECT (regexp_matches(v_html, 'data-rpc="([^"]+)"', 'g'))[1]

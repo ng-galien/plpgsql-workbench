@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv_qa.page_test_bad_uuid()
+CREATE OR REPLACE FUNCTION pgv_qa.get_test_bad_uuid()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$

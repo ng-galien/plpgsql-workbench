@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv_qa.page_errors()
+CREATE OR REPLACE FUNCTION pgv_qa.get_errors()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
