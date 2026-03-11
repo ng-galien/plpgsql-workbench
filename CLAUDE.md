@@ -50,7 +50,7 @@ make dev-sync            # Copy module frontend assets into dev/frontend/
 
 **Connection:** `postgresql://postgres:postgres@localhost:5433/postgres`
 
-**Auto-initialized on first start** (via `seed/`):
+**Auto-initialized on first start** (via `seed/` at repo root):
 - Extensions: `plpgsql_check`, `pgtap`, `postgis`, `postgis_sfcgal`
 - Roles: `authenticator`, `web_anon`, domain `text/html`
 - `workbench` schema (toolbox, toolbox_tool, tenant tables)
@@ -74,6 +74,7 @@ Apps live in `apps/`. Each has its own `docker-compose.yml`, `Makefile`, `sql/`,
 | `apps/001-uxlab` | 5441 | 3001 | 8081 | 3101 |
 | `apps/002-demo` | 5442 | 3002 | 8082 | 3102 |
 | `apps/003-docman` | 5443 | 3003 | 8083 | 3103 |
+| `apps/004-cad` | 5444 | 3004 | 8084 | 3104 |
 
 ```bash
 cd apps/001-uxlab && make up         # Start app stack
@@ -117,6 +118,7 @@ Each pack registers infrastructure + tools into the Awilix container:
 | plpgsql | `packs/plpgsql.ts` | `pool`, `withClient`, shared services, 13 pg_* tools |
 | docstore | `packs/docstore.ts` | 4 fs_* tools (depends on plpgsql's `withClient`) |
 | google | `packs/google.ts` | `googleAuthConfig`, `gmailClient`, 3 gmail_* tools |
+| docman | `packs/docman.ts` | 17 doc_* tools (app layer on fs_*/gmail_*, zero inline SQL) |
 
 ### Tools (`src/tools/`)
 
@@ -137,26 +139,10 @@ Each tool file exports a factory function `createXxxTool(deps) -> ToolHandler`. 
 | `pg_explain` | `explain.ts` | EXPLAIN ANALYZE on a query (wrapped in ROLLBACK transaction) |
 | `pg_test` | `test.ts` | Run pgTAP tests (by target URI or schema) |
 | `pg_coverage` | `coverage.ts` | Code coverage via AST instrumentation |
+| `pg_pack` | `pack.ts` | Consolidate functions into build/*.func.sql (dependency-sorted) + coherence check |
 | `pg_doc` | `doc.ts` | Generate Mermaid dependency graphs via plpgsql_check |
 
-**docstore tools** (`src/tools/docstore/`):
-
-| Tool | File | Purpose |
-|------|------|---------|
-| `fs_scan` | `scan.ts` | Scan directory, register files in docstore.file |
-| `fs_sync` | `sync.ts` | Compare filesystem with DB index |
-| `fs_peek` | `peek.ts` | Read file content with pagination, PDF support |
-| `fs_open` | `open.ts` | Open file/directory with system default app |
-
-**google tools** (`src/tools/google/`):
-
-| Tool | File | Purpose |
-|------|------|---------|
-| `gmail_search` | `gmail-search.ts` | Search Gmail with query syntax |
-| `gmail_read` | `gmail-read.ts` | Read full message by ID |
-| `gmail_attachment` | `gmail-attachment.ts` | Download attachment to disk |
-
-Shared: `auth.ts` (OAuth2 service), `utils.ts` (docstore utilities).
+**Other tools**: `fs_scan`, `fs_sync`, `fs_peek`, `fs_open` (docstore), `gmail_search`, `gmail_read`, `gmail_attachment` (google), 17 `doc_*` tools (docman — import, classify, tag, link, relate, search, etc.).
 
 ### Resources (`src/resources/`)
 
@@ -171,13 +157,20 @@ Modules: `catalog.ts`, `schema.ts`, `function.ts`, `table.ts`, `trigger.ts`, `ty
 - **`visitor.ts`** — Uses `@libpg-query/parser` to walk PL/pgSQL AST and extract block/branch coverage points. Generates injection instructions (before, inject_else, inject_after_loop).
 - **`coverage.ts`** — Orchestrates: instrument function -> deploy -> run tests -> capture `RAISE WARNING` notices -> restore original -> persist results in `workbench.cov_run`/`workbench.cov_point` tables.
 
-### Module Registry (`src/pgm/registry.ts`)
+### pgm — PostgreSQL Module Manager (`src/pgm/`)
 
-Maps schemas to modules for automatic path resolution. Tools like `pg_pack`, `pg_func_save`, and `pg_func_load` use the registry to find the correct module directory — no manual `path` parameter needed.
+| File | Role |
+|------|------|
+| `cli.ts` | CLI entry point (`pgm app init\|install\|deploy\|remove\|list`, `pgm module new\|info\|list`) |
+| `registry.ts` | Schema -> module path resolution (used by pg_pack, pg_func_save, pg_func_load) |
+| `deployer.ts` | Apply module SQL to DB in dependency-resolved order |
+| `installer.ts` | Copy module build/ files to app sql/ with slot convention |
+| `resolver.ts` | Resolve module dependencies |
+| `scaffold.ts` | Generate new module/app boilerplate |
 
-- `pg_pack schemas: "cad,cad_ut"` -> auto-resolves to `modules/cad3d/build/cad.func.sql`
-- `pg_func_save target: "plpgsql://cad"` -> auto-resolves to `modules/cad3d/src/`
-- `pg_func_load target: "plpgsql://cad"` -> auto-resolves to `modules/cad3d/src/`
+Auto-resolution examples:
+- `pg_pack schemas: "cad,cad_ut"` -> `modules/cad3d/build/cad.func.sql`
+- `pg_func_save target: "plpgsql://cad"` -> `modules/cad3d/src/`
 
 ### Module Layout
 
@@ -207,13 +200,6 @@ When `pg_func_set` or `pg_func_edit` is called on a function:
 2. `plpgsql_check` static analysis (rolls back on error)
 3. Auto-run `{schema}_ut.test_{name}()` if it exists
 4. Return result with validation status + test report
-
-### Deployer (`src/pgm/deployer.ts`)
-
-`pgm deploy` applies module SQL to a live database in dependency-resolved order:
-- Auto-installs extensions declared in `module.json` (`CREATE EXTENSION IF NOT EXISTS`)
-- Checks schema/extension dependencies before deploying
-- Stops on first failure (downstream modules depend on earlier ones)
 
 ### Hooks (`src/index.ts` — `/hooks/:module`)
 
@@ -287,16 +273,9 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 
 ## SQL
 
-**Dev DB** (`sql/seed/`) — workbench-only bootstrap (extensions, roles, workbench schema). Auto-run by Docker init on port 5433.
-
-**pgv framework** (`modules/pgv/build/pgv.func.sql`) — canonical source for `pgv.*` + `pgv_ut.*` schemas. Exported via `pg_pack`, distributed to apps via `pgm install`.
-
-**Apps** (`apps/*/sql/`) — each app has its own SQL init files, managed by `pgm install`:
-- `00-{module}-extensions.sql` — from pgv module
-- `01-roles.sql` — app-specific roles and permissions
-- `02-{module}-{file}.sql` — from pgv module (slot 02)
-- `05-{module}-{file}.sql` — from other modules (slot 05+)
-- App-specific files: `03-ddl.sql`, `04-functions.sql`, etc.
+- **Dev DB** — `seed/` (repo root) — bootstrap extensions, roles, workbench schema. Auto-run by Docker init.
+- **pgv framework** — `modules/pgv/build/pgv.func.sql` — canonical `pgv.*` + `pgv_ut.*`. Distributed via `pgm install`.
+- **Apps** — `apps/*/sql/` — slot convention: 00=extensions, 01=roles, 02=pgv, 05+=modules, 03-04=app-specific.
 
 ## Key Conventions
 
