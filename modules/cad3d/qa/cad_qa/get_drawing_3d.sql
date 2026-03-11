@@ -1,56 +1,42 @@
 CREATE OR REPLACE FUNCTION cad_qa.get_drawing_3d(p_id integer)
- RETURNS text
+ RETURNS "text/html"
  LANGUAGE plpgsql
  STABLE
 AS $function$
 DECLARE
-  v_drawing cad.drawing;
   v_body text;
   v_pieces text;
   v_piece_count int;
-  v_group_count int;
-  v_total_vol float;
 BEGIN
-  SELECT * INTO v_drawing FROM cad.drawing WHERE id = p_id;
-  IF NOT FOUND THEN
+  -- Default to first drawing when no id provided
+  IF p_id IS NULL THEN
+    SELECT id INTO p_id FROM cad.drawing ORDER BY name LIMIT 1;
+    IF p_id IS NULL THEN
+      RETURN pgv.empty('Aucun dessin', 'Lancez le seed pour créer des données.');
+    END IF;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM cad.drawing WHERE id = p_id) THEN
     RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
   END IF;
 
-  -- Navigation
-  v_body := '<p>'
-    || '<a href="' || pgv.call_ref('get_drawing', jsonb_build_object('p_id', p_id)) || '">Vue 2D</a>'
-    || ' | <strong>Vue 3D</strong>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a>'
-    || '</p>';
+  v_body := cad.fragment_drawing_nav(p_id, 'Vue 3D');
 
-  -- Stats
-  SELECT count(*), COALESCE(round((sum(ST_Volume(geom)) / 1e9)::numeric, 6), 0)
-  INTO v_piece_count, v_total_vol
-  FROM cad.piece WHERE drawing_id = p_id;
-
-  SELECT count(*) INTO v_group_count
-  FROM cad.piece_group WHERE drawing_id = p_id;
-
-  v_body := v_body || pgv.grid(
-    pgv.stat('Pièces', COALESCE(v_piece_count, 0)::text),
-    pgv.stat('Groupes', COALESCE(v_group_count, 0)::text),
-    pgv.stat('Volume', COALESCE(v_total_vol, 0) || ' m³'),
-    pgv.stat('Échelle', '1:' || v_drawing.scale::text)
-  );
+  SELECT count(*) INTO v_piece_count FROM cad.piece WHERE drawing_id = p_id;
 
   -- 3D Viewer + Tree in cad-layout
-  v_body := v_body || '<div class="cad-layout">'
+  v_body := v_body || '<section><div class="cad-layout">'
     || cad.fragment_piece_tree(p_id)
     || '<div>' || cad.fragment_viewer(p_id) || '</div>'
-    || '</div>';
+    || '</div></section>';
 
   -- Wireframe projections in tabs
   IF v_piece_count > 0 THEN
-    v_body := v_body || pgv.tabs(
+    v_body := v_body || '<section>' || pgv.tabs(
       'Face (XZ)', pgv.svg_canvas(cad.render_wireframe(p_id, 'front', 800, 500)),
       'Dessus (XY)', pgv.svg_canvas(cad.render_wireframe(p_id, 'top', 800, 500)),
       'Côté (YZ)', pgv.svg_canvas(cad.render_wireframe(p_id, 'side', 800, 500))
-    );
+    ) || '</section>';
   END IF;
 
   -- BOM table
@@ -75,12 +61,12 @@ BEGIN
   ) sub;
 
   IF v_pieces IS NOT NULL THEN
-    v_body := v_body || '<h4>Pièces</h4>'
+    v_body := v_body || '<section><h4>Pièces</h4>'
       || '<md data-page="15">' || E'\n'
       || '| # | Label | Rôle | Section | Longueur | Essence | Groupe |' || E'\n'
       || '|---|-------|------|---------|----------|---------|--------|' || E'\n'
       || v_pieces || E'\n'
-      || '</md>';
+      || '</md></section>';
   END IF;
 
   RETURN v_body;

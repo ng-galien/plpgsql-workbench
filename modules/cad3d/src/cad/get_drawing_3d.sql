@@ -10,17 +10,36 @@ DECLARE
   v_piece_count int;
   v_group_count int;
   v_total_vol float;
+  v_options text;
+  v_rec record;
 BEGIN
   SELECT * INTO v_drawing FROM cad.drawing WHERE id = p_id;
   IF NOT FOUND THEN
     RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
   END IF;
 
-  -- Navigation
-  v_body := '<p>'
-    || '<a href="' || pgv.call_ref('get_drawing', jsonb_build_object('p_id', p_id)) || '">Vue 2D</a>'
+  -- Breadcrumb: Dessins > [nom] > Vue 3D
+  v_body := pgv.breadcrumb(
+    'Dessins', pgv.href('get_index'),
+    pgv.esc(v_drawing.name), pgv.href('get_drawing?p_id=' || p_id),
+    'Vue 3D'
+  );
+
+  -- Drawing selector
+  v_options := '';
+  FOR v_rec IN SELECT id, name FROM cad.drawing ORDER BY name LOOP
+    v_options := v_options || '<option value="' || v_rec.id || '"'
+      || CASE WHEN v_rec.id = p_id THEN ' selected' ELSE '' END
+      || '>' || pgv.esc(v_rec.name) || '</option>';
+  END LOOP;
+  v_body := v_body || '<p><select @change="go(''get_drawing_3d?p_id='' + $el.value)">'
+    || v_options || '</select></p>';
+
+  -- View tabs: 2D | 3D | BOM
+  v_body := v_body || '<p>'
+    || '<a href="' || pgv.href('get_drawing?p_id=' || p_id) || '">Vue 2D</a>'
     || ' | <strong>Vue 3D</strong>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a>'
+    || ' | <a href="' || pgv.href('get_drawing_bom?p_id=' || p_id) || '">Liste de débit</a>'
     || '</p>';
 
   -- Stats

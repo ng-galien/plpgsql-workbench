@@ -770,6 +770,52 @@ END;
 $function$;
 COMMENT ON FUNCTION cad.faces(integer) IS 'Faces de la bounding box (top/bottom/left/right/front/back) avec coordonnees.';
 
+CREATE OR REPLACE FUNCTION cad.fragment_drawing_nav(p_id integer, p_current text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_html text;
+  v_options text := '';
+  v_rec record;
+  v_page_fn text;
+  v_base_url text;
+BEGIN
+  -- Determine current view for select navigation
+  v_page_fn := CASE p_current
+    WHEN 'Vue 2D' THEN 'get_drawing'
+    WHEN 'Vue 3D' THEN 'get_drawing_3d'
+    WHEN 'Liste de débit' THEN 'get_drawing_bom'
+    ELSE 'get_drawing'
+  END;
+
+  -- Schema-prefixed base URL for the dropdown
+  v_base_url := pgv.call_ref(v_page_fn);
+
+  -- Drawing selector dropdown
+  FOR v_rec IN SELECT id, name FROM cad.drawing ORDER BY name LOOP
+    v_options := v_options || '<option value="' || v_rec.id || '"'
+      || CASE WHEN v_rec.id = p_id THEN ' selected' ELSE '' END
+      || '>' || pgv.esc(v_rec.name) || '</option>';
+  END LOOP;
+
+  v_html := '<section>'
+    || '<p><select @change="go(''' || v_base_url || '?p_id='' + $el.value)">'
+    || v_options || '</select></p>';
+
+  -- BOM link (only when not already on BOM page)
+  IF p_current <> 'Liste de débit' THEN
+    v_html := v_html || '<p><small><a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a></small></p>';
+  END IF;
+
+  v_html := v_html || '</section>';
+
+  RETURN v_html;
+END;
+$function$;
+COMMENT ON FUNCTION cad.fragment_drawing_nav(integer,text) IS 'Fragment navigation dessin: sélecteur de dessin + lien liste de débit.';
+
 CREATE OR REPLACE FUNCTION cad.fragment_piece_tree(p_drawing_id integer)
  RETURNS text
  LANGUAGE plpgsql
@@ -2570,17 +2616,36 @@ DECLARE
   v_piece_count int;
   v_group_count int;
   v_total_vol float;
+  v_options text;
+  v_rec record;
 BEGIN
   SELECT * INTO v_drawing FROM cad.drawing WHERE id = p_id;
   IF NOT FOUND THEN
     RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
   END IF;
 
-  -- Navigation
-  v_body := '<p>'
-    || '<a href="' || pgv.call_ref('get_drawing', jsonb_build_object('p_id', p_id)) || '">Vue 2D</a>'
+  -- Breadcrumb: Dessins > [nom] > Vue 3D
+  v_body := pgv.breadcrumb(
+    'Dessins', pgv.href('get_index'),
+    pgv.esc(v_drawing.name), pgv.href('get_drawing?p_id=' || p_id),
+    'Vue 3D'
+  );
+
+  -- Drawing selector
+  v_options := '';
+  FOR v_rec IN SELECT id, name FROM cad.drawing ORDER BY name LOOP
+    v_options := v_options || '<option value="' || v_rec.id || '"'
+      || CASE WHEN v_rec.id = p_id THEN ' selected' ELSE '' END
+      || '>' || pgv.esc(v_rec.name) || '</option>';
+  END LOOP;
+  v_body := v_body || '<p><select @change="go(''get_drawing_3d?p_id='' + $el.value)">'
+    || v_options || '</select></p>';
+
+  -- View tabs: 2D | 3D | BOM
+  v_body := v_body || '<p>'
+    || '<a href="' || pgv.href('get_drawing?p_id=' || p_id) || '">Vue 2D</a>'
     || ' | <strong>Vue 3D</strong>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a>'
+    || ' | <a href="' || pgv.href('get_drawing_bom?p_id=' || p_id) || '">Liste de débit</a>'
     || '</p>';
 
   -- Stats
@@ -2646,7 +2711,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION cad.get_drawing_3d(integer) IS 'Page vue 3D complète: tree + viewer Three.js dans cad-layout, stats, wireframes (front/top/side), table des pièces.';
+COMMENT ON FUNCTION cad.get_drawing_3d(integer) IS 'Page vue 3D: breadcrumb, sélecteur de dessin, tree + viewer Three.js, stats, wireframes, table des pièces.';
 
 CREATE OR REPLACE FUNCTION cad.resize_piece(p_piece_id integer, p_new_length_mm double precision)
  RETURNS text
@@ -3388,79 +3453,132 @@ $function$;
 COMMENT ON FUNCTION cad_qa.brand() IS 'Brand name for cad QA module';
 
 CREATE OR REPLACE FUNCTION cad_qa.get_drawing_bom(p_id integer)
- RETURNS text
+ RETURNS "text/html"
  LANGUAGE plpgsql
+ STABLE
 AS $function$
+DECLARE
+  v_body text;
+  v_rows text[];
+  v_rec record;
+  v_total_count int := 0;
+  v_total_vol numeric := 0;
 BEGIN
+  -- Default to first drawing when no id provided
+  IF p_id IS NULL THEN
+    SELECT id INTO p_id FROM cad.drawing ORDER BY name LIMIT 1;
+    IF p_id IS NULL THEN
+      RETURN pgv.empty('Aucun dessin', 'Lancez le seed pour créer des données.');
+    END IF;
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM cad.drawing WHERE id = p_id) THEN
     RETURN pgv.error('404', 'Dessin non trouvé');
   END IF;
 
-  RETURN '<p>'
-    || '<a href="' || pgv.call_ref('get_drawing', jsonb_build_object('p_id', p_id)) || '">Vue 2D</a>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', p_id)) || '">Vue 3D</a>'
-    || ' | <strong>Liste de débit</strong>'
-    || '</p>'
-    || '<pre>' || cad.bill_of_materials(p_id) || '</pre>';
-END;
-$function$;
-COMMENT ON FUNCTION cad_qa.get_drawing_bom(integer) IS 'Page QA liste de débit (BOM) avec navigation 2D/3D/BOM.';
+  v_body := cad.fragment_drawing_nav(p_id, 'Liste de débit');
 
-CREATE OR REPLACE FUNCTION cad_qa.get_index()
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_body text;
-  v_did int;
-BEGIN
-  -- Stats
-  v_body := pgv.grid(
-    pgv.stat('Dessins', (SELECT count(*)::text FROM cad.drawing), 'total'),
-    pgv.stat('Shapes', (SELECT count(*)::text FROM cad.shape), 'total'),
-    pgv.stat('Calques', (SELECT count(*)::text FROM cad.layer), 'total'),
-    pgv.stat('Pièces 3D', (SELECT count(*)::text FROM cad.piece), 'total')
-  );
+  -- BOM table grouped by role/section
+  v_rows := ARRAY[]::text[];
+  FOR v_rec IN
+    SELECT
+      p.role, p.section, p.wood_type,
+      count(*) AS qty,
+      round(sum(p.length_mm)::numeric) AS total_len,
+      round((sum(ST_Volume(p.geom)) / 1e9)::numeric, 6) AS total_vol,
+      COALESCE(g.label, '-') AS grp_label
+    FROM cad.piece p
+    LEFT JOIN cad.piece_group g ON g.id = p.group_id
+    WHERE p.drawing_id = p_id
+    GROUP BY p.role, p.section, p.wood_type, g.label
+    ORDER BY g.label NULLS LAST, p.role, p.section
+  LOOP
+    v_rows := v_rows || ARRAY[
+      v_rec.qty::text,
+      v_rec.section,
+      v_rec.wood_type,
+      v_rec.role,
+      v_rec.total_len || ' mm',
+      v_rec.total_vol || ' m³',
+      v_rec.grp_label
+    ];
+    v_total_count := v_total_count + v_rec.qty;
+    v_total_vol := v_total_vol + v_rec.total_vol;
+  END LOOP;
 
-  -- Seed button
-  v_body := v_body || pgv.action('seed', 'Recréer le seed QA', '{}'::jsonb, 'Recréer l''abri bois de démo ?');
-
-  -- Premier dessin avec des pièces
-  SELECT d.id INTO v_did
-  FROM cad.drawing d
-  WHERE EXISTS (SELECT 1 FROM cad.piece WHERE drawing_id = d.id)
-  ORDER BY d.id LIMIT 1;
-
-  IF v_did IS NOT NULL THEN
-    -- Navigation vers les pages dessin (même schema cad_qa)
-    v_body := v_body || '<h3>Dessin #' || v_did || '</h3>'
-      || '<p>'
-      || '<a href="' || pgv.call_ref('get_drawing', jsonb_build_object('p_id', v_did)) || '">Vue 2D</a>'
-      || ' | <a href="' || pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', v_did)) || '">Vue 3D</a>'
-      || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', v_did)) || '">Liste de débit</a>'
-      || '</p>';
-
-    -- Aperçu 3D
-    v_body := v_body || cad.fragment_viewer(v_did);
+  IF array_length(v_rows, 1) > 0 THEN
+    v_body := v_body || '<section>' || pgv.md_table(
+      ARRAY['Qté', 'Section', 'Essence', 'Rôle', 'Longueur', 'Volume', 'Groupe'],
+      v_rows
+    ) || pgv.grid(
+      pgv.stat('Pièces', v_total_count::text),
+      pgv.stat('Volume total', round(v_total_vol, 4) || ' m³')
+    ) || '</section>';
   ELSE
-    v_body := v_body || pgv.error('info', 'Pas de pièces 3D', 'Cliquez "Recréer le seed QA" pour générer les données de démo.');
+    v_body := v_body || '<section>' || pgv.empty('Aucune pièce', 'Ce dessin ne contient pas de pièces 3D.') || '</section>';
   END IF;
 
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION cad_qa.get_index() IS 'Dashboard QA: stats, seed, liens vers pages 2D/3D/BOM, aperçu 3D.';
+COMMENT ON FUNCTION cad_qa.get_drawing_bom(integer) IS 'Page QA liste de débit: sélecteur, table BOM par groupe avec md_table, totaux.';
+
+CREATE OR REPLACE FUNCTION cad_qa.get_index()
+ RETURNS "text/html"
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_body text := '';
+  v_rec record;
+  v_cards text := '';
+BEGIN
+  -- Drawing cards
+  FOR v_rec IN
+    SELECT d.id, d.name,
+      (SELECT count(*) FROM cad.piece WHERE drawing_id = d.id) AS piece_count,
+      COALESCE((SELECT round((sum(ST_Volume(geom)) / 1e9)::numeric, 4) FROM cad.piece WHERE drawing_id = d.id), 0) AS vol
+    FROM cad.drawing d
+    ORDER BY d.name
+  LOOP
+    v_cards := v_cards || pgv.card(
+      '<a href="' || pgv.call_ref('get_drawing', jsonb_build_object('p_id', v_rec.id)) || '">'
+        || pgv.esc(v_rec.name) || '</a>',
+      '<p>'
+        || pgv.badge(v_rec.piece_count || ' pièces')
+        || CASE WHEN v_rec.vol > 0 THEN ' ' || pgv.badge(v_rec.vol || ' m³', 'success') ELSE '' END
+        || '</p>',
+      '<a href="' || pgv.call_ref('get_drawing', jsonb_build_object('p_id', v_rec.id)) || '">2D</a>'
+        || ' · <a href="' || pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', v_rec.id)) || '">3D</a>'
+        || ' · <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', v_rec.id)) || '">Débit</a>'
+    );
+  END LOOP;
+
+  IF v_cards = '' THEN
+    v_body := '<section>' || pgv.empty('Aucun dessin', 'Cliquez "Recréer le seed QA" pour générer les données de démo.') || '</section>';
+  ELSE
+    v_body := '<section>' || pgv.grid(v_cards) || '</section>';
+  END IF;
+
+  v_body := v_body || '<section>' || pgv.action('seed', 'Recréer le seed QA', '{}'::jsonb, 'Recréer l''abri bois de démo ?') || '</section>';
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION cad_qa.get_index() IS 'Dashboard QA: liste des dessins avec badges et liens 2D/3D/Débit, bouton seed.';
 
 CREATE OR REPLACE FUNCTION cad_qa.nav_items()
  RETURNS jsonb
  LANGUAGE sql
  STABLE
 AS $function$
-  SELECT '[
-    {"href": "/", "label": "Dashboard"}
-  ]'::jsonb;
+  SELECT jsonb_build_array(
+    jsonb_build_object('href', pgv.call_ref('get_index'), 'label', 'Accueil'),
+    jsonb_build_object('href', pgv.call_ref('get_drawing'), 'label', '2D'),
+    jsonb_build_object('href', pgv.call_ref('get_drawing_3d'), 'label', '3D')
+  );
 $function$;
-COMMENT ON FUNCTION cad_qa.nav_items() IS 'Navigation items for cad QA pages';
+COMMENT ON FUNCTION cad_qa.nav_items() IS 'Navigation items: Accueil, 2D, 3D.';
 
 CREATE OR REPLACE FUNCTION cad_qa.page(p_path text, p_body jsonb DEFAULT '{}'::jsonb)
  RETURNS "text/html"
@@ -3471,39 +3589,43 @@ $function$;
 COMMENT ON FUNCTION cad_qa.page(text,jsonb) IS 'Router wrapper for cad_qa QA pages';
 
 CREATE OR REPLACE FUNCTION cad_qa.get_drawing(p_id integer)
- RETURNS text
+ RETURNS "text/html"
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_drawing cad.drawing;
   v_body text;
   v_shapes text;
 BEGIN
+  -- Default to first drawing when no id provided
+  IF p_id IS NULL THEN
+    SELECT id INTO p_id FROM cad.drawing ORDER BY name LIMIT 1;
+    IF p_id IS NULL THEN
+      RETURN pgv.empty('Aucun dessin', 'Lancez le seed pour créer des données.');
+    END IF;
+  END IF;
+
   SELECT * INTO v_drawing FROM cad.drawing WHERE id = p_id;
   IF NOT FOUND THEN
     RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
   END IF;
 
-  -- Navigation
-  v_body := '<p>'
-    || '<strong>Vue 2D</strong>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', p_id)) || '">Vue 3D</a>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a>'
-    || '</p>';
+  v_body := cad.fragment_drawing_nav(p_id, 'Vue 2D');
 
   -- Layout: tree + canvas
-  v_body := v_body || '<div class="cad-layout">'
+  v_body := v_body || '<section><div class="cad-layout">'
     || cad.fragment_tree(p_id)
     || '<div>' || pgv.svg_canvas(cad.render_svg(p_id)) || '</div>'
-    || '</div>';
+    || '</div></section>';
 
   -- Stats
-  v_body := v_body || pgv.grid(
+  v_body := v_body || '<section>' || pgv.grid(
     pgv.stat('Shapes', (SELECT count(*)::text FROM cad.shape WHERE drawing_id = p_id)),
     pgv.stat('Calques', (SELECT count(*)::text FROM cad.layer WHERE drawing_id = p_id)),
     pgv.stat('Échelle', '1:' || v_drawing.scale::text),
     pgv.stat('Taille', v_drawing.width || ' × ' || v_drawing.height || ' ' || v_drawing.unit)
-  );
+  ) || '</section>';
 
   -- Liste des shapes
   SELECT string_agg(line, E'\n' ORDER BY sid) INTO v_shapes
@@ -3520,11 +3642,11 @@ BEGIN
   ) sub;
 
   IF v_shapes IS NOT NULL THEN
-    v_body := v_body || '<md>' || E'\n'
+    v_body := v_body || '<section><md>' || E'\n'
       || '| ID | Type | Label | Calque |' || E'\n'
       || '|----|------|-------|--------|' || E'\n'
       || v_shapes || E'\n'
-      || '</md>';
+      || '</md></section>';
   END IF;
 
   RETURN v_body;
@@ -3533,58 +3655,44 @@ $function$;
 COMMENT ON FUNCTION cad_qa.get_drawing(integer) IS 'Page QA dessin 2D: navigation, tree + SVG canvas, stats, shapes table.';
 
 CREATE OR REPLACE FUNCTION cad_qa.get_drawing_3d(p_id integer)
- RETURNS text
+ RETURNS "text/html"
  LANGUAGE plpgsql
  STABLE
 AS $function$
 DECLARE
-  v_drawing cad.drawing;
   v_body text;
   v_pieces text;
   v_piece_count int;
-  v_group_count int;
-  v_total_vol float;
 BEGIN
-  SELECT * INTO v_drawing FROM cad.drawing WHERE id = p_id;
-  IF NOT FOUND THEN
+  -- Default to first drawing when no id provided
+  IF p_id IS NULL THEN
+    SELECT id INTO p_id FROM cad.drawing ORDER BY name LIMIT 1;
+    IF p_id IS NULL THEN
+      RETURN pgv.empty('Aucun dessin', 'Lancez le seed pour créer des données.');
+    END IF;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM cad.drawing WHERE id = p_id) THEN
     RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
   END IF;
 
-  -- Navigation
-  v_body := '<p>'
-    || '<a href="' || pgv.call_ref('get_drawing', jsonb_build_object('p_id', p_id)) || '">Vue 2D</a>'
-    || ' | <strong>Vue 3D</strong>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a>'
-    || '</p>';
+  v_body := cad.fragment_drawing_nav(p_id, 'Vue 3D');
 
-  -- Stats
-  SELECT count(*), COALESCE(round((sum(ST_Volume(geom)) / 1e9)::numeric, 6), 0)
-  INTO v_piece_count, v_total_vol
-  FROM cad.piece WHERE drawing_id = p_id;
-
-  SELECT count(*) INTO v_group_count
-  FROM cad.piece_group WHERE drawing_id = p_id;
-
-  v_body := v_body || pgv.grid(
-    pgv.stat('Pièces', COALESCE(v_piece_count, 0)::text),
-    pgv.stat('Groupes', COALESCE(v_group_count, 0)::text),
-    pgv.stat('Volume', COALESCE(v_total_vol, 0) || ' m³'),
-    pgv.stat('Échelle', '1:' || v_drawing.scale::text)
-  );
+  SELECT count(*) INTO v_piece_count FROM cad.piece WHERE drawing_id = p_id;
 
   -- 3D Viewer + Tree in cad-layout
-  v_body := v_body || '<div class="cad-layout">'
+  v_body := v_body || '<section><div class="cad-layout">'
     || cad.fragment_piece_tree(p_id)
     || '<div>' || cad.fragment_viewer(p_id) || '</div>'
-    || '</div>';
+    || '</div></section>';
 
   -- Wireframe projections in tabs
   IF v_piece_count > 0 THEN
-    v_body := v_body || pgv.tabs(
+    v_body := v_body || '<section>' || pgv.tabs(
       'Face (XZ)', pgv.svg_canvas(cad.render_wireframe(p_id, 'front', 800, 500)),
       'Dessus (XY)', pgv.svg_canvas(cad.render_wireframe(p_id, 'top', 800, 500)),
       'Côté (YZ)', pgv.svg_canvas(cad.render_wireframe(p_id, 'side', 800, 500))
-    );
+    ) || '</section>';
   END IF;
 
   -- BOM table
@@ -3609,18 +3717,18 @@ BEGIN
   ) sub;
 
   IF v_pieces IS NOT NULL THEN
-    v_body := v_body || '<h4>Pièces</h4>'
+    v_body := v_body || '<section><h4>Pièces</h4>'
       || '<md data-page="15">' || E'\n'
       || '| # | Label | Rôle | Section | Longueur | Essence | Groupe |' || E'\n'
       || '|---|-------|------|---------|----------|---------|--------|' || E'\n'
       || v_pieces || E'\n'
-      || '</md>';
+      || '</md></section>';
   END IF;
 
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION cad_qa.get_drawing_3d(integer) IS 'Page QA vue 3D complète: tree + viewer Three.js dans cad-layout, stats, wireframes, table des pièces.';
+COMMENT ON FUNCTION cad_qa.get_drawing_3d(integer) IS 'Page QA vue 3D: sélecteur de dessin, tree + viewer Three.js, wireframes, table des pièces.';
 
 CREATE OR REPLACE FUNCTION cad_qa.seed()
  RETURNS "text/html"
@@ -3628,11 +3736,15 @@ CREATE OR REPLACE FUNCTION cad_qa.seed()
 AS $function$
 DECLARE
   v_did int;
+  v_pav_g int; v_pav_d int; v_par_g int; v_par_d int;
+  v_tav int; v_tar int; v_tg int; v_td int;
+  v_c1 int; v_c2 int; v_c3 int; v_c4 int; v_c5 int;
+  v_lav int; v_lar int; v_lg int; v_ld int;
+  v_g_ossature int; v_g_toiture int; v_g_lisses int;
+  v_g_face_av int; v_g_face_ar int;
 BEGIN
-  -- Nettoyer les anciens seeds
   DELETE FROM cad.drawing WHERE name = 'QA — Abri bois';
 
-  -- Créer un dessin de démo
   INSERT INTO cad.drawing (name, width, height, scale)
   VALUES ('QA — Abri bois', 3000, 2500, 1)
   RETURNING id INTO v_did;
@@ -3640,28 +3752,54 @@ BEGIN
   INSERT INTO cad.layer (drawing_id, name, color, stroke_width)
   VALUES (v_did, 'Structure', '#333333', 1.5);
 
-  -- 4 poteaux (coins)
-  PERFORM cad.add_piece(v_did, '90x90', 2400, ARRAY[0,0,0],       ARRAY[0,0,0], 'Poteau AV-G', 'poteau');
-  PERFORM cad.add_piece(v_did, '90x90', 2400, ARRAY[2000,0,0],    ARRAY[0,0,0], 'Poteau AV-D', 'poteau');
-  PERFORM cad.add_piece(v_did, '90x90', 2400, ARRAY[0,2000,0],    ARRAY[0,0,0], 'Poteau AR-G', 'poteau');
-  PERFORM cad.add_piece(v_did, '90x90', 2400, ARRAY[2000,2000,0], ARRAY[0,0,0], 'Poteau AR-D', 'poteau');
+  -- === POTEAUX (4 coins, vertical, 90x90mm, 2400mm) ===
+  v_pav_g := cad.add_piece(v_did, '90x90', 2400, ARRAY[0,0,0],       ARRAY[0,0,0], 'Poteau AV-G', 'poteau');
+  v_pav_d := cad.add_piece(v_did, '90x90', 2400, ARRAY[2000,0,0],    ARRAY[0,0,0], 'Poteau AV-D', 'poteau');
+  v_par_g := cad.add_piece(v_did, '90x90', 2400, ARRAY[0,2000,0],    ARRAY[0,0,0], 'Poteau AR-G', 'poteau');
+  v_par_d := cad.add_piece(v_did, '90x90', 2400, ARRAY[2000,2000,0], ARRAY[0,0,0], 'Poteau AR-D', 'poteau');
 
-  -- 4 traverses hautes (liant les poteaux)
-  PERFORM cad.add_piece(v_did, '45x90', 2000, ARRAY[0,0,2400],    ARRAY[0,90,0],  'Traverse AV',  'traverse');
-  PERFORM cad.add_piece(v_did, '45x90', 2000, ARRAY[0,2000,2400], ARRAY[0,90,0],  'Traverse AR',  'traverse');
-  PERFORM cad.add_piece(v_did, '45x90', 2000, ARRAY[0,0,2400],    ARRAY[90,0,0],  'Traverse G',   'traverse');
-  PERFORM cad.add_piece(v_did, '45x90', 2000, ARRAY[2000,0,2400], ARRAY[90,0,0],  'Traverse D',   'traverse');
+  -- === TRAVERSES HAUTES (4 côtés) ===
+  -- AV/AR: along X, RY=90
+  v_tav := cad.add_piece(v_did, '45x90', 2000, ARRAY[0,0,2400],    ARRAY[0,90,0],  'Traverse AV',  'traverse');
+  v_tar := cad.add_piece(v_did, '45x90', 2000, ARRAY[0,2000,2400], ARRAY[0,90,0],  'Traverse AR',  'traverse');
+  -- G/D: along Y, RX=-90 (section 90x45 pour garder 45mm en Z)
+  v_tg  := cad.add_piece(v_did, '90x45', 2000, ARRAY[0,0,2400],    ARRAY[0,0,-90], 'Traverse G',   'traverse');
+  v_td  := cad.add_piece(v_did, '90x45', 2000, ARRAY[2000,0,2400], ARRAY[0,0,-90], 'Traverse D',   'traverse');
 
-  -- 3 chevrons (toiture)
-  PERFORM cad.add_piece(v_did, '45x120', 2200, ARRAY[200,0,2490],  ARRAY[90,0,0], 'Chevron 1', 'chevron');
-  PERFORM cad.add_piece(v_did, '45x120', 2200, ARRAY[1000,0,2490], ARRAY[90,0,0], 'Chevron 2', 'chevron');
-  PERFORM cad.add_piece(v_did, '45x120', 2200, ARRAY[1800,0,2490], ARRAY[90,0,0], 'Chevron 3', 'chevron');
+  -- === LISSES BASSES (4 côtés, au sol) ===
+  v_lav := cad.add_piece(v_did, '45x90', 2000, ARRAY[0,0,0],       ARRAY[0,90,0], 'Lisse AV',  'lisse');
+  v_lar := cad.add_piece(v_did, '45x90', 2000, ARRAY[0,2000,0],    ARRAY[0,90,0], 'Lisse AR',  'lisse');
+  v_lg  := cad.add_piece(v_did, '90x45', 2000, ARRAY[0,0,0],       ARRAY[0,0,-90], 'Lisse G',   'lisse');
+  v_ld  := cad.add_piece(v_did, '90x45', 2000, ARRAY[2000,0,0],    ARRAY[0,0,-90], 'Lisse D',   'lisse');
 
-  RETURN '<template data-toast="success">Seed QA créé: abri bois (' || v_did || ')</template>'
+  -- === CHEVRONS (5 en toiture, along Y, 120x45 -> 120mm wide, 45mm tall) ===
+  v_c1 := cad.add_piece(v_did, '120x45', 2200, ARRAY[0,  -100,2445],  ARRAY[0,0,-90], 'Chevron 1', 'chevron');
+  v_c2 := cad.add_piece(v_did, '120x45', 2200, ARRAY[500, -100,2445], ARRAY[0,0,-90], 'Chevron 2', 'chevron');
+  v_c3 := cad.add_piece(v_did, '120x45', 2200, ARRAY[1000,-100,2445], ARRAY[0,0,-90], 'Chevron 3', 'chevron');
+  v_c4 := cad.add_piece(v_did, '120x45', 2200, ARRAY[1500,-100,2445], ARRAY[0,0,-90], 'Chevron 4', 'chevron');
+  v_c5 := cad.add_piece(v_did, '120x45', 2200, ARRAY[1880,-100,2445], ARRAY[0,0,-90], 'Chevron 5', 'chevron');
+
+  -- === ENTRETOISES (2 diagonales face AV) ===
+  PERFORM cad.add_piece(v_did, '45x45', 1200, ARRAY[45,0,1200],   ARRAY[0,45,0],  'Entretoise AV-G', 'montant');
+  PERFORM cad.add_piece(v_did, '45x45', 1200, ARRAY[1955,0,1200], ARRAY[0,-45,0], 'Entretoise AV-D', 'montant');
+
+  -- === GROUPES ===
+  v_g_ossature := cad.group_pieces(v_did, ARRAY[v_tg, v_td], 'Ossature');
+
+  v_g_face_av := cad.group_pieces(v_did, ARRAY[v_pav_g, v_pav_d, v_tav], 'Face avant');
+  PERFORM cad.nest_group(v_g_face_av, v_g_ossature);
+
+  v_g_face_ar := cad.group_pieces(v_did, ARRAY[v_par_g, v_par_d, v_tar], 'Face arrière');
+  PERFORM cad.nest_group(v_g_face_ar, v_g_ossature);
+
+  v_g_toiture := cad.group_pieces(v_did, ARRAY[v_c1, v_c2, v_c3, v_c4, v_c5], 'Toiture');
+  v_g_lisses := cad.group_pieces(v_did, ARRAY[v_lav, v_lar, v_lg, v_ld], 'Lisses basses');
+
+  RETURN '<template data-toast="success">Seed QA: abri bois (' || v_did || ') — 19 pièces, 5 groupes</template>'
     || '<template data-redirect="/"></template>';
 END;
 $function$;
-COMMENT ON FUNCTION cad_qa.seed() IS 'Seed QA: crée un dessin abri bois de démo avec poteaux, traverses, chevrons.';
+COMMENT ON FUNCTION cad_qa.seed() IS 'Seed QA: abri bois complet avec groupes (ossature, toiture, lisses) et sous-groupes (faces).';
 
 GRANT USAGE ON SCHEMA cad_qa TO web_anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad_qa TO web_anon;

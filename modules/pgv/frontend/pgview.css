@@ -516,18 +516,21 @@ section > h4:first-child {
   font-weight: 600;
 }
 
-/* ── Breadcrumb ───────────────────────────────────────────────── */
-.pgv-breadcrumb ul {
+/* ── Breadcrumb (override PicoCSS nav[aria-label="breadcrumb"] rules) ── */
+nav.pgv-breadcrumb[aria-label] ul {
   display: flex;
   list-style: none;
   padding: 0;
   margin: 0 0 0.75rem 0;
   font-size: 0.8125rem;
   gap: 0;
+  align-items: center;
 }
-.pgv-breadcrumb li::after { content: '/'; color: var(--pgv-muted); margin: 0 0.4rem; }
-.pgv-breadcrumb li:last-child::after { content: ''; margin: 0; }
-.pgv-breadcrumb li:last-child { color: var(--pgv-muted); font-weight: 500; }
+nav.pgv-breadcrumb[aria-label] ul li { display: inline; padding: 0; }
+nav.pgv-breadcrumb[aria-label] ul li::after { content: '/'; color: var(--pgv-muted); margin: 0 0.4rem; display: inline; position: static; }
+nav.pgv-breadcrumb[aria-label] ul li:last-child::after { content: ''; margin: 0; }
+nav.pgv-breadcrumb[aria-label] ul li:last-child { color: var(--pgv-muted); font-weight: 500; }
+nav.pgv-breadcrumb[aria-label] ul li a { display: inline; }
 
 /* ── Tree ────────────────────────────────────────────────────────── */
 .pgv-tree { list-style: none; padding-left: 0; font-size: 0.8125rem; margin-bottom: 0.75rem; }
@@ -537,6 +540,7 @@ section > h4:first-child {
 .pgv-tree summary:hover { color: var(--pgv-accent); }
 .pgv-tree a { color: var(--pgv-text); text-decoration: none; }
 .pgv-tree a:hover { color: var(--pgv-accent); }
+.pgv-tree-icon { display: inline-block; width: 1.2em; text-align: center; margin-right: 0.2em; flex-shrink: 0; }
 
 /* ── Theme Toggle ──────────────────────────────────────────────── */
 .pgv-theme-toggle {

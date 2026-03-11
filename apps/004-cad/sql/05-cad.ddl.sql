@@ -1,6 +1,9 @@
 -- CAD 2D/3D — DDL
 
+CREATE SCHEMA IF NOT EXISTS cad;
 CREATE SCHEMA IF NOT EXISTS cad_ut;
+CREATE SCHEMA IF NOT EXISTS cad_qa;
+GRANT USAGE ON SCHEMA cad TO web_anon;
 
 -- Dessins
 CREATE TABLE IF NOT EXISTS cad.drawing (
@@ -66,7 +69,26 @@ CREATE TABLE IF NOT EXISTS cad.piece (
 CREATE INDEX IF NOT EXISTS idx_piece_drawing ON cad.piece(drawing_id);
 CREATE INDEX IF NOT EXISTS idx_piece_geom ON cad.piece USING gist(geom);
 
+-- Groupes de pièces (sous-assemblages)
+CREATE TABLE IF NOT EXISTS cad.piece_group (
+  id serial PRIMARY KEY,
+  drawing_id int NOT NULL REFERENCES cad.drawing(id) ON DELETE CASCADE,
+  parent_id int REFERENCES cad.piece_group(id) ON DELETE CASCADE,
+  label text NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_piece_group_drawing ON cad.piece_group(drawing_id);
+CREATE INDEX IF NOT EXISTS idx_piece_group_parent ON cad.piece_group(parent_id);
+
+ALTER TABLE cad.piece ADD COLUMN IF NOT EXISTS group_id int
+  REFERENCES cad.piece_group(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_piece_group ON cad.piece(group_id);
+
 -- Permissions
+GRANT SELECT, INSERT, UPDATE, DELETE ON cad.piece_group TO web_anon;
+GRANT USAGE ON SEQUENCE cad.piece_group_id_seq TO web_anon;
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON cad.piece TO web_anon;
 GRANT USAGE ON SEQUENCE cad.piece_id_seq TO web_anon;
 
@@ -80,7 +102,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON cad.shape TO web_anon;
 GRANT USAGE ON SEQUENCE cad.shape_id_seq TO web_anon;
 
 GRANT USAGE ON SCHEMA cad_ut TO web_anon;
+GRANT USAGE ON SCHEMA cad_qa TO web_anon;
 
 -- Default privileges pour les fonctions créées après le DDL
 ALTER DEFAULT PRIVILEGES IN SCHEMA cad GRANT EXECUTE ON FUNCTIONS TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA cad_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA cad_qa GRANT EXECUTE ON FUNCTIONS TO web_anon;

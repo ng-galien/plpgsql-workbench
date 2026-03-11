@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION pgv.svg_canvas(p_svg text, p_options jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
- IMMUTABLE
+ STABLE
 AS $function$
 DECLARE
   v_id text := 'sc_' || substr(md5(random()::text), 1, 8);
@@ -13,7 +13,7 @@ BEGIN
   IF p_svg IS NULL OR p_svg = '' THEN RETURN ''; END IF;
 
   v_html := '<div class="pgv-canvas" id="' || v_id || '">'
-    || '<div class="pgv-canvas-vp" id="' || v_id || '_vp" style="height:' || v_height || '">'
+    || '<div class="pgv-canvas-vp" id="' || v_id || '_vp" data-height="' || pgv.esc(v_height) || '">'
     || p_svg
     || '</div>';
 
@@ -38,6 +38,7 @@ BEGIN
       svg=vp&&vp.querySelector("svg"),
       zl=document.getElementById(id+"_zl");
   if(!vp||!svg||typeof panzoom==="undefined")return;
+  if(vp.dataset.height)vp.style.height=vp.dataset.height;
   var pz=panzoom(svg,{maxZoom:20,minZoom:0.05,smoothScroll:false,bounds:true,boundsPadding:0.2});
   function upd(){if(zl)zl.textContent=Math.round(pz.getTransform().scale*100)+"%";}
   pz.on("zoom",upd);

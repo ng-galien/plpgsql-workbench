@@ -1,5 +1,8 @@
 /* cad3d — Module-specific styles */
 
+/* ── Page sections spacing ── */
+.cad-layout { margin-bottom: 1.5rem; }
+
 /* ── 3D Viewer container ── */
 .cad-viewer {
   position: relative;

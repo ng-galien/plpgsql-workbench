@@ -1,37 +1,41 @@
 CREATE OR REPLACE FUNCTION cad_qa.get_drawing(p_id integer)
- RETURNS text
+ RETURNS "text/html"
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_drawing cad.drawing;
   v_body text;
   v_shapes text;
 BEGIN
+  -- Default to first drawing when no id provided
+  IF p_id IS NULL THEN
+    SELECT id INTO p_id FROM cad.drawing ORDER BY name LIMIT 1;
+    IF p_id IS NULL THEN
+      RETURN pgv.empty('Aucun dessin', 'Lancez le seed pour créer des données.');
+    END IF;
+  END IF;
+
   SELECT * INTO v_drawing FROM cad.drawing WHERE id = p_id;
   IF NOT FOUND THEN
     RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
   END IF;
 
-  -- Navigation
-  v_body := '<p>'
-    || '<strong>Vue 2D</strong>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', p_id)) || '">Vue 3D</a>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a>'
-    || '</p>';
+  v_body := cad.fragment_drawing_nav(p_id, 'Vue 2D');
 
   -- Layout: tree + canvas
-  v_body := v_body || '<div class="cad-layout">'
+  v_body := v_body || '<section><div class="cad-layout">'
     || cad.fragment_tree(p_id)
     || '<div>' || pgv.svg_canvas(cad.render_svg(p_id)) || '</div>'
-    || '</div>';
+    || '</div></section>';
 
   -- Stats
-  v_body := v_body || pgv.grid(
+  v_body := v_body || '<section>' || pgv.grid(
     pgv.stat('Shapes', (SELECT count(*)::text FROM cad.shape WHERE drawing_id = p_id)),
     pgv.stat('Calques', (SELECT count(*)::text FROM cad.layer WHERE drawing_id = p_id)),
     pgv.stat('Échelle', '1:' || v_drawing.scale::text),
     pgv.stat('Taille', v_drawing.width || ' × ' || v_drawing.height || ' ' || v_drawing.unit)
-  );
+  ) || '</section>';
 
   -- Liste des shapes
   SELECT string_agg(line, E'\n' ORDER BY sid) INTO v_shapes
@@ -48,11 +52,11 @@ BEGIN
   ) sub;
 
   IF v_shapes IS NOT NULL THEN
-    v_body := v_body || '<md>' || E'\n'
+    v_body := v_body || '<section><md>' || E'\n'
       || '| ID | Type | Label | Calque |' || E'\n'
       || '|----|------|-------|--------|' || E'\n'
       || v_shapes || E'\n'
-      || '</md>';
+      || '</md></section>';
   END IF;
 
   RETURN v_body;

@@ -1,4 +1,4 @@
-# cad — Port convention: app #4 → PG:5444 PGRST:3004 HTTP:8084
+# cad — PG:5444 PGRST:3004 HTTP:8084
 services:
   postgres:
     image: pg-workbench
@@ -19,10 +19,12 @@ services:
     image: postgrest/postgrest:v12.2.3
     ports:
       - "3004:3000"
+    env_file: .env
     environment:
       PGRST_DB_URI: postgres://authenticator:authenticator@postgres:5432/postgres
-      PGRST_DB_SCHEMAS: cad
       PGRST_DB_ANON_ROLE: web_anon
+      PGRST_DB_EXTRA_SEARCH_PATH: public,pgv
+      PGRST_DB_CHANNEL_ENABLED: "true"
     depends_on:
       postgres:
         condition: service_healthy
