@@ -10,7 +10,8 @@ BEGIN
     || '<p>Le routeur attrape les exceptions et rend des pages d''erreur.</p>'
     || '<div class="grid">'
     || pgv.card('404', '<p>Page inexistante</p>', '<a href="' || v_prefix || '/nexiste/pas">Tester 404</a>')
-    || pgv.card('Erreur metier', '<p>RAISE EXCEPTION</p>', '<a href="' || pgv.call_ref('get_test_raise') || '">Tester raise</a>')
+    || pgv.card('Erreur metier', '<p>RAISE EXCEPTION → 500</p>', '<a href="' || pgv.call_ref('get_test_raise') || '">Tester raise</a>')
+    || pgv.card('Erreur cast', '<p>UUID invalide → 400</p>', '<a href="' || pgv.call_ref('get_test_bad_uuid') || '">Tester bad uuid</a>')
     || '</div></section>';
 END;
 $function$;

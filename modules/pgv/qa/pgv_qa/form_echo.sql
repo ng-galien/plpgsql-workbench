@@ -3,7 +3,7 @@ CREATE OR REPLACE FUNCTION pgv_qa.form_echo(p_name text DEFAULT ''::text, p_emai
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  RETURN '<template data-toast="success">Formulaire recu: ' || pgv.esc(p_name) || '</template>'
+  RETURN '<template data-toast="success">Recu: ' || pgv.esc(p_name) || ' (' || pgv.esc(p_role) || ') — ' || pgv.esc(p_email) || CASE WHEN p_notes <> '' THEN ' — ' || pgv.esc(p_notes) ELSE '' END || '</template>'
       || '<template data-redirect="/forms"></template>';
 END;
 $function$;

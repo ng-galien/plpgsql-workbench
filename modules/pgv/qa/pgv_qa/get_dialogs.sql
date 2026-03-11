@@ -19,9 +19,9 @@ BEGIN
     || '<section><h4>Toast apres action</h4>'
     || '<p>Les actions serveur retournent un template data-toast. Le shell extrait le message et affiche un toast.</p>'
     || '<div class="grid">'
-    || '<button data-rpc="toast_success">Toast succes</button>'
-    || '<button data-rpc="toast_error" class="secondary">Toast erreur</button>'
-    || '<button data-rpc="toast_raise" class="contrast">Toast RAISE</button>'
+    || pgv.action('toast_success', 'Toast succes')
+    || pgv.action('toast_error', 'Toast erreur', NULL::jsonb, NULL, 'secondary')
+    || pgv.action('toast_raise', 'Toast RAISE', NULL::jsonb, NULL, 'contrast')
     || '</div></section>';
 END;
 $function$;

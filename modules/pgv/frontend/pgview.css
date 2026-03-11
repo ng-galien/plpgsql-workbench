@@ -134,6 +134,7 @@ p:last-child { margin-bottom: 0; }
   font-size: 0.85rem;
   color: var(--pgv-muted);
 }
+.pgv-lazy { min-height: 4rem; }
 
 /* ── Navigation ────────────────────────────────────────────────── */
 nav {

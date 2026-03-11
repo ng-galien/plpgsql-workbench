@@ -347,6 +347,41 @@
         });
         // Initialize Alpine.js on new DOM (module fragments with x-data)
         if (typeof Alpine !== 'undefined') Alpine.initTree(el);
+        // Lazy-load containers: fetch content when scrolled into view
+        el.querySelectorAll('[data-lazy]:not([data-loaded])').forEach(function(lazy) {
+          var obs = new IntersectionObserver(function(entries) {
+            if (entries[0].isIntersecting) {
+              obs.disconnect();
+              lazy.setAttribute('data-loaded', '');
+              self._loadLazy(lazy);
+            }
+          }, { rootMargin: '200px' });
+          obs.observe(lazy);
+        });
+      },
+
+      _loadLazy: function(container) {
+        var self = this;
+        var rpc = container.dataset.lazy;
+        var params = container.dataset.params ? JSON.parse(container.dataset.params) : {};
+        var headers = { 'Content-Type': 'application/json', 'Accept': 'text/html' };
+        if (this._currentSchema) headers['Content-Profile'] = this._currentSchema;
+        fetch('/rpc/' + rpc, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(params)
+        })
+        .then(function(r) {
+          if (!r.ok) throw new Error(r.status);
+          return r.text();
+        })
+        .then(function(html) {
+          container.innerHTML = html;
+          self._enhance(container);
+        })
+        .catch(function() {
+          container.innerHTML = '<p>Erreur de chargement</p>';
+        });
       },
 
       /* ── Toast ─────────────────────────────────────── */

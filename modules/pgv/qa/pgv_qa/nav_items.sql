@@ -10,7 +10,9 @@ AS $function$
     {"href": "/forms", "label": "Formulaires"},
     {"href": "/dialogs", "label": "Dialogs"},
     {"href": "/toast", "label": "Toasts"},
+    {"href": "/svg", "label": "SVG"},
     {"href": "/errors", "label": "Erreurs"},
-    {"href": "/settings", "label": "Config"}
+    {"href": "/settings", "label": "Config"},
+    {"href": "/diagnostics", "label": "Diagnostics"}
   ]'::jsonb;
 $function$;

@@ -44,8 +44,25 @@ BEGIN
               'Widget B', pgv.money(59.50), '38',
               'Widget C', pgv.money(149.00), '7'])
     || '</section>'
+    || '<section><h4>pgv.href (liens externes)</h4>'
+    || '<p>'
+    || '<a href="' || pgv.href('https://picocss.com') || '">PicoCSS</a> | '
+    || '<a href="' || pgv.href('https://alpinejs.dev') || '">Alpine.js</a> | '
+    || '<a href="' || pgv.href('mailto:contact@example.com') || '">Email</a> | '
+    || '<a href="' || pgv.href('tel:+33123456789') || '">Telephone</a>'
+    || '</p></section>'
     || '<section><h4>pgv.error</h4>'
     || pgv.error('404', 'Page non trouvee', 'Le chemin /exemple n''existe pas.', 'Verifiez l''URL.')
+    || '</section>'
+    || '<section><h4>pgv.script (Alpine.js inline)</h4>'
+    || '<div x-data="{count: 0}">'
+    || '<p>Compteur: <strong x-text="count">0</strong></p>'
+    || '<div class="grid">'
+    || '<button @click="count++">+1</button>'
+    || '<button @click="count--" class="secondary">-1</button>'
+    || '<button @click="count=0" class="outline">Reset</button>'
+    || '</div></div>'
+    || pgv.script('console.log(''pgv.script demo loaded'')') 
     || '</section>'
     || '<section><h4>pgv.card (imbrication)</h4>'
     || pgv.card('Utilisateur', pgv.dl('Nom', 'Marie Durand', 'Role', pgv.badge('admin', 'primary'), 'Email', 'marie@example.com'),

@@ -15,9 +15,9 @@ Server-Side Rendering framework for PostgreSQL apps. Alpine.js shell + PicoCSS +
 ```
 build/pgv.func.sql      # pg_pack output (pgv + pgv_ut, dependency-sorted)
 build/pgv_qa.ddl.sql     # QA schema DDL (item table + test data)
-src/pgv/*.sql            # 21 primitive sources
-src/pgv_ut/*.sql         # 16 test sources
-qa/pgv_qa/*.sql          # 18 demo page sources
+src/pgv/*.sql            # 21 primitive sources (pg_func_save)
+src/pgv_ut/*.sql         # 16 test sources (pg_func_save)
+qa/pgv_qa/*.sql          # 18 demo page sources (pg_func_save — _qa suffix → qa/)
 frontend/index.html      # Alpine.js shell (routing, events, toast, dialog)
 frontend/pgview.css      # Design tokens + component styles + light/dark themes
 ```
@@ -98,6 +98,14 @@ pg_test target: "plpgsql://pgv_ut"    # Run all 16 tests
 ```
 
 Key test: `pgv_ut.assert_page(html, schema)` — validates HTML contract (no styles, RPCs exist, hrefs resolve, md blocks valid). Use it in consumer modules.
+
+## File Export Convention
+
+`pg_func_save` auto-resolves output directories via module registry:
+- `pgv`, `pgv_ut` schemas → **`src/`** (`src/pgv/*.sql`, `src/pgv_ut/*.sql`)
+- `pgv_qa` schema → **`qa/`** (`qa/pgv_qa/*.sql`)
+
+NEVER move QA files from `qa/` to `src/`. The registry decides based on schema suffix `_qa`.
 
 ## Gotchas
 

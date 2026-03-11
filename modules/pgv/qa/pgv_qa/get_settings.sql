@@ -8,16 +8,11 @@ BEGIN
   RETURN
     '<section><h4>Documents</h4>'
     || '<form data-rpc="save_settings">'
-    || '<label>Repertoire racine</label>'
-    || '<div class="grid">'
-    || '<input id="documentsRoot" name="p_documentsroot" type="text"'
-    || ' value="' || coalesce(pgv.esc(v_root), '') || '"'
-    || ' placeholder="/chemin/vers/documents" required>'
+    || pgv.input('p_documentsroot', 'text', 'Repertoire racine', v_root, true)
     || '<button type="button" class="outline"'
     || ' data-dialog="folder-picker"'
     || ' data-src="' || CASE WHEN v_root IS NOT NULL THEN '/api/browse?path=' || pgv.esc(v_root) ELSE '/api/browse' END || '"'
-    || ' data-target="documentsRoot">Parcourir</button>'
-    || '</div>'
+    || ' data-target="p_documentsroot">Parcourir</button>'
     || '<small>Dossier contenant les documents a indexer</small>'
     || '<button type="submit">Enregistrer</button>'
     || '</form></section>'
