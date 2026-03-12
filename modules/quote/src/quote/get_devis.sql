@@ -24,7 +24,7 @@ BEGIN
     LOOP
       v_rows := v_rows || ARRAY[
         format('<a href="%s">%s</a>', pgv.call_ref('get_devis', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-        format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || r.client_id), pgv.esc(r.client)),
+        format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
         pgv.esc(r.objet),
         quote._statut_badge(r.statut),
         to_char(r.ttc, 'FM999 990.00') || ' EUR',
@@ -64,7 +64,7 @@ BEGIN
 
   v_body := v_body || pgv.dl(VARIADIC ARRAY[
     'Numéro', d.numero,
-    'Client', format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || d.client_id), pgv.esc(d.client_name)),
+    'Client', format('<a href="/crm/client?p_id=%s">%s</a>', d.client_id, pgv.esc(d.client_name)),
     'Objet', pgv.esc(d.objet),
     'Statut', quote._statut_badge(d.statut),
     'Validité', d.validite_jours || ' jours',

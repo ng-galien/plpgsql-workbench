@@ -470,6 +470,30 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv.page(text,text,text,jsonb,text,jsonb) IS 'Wrap body in nav + main layout. Options forwarded to pgv.nav().';
 
+CREATE OR REPLACE FUNCTION pgv.post_bug_report(p jsonb DEFAULT '{}'::jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_desc text;
+  v_ctx  jsonb;
+BEGIN
+  v_desc := trim(p->>'description');
+  IF v_desc IS NULL OR v_desc = '' THEN
+    RETURN '<template data-toast="error">Description requise</template>';
+  END IF;
+
+  -- Build context from remaining keys
+  v_ctx := p - 'description';
+
+  INSERT INTO workbench.bug_report (description, context)
+  VALUES (v_desc, v_ctx);
+
+  RETURN '<template data-toast="success">Bug reporté, merci !</template>';
+END;
+$function$;
+COMMENT ON FUNCTION pgv.post_bug_report(jsonb) IS 'Receive a bug report from the shell UI and store it in workbench.bug_report';
+
 CREATE OR REPLACE FUNCTION pgv.progress(p_value numeric, p_max numeric DEFAULT 100, p_label text DEFAULT NULL::text)
  RETURNS text
  LANGUAGE sql

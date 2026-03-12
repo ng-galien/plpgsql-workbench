@@ -1110,6 +1110,107 @@ dialog article {
 .pgv-wf-future .pgv-wf-dot { background: var(--pgv-surface); border-color: var(--pgv-border); }
 .pgv-wf-future .pgv-wf-label { color: var(--pgv-muted); opacity: 0.6; }
 
+/* ── Bug Report ──────────────────────────────────────────────── */
+.pgv-bug-btn {
+  all: unset;
+  cursor: pointer;
+  position: fixed;
+  bottom: 1rem;
+  left: 1rem;
+  z-index: 800;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--pgv-surface);
+  border: 1px solid var(--pgv-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 1rem;
+  opacity: 0.5;
+  transition: opacity 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+.pgv-bug-btn:hover {
+  opacity: 1;
+  border-color: var(--pgv-accent);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.pgv-bug-backdrop {
+  position: fixed; inset: 0; z-index: 900;
+  background: rgba(0, 0, 0, 0.4);
+  animation: pgv-fade-in 0.12s ease-out;
+}
+
+.pgv-bug-panel {
+  position: fixed;
+  bottom: 1rem;
+  left: 1rem;
+  z-index: 901;
+  width: min(90vw, 420px);
+  background: var(--pgv-surface);
+  border: 1px solid var(--pgv-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  animation: pgv-bug-in 0.15s ease-out;
+}
+@keyframes pgv-bug-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pgv-bug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--pgv-border);
+  font-size: 0.875rem;
+}
+
+.pgv-bug-close {
+  all: unset;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: var(--pgv-muted);
+  padding: 0 0.2rem;
+  line-height: 1;
+}
+.pgv-bug-close:hover { color: var(--pgv-text); }
+
+.pgv-bug-body {
+  padding: 0.75rem 0.85rem;
+}
+
+.pgv-bug-body textarea {
+  width: 100%;
+  resize: vertical;
+  font-size: 0.8125rem;
+  margin-bottom: 0.5rem;
+}
+
+.pgv-bug-body details {
+  margin-bottom: 0;
+}
+
+.pgv-bug-body pre {
+  font-size: 0.7rem;
+  max-height: 10rem;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.pgv-bug-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--pgv-border);
+}
+
 /* ── Timeline (pgv.timeline) ─────────────────────────────────── */
 .pgv-tl {
   position: relative;

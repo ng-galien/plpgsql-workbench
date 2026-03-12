@@ -43,6 +43,34 @@
     </main>
   </div>
 
+  <!-- Bug Report Button -->
+  <button class="pgv-bug-btn" @click="bugOpen()" title="Signaler un bug">&#x1F41B;</button>
+
+  <!-- Bug Report Overlay -->
+  <template x-if="bug.open">
+    <div>
+      <div class="pgv-bug-backdrop" @click="bugClose()"></div>
+      <div class="pgv-bug-panel" @keydown.escape.prevent="bugClose()">
+        <header class="pgv-bug-header">
+          <strong>Signaler un bug</strong>
+          <button class="pgv-bug-close" @click="bugClose()">&times;</button>
+        </header>
+        <div class="pgv-bug-body">
+          <label for="bug-desc">Description du problème</label>
+          <textarea id="bug-desc" x-model="bug.desc" rows="4" placeholder="Décrivez ce qui ne fonctionne pas..."></textarea>
+          <details>
+            <summary>Contexte capturé automatiquement</summary>
+            <pre x-text="JSON.stringify(bugContext(), null, 2)"></pre>
+          </details>
+        </div>
+        <footer class="pgv-bug-footer">
+          <button class="secondary" @click="bugClose()">Annuler</button>
+          <button @click="bugSubmit()" :disabled="!bug.desc.trim()">Envoyer</button>
+        </footer>
+      </div>
+    </div>
+  </template>
+
   <!-- Toast -->
   <div id="toast" role="alert" x-show="toast.show" x-transition>
     <article :class="'toast-' + toast.level">
@@ -94,13 +122,27 @@
       toast: { show: false, msg: '', level: 'success', detail: '' },
       dlg:   { title: '', target: '' },
       search: { open: false, query: '', idx: 0 },
+      bug: { open: false, desc: '' },
       _tt: null,
       _modules: [],
       _currentSchema: null,
       _fixedSchema: null,
+      _errors: [],
+      _actions: [],
 
       /* ── Bootstrap ─────────────────────────────────── */
       boot: function() {
+        var self = this;
+        // Error tracking (circular buffer, max 20)
+        window.addEventListener('error', function(e) {
+          self._errors.push({ msg: e.message, src: e.filename, line: e.lineno, ts: Date.now() });
+          if (self._errors.length > 20) self._errors.shift();
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+          self._errors.push({ msg: String(e.reason), ts: Date.now() });
+          if (self._errors.length > 20) self._errors.shift();
+        });
+
         var saved = localStorage.getItem('pgv-theme');
         if (saved) document.documentElement.setAttribute('data-theme', saved);
         // App mode: <meta name="pgv-schema"> fixes the schema
@@ -198,6 +240,8 @@
       go: function(path, push) {
         if (push === undefined) push = true;
         var self = this;
+        this._actions.push({ type: 'go', path: path, ts: Date.now() });
+        if (this._actions.length > 30) this._actions.shift();
 
         // Home page: render module cards
         if (!this._fixedSchema && this._modules.length > 0 && (path === '/' || path === '')) {
@@ -251,6 +295,8 @@
       /* ── POST action ───────────────────────────────── */
       post: function(endpoint, data) {
         var self = this;
+        this._actions.push({ type: 'post', endpoint: endpoint, ts: Date.now() });
+        if (this._actions.length > 30) this._actions.shift();
         var schema, fn;
         if (endpoint.indexOf('.') !== -1) {
           var parts = endpoint.split('.');
@@ -703,6 +749,48 @@
           if (input) input.value = pathEl.textContent.trim();
         }
         this.$refs.dialog.close();
+      },
+
+      /* ── Bug Report ─────────────────────────────────── */
+      bugOpen: function() {
+        this.bug = { open: true, desc: '' };
+      },
+
+      bugClose: function() {
+        this.bug.open = false;
+      },
+
+      bugContext: function() {
+        return {
+          path: location.pathname + location.search,
+          schema: this._currentSchema,
+          errors: this._errors.slice(-5),
+          actions: this._actions.slice(-10),
+          viewport: innerWidth + 'x' + innerHeight,
+          userAgent: navigator.userAgent,
+          timestamp: new Date().toISOString()
+        };
+      },
+
+      bugSubmit: function() {
+        var desc = this.bug.desc.trim();
+        if (!desc) return;
+        var self = this;
+        var data = this.bugContext();
+        data.description = desc;
+        this.bug.open = false;
+        fetch('/rpc/post_bug_report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
+          body: JSON.stringify({ p: data })
+        })
+        .then(function(r) {
+          if (!r.ok) throw new Error(r.status);
+          self.showToast('Bug reporté, merci !', 'success');
+        })
+        .catch(function() {
+          self.showToast('Erreur lors de l\'envoi', 'error');
+        });
       }
     }; });
   });

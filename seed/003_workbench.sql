@@ -110,6 +110,18 @@ CREATE TABLE IF NOT EXISTS workbench.gotcha (
 CREATE INDEX IF NOT EXISTS idx_gotcha_scope
   ON workbench.gotcha (scope) WHERE active;
 
+-- Bug reports (from shell UI)
+CREATE TABLE IF NOT EXISTS workbench.bug_report (
+  id          SERIAL PRIMARY KEY,
+  description TEXT NOT NULL,
+  context     JSONB NOT NULL DEFAULT '{}',
+  status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','acknowledged','resolved','closed')),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bug_report_status
+  ON workbench.bug_report (status) WHERE status != 'closed';
+
 -- Hook event log
 CREATE TABLE IF NOT EXISTS workbench.hook_log (
   id          SERIAL PRIMARY KEY,
@@ -296,3 +308,5 @@ GRANT SELECT, INSERT, UPDATE ON workbench.config TO web_anon;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA workbench TO web_anon;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA workbench TO web_anon;
 GRANT EXECUTE ON FUNCTION workbench.postgrest_pre_request() TO web_anon;
+GRANT SELECT, INSERT, UPDATE ON workbench.bug_report TO web_anon;
+GRANT USAGE, SELECT ON SEQUENCE workbench.bug_report_id_seq TO web_anon;

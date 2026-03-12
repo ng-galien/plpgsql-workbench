@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION quote.get_index()
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_devis_en_cours int;
@@ -54,7 +55,7 @@ BEGIN
   LOOP
     v_rows_d := v_rows_d || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_devis', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-      format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || r.client_id), pgv.esc(r.client)),
+      format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
       pgv.esc(r.objet),
       quote._statut_badge(r.statut),
       to_char(r.ttc, 'FM999 990.00') || ' EUR',
@@ -73,7 +74,7 @@ BEGIN
   LOOP
     v_rows_f := v_rows_f || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_facture', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-      format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || r.client_id), pgv.esc(r.client)),
+      format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
       pgv.esc(r.objet),
       quote._statut_badge(r.statut),
       to_char(r.ttc, 'FM999 990.00') || ' EUR',
