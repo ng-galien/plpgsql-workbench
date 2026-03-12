@@ -1,33 +1,64 @@
 /* ops.css — Agent Dashboard layout */
 
-/* Agent grid */
-.ops-agent-grid {
+/* ── Live agents grid ── */
+.ops-agents-live {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: var(--pgv-spacing, 1rem);
-  margin: var(--pgv-spacing, 1rem) 0;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin: 0.75rem 0;
 }
 
-.ops-agent-grid > article {
-  border-left: 4px solid var(--pico-muted-border-color);
-  transition: border-color 0.2s;
-}
-
-.ops-agent-grid > article:has(.pgv-badge-success) {
-  border-left-color: var(--pico-ins-color, #2ea043);
-}
-
-.ops-agent-grid > article:has(.pgv-badge-danger) {
-  border-left-color: var(--pico-del-color, #cf222e);
-}
-
-/* Terminal container — height driven by data-height attribute */
-.ops-terminal {
-  position: relative;
-  height: 50vh;
+/* Agent card */
+.ops-agent-card {
+  border: 1px solid var(--pico-muted-border-color);
   border-radius: var(--pico-border-radius);
   overflow: hidden;
-  margin: var(--pgv-spacing, 1rem) 0;
+  background: var(--pico-card-background-color);
+}
+
+.ops-agent-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: color-mix(in srgb, var(--pico-card-background-color) 90%, var(--pico-muted-color));
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  font-size: 0.8rem;
+}
+
+.ops-agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ops-agent-dot.connected { background: #2ea043; }
+.ops-agent-dot.disconnected { background: #cf222e; }
+.ops-agent-dot.loading { background: #d29922; animation: ops-pulse 1.5s infinite; }
+
+@keyframes ops-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.ops-agent-name {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ops-agent-meta {
+  margin-left: auto;
+  color: var(--pico-muted-color);
+  font-size: 0.7rem;
+  font-family: var(--pico-font-family-monospace, monospace);
+}
+
+/* Terminal container */
+.ops-terminal {
+  position: relative;
+  height: 300px;
   background: #1a1b26;
 }
 
@@ -40,6 +71,21 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  color: #555;
+  font-size: 0.8rem;
+}
+
+/* ── Loading state ── */
+.ops-loading {
+  text-align: center;
+  padding: 2rem;
   color: var(--pico-muted-color);
-  font-size: 0.875rem;
+}
+
+/* ── Agent grid (legacy, non-live) ── */
+.ops-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--pgv-spacing, 1rem);
+  margin: var(--pgv-spacing, 1rem) 0;
 }

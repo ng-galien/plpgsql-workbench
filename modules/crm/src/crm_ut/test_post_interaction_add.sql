@@ -7,6 +7,8 @@ DECLARE
   v_result text;
   v_interaction crm.interaction;
 BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
   INSERT INTO crm.client (type, name) VALUES ('individual', 'Interaction Test') RETURNING id INTO v_id;
 
   v_result := crm.post_interaction_add(jsonb_build_object('client_id', v_id, 'type', 'call', 'subject', 'Appel test', 'body', 'Détails'));

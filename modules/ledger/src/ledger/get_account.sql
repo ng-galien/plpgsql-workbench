@@ -28,7 +28,7 @@ BEGIN
     'Type', pgv.badge(ledger._type_label(v_account.type),
       CASE v_account.type WHEN 'asset' THEN 'info' WHEN 'liability' THEN 'warning'
         WHEN 'equity' THEN 'default' WHEN 'revenue' THEN 'success' WHEN 'expense' THEN 'danger' END),
-    'Solde', to_char(v_balance, 'FM999 999.00') || ' €'
+    'Solde', to_char(v_balance, 'FM999 990.00') || ' €'
   ]);
 
   -- Lignes du grand livre
@@ -46,9 +46,9 @@ BEGIN
       to_char(r.entry_date, 'DD/MM/YYYY'),
       format('<a href="%s">%s</a>', pgv.call_ref('get_entry', jsonb_build_object('p_id', r.entry_id)), pgv.esc(r.reference)),
       pgv.esc(r.label),
-      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 999.00') ELSE '' END,
-      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 999.00') ELSE '' END,
-      to_char(v_cumul, 'FM999 999.00')
+      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 990.00') ELSE '' END,
+      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 990.00') ELSE '' END,
+      to_char(v_cumul, 'FM999 990.00')
     ];
   END LOOP;
 

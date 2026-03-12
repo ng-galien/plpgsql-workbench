@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS cad.drawing (
   unit text NOT NULL DEFAULT 'mm' CHECK (unit IN ('mm', 'cm', 'm')),
   width real NOT NULL DEFAULT 2000,
   height real NOT NULL DEFAULT 1500,
+  tenant_id text NOT NULL DEFAULT COALESCE(current_setting('app.tenant_id', true), 'dev'),
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS cad.layer (
   visible boolean NOT NULL DEFAULT true,
   locked boolean NOT NULL DEFAULT false,
   sort_order int NOT NULL DEFAULT 0,
+  tenant_id text NOT NULL DEFAULT COALESCE(current_setting('app.tenant_id', true), 'dev'),
   UNIQUE (drawing_id, name)
 );
 
@@ -37,10 +39,12 @@ CREATE TABLE IF NOT EXISTS cad.shape (
   id serial PRIMARY KEY,
   drawing_id int NOT NULL REFERENCES cad.drawing(id) ON DELETE CASCADE,
   layer_id int NOT NULL REFERENCES cad.layer(id) ON DELETE CASCADE,
-  type text NOT NULL CHECK (type IN ('line', 'rect', 'circle', 'arc', 'polyline', 'text', 'dimension')),
+  type text NOT NULL CHECK (type IN ('line', 'rect', 'circle', 'arc', 'polyline', 'text', 'dimension', 'group')),
+  parent_id int REFERENCES cad.shape(id) ON DELETE CASCADE,
   geometry jsonb NOT NULL DEFAULT '{}',
   props jsonb NOT NULL DEFAULT '{}',
   label text,
+  tenant_id text NOT NULL DEFAULT COALESCE(current_setting('app.tenant_id', true), 'dev'),
   sort_order int NOT NULL DEFAULT 0,
   created_at timestamptz DEFAULT now()
 );
@@ -63,6 +67,7 @@ CREATE TABLE IF NOT EXISTS cad.piece (
   profile geometry(POLYGONZ, 0),       -- section 2D positionnée en Z=0
   geom geometry(POLYHEDRALSURFACEZ, 0),-- solide 3D extrudé
 
+  tenant_id text NOT NULL DEFAULT COALESCE(current_setting('app.tenant_id', true), 'dev'),
   created_at timestamptz DEFAULT now()
 );
 
@@ -75,6 +80,7 @@ CREATE TABLE IF NOT EXISTS cad.piece_group (
   drawing_id int NOT NULL REFERENCES cad.drawing(id) ON DELETE CASCADE,
   parent_id int REFERENCES cad.piece_group(id) ON DELETE CASCADE,
   label text NOT NULL,
+  tenant_id text NOT NULL DEFAULT COALESCE(current_setting('app.tenant_id', true), 'dev'),
   created_at timestamptz DEFAULT now()
 );
 
@@ -108,3 +114,31 @@ GRANT USAGE ON SCHEMA cad_qa TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA cad GRANT EXECUTE ON FUNCTIONS TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA cad_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA cad_qa GRANT EXECUTE ON FUNCTIONS TO web_anon;
+
+-- Tenant indexes
+CREATE INDEX IF NOT EXISTS idx_drawing_tenant ON cad.drawing(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_layer_tenant ON cad.layer(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_shape_tenant ON cad.shape(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_piece_tenant ON cad.piece(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_piece_group_tenant ON cad.piece_group(tenant_id);
+
+-- RLS
+ALTER TABLE cad.drawing ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON cad.drawing
+  USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));
+
+ALTER TABLE cad.layer ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON cad.layer
+  USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));
+
+ALTER TABLE cad.shape ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON cad.shape
+  USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));
+
+ALTER TABLE cad.piece ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON cad.piece
+  USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));
+
+ALTER TABLE cad.piece_group ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON cad.piece_group
+  USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));

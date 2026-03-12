@@ -194,7 +194,7 @@ BEGIN
     'Type', pgv.badge(ledger._type_label(v_account.type),
       CASE v_account.type WHEN 'asset' THEN 'info' WHEN 'liability' THEN 'warning'
         WHEN 'equity' THEN 'default' WHEN 'revenue' THEN 'success' WHEN 'expense' THEN 'danger' END),
-    'Solde', to_char(v_balance, 'FM999 999.00') || ' €'
+    'Solde', to_char(v_balance, 'FM999 990.00') || ' €'
   ]);
 
   -- Lignes du grand livre
@@ -212,9 +212,9 @@ BEGIN
       to_char(r.entry_date, 'DD/MM/YYYY'),
       format('<a href="%s">%s</a>', pgv.call_ref('get_entry', jsonb_build_object('p_id', r.entry_id)), pgv.esc(r.reference)),
       pgv.esc(r.label),
-      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 999.00') ELSE '' END,
-      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 999.00') ELSE '' END,
-      to_char(v_cumul, 'FM999 999.00')
+      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 990.00') ELSE '' END,
+      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 990.00') ELSE '' END,
+      to_char(v_cumul, 'FM999 990.00')
     ];
   END LOOP;
 
@@ -255,7 +255,7 @@ BEGIN
       pgv.badge(ledger._type_label(r.type),
         CASE r.type WHEN 'asset' THEN 'info' WHEN 'liability' THEN 'warning'
           WHEN 'equity' THEN 'default' WHEN 'revenue' THEN 'success' WHEN 'expense' THEN 'danger' END),
-      to_char(r.balance, 'FM999 999.00') || ' €'
+      to_char(r.balance, 'FM999 990.00') || ' €'
     ];
   END LOOP;
 
@@ -320,7 +320,7 @@ BEGIN
     IF r.balance <> 0 THEN
       v_rows_r := v_rows_r || ARRAY[
         pgv.esc(r.code), pgv.esc(r.label),
-        to_char(r.balance, 'FM999 999.00') || ' €'
+        to_char(r.balance, 'FM999 990.00') || ' €'
       ];
     END IF;
   END LOOP;
@@ -343,7 +343,7 @@ BEGIN
     IF r.balance <> 0 THEN
       v_rows_e := v_rows_e || ARRAY[
         pgv.esc(r.code), pgv.esc(r.label),
-        to_char(r.balance, 'FM999 999.00') || ' €'
+        to_char(r.balance, 'FM999 990.00') || ' €'
       ];
     END IF;
   END LOOP;
@@ -352,9 +352,9 @@ BEGIN
 
   -- Stats résumé
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Produits', to_char(v_total_revenue, 'FM999 999.00') || ' €'),
-    pgv.stat('Charges', to_char(v_total_expense, 'FM999 999.00') || ' €'),
-    pgv.stat('Résultat net', to_char(v_resultat, 'FM999 999.00') || ' €',
+    pgv.stat('Produits', to_char(v_total_revenue, 'FM999 990.00') || ' €'),
+    pgv.stat('Charges', to_char(v_total_expense, 'FM999 990.00') || ' €'),
+    pgv.stat('Résultat net', to_char(v_resultat, 'FM999 990.00') || ' €',
       CASE WHEN v_resultat >= 0 THEN 'Bénéfice' ELSE 'Déficit' END)
   ]);
 
@@ -364,13 +364,13 @@ BEGIN
     CASE WHEN array_length(v_rows_r, 1) IS NULL
       THEN pgv.empty('Aucun produit sur ' || v_year)
       ELSE pgv.md_table(ARRAY['Code', 'Libellé', 'Montant'], v_rows_r)
-        || '<p><strong>Total produits : ' || to_char(v_total_revenue, 'FM999 999.00') || ' €</strong></p>'
+        || '<p><strong>Total produits : ' || to_char(v_total_revenue, 'FM999 990.00') || ' €</strong></p>'
     END,
     'Charges (classe 6)',
     CASE WHEN array_length(v_rows_e, 1) IS NULL
       THEN pgv.empty('Aucune charge sur ' || v_year)
       ELSE pgv.md_table(ARRAY['Code', 'Libellé', 'Montant'], v_rows_e)
-        || '<p><strong>Total charges : ' || to_char(v_total_expense, 'FM999 999.00') || ' €</strong></p>'
+        || '<p><strong>Total charges : ' || to_char(v_total_expense, 'FM999 990.00') || ' €</strong></p>'
     END
   ]);
 
@@ -401,7 +401,7 @@ BEGIN
       to_char(r.entry_date, 'DD/MM/YYYY'),
       format('<a href="%s">%s</a>', pgv.call_ref('get_entry', jsonb_build_object('p_id', r.id)), pgv.esc(r.reference)),
       pgv.esc(r.description),
-      to_char(r.total_debit, 'FM999 999.00') || ' €',
+      to_char(r.total_debit, 'FM999 990.00') || ' €',
       CASE WHEN r.posted THEN pgv.badge('Validée', 'success') ELSE pgv.badge('Brouillon', 'warning') END
     ];
   END LOOP;
@@ -466,8 +466,8 @@ BEGIN
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a> %s', pgv.call_ref('get_account', jsonb_build_object('p_id', r.account_id)), pgv.esc(r.code), pgv.esc(r.account_label)),
       pgv.esc(r.label),
-      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 999.00') ELSE '' END,
-      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 999.00') ELSE '' END,
+      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 990.00') ELSE '' END,
+      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 990.00') ELSE '' END,
       CASE WHEN NOT v_entry.posted
         THEN pgv.action('post_line_delete', 'Suppr.', jsonb_build_object('id', r.id, 'entry_id', p_id), 'Supprimer cette ligne ?', 'danger')
         ELSE ''
@@ -481,8 +481,8 @@ BEGIN
     -- Add totals row
     v_rows := v_rows || ARRAY[
       '<strong>Total</strong>', '',
-      '<strong>' || to_char(v_total_debit, 'FM999 999.00') || '</strong>',
-      '<strong>' || to_char(v_total_credit, 'FM999 999.00') || '</strong>',
+      '<strong>' || to_char(v_total_debit, 'FM999 990.00') || '</strong>',
+      '<strong>' || to_char(v_total_credit, 'FM999 990.00') || '</strong>',
       ''
     ];
     v_body := v_body || pgv.md_table(
@@ -495,8 +495,8 @@ BEGIN
   v_balanced := ledger._entry_balanced(p_id);
   IF NOT v_balanced AND v_total_debit + v_total_credit > 0 THEN
     v_body := v_body || pgv.alert(
-      'Écriture déséquilibrée : débit ' || to_char(v_total_debit, 'FM999 999.00')
-        || ' € ≠ crédit ' || to_char(v_total_credit, 'FM999 999.00') || ' €',
+      'Écriture déséquilibrée : débit ' || to_char(v_total_debit, 'FM999 990.00')
+        || ' € ≠ crédit ' || to_char(v_total_credit, 'FM999 990.00') || ' €',
       'danger'
     );
   END IF;
@@ -612,10 +612,10 @@ BEGIN
   v_resultat := coalesce(v_ca_mois, 0) - coalesce(v_charges_mois, 0);
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Solde banque', to_char(coalesce(v_solde_banque, 0), 'FM999 999.00') || ' €'),
-    pgv.stat('CA du mois', to_char(coalesce(v_ca_mois, 0), 'FM999 999.00') || ' €'),
-    pgv.stat('Charges du mois', to_char(coalesce(v_charges_mois, 0), 'FM999 999.00') || ' €'),
-    pgv.stat('Résultat', to_char(v_resultat, 'FM999 999.00') || ' €')
+    pgv.stat('Solde banque', to_char(coalesce(v_solde_banque, 0), 'FM999 990.00') || ' €'),
+    pgv.stat('CA du mois', to_char(coalesce(v_ca_mois, 0), 'FM999 990.00') || ' €'),
+    pgv.stat('Charges du mois', to_char(coalesce(v_charges_mois, 0), 'FM999 990.00') || ' €'),
+    pgv.stat('Résultat', to_char(v_resultat, 'FM999 990.00') || ' €')
   ]);
 
   -- Écritures récentes
@@ -633,7 +633,7 @@ BEGIN
       to_char(r.entry_date, 'DD/MM/YYYY'),
       format('<a href="%s">%s</a>', pgv.call_ref('get_entry', jsonb_build_object('p_id', r.id)), pgv.esc(r.reference)),
       pgv.esc(r.description),
-      to_char(r.total_debit, 'FM999 999.00') || ' €',
+      to_char(r.total_debit, 'FM999 990.00') || ' €',
       CASE WHEN r.posted THEN pgv.badge('Validée', 'success') ELSE pgv.badge('Brouillon', 'warning') END
     ];
   END LOOP;
@@ -707,11 +707,11 @@ BEGIN
   v_solde := v_collectee - v_deductible;
 
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('TVA collectée', to_char(v_collectee, 'FM999 999.00') || ' €'),
-    pgv.stat('TVA déductible', to_char(v_deductible, 'FM999 999.00') || ' €'),
+    pgv.stat('TVA collectée', to_char(v_collectee, 'FM999 990.00') || ' €'),
+    pgv.stat('TVA déductible', to_char(v_deductible, 'FM999 990.00') || ' €'),
     pgv.stat(
       CASE WHEN v_solde >= 0 THEN 'TVA à reverser' ELSE 'Crédit de TVA' END,
-      to_char(abs(v_solde), 'FM999 999.00') || ' €'
+      to_char(abs(v_solde), 'FM999 990.00') || ' €'
     )
   ]);
 
@@ -731,8 +731,8 @@ BEGIN
       to_char(r.entry_date, 'DD/MM/YYYY'),
       format('<a href="%s">%s</a>', pgv.call_ref('get_entry', jsonb_build_object('p_id', r.entry_id)), pgv.esc(r.reference)),
       r.code || ' ' || pgv.esc(r.account_label),
-      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 999.00') ELSE '' END,
-      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 999.00') ELSE '' END
+      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 990.00') ELSE '' END,
+      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 990.00') ELSE '' END
     ];
   END LOOP;
 

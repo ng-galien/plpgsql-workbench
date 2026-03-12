@@ -45,7 +45,7 @@ BEGIN
     IF r.balance <> 0 THEN
       v_rows_r := v_rows_r || ARRAY[
         pgv.esc(r.code), pgv.esc(r.label),
-        to_char(r.balance, 'FM999 999.00') || ' €'
+        to_char(r.balance, 'FM999 990.00') || ' €'
       ];
     END IF;
   END LOOP;
@@ -68,7 +68,7 @@ BEGIN
     IF r.balance <> 0 THEN
       v_rows_e := v_rows_e || ARRAY[
         pgv.esc(r.code), pgv.esc(r.label),
-        to_char(r.balance, 'FM999 999.00') || ' €'
+        to_char(r.balance, 'FM999 990.00') || ' €'
       ];
     END IF;
   END LOOP;
@@ -77,9 +77,9 @@ BEGIN
 
   -- Stats résumé
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Produits', to_char(v_total_revenue, 'FM999 999.00') || ' €'),
-    pgv.stat('Charges', to_char(v_total_expense, 'FM999 999.00') || ' €'),
-    pgv.stat('Résultat net', to_char(v_resultat, 'FM999 999.00') || ' €',
+    pgv.stat('Produits', to_char(v_total_revenue, 'FM999 990.00') || ' €'),
+    pgv.stat('Charges', to_char(v_total_expense, 'FM999 990.00') || ' €'),
+    pgv.stat('Résultat net', to_char(v_resultat, 'FM999 990.00') || ' €',
       CASE WHEN v_resultat >= 0 THEN 'Bénéfice' ELSE 'Déficit' END)
   ]);
 
@@ -89,13 +89,13 @@ BEGIN
     CASE WHEN array_length(v_rows_r, 1) IS NULL
       THEN pgv.empty('Aucun produit sur ' || v_year)
       ELSE pgv.md_table(ARRAY['Code', 'Libellé', 'Montant'], v_rows_r)
-        || '<p><strong>Total produits : ' || to_char(v_total_revenue, 'FM999 999.00') || ' €</strong></p>'
+        || '<p><strong>Total produits : ' || to_char(v_total_revenue, 'FM999 990.00') || ' €</strong></p>'
     END,
     'Charges (classe 6)',
     CASE WHEN array_length(v_rows_e, 1) IS NULL
       THEN pgv.empty('Aucune charge sur ' || v_year)
       ELSE pgv.md_table(ARRAY['Code', 'Libellé', 'Montant'], v_rows_e)
-        || '<p><strong>Total charges : ' || to_char(v_total_expense, 'FM999 999.00') || ' €</strong></p>'
+        || '<p><strong>Total charges : ' || to_char(v_total_expense, 'FM999 990.00') || ' €</strong></p>'
     END
   ]);
 

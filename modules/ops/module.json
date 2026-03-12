@@ -21,8 +21,12 @@
       "frontend/ops.js",
       "frontend/ops.css"
     ],
-    "scripts": [],
-    "styles": []
+    "scripts": [
+      "frontend/ops.js"
+    ],
+    "styles": [
+      "frontend/ops.css"
+    ]
   },
   "grants": {
     "web_anon": [

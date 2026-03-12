@@ -21,7 +21,7 @@ BEGIN
       pgv.badge(ledger._type_label(r.type),
         CASE r.type WHEN 'asset' THEN 'info' WHEN 'liability' THEN 'warning'
           WHEN 'equity' THEN 'default' WHEN 'revenue' THEN 'success' WHEN 'expense' THEN 'danger' END),
-      to_char(r.balance, 'FM999 999.00') || ' €'
+      to_char(r.balance, 'FM999 990.00') || ' €'
     ];
   END LOOP;
 

@@ -11,6 +11,7 @@ import path from "path";
 import pino from "pino";
 import { WebSocketServer, WebSocket } from "ws";
 import pty from "node-pty";
+import { execFileSync, execFile, spawn as cpSpawn, type ChildProcess } from "child_process";
 import { buildContainer, mountTools, type ToolPack } from "./container.js";
 import { plpgsqlPack } from "./packs/plpgsql.js";
 import { docstorePack } from "./packs/docstore.js";
@@ -518,26 +519,38 @@ async function endAgentSession(sessionId: number | null, status: string) {
   } catch { /* silent */ }
 }
 
+function resolveWorkspaceRoot(): string {
+  let dir = process.cwd();
+  for (let i = 0; i < 10; i++) {
+    if (fsSync.existsSync(path.join(dir, "modules"))) return dir;
+    dir = path.dirname(dir);
+  }
+  return process.cwd();
+}
+
 function resolveModulePath(mod: string): string {
-  const wsRoot = (() => {
-    let dir = process.cwd();
-    for (let i = 0; i < 10; i++) {
-      if (fsSync.existsSync(path.join(dir, "modules"))) return dir;
-      dir = path.dirname(dir);
-    }
-    return process.cwd();
-  })();
-  return path.join(wsRoot, "modules", mod);
+  return path.join(resolveWorkspaceRoot(), "modules", mod);
 }
 
 httpServer.on("upgrade", (req, socket, head) => {
-  // Only handle /ws/terminal/:module
-  const match = req.url?.match(/^\/ws\/terminal\/([a-z0-9_-]+)$/);
-  if (!match) {
+  if (process.env.WORKBENCH_MODE !== "dev") {
     socket.destroy();
     return;
   }
-  if (process.env.WORKBENCH_MODE !== "dev") {
+
+  // /ws/tmux/:session — read-only attach to tmux session
+  const tmuxMatch = req.url?.match(/^\/ws\/tmux\/([a-zA-Z0-9_.-]+)$/);
+  if (tmuxMatch) {
+    const session = tmuxMatch[1];
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      handleTmuxAttach(ws, session);
+    });
+    return;
+  }
+
+  // /ws/terminal/:module — interactive agent terminal
+  const match = req.url?.match(/^\/ws\/terminal\/([a-z0-9_-]+)$/);
+  if (!match) {
     socket.destroy();
     return;
   }
@@ -671,19 +684,222 @@ app.get("/api/messages", async (req, res) => {
   }
 });
 
+// --- tmux session monitoring (read-only agent observation) ---
+const tmuxWatchers = new Map<string, { tail: ChildProcess; clients: Set<WebSocket> }>();
+
+app.get("/api/tmux", (_req, res) => {
+  if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
+  try {
+    const raw = execFileSync("tmux", [
+      "list-sessions", "-F",
+      "#{session_name}\t#{session_created}\t#{session_activity}",
+    ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+    const wsRoot = resolveWorkspaceRoot();
+    const sessions = raw.trim().split("\n").filter(Boolean).map(line => {
+      const [name, created, activity] = line.split("\t");
+      let cwd = "";
+      let dead = false;
+      try {
+        cwd = execFileSync("tmux", ["display-message", "-t", name, "-p", "#{pane_current_path}"], {
+          encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+        }).trim();
+        const info = execFileSync("tmux", ["list-panes", "-t", name, "-F", "#{pane_dead}"], {
+          encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+        }).trim();
+        dead = info === "1";
+      } catch {}
+      return { name, created: parseInt(created) * 1000, activity: parseInt(activity) * 1000, cwd, dead };
+    }).filter(s => s.cwd.startsWith(wsRoot));
+
+    res.json(sessions);
+  } catch {
+    res.json([]);
+  }
+});
+
+function handleTmuxAttach(ws: WebSocket, session: string) {
+  // Check session exists
+  try {
+    execFileSync("tmux", ["has-session", "-t", session], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    ws.send(`\r\n\x1b[31mSession not found: ${session}\x1b[0m\r\n`);
+    ws.close();
+    return;
+  }
+
+  // Send initial scrollback (last 500 lines with ANSI escapes)
+  try {
+    const scrollback = execFileSync("tmux", [
+      "capture-pane", "-p", "-e", "-t", session, "-S", "-500",
+    ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (scrollback) ws.send(scrollback);
+  } catch {}
+
+  // Join or create watcher for this session
+  let watcher = tmuxWatchers.get(session);
+  if (!watcher) {
+    const logPath = `/tmp/pgw-tmux-${session}.log`;
+    fsSync.writeFileSync(logPath, "");
+
+    // pipe-pane -o = output only (no input) → log file
+    try {
+      execFileSync("tmux", ["pipe-pane", "-o", "-t", session, `cat >> '${logPath}'`], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      ws.send(`\r\n\x1b[31mFailed to attach pipe-pane: ${session}\x1b[0m\r\n`);
+      ws.close();
+      return;
+    }
+
+    // tail -f for event-driven streaming
+    const tail = cpSpawn("tail", ["-f", logPath], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    watcher = { tail, clients: new Set() };
+    tmuxWatchers.set(session, watcher);
+
+    tail.stdout?.on("data", (chunk: Buffer) => {
+      const data = chunk.toString("utf8");
+      for (const client of watcher!.clients) {
+        if (client.readyState === 1) client.send(data);
+      }
+    });
+
+    tail.on("exit", () => {
+      tmuxWatchers.delete(session);
+      try { fsSync.unlinkSync(logPath); } catch {}
+    });
+  }
+
+  watcher.clients.add(ws);
+
+  // Interactive: forward input to tmux, handle resize
+  ws.on("message", (data: Buffer | string) => {
+    const msg = typeof data === "string" ? data : data.toString();
+    try {
+      const parsed = JSON.parse(msg);
+      if (parsed.type === "resize" && parsed.cols && parsed.rows) {
+        const cols = Math.max(20, Math.floor(parsed.cols));
+        const rows = Math.max(5, Math.floor(parsed.rows));
+        try {
+          execFileSync("tmux", ["resize-window", "-t", session, "-x", String(cols), "-y", String(rows)], {
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+        } catch {}
+        return;
+      }
+    } catch {}
+    // Forward raw input to tmux via send-keys (async to avoid blocking event loop)
+    const parts = msg.split(/(\r\n|\r|\n)/);
+    for (const part of parts) {
+      if (!part) continue;
+      if (part === "\r" || part === "\n" || part === "\r\n") {
+        execFile("tmux", ["send-keys", "-t", session, "Enter"], () => {});
+      } else {
+        execFile("tmux", ["send-keys", "-t", session, "-l", "--", part], () => {});
+      }
+    }
+  });
+
+  ws.on("close", () => {
+    watcher?.clients.delete(ws);
+    if (watcher && watcher.clients.size === 0) {
+      watcher.tail.kill();
+      tmuxWatchers.delete(session);
+      // Disable pipe-pane
+      try {
+        execFileSync("tmux", ["pipe-pane", "-t", session], {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+      } catch {}
+      try { fsSync.unlinkSync(`/tmp/pgw-tmux-${session}.log`); } catch {}
+    }
+  });
+}
+
+// --- Agent lifecycle: spawn / kill via tmux ---
+// Env vars to strip to avoid Claude Code nesting issues
+const CLAUDE_VARS_TO_STRIP = [
+  "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_CODE_CONVERSATION_ID", "CLAUDE_CODE_TASK_ID",
+  "NON_INTERACTIVE", "MCP_TRANSPORT", "MCP_SESSION_ID",
+];
+
 app.post("/api/agents/:module/spawn", async (req, res) => {
   if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
   const mod = req.params.module;
-  if (terminals.has(mod)) {
-    return res.json({ status: "already_running", module: mod });
+  const session = mod;
+
+  // Already running?
+  try {
+    execFileSync("tmux", ["has-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
+    return res.json({ status: "already_running", module: mod, session, ws: `/ws/tmux/${session}` });
+  } catch {}
+
+  const modPath = resolveModulePath(mod);
+  if (!fsSync.existsSync(modPath)) {
+    return res.status(404).json({ error: `Module not found: ${mod}` });
   }
-  // The terminal will be created on first WebSocket connection
-  res.json({ status: "ready", module: mod, ws: `/ws/terminal/${mod}` });
+
+  // Write spawn script (strips parent Claude env, launches claude CLI)
+  const scriptFile = `/tmp/pgw-spawn-${session}.sh`;
+  const script = [
+    "#!/bin/sh",
+    `unset ${CLAUDE_VARS_TO_STRIP.join(" ")}`,
+    `exec claude`,
+  ].join("\n");
+  fsSync.writeFileSync(scriptFile, script, { mode: 0o700 });
+
+  try {
+    execFileSync("tmux", [
+      "new-session", "-d", "-s", session, "-c", modPath, scriptFile,
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync("tmux", ["set-option", "-t", session, "history-limit", "50000"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    execFileSync("tmux", ["set-option", "-t", session, "remain-on-exit", "on"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return res.status(500).json({ error: msg });
+  }
+
+  // Track in DB
+  const sessionId = await createAgentSession(mod);
+  log.info({ mod, session, cwd: modPath }, "Spawned Claude agent in tmux");
+
+  res.json({ status: "started", module: mod, session, sessionId, ws: `/ws/tmux/${session}` });
 });
 
 app.post("/api/agents/:module/kill", async (req, res) => {
   if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
   const mod = req.params.module;
+  const session = mod;
+
+  // Kill tmux session if exists
+  try {
+    execFileSync("tmux", ["has-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync("tmux", ["kill-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
+    // Clean up watcher
+    const watcher = tmuxWatchers.get(session);
+    if (watcher) {
+      watcher.tail.kill();
+      for (const client of watcher.clients) client.close();
+      tmuxWatchers.delete(session);
+    }
+    try { fsSync.unlinkSync(`/tmp/pgw-tmux-${session}.log`); } catch {}
+    try { fsSync.unlinkSync(`/tmp/pgw-spawn-${session}.sh`); } catch {}
+    log.info({ mod, session }, "Killed Claude agent tmux session");
+    return res.json({ status: "killed", module: mod, session });
+  } catch {}
+
+  // Fallback: kill node-pty terminal
   const term = terminals.get(mod);
   if (!term) return res.json({ status: "not_running", module: mod });
   term.proc.kill();

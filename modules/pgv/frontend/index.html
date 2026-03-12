@@ -6,12 +6,34 @@
   <title>pgView</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <link rel="stylesheet" href="/pgview.css">
+  <style>[x-cloak]{display:none!important}</style>
   <script src="/pgv-modules.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/panzoom@9/dist/panzoom.min.js"></script>
 </head>
 <body x-data="pgview" x-init="boot()">
+
+  <!-- App bar (multi-module mode) -->
+  <div class="pgv-app-bar" x-show="_modules.length > 0" x-cloak>
+    <a href="/" @click.prevent="go('/')" class="pgv-app-home" title="Accueil">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    </a>
+    <div class="pgv-app-nav">
+      <template x-for="mod in _modules" :key="mod.module">
+        <a :href="'/' + mod.schema + '/'"
+           @click.prevent="go('/' + mod.schema + '/')"
+           :class="{'pgv-app-active': _currentSchema === mod.schema}"
+           x-text="mod.brand"></a>
+      </template>
+    </div>
+    <div class="pgv-app-end">
+      <button class="pgv-app-search-btn" @click="searchOpen()" title="Rechercher (⌘K)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="15" y2="15"/></svg>
+      </button>
+      <button class="pgv-theme-toggle" data-toggle-theme @click="_themeToggle()">&#x263E;</button>
+    </div>
+  </div>
 
   <!-- Page content -->
   <div id="app">
@@ -73,6 +95,9 @@
       dlg:   { title: '', target: '' },
       search: { open: false, query: '', idx: 0 },
       _tt: null,
+      _modules: [],
+      _currentSchema: null,
+      _fixedSchema: null,
 
       /* ── Bootstrap ─────────────────────────────────── */
       boot: function() {
@@ -83,8 +108,28 @@
         var meta = document.querySelector('meta[name="pgv-schema"]');
         this._fixedSchema = meta ? meta.getAttribute('content') : null;
         this._listen();
-        this.go(location.pathname || '/');
         var self = this;
+        // Multi-module: fetch app_nav before initial navigation
+        if (!this._fixedSchema) {
+          fetch('/rpc/app_nav', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
+            body: '{}'
+          })
+          .then(function(r) { return r.ok ? r.json() : []; })
+          .then(function(mods) {
+            self._modules = Array.isArray(mods) ? mods : [];
+            if (self._modules.length > 0)
+              document.documentElement.style.setProperty('--pgv-app-bar-h', '2.5rem');
+            self.go(location.pathname || '/');
+          })
+          .catch(function() {
+            self._modules = [];
+            self.go(location.pathname || '/');
+          });
+        } else {
+          this.go(location.pathname || '/');
+        }
         window.onpopstate = function() { self.go(location.pathname || '/', false); };
       },
 
@@ -120,12 +165,7 @@
           var thm = e.target.closest('[data-toggle-theme]');
           if (thm) {
             e.preventDefault();
-            var html = document.documentElement;
-            var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-            html.setAttribute('data-theme', next);
-            localStorage.setItem('pgv-theme', next);
-            thm.innerHTML = next === 'dark' ? '&#x2600;' : '&#x263E;';
-            return;
+            return self._themeToggle();
           }
 
           // data-dialog buttons
@@ -158,6 +198,15 @@
       go: function(path, push) {
         if (push === undefined) push = true;
         var self = this;
+
+        // Home page: render module cards
+        if (!this._fixedSchema && this._modules.length > 0 && (path === '/' || path === '')) {
+          this._currentSchema = null;
+          this._renderHome();
+          if (push) history.pushState({}, '', '/');
+          window.scrollTo(0, 0);
+          return;
+        }
 
         // Resolve schema + route path
         var rpcUrl, body;
@@ -338,12 +387,9 @@
 
       _enhance: function(el) {
         var self = this;
-        // Sync theme toggle icon
-        var themeBtn = el.querySelector('[data-toggle-theme]');
-        if (themeBtn) {
-          themeBtn.innerHTML = document.documentElement.getAttribute('data-theme') === 'dark'
-            ? '&#x2600;' : '&#x263E;';
-        }
+        // Sync all theme toggle icons
+        var icon = document.documentElement.getAttribute('data-theme') === 'dark' ? '&#x2600;' : '&#x263E;';
+        document.querySelectorAll('[data-toggle-theme]').forEach(function(b) { b.innerHTML = icon; });
         // <md> → rendered markdown, tables wrapped in .pgv-table
         el.querySelectorAll('md').forEach(function(md) {
           var pageSize = parseInt(md.dataset.page) || 0;
@@ -411,6 +457,43 @@
         })
         .catch(function() {
           container.innerHTML = '<p>Erreur de chargement</p>';
+        });
+      },
+
+      /* ── Home page (module cards) ──────────────────── */
+      _renderHome: function() {
+        var h = '<main class="container"><hgroup><h2>Applications</h2></hgroup>';
+        h += '<div class="pgv-app-grid">';
+        for (var i = 0; i < this._modules.length; i++) {
+          var m = this._modules[i];
+          h += '<article class="pgv-app-card">';
+          h += '<header>' + m.brand + '</header>';
+          h += '<ul>';
+          for (var j = 0; j < m.items.length; j++) {
+            var it = m.items[j];
+            h += '<li><a href="/' + m.schema + (it.href || '/') + '">';
+            if (it.icon) h += '<span class="pgv-app-card-icon">' + it.icon + '</span> ';
+            h += (it.label || '') + '</a></li>';
+          }
+          h += '</ul>';
+          h += '<footer><a href="/' + m.schema + '/">Ouvrir &rarr;</a></footer>';
+          h += '</article>';
+        }
+        h += '</div></main>';
+        var app = document.getElementById('app');
+        app.innerHTML = h;
+        var self = this;
+        this.$nextTick(function() { self._enhance(app); });
+      },
+
+      /* ── Theme toggle ───────────────────────────────── */
+      _themeToggle: function() {
+        var html = document.documentElement;
+        var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('pgv-theme', next);
+        document.querySelectorAll('[data-toggle-theme]').forEach(function(b) {
+          b.innerHTML = next === 'dark' ? '&#x2600;' : '&#x263E;';
         });
       },
 

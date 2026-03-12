@@ -7,12 +7,14 @@ CREATE SCHEMA IF NOT EXISTS ledger_qa;
 -- Plan comptable simplifié artisan (PCG)
 CREATE TABLE ledger.account (
     id          SERIAL PRIMARY KEY,
-    code        TEXT NOT NULL UNIQUE,
+    code        TEXT NOT NULL,
     label       TEXT NOT NULL,
     type        TEXT NOT NULL CHECK (type IN ('asset','liability','equity','revenue','expense')),
     parent_code TEXT,
     active      BOOLEAN NOT NULL DEFAULT true,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    tenant_id   TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT account_tenant_code_key UNIQUE (tenant_id, code)
 );
 
 -- Écriture comptable (journal entry)
@@ -23,6 +25,7 @@ CREATE TABLE ledger.journal_entry (
     description TEXT NOT NULL,
     posted      BOOLEAN NOT NULL DEFAULT false,
     posted_at   TIMESTAMPTZ,
+    tenant_id   TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -34,15 +37,32 @@ CREATE TABLE ledger.entry_line (
     debit            NUMERIC(12,2) NOT NULL DEFAULT 0,
     credit           NUMERIC(12,2) NOT NULL DEFAULT 0,
     label            TEXT NOT NULL DEFAULT '',
+    tenant_id        TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
     CONSTRAINT line_debit_or_credit CHECK (debit >= 0 AND credit >= 0 AND (debit > 0 OR credit > 0))
 );
 
 -- Indexes
 CREATE INDEX idx_account_type ON ledger.account(type);
+CREATE INDEX idx_account_tenant ON ledger.account(tenant_id);
 CREATE INDEX idx_entry_date ON ledger.journal_entry(entry_date);
 CREATE INDEX idx_entry_posted ON ledger.journal_entry(posted);
+CREATE INDEX idx_entry_tenant ON ledger.journal_entry(tenant_id);
 CREATE INDEX idx_entry_line_entry ON ledger.entry_line(journal_entry_id);
 CREATE INDEX idx_entry_line_account ON ledger.entry_line(account_id);
+CREATE INDEX idx_entry_line_tenant ON ledger.entry_line(tenant_id);
+
+-- RLS
+ALTER TABLE ledger.account ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON ledger.account
+    USING (tenant_id = current_setting('app.tenant_id', true));
+
+ALTER TABLE ledger.journal_entry ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON ledger.journal_entry
+    USING (tenant_id = current_setting('app.tenant_id', true));
+
+ALTER TABLE ledger.entry_line ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON ledger.entry_line
+    USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Trigger : écriture validée = immutable
 CREATE OR REPLACE FUNCTION ledger._protect_posted()
@@ -128,3 +148,6 @@ GRANT USAGE ON SCHEMA ledger_ut TO web_anon;
 GRANT USAGE ON SCHEMA ledger_qa TO web_anon;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ledger TO web_anon;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ledger TO web_anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger TO web_anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger_ut TO web_anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger_qa TO web_anon;

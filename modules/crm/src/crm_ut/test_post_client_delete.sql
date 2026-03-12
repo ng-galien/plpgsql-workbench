@@ -6,6 +6,8 @@ DECLARE
   v_id int;
   v_result text;
 BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
   INSERT INTO crm.client (type, name) VALUES ('individual', 'To Delete') RETURNING id INTO v_id;
   INSERT INTO crm.interaction (client_id, type, subject) VALUES (v_id, 'note', 'Test note');
   INSERT INTO crm.contact (client_id, name) VALUES (v_id, 'Contact Test');

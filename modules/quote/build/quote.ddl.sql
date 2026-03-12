@@ -8,6 +8,7 @@ GRANT USAGE ON SCHEMA quote TO web_anon;
 -- Devis
 CREATE TABLE IF NOT EXISTS quote.devis (
   id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   numero text NOT NULL UNIQUE,                    -- DEV-2026-001
   client_id int NOT NULL REFERENCES crm.client(id) ON DELETE CASCADE,
   objet text NOT NULL,
@@ -21,10 +22,12 @@ CREATE TABLE IF NOT EXISTS quote.devis (
 
 CREATE INDEX IF NOT EXISTS idx_devis_client ON quote.devis(client_id);
 CREATE INDEX IF NOT EXISTS idx_devis_statut ON quote.devis(statut);
+CREATE INDEX IF NOT EXISTS idx_devis_tenant ON quote.devis(tenant_id);
 
 -- Factures
 CREATE TABLE IF NOT EXISTS quote.facture (
   id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   numero text NOT NULL UNIQUE,                    -- FAC-2026-001
   client_id int NOT NULL REFERENCES crm.client(id) ON DELETE CASCADE,
   devis_id int REFERENCES quote.devis(id),        -- NULL = facture directe
@@ -40,10 +43,12 @@ CREATE TABLE IF NOT EXISTS quote.facture (
 CREATE INDEX IF NOT EXISTS idx_facture_client ON quote.facture(client_id);
 CREATE INDEX IF NOT EXISTS idx_facture_devis ON quote.facture(devis_id);
 CREATE INDEX IF NOT EXISTS idx_facture_statut ON quote.facture(statut);
+CREATE INDEX IF NOT EXISTS idx_facture_tenant ON quote.facture(tenant_id);
 
 -- Lignes (partagees entre devis et factures, XOR constraint)
 CREATE TABLE IF NOT EXISTS quote.ligne (
   id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   devis_id int REFERENCES quote.devis(id) ON DELETE CASCADE,
   facture_id int REFERENCES quote.facture(id) ON DELETE CASCADE,
   sort_order int NOT NULL DEFAULT 0,
@@ -60,6 +65,7 @@ CREATE TABLE IF NOT EXISTS quote.ligne (
 
 CREATE INDEX IF NOT EXISTS idx_ligne_devis ON quote.ligne(devis_id);
 CREATE INDEX IF NOT EXISTS idx_ligne_facture ON quote.ligne(facture_id);
+CREATE INDEX IF NOT EXISTS idx_ligne_tenant ON quote.ligne(tenant_id);
 
 -- Trigger updated_at
 CREATE OR REPLACE FUNCTION quote._set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -78,6 +84,19 @@ DROP TRIGGER IF EXISTS trg_facture_updated_at ON quote.facture;
 CREATE TRIGGER trg_facture_updated_at
   BEFORE UPDATE ON quote.facture
   FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
+
+-- RLS
+ALTER TABLE quote.devis ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON quote.devis
+  USING (tenant_id = current_setting('app.tenant_id', true));
+
+ALTER TABLE quote.facture ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON quote.facture
+  USING (tenant_id = current_setting('app.tenant_id', true));
+
+ALTER TABLE quote.ligne ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON quote.ligne
+  USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON quote.devis TO web_anon;

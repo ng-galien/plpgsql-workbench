@@ -7,6 +7,8 @@ DECLARE
   v_client crm.client;
   v_id int;
 BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
   -- Create
   v_result := crm.post_client_save('{"name":"Test Client","type":"individual","email":"test@example.com","tags":"plomberie, Urgent, plomberie","city":"Lyon"}'::jsonb);
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'create returns success toast');

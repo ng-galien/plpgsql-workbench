@@ -8,6 +8,8 @@ DECLARE
   v_result text;
   v_contact crm.contact;
 BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
   INSERT INTO crm.client (type, name) VALUES ('company', 'Contact Test Co') RETURNING id INTO v_client_id;
 
   -- Add contact

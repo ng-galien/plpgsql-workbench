@@ -52,11 +52,11 @@ BEGIN
   v_solde := v_collectee - v_deductible;
 
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('TVA collectée', to_char(v_collectee, 'FM999 999.00') || ' €'),
-    pgv.stat('TVA déductible', to_char(v_deductible, 'FM999 999.00') || ' €'),
+    pgv.stat('TVA collectée', to_char(v_collectee, 'FM999 990.00') || ' €'),
+    pgv.stat('TVA déductible', to_char(v_deductible, 'FM999 990.00') || ' €'),
     pgv.stat(
       CASE WHEN v_solde >= 0 THEN 'TVA à reverser' ELSE 'Crédit de TVA' END,
-      to_char(abs(v_solde), 'FM999 999.00') || ' €'
+      to_char(abs(v_solde), 'FM999 990.00') || ' €'
     )
   ]);
 
@@ -76,8 +76,8 @@ BEGIN
       to_char(r.entry_date, 'DD/MM/YYYY'),
       format('<a href="%s">%s</a>', pgv.call_ref('get_entry', jsonb_build_object('p_id', r.entry_id)), pgv.esc(r.reference)),
       r.code || ' ' || pgv.esc(r.account_label),
-      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 999.00') ELSE '' END,
-      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 999.00') ELSE '' END
+      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 990.00') ELSE '' END,
+      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 990.00') ELSE '' END
     ];
   END LOOP;
 

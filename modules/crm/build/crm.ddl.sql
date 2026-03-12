@@ -8,6 +8,7 @@ GRANT USAGE ON SCHEMA crm TO web_anon;
 -- Clients (particuliers et entreprises)
 CREATE TABLE IF NOT EXISTS crm.client (
   id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   type text NOT NULL CHECK (type IN ('individual', 'company')),
   name text NOT NULL,
   email text,                              -- NULL = pas d'email connu
@@ -23,12 +24,17 @@ CREATE TABLE IF NOT EXISTS crm.client (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE crm.client ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT '';
+ALTER TABLE crm.client ALTER COLUMN tenant_id SET DEFAULT current_setting('app.tenant_id', true);
+
+CREATE INDEX IF NOT EXISTS idx_client_tenant ON crm.client(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_client_active_name ON crm.client(active, name);
 CREATE INDEX IF NOT EXISTS idx_client_tags ON crm.client USING gin(tags);
 
 -- Contacts secondaires (entreprises)
 CREATE TABLE IF NOT EXISTS crm.contact (
   id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   client_id int NOT NULL REFERENCES crm.client(id) ON DELETE CASCADE,
   name text NOT NULL,
   role text NOT NULL DEFAULT '',           -- vide si inconnu
@@ -37,11 +43,17 @@ CREATE TABLE IF NOT EXISTS crm.contact (
   is_primary boolean NOT NULL DEFAULT false
 );
 
+-- Migration: add tenant_id to existing tables (idempotent)
+ALTER TABLE crm.contact ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT '';
+ALTER TABLE crm.contact ALTER COLUMN tenant_id SET DEFAULT current_setting('app.tenant_id', true);
+
+CREATE INDEX IF NOT EXISTS idx_contact_tenant ON crm.contact(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_contact_client ON crm.contact(client_id);
 
 -- Interactions (historique — PAS devis/factures, bounded context séparé)
 CREATE TABLE IF NOT EXISTS crm.interaction (
   id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   client_id int NOT NULL REFERENCES crm.client(id) ON DELETE CASCADE,
   type text NOT NULL CHECK (type IN ('call', 'visit', 'email', 'note')),
   subject text NOT NULL,
@@ -49,6 +61,10 @@ CREATE TABLE IF NOT EXISTS crm.interaction (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE crm.interaction ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT '';
+ALTER TABLE crm.interaction ALTER COLUMN tenant_id SET DEFAULT current_setting('app.tenant_id', true);
+
+CREATE INDEX IF NOT EXISTS idx_interaction_tenant ON crm.interaction(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_interaction_client_date ON crm.interaction(client_id, created_at DESC);
 
 -- Trigger updated_at
@@ -63,6 +79,21 @@ DROP TRIGGER IF EXISTS trg_client_updated_at ON crm.client;
 CREATE TRIGGER trg_client_updated_at
   BEFORE UPDATE ON crm.client
   FOR EACH ROW EXECUTE FUNCTION crm._set_updated_at();
+
+-- Row Level Security
+ALTER TABLE crm.client ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm.contact ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm.interaction ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON crm.client;
+CREATE POLICY tenant_isolation ON crm.client
+  USING (tenant_id = current_setting('app.tenant_id', true));
+DROP POLICY IF EXISTS tenant_isolation ON crm.contact;
+CREATE POLICY tenant_isolation ON crm.contact
+  USING (tenant_id = current_setting('app.tenant_id', true));
+DROP POLICY IF EXISTS tenant_isolation ON crm.interaction;
+CREATE POLICY tenant_isolation ON crm.interaction
+  USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON crm.client TO web_anon;

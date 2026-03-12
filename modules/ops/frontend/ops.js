@@ -1,34 +1,21 @@
 /* ops.js — xterm.js terminal + Alpine.js component */
 
 document.addEventListener('alpine:init', () => {
-  Alpine.data('opsTerminal', () => ({
+  Alpine.data('opsTerminal', (module) => ({
     term: null,
     ws: null,
     connected: false,
 
     init() {
+      if (!module) return;
       const container = this.$el;
       const el = this.$refs.terminal;
       if (!el) return;
-      const module = el.dataset.module;
-      const wsUrl = el.dataset.ws;
-      if (!module || !wsUrl) return;
+      const wsUrl = `ws://${location.host}/ws/tmux/${module}`;
 
       // Apply data-height from server
       if (container.dataset.height) {
         container.style.height = container.dataset.height;
-      }
-
-      // IntersectionObserver: defer init if terminal is in a hidden tab
-      if (!el.offsetParent) {
-        const observer = new IntersectionObserver((entries) => {
-          if (entries[0].isIntersecting) {
-            observer.disconnect();
-            this._initTerminal(el, wsUrl);
-          }
-        });
-        observer.observe(el);
-        return;
       }
 
       this._initTerminal(el, wsUrl);
@@ -53,8 +40,16 @@ document.addEventListener('alpine:init', () => {
         fitAddon.fit();
 
         this.ws = new WebSocket(wsUrl);
-        this.ws.onopen = () => { this.connected = true; };
-        this.ws.onclose = () => { this.connected = false; };
+        this.ws.onopen = () => {
+          this.connected = true;
+          this._updateParent('_connected', true);
+          this._updateParent('_disconnected', false);
+        };
+        this.ws.onclose = () => {
+          this.connected = false;
+          this._updateParent('_connected', false);
+          this._updateParent('_disconnected', true);
+        };
         this.ws.onmessage = (e) => this.term.write(e.data);
         this.term.onData((data) => {
           if (this.ws?.readyState === 1) this.ws.send(data);
@@ -64,17 +59,60 @@ document.addEventListener('alpine:init', () => {
             this.ws.send(JSON.stringify({ type: 'resize', cols, rows }));
         });
 
-        window.addEventListener('resize', () => fitAddon.fit());
+        new ResizeObserver(() => fitAddon.fit()).observe(el);
       });
     },
 
-    async loadXterm() {
-      if (window.Terminal) return;
-      await Promise.all([
-        loadCSS('https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css'),
-        loadScript('https://cdn.jsdelivr.net/npm/@xterm/xterm@5/lib/xterm.min.js')
-      ]);
-      await loadScript('https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0/lib/addon-fit.min.js');
+    _updateParent(key, value) {
+      // Walk up Alpine scopes to find the session object in opsTmuxGrid
+      try {
+        const grid = Alpine.closestDataStack(this.$el).find(d => d.sessions);
+        if (grid) {
+          const s = grid.sessions.find(s => s.name === module);
+          if (s) s[key] = value;
+        }
+      } catch {}
+    },
+
+    loadXterm() {
+      if (!window._xtermLoading) {
+        window._xtermLoading = Promise.all([
+          loadCSS('https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css'),
+          loadScript('https://cdn.jsdelivr.net/npm/@xterm/xterm@5/lib/xterm.min.js')
+        ]).then(() => loadScript('https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0/lib/addon-fit.min.js'));
+      }
+      return window._xtermLoading;
+    }
+  }));
+
+  // Live tmux grid — fetches active tmux sessions and renders terminal cards
+  Alpine.data('opsTmuxGrid', () => ({
+    sessions: [],
+    loading: true,
+
+    init() {
+      this.refresh();
+      this._interval = setInterval(() => this.refresh(), 10000);
+    },
+
+    destroy() {
+      clearInterval(this._interval);
+    },
+
+    async refresh() {
+      try {
+        const res = await fetch('/api/tmux');
+        if (!res.ok) { this.loading = false; return; }
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data.sessions || []);
+        const newNames = list.map(s => s.name);
+        const oldNames = this.sessions.map(s => s.name);
+        // Only update if sessions changed
+        if (JSON.stringify(newNames) !== JSON.stringify(oldNames)) {
+          this.sessions = list;
+        }
+      } catch { /* ignore */ }
+      this.loading = false;
     }
   }));
 });

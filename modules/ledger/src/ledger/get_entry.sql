@@ -42,8 +42,8 @@ BEGIN
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a> %s', pgv.call_ref('get_account', jsonb_build_object('p_id', r.account_id)), pgv.esc(r.code), pgv.esc(r.account_label)),
       pgv.esc(r.label),
-      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 999.00') ELSE '' END,
-      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 999.00') ELSE '' END,
+      CASE WHEN r.debit > 0 THEN to_char(r.debit, 'FM999 990.00') ELSE '' END,
+      CASE WHEN r.credit > 0 THEN to_char(r.credit, 'FM999 990.00') ELSE '' END,
       CASE WHEN NOT v_entry.posted
         THEN pgv.action('post_line_delete', 'Suppr.', jsonb_build_object('id', r.id, 'entry_id', p_id), 'Supprimer cette ligne ?', 'danger')
         ELSE ''
@@ -57,8 +57,8 @@ BEGIN
     -- Add totals row
     v_rows := v_rows || ARRAY[
       '<strong>Total</strong>', '',
-      '<strong>' || to_char(v_total_debit, 'FM999 999.00') || '</strong>',
-      '<strong>' || to_char(v_total_credit, 'FM999 999.00') || '</strong>',
+      '<strong>' || to_char(v_total_debit, 'FM999 990.00') || '</strong>',
+      '<strong>' || to_char(v_total_credit, 'FM999 990.00') || '</strong>',
       ''
     ];
     v_body := v_body || pgv.md_table(
@@ -71,8 +71,8 @@ BEGIN
   v_balanced := ledger._entry_balanced(p_id);
   IF NOT v_balanced AND v_total_debit + v_total_credit > 0 THEN
     v_body := v_body || pgv.alert(
-      'Écriture déséquilibrée : débit ' || to_char(v_total_debit, 'FM999 999.00')
-        || ' € ≠ crédit ' || to_char(v_total_credit, 'FM999 999.00') || ' €',
+      'Écriture déséquilibrée : débit ' || to_char(v_total_debit, 'FM999 990.00')
+        || ' € ≠ crédit ' || to_char(v_total_credit, 'FM999 990.00') || ' €',
       'danger'
     );
   END IF;

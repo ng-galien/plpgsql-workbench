@@ -25,10 +25,10 @@ BEGIN
   v_resultat := coalesce(v_ca_mois, 0) - coalesce(v_charges_mois, 0);
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Solde banque', to_char(coalesce(v_solde_banque, 0), 'FM999 999.00') || ' €'),
-    pgv.stat('CA du mois', to_char(coalesce(v_ca_mois, 0), 'FM999 999.00') || ' €'),
-    pgv.stat('Charges du mois', to_char(coalesce(v_charges_mois, 0), 'FM999 999.00') || ' €'),
-    pgv.stat('Résultat', to_char(v_resultat, 'FM999 999.00') || ' €')
+    pgv.stat('Solde banque', to_char(coalesce(v_solde_banque, 0), 'FM999 990.00') || ' €'),
+    pgv.stat('CA du mois', to_char(coalesce(v_ca_mois, 0), 'FM999 990.00') || ' €'),
+    pgv.stat('Charges du mois', to_char(coalesce(v_charges_mois, 0), 'FM999 990.00') || ' €'),
+    pgv.stat('Résultat', to_char(v_resultat, 'FM999 990.00') || ' €')
   ]);
 
   -- Écritures récentes
@@ -46,7 +46,7 @@ BEGIN
       to_char(r.entry_date, 'DD/MM/YYYY'),
       format('<a href="%s">%s</a>', pgv.call_ref('get_entry', jsonb_build_object('p_id', r.id)), pgv.esc(r.reference)),
       pgv.esc(r.description),
-      to_char(r.total_debit, 'FM999 999.00') || ' €',
+      to_char(r.total_debit, 'FM999 990.00') || ' €',
       CASE WHEN r.posted THEN pgv.badge('Validée', 'success') ELSE pgv.badge('Brouillon', 'warning') END
     ];
   END LOOP;

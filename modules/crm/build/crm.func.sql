@@ -483,6 +483,8 @@ DECLARE
   v_id int;
   v_result text;
 BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
   INSERT INTO crm.client (type, name) VALUES ('individual', 'To Delete') RETURNING id INTO v_id;
   INSERT INTO crm.interaction (client_id, type, subject) VALUES (v_id, 'note', 'Test note');
   INSERT INTO crm.contact (client_id, name) VALUES (v_id, 'Contact Test');
@@ -506,6 +508,8 @@ DECLARE
   v_client crm.client;
   v_id int;
 BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
   -- Create
   v_result := crm.post_client_save('{"name":"Test Client","type":"individual","email":"test@example.com","tags":"plomberie, Urgent, plomberie","city":"Lyon"}'::jsonb);
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'create returns success toast');
@@ -545,6 +549,8 @@ DECLARE
   v_result text;
   v_contact crm.contact;
 BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
   INSERT INTO crm.client (type, name) VALUES ('company', 'Contact Test Co') RETURNING id INTO v_client_id;
 
   -- Add contact
@@ -580,6 +586,8 @@ DECLARE
   v_result text;
   v_interaction crm.interaction;
 BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
   INSERT INTO crm.client (type, name) VALUES ('individual', 'Interaction Test') RETURNING id INTO v_id;
 
   v_result := crm.post_interaction_add(jsonb_build_object('client_id', v_id, 'type', 'call', 'subject', 'Appel test', 'body', 'Détails'));

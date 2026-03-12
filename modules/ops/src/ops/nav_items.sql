@@ -5,6 +5,7 @@ CREATE OR REPLACE FUNCTION ops.nav_items()
 AS $function$
   SELECT '[
     {"href":"/","label":"Dashboard","icon":"monitor"},
+    {"href":"/agents","label":"Agents","icon":"terminal"},
     {"href":"/messages","label":"Messages","icon":"mail"},
     {"href":"/hooks","label":"Hooks","icon":"shield"}
   ]'::jsonb;
