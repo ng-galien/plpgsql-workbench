@@ -223,6 +223,88 @@ END;
 $function$;
 COMMENT ON FUNCTION crm.post_contact_delete(jsonb) IS 'Delete a secondary contact';
 
+CREATE OR REPLACE FUNCTION crm.post_import_csv(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_csv text;
+  v_lines text[];
+  v_cols text[];
+  v_line text;
+  v_imported int := 0;
+  v_skipped int := 0;
+  v_errors text := '';
+  v_name text;
+  v_type text;
+  i int;
+BEGIN
+  v_csv := trim(COALESCE(p_data->>'csv', ''));
+  IF v_csv = '' THEN
+    RETURN '<template data-toast="error">Aucun contenu CSV fourni.</template>';
+  END IF;
+
+  v_lines := string_to_array(v_csv, E'\n');
+
+  -- Skip header if it looks like one
+  i := 1;
+  IF lower(v_lines[1]) LIKE '%nom%' THEN
+    i := 2;
+  END IF;
+
+  WHILE i <= array_length(v_lines, 1) LOOP
+    v_line := trim(v_lines[i]);
+    i := i + 1;
+
+    IF v_line = '' THEN CONTINUE; END IF;
+
+    -- Parse CSV line (simple split on ; or ,)
+    IF position(';' IN v_line) > 0 THEN
+      v_cols := string_to_array(v_line, ';');
+    ELSE
+      v_cols := string_to_array(v_line, ',');
+    END IF;
+
+    -- Columns: nom, email, telephone, adresse, ville, code_postal, type
+    v_name := trim(COALESCE(v_cols[1], ''));
+    IF v_name = '' THEN
+      v_skipped := v_skipped + 1;
+      v_errors := v_errors || 'Ligne ' || (i - 1) || ': nom vide. ';
+      CONTINUE;
+    END IF;
+
+    v_type := lower(trim(COALESCE(v_cols[7], '')));
+    IF v_type NOT IN ('individual', 'company') THEN
+      v_type := 'individual';
+    END IF;
+
+    INSERT INTO crm.client (name, email, phone, address, city, postal_code, type)
+    VALUES (
+      v_name,
+      NULLIF(trim(COALESCE(v_cols[2], '')), ''),
+      NULLIF(trim(COALESCE(v_cols[3], '')), ''),
+      NULLIF(trim(COALESCE(v_cols[4], '')), ''),
+      NULLIF(trim(COALESCE(v_cols[5], '')), ''),
+      NULLIF(trim(COALESCE(v_cols[6], '')), ''),
+      v_type
+    );
+    v_imported := v_imported + 1;
+  END LOOP;
+
+  IF v_imported = 0 THEN
+    RETURN '<template data-toast="error">Aucun client importé.' ||
+      CASE WHEN v_skipped > 0 THEN ' ' || v_skipped || ' ligne(s) ignorée(s).' ELSE '' END ||
+      '</template>';
+  END IF;
+
+  RETURN '<template data-toast="success">' || v_imported || ' client(s) importé(s).' ||
+    CASE WHEN v_skipped > 0 THEN ' ' || v_skipped || ' ignoré(s).' ELSE '' END ||
+    '</template>'
+    || '<template data-redirect="' || pgv.call_ref('get_index') || '"></template>';
+END;
+$function$;
+COMMENT ON FUNCTION crm.post_import_csv(jsonb) IS 'Import clients from CSV text (nom, email, telephone, adresse, ville, code_postal, type)';
+
 CREATE OR REPLACE FUNCTION crm.post_interaction_add(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
@@ -664,6 +746,47 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION crm_ut.test_post_contact_delete() IS 'Test contact delete — nominal + DB verification';
+
+CREATE OR REPLACE FUNCTION crm_ut.test_post_import_csv()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result text;
+  v_count int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
+  -- Empty CSV
+  v_result := crm.post_import_csv('{"csv":""}'::jsonb);
+  RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'empty csv returns error');
+
+  -- Nominal with header + semicolons
+  v_result := crm.post_import_csv(('{"csv":"nom;email;telephone;adresse;ville;code_postal;type\nAlice Import;alice@test.com;0600000001;1 rue A;Paris;75001;individual\nBob Import;bob@test.com;0600000002;2 rue B;Lyon;69001;company"}')::jsonb);
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'import returns success');
+  RETURN NEXT ok(v_result LIKE '%2 client(s) importé(s)%', 'imported 2 clients');
+
+  SELECT count(*)::int INTO v_count FROM crm.client WHERE name IN ('Alice Import', 'Bob Import');
+  RETURN NEXT is(v_count, 2, '2 clients in DB');
+
+  -- Verify fields
+  RETURN NEXT ok(EXISTS(SELECT 1 FROM crm.client WHERE name = 'Alice Import' AND email = 'alice@test.com' AND city = 'Paris' AND type = 'individual'), 'Alice fields correct');
+  RETURN NEXT ok(EXISTS(SELECT 1 FROM crm.client WHERE name = 'Bob Import' AND type = 'company'), 'Bob type correct');
+
+  -- Line with empty name is skipped
+  v_result := crm.post_import_csv('{"csv":";skip@test.com;000\nCharlie Import;charlie@test.com;000"}'::jsonb);
+  RETURN NEXT ok(v_result LIKE '%1 client(s) importé(s)%', '1 imported, empty name skipped');
+  RETURN NEXT ok(v_result LIKE '%1 ignoré(s)%', '1 skipped reported');
+
+  -- Comma separator
+  v_result := crm.post_import_csv('{"csv":"Delta Import,delta@test.com,000,addr,Nice,06000,individual"}'::jsonb);
+  RETURN NEXT ok(v_result LIKE '%1 client(s) importé(s)%', 'comma separator works');
+
+  -- Cleanup
+  DELETE FROM crm.client WHERE name IN ('Alice Import', 'Bob Import', 'Charlie Import', 'Delta Import');
+END;
+$function$;
+COMMENT ON FUNCTION crm_ut.test_post_import_csv() IS 'Test CSV import — nominal, header skip, empty name, empty CSV';
 
 CREATE OR REPLACE FUNCTION crm_ut.test_post_interaction_add()
  RETURNS SETOF text

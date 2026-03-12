@@ -458,6 +458,10 @@ BEGIN
     v_body := v_body || pgv.action('post_facture_payer', 'Marquer payée',
       jsonb_build_object('p_id', p_id),
       'Marquer cette facture comme payée ?');
+  ELSIF v_fac.statut = 'payee' THEN
+    v_body := v_body || pgv.action('post_facture_comptabiliser', 'Comptabiliser',
+      jsonb_build_object('p_id', p_id),
+      'Créer l''écriture comptable pour cette facture ?');
   END IF;
   v_body := v_body || '</p>';
 
@@ -663,6 +667,80 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION purchase.post_commande_save(jsonb) IS 'Create or update a purchase order (draft only)';
+
+CREATE OR REPLACE FUNCTION purchase.post_facture_comptabiliser(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id int := (p_data->>'p_id')::int;
+  v_facture record;
+  v_tva numeric(12,2);
+  v_entry_id int;
+  v_ledger_exists boolean;
+BEGIN
+  -- Check facture exists and is payee
+  SELECT * INTO v_facture FROM purchase.facture_fournisseur WHERE id = v_id;
+  IF NOT FOUND THEN
+    RETURN '<template data-toast="error">Facture introuvable</template>';
+  END IF;
+  IF v_facture.statut <> 'payee' THEN
+    RETURN '<template data-toast="error">La facture doit être payée avant comptabilisation</template>';
+  END IF;
+  IF v_facture.montant_ttc = 0 THEN
+    RETURN '<template data-toast="error">Facture sans montant</template>';
+  END IF;
+
+  -- Check ledger schema exists
+  SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'ledger') INTO v_ledger_exists;
+  IF NOT v_ledger_exists THEN
+    RETURN '<template data-toast="error">Module ledger non déployé</template>';
+  END IF;
+
+  -- Compute TVA (TTC - HT)
+  v_tva := v_facture.montant_ttc - v_facture.montant_ht;
+
+  -- Create journal entry via dynamic SQL (no hard dependency on ledger)
+  EXECUTE format(
+    $e$INSERT INTO ledger.journal_entry (entry_date, reference, description)
+    VALUES (%L, %L, %L) RETURNING id$e$,
+    coalesce(v_facture.date_facture, CURRENT_DATE),
+    'FAF-' || v_facture.numero_fournisseur,
+    'Facture fournisseur ' || v_facture.numero_fournisseur
+  ) INTO v_entry_id;
+
+  -- 601 Achats matériaux — débit HT
+  EXECUTE format(
+    $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
+    VALUES (%s, (SELECT id FROM ledger.account WHERE code = '601'), %s, 0, %L)$e$,
+    v_entry_id, v_facture.montant_ht,
+    'Achat facture ' || v_facture.numero_fournisseur
+  );
+
+  -- 4456 TVA déductible — débit TVA
+  IF v_tva > 0 THEN
+    EXECUTE format(
+      $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
+      VALUES (%s, (SELECT id FROM ledger.account WHERE code = '4456'), %s, 0, %L)$e$,
+      v_entry_id, v_tva,
+      'TVA déductible facture ' || v_facture.numero_fournisseur
+    );
+  END IF;
+
+  -- 401 Fournisseurs — crédit TTC
+  EXECUTE format(
+    $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
+    VALUES (%s, (SELECT id FROM ledger.account WHERE code = '401'), 0, %s, %L)$e$,
+    v_entry_id, v_facture.montant_ttc,
+    'Fournisseur facture ' || v_facture.numero_fournisseur
+  );
+
+  RETURN '<template data-toast="success">Écriture comptable créée</template>'
+    || format('<template data-redirect="%s"></template>',
+       pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
+END;
+$function$;
+COMMENT ON FUNCTION purchase.post_facture_comptabiliser(jsonb) IS 'Comptabiliser une facture fournisseur payée: écriture 607/44566/401 dans ledger (EXECUTE dynamique, pas de hard dep)';
 
 CREATE OR REPLACE FUNCTION purchase.post_facture_payer(p_data jsonb)
  RETURNS text
@@ -971,6 +1049,83 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION purchase_ut.test_commande_workflow() IS 'Test full purchase order workflow: create, send, receive';
+
+CREATE OR REPLACE FUNCTION purchase_ut.test_facture_comptabiliser()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_cmd_id int;
+  v_fac_id int;
+  v_result text;
+  v_entry_count int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
+  -- Setup: create commande + facture + pay it
+  INSERT INTO purchase.commande (numero, fournisseur_id, objet, statut)
+  VALUES ('CMD-TEST-CPT', (SELECT id FROM crm.client LIMIT 1), 'Test compta', 'envoyee')
+  RETURNING id INTO v_cmd_id;
+
+  INSERT INTO purchase.facture_fournisseur
+    (commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, statut)
+  VALUES (v_cmd_id, 'FAF-CPT-001', 1000.00, 1200.00, CURRENT_DATE, 'payee')
+  RETURNING id INTO v_fac_id;
+
+  -- Cannot comptabiliser non-payee
+  UPDATE purchase.facture_fournisseur SET statut = 'validee' WHERE id = v_fac_id;
+  v_result := purchase.post_facture_comptabiliser(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%doit être payée%', 'cannot comptabilise non-payee');
+
+  -- Restore payee
+  UPDATE purchase.facture_fournisseur SET statut = 'payee' WHERE id = v_fac_id;
+
+  -- Count entries before
+  SELECT count(*) INTO v_entry_count FROM ledger.journal_entry;
+
+  -- Comptabiliser
+  v_result := purchase.post_facture_comptabiliser(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%success%', 'comptabilisation succeeds');
+
+  -- Verify entry created
+  RETURN NEXT ok(
+    (SELECT count(*) FROM ledger.journal_entry) = v_entry_count + 1,
+    'journal entry created'
+  );
+
+  -- Verify lines: 607 debit HT, 44566 debit TVA, 401 credit TTC
+  RETURN NEXT ok(
+    EXISTS(SELECT 1 FROM ledger.entry_line el
+      JOIN ledger.account a ON a.id = el.account_id
+     WHERE el.journal_entry_id = (SELECT max(id) FROM ledger.journal_entry)
+       AND a.code = '601' AND el.debit = 1000.00),
+    '601 debited 1000 HT'
+  );
+
+  RETURN NEXT ok(
+    EXISTS(SELECT 1 FROM ledger.entry_line el
+      JOIN ledger.account a ON a.id = el.account_id
+     WHERE el.journal_entry_id = (SELECT max(id) FROM ledger.journal_entry)
+       AND a.code = '4456' AND el.debit = 200.00),
+    '4456 debited 200 TVA'
+  );
+
+  RETURN NEXT ok(
+    EXISTS(SELECT 1 FROM ledger.entry_line el
+      JOIN ledger.account a ON a.id = el.account_id
+     WHERE el.journal_entry_id = (SELECT max(id) FROM ledger.journal_entry)
+       AND a.code = '401' AND el.credit = 1200.00),
+    '401 credited 1200 TTC'
+  );
+
+  -- Cleanup
+  DELETE FROM ledger.entry_line WHERE journal_entry_id = (SELECT max(id) FROM ledger.journal_entry);
+  DELETE FROM ledger.journal_entry WHERE id = (SELECT max(id) FROM ledger.journal_entry);
+  DELETE FROM purchase.facture_fournisseur WHERE id = v_fac_id;
+  DELETE FROM purchase.commande WHERE id = v_cmd_id;
+END;
+$function$;
+COMMENT ON FUNCTION purchase_ut.test_facture_comptabiliser() IS 'Test comptabilisation facture fournisseur: validation statut, écriture 607/44566/401';
 
 CREATE OR REPLACE FUNCTION purchase_ut.test_facture_workflow()
  RETURNS SETOF text

@@ -235,6 +235,77 @@ END;
 $function$;
 COMMENT ON FUNCTION ops.get_agents() IS 'Live agents grid page — single-terminal pattern with buffer cache';
 
+CREATE OR REPLACE FUNCTION ops.get_dashboard()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_rows text[];
+  v_mod text;
+  v_stats record;
+  v_total_funcs int := 0;
+  v_total_tests int := 0;
+  v_total_pending int := 0;
+  v_total_hook_deny int := 0;
+  v_last_hook text;
+BEGIN
+  v_rows := ARRAY[]::text[];
+
+  FOR v_mod IN SELECT module FROM ops._module_list()
+  LOOP
+    SELECT * INTO v_stats FROM ops._module_stats(v_mod);
+
+    v_total_funcs := v_total_funcs + v_stats.func_count;
+    v_total_tests := v_total_tests + v_stats.test_count;
+    v_total_pending := v_total_pending + v_stats.msg_new;
+    v_total_hook_deny := v_total_hook_deny + v_stats.hook_deny;
+
+    v_last_hook := CASE
+      WHEN v_stats.last_hook_at IS NOT NULL
+        THEN to_char(v_stats.last_hook_at, 'DD/MM HH24:MI')
+      ELSE '-'
+    END;
+
+    v_rows := v_rows || ARRAY[
+      pgv.esc(v_mod),
+      v_stats.func_count::text,
+      v_stats.test_count::text,
+      CASE WHEN v_stats.msg_new > 0
+        THEN pgv.badge(v_stats.msg_new::text, 'warning')
+        ELSE '0'
+      END,
+      CASE WHEN v_stats.hook_deny > 0
+        THEN pgv.badge(v_stats.hook_deny::text, 'danger')
+        ELSE '0'
+      END || ' / ' || v_stats.hook_total::text,
+      v_last_hook
+    ];
+  END LOOP;
+
+  -- Top stats
+  v_body := pgv.grid(VARIADIC ARRAY[
+    pgv.stat('Fonctions', v_total_funcs::text, 'tous modules'),
+    pgv.stat('Tests', v_total_tests::text, 'pgTAP'),
+    pgv.stat('Messages pending', v_total_pending::text),
+    pgv.stat('Hooks bloques', v_total_hook_deny::text, 'total')
+  ]);
+
+  -- Module detail table
+  IF array_length(v_rows, 1) IS NULL THEN
+    v_body := v_body || pgv.empty('Aucun module', 'Deployer des modules pour les voir ici.');
+  ELSE
+    v_body := v_body || pgv.md_table(
+      ARRAY['Module', 'Fonctions', 'Tests', 'Pending', 'Hooks deny', 'Dernier hook'],
+      v_rows
+    );
+  END IF;
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION ops.get_dashboard() IS 'Vue globale santé modules — stats agrégées + tableau détaillé par module';
+
 CREATE OR REPLACE FUNCTION ops.get_hooks(p_module text DEFAULT NULL::text)
  RETURNS text
  LANGUAGE plpgsql
@@ -445,8 +516,9 @@ CREATE OR REPLACE FUNCTION ops.nav_items()
  LANGUAGE sql
  STABLE
 AS $function$
-  SELECT '[
+SELECT '[
     {"href":"/","label":"Dashboard","icon":"monitor"},
+    {"href":"/dashboard","label":"Sante","icon":"activity"},
     {"href":"/agents","label":"Agents","icon":"terminal"},
     {"href":"/messages","label":"Messages","icon":"mail"},
     {"href":"/hooks","label":"Hooks","icon":"shield"}
@@ -512,6 +584,25 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION ops_ut.test_get_agents() IS 'Test get_agents renders collapsible card structure with Alpine.js bindings';
+
+CREATE OR REPLACE FUNCTION ops_ut.test_get_dashboard()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  v_html := ops.get_dashboard();
+  RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 0, 'get_dashboard renders HTML');
+  RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'get_dashboard contains stat widgets');
+  RETURN NEXT ok(v_html LIKE '%Fonctions%', 'get_dashboard shows total functions');
+  RETURN NEXT ok(v_html LIKE '%Tests%', 'get_dashboard shows total tests');
+  RETURN NEXT ok(v_html LIKE '%cad%', 'get_dashboard lists cad module');
+  -- No inline styles
+  RETURN NEXT ok(v_html NOT LIKE '%style="%', 'get_dashboard has no inline styles');
+END;
+$function$;
+COMMENT ON FUNCTION ops_ut.test_get_dashboard() IS 'Test get_dashboard renders health overview with stats and module table';
 
 CREATE OR REPLACE FUNCTION ops_ut.test_module_list()
  RETURNS SETOF text

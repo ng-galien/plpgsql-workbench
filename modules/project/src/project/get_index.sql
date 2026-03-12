@@ -36,11 +36,12 @@ BEGIN
   -- Liste chantiers actifs
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT c.id, c.client_id, c.numero, cl.name AS client, c.objet, c.statut,
+    SELECT c.id, c.client_id, c.devis_id, c.numero, cl.name AS client, c.objet, c.statut,
            project._avancement_global(c.id) AS pct,
-           c.date_debut
+           c.date_debut, d.numero AS devis_numero
       FROM project.chantier c
       JOIN crm.client cl ON cl.id = c.client_id
+      LEFT JOIN quote.devis d ON d.id = c.devis_id
      WHERE c.statut IN ('preparation', 'execution', 'reception')
      ORDER BY c.updated_at DESC
      LIMIT 20
@@ -51,6 +52,9 @@ BEGIN
       pgv.esc(r.objet),
       project._statut_badge(r.statut),
       pgv.badge(r.pct::text || ' %'),
+      CASE WHEN r.devis_numero IS NOT NULL
+        THEN format('<a href="/quote/devis?p_id=%s">%s</a>', r.devis_id, pgv.esc(r.devis_numero))
+        ELSE '—' END,
       COALESCE(to_char(r.date_debut, 'DD/MM/YYYY'), '—')
     ];
   END LOOP;
@@ -59,7 +63,7 @@ BEGIN
     v_body := v_body || pgv.empty('Aucun chantier actif', 'Créez votre premier chantier pour commencer.');
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Avancement', 'Début'],
+      ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Avancement', 'Devis', 'Début'],
       v_rows, 10
     );
   END IF;

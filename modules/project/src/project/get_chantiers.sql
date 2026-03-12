@@ -8,11 +8,12 @@ DECLARE
 BEGIN
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT c.id, c.client_id, c.numero, cl.name AS client, c.objet, c.statut,
+    SELECT c.id, c.client_id, c.devis_id, c.numero, cl.name AS client, c.objet, c.statut,
            project._avancement_global(c.id) AS pct,
-           c.date_debut, c.date_fin_prevue
+           c.date_debut, c.date_fin_prevue, d.numero AS devis_numero
       FROM project.chantier c
       JOIN crm.client cl ON cl.id = c.client_id
+      LEFT JOIN quote.devis d ON d.id = c.devis_id
      ORDER BY CASE c.statut
        WHEN 'execution' THEN 1
        WHEN 'preparation' THEN 2
@@ -26,6 +27,9 @@ BEGIN
       pgv.esc(r.objet),
       project._statut_badge(r.statut),
       pgv.badge(r.pct::text || ' %'),
+      CASE WHEN r.devis_numero IS NOT NULL
+        THEN format('<a href="/quote/devis?p_id=%s">%s</a>', r.devis_id, pgv.esc(r.devis_numero))
+        ELSE '—' END,
       COALESCE(to_char(r.date_debut, 'DD/MM/YYYY'), '—'),
       COALESCE(to_char(r.date_fin_prevue, 'DD/MM/YYYY'), '—')
     ];
@@ -37,7 +41,7 @@ BEGIN
   END IF;
 
   RETURN pgv.md_table(
-    ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Avancement', 'Début', 'Fin prévue'],
+    ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Avancement', 'Devis', 'Début', 'Fin prévue'],
     v_rows, 20
   )
   || '<p>' || format('<a href="%s" role="button">Nouveau chantier</a>', pgv.call_ref('get_chantier_form')) || '</p>';
