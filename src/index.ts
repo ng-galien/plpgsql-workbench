@@ -11,7 +11,7 @@ import path from "path";
 import pino from "pino";
 import { WebSocketServer, WebSocket } from "ws";
 import pty from "node-pty";
-import { execFileSync, execFile, spawn as cpSpawn, type ChildProcess } from "child_process";
+import { execFileSync } from "child_process";
 import { buildContainer, mountTools, type ToolPack } from "./container.js";
 import { plpgsqlPack } from "./packs/plpgsql.js";
 import { docstorePack } from "./packs/docstore.js";
@@ -317,42 +317,50 @@ app.post("/hooks/:module/session", async (req, res) => {
   res.json({ hookSpecificOutput: { hookEventName: "SessionStart" } });
 });
 
-// --- Stop hook — block if pending messages, let pass otherwise ---
+// --- Stop hook — deliver messages one at a time, agent must resolve before stopping ---
+// Hard limit: 5 consecutive blocks per module, then allow stop
+const stopBlockCount = new Map<string, number>();
+
 app.post("/hooks/:module/stop", async (req, res) => {
   const mod = req.params.module;
-  // Prevent infinite loops: if already continuing from a previous stop hook block, allow stop
-  if (req.body?.stop_hook_active) {
+  const count = stopBlockCount.get(mod) ?? 0;
+
+  // Hard limit: after 5 blocks, allow stop unconditionally
+  if (count >= 5) {
+    stopBlockCount.delete(mod);
     return res.json({});
   }
+
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const inbox = await pool.query(`SELECT * FROM workbench.inbox_new($1)`, [mod]);
-    const resolved = await pool.query(`SELECT * FROM workbench.ack_resolved($1)`, [mod]);
 
-    const parts: string[] = [];
+    // Auto-ack resolved messages silently (no agent action needed)
+    await pool.query(`SELECT * FROM workbench.ack_resolved($1)`, [mod]).catch(() => {});
 
-    if (inbox.rows.length > 0) {
-      parts.push(`[INBOX] ${inbox.rows.length} new message(s):`);
-      for (const r of inbox.rows) {
-        parts.push(`  #${r.id} [${r.msg_type}] from ${r.from_module}: ${r.subject}`);
-      }
-      parts.push(`→ Use pg_msg_inbox module:${mod} to read, then resolve each message before stopping.`);
-    }
+    // Check for the last unread message — show only ID + subject
+    const { rows } = await pool.query(
+      `SELECT id, from_module, msg_type, subject
+       FROM workbench.agent_message
+       WHERE to_module = $1 AND status = 'new'
+       ORDER BY created_at DESC LIMIT 1`,
+      [mod],
+    );
 
-    if (resolved.rows.length > 0) {
-      parts.push(`[RESOLVED] ${resolved.rows.length} of your message(s) were resolved:`);
-      for (const r of resolved.rows) {
-        parts.push(`  #${r.id} -> ${r.to_module}: ${r.subject}${r.resolution ? ` — ${r.resolution}` : ""}`);
-      }
-      parts.push(`→ Use pg_msg_inbox module:${mod} to acknowledge these resolutions before stopping.`);
-    }
-
-    if (parts.length > 0) {
-      return res.json({ decision: "block", reason: parts.join("\n") });
+    if (rows.length > 0) {
+      const msg = rows[0];
+      stopBlockCount.set(mod, count + 1);
+      return res.json({
+        decision: "block",
+        reason:
+          `[MESSAGE #${msg.id}] from:${msg.from_module} [${msg.msg_type}]: ${msg.subject}\n` +
+          `→ pg_msg_inbox module:${mod} to read, then pg_msg_inbox module:${mod} resolve:${msg.id} resolution:"..."`,
+      });
     }
   } catch {
     // Table might not exist yet — silent
   }
+
+  stopBlockCount.delete(mod);
   res.json({});
 });
 
@@ -486,7 +494,83 @@ app.delete("/mcp", async (_req, res) => {
 
 // --- WebSocket terminal server (agent terminals for ops dashboard) ---
 const httpServer = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
+
+// --- Server-side output batching (adaptive intervals, Codeman pattern) ---
+const BATCH_INTERVAL_DEFAULT = 16;  // ~60fps
+const BATCH_INTERVAL_BURST   = 50;  // burst mode: batch longer
+const BATCH_FLUSH_THRESHOLD  = 65536; // 64KB → flush immediately
+const WS_PING_INTERVAL       = 15000;
+const WS_BACKPRESSURE_LIMIT  = 262144; // 256KB bufferedAmount → skip
+
+interface OutputBatch {
+  chunks: string[];
+  size: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  lastEvent: number;
+}
+const outputBatches = new Map<string, OutputBatch>();
+
+function batchBroadcast(key: string, data: string, clients: Set<WebSocket>) {
+  let batch = outputBatches.get(key);
+  if (!batch) {
+    batch = { chunks: [], size: 0, timer: null, lastEvent: 0 };
+    outputBatches.set(key, batch);
+  }
+
+  const now = Date.now();
+  batch.chunks.push(data);
+  batch.size += data.length;
+
+  // Flush immediately if threshold exceeded
+  if (batch.size >= BATCH_FLUSH_THRESHOLD) {
+    flushBatch(key, clients);
+    return;
+  }
+
+  // Adaptive interval: burst mode uses longer batches
+  if (!batch.timer) {
+    const gap = now - batch.lastEvent;
+    const interval = gap < 10 ? BATCH_INTERVAL_BURST : BATCH_INTERVAL_DEFAULT;
+    batch.timer = setTimeout(() => flushBatch(key, clients), interval);
+  }
+  batch.lastEvent = now;
+}
+
+function flushBatch(key: string, clients: Set<WebSocket>) {
+  const batch = outputBatches.get(key);
+  if (!batch || batch.chunks.length === 0) return;
+
+  const combined = batch.chunks.join("");
+  batch.chunks = [];
+  batch.size = 0;
+  if (batch.timer) { clearTimeout(batch.timer); batch.timer = null; }
+
+  for (const client of clients) {
+    if (client.readyState !== 1) continue;
+    // Backpressure: skip slow clients (bufferedAmount > 256KB)
+    if (client.bufferedAmount > WS_BACKPRESSURE_LIMIT) continue;
+    client.send(combined);
+  }
+}
+
+// WS heartbeat: ping every 15s, terminate if no pong within 10s
+function setupWsPing(ws: WebSocket) {
+  let alive = true;
+  ws.on("pong", () => { alive = true; });
+
+  const interval = setInterval(() => {
+    if (!alive) {
+      clearInterval(interval);
+      ws.terminate();
+      return;
+    }
+    alive = false;
+    ws.ping();
+  }, WS_PING_INTERVAL);
+
+  ws.on("close", () => clearInterval(interval));
+}
 
 // Active terminal sessions: module -> { pty, clients }
 const terminals = new Map<string, { proc: pty.IPty; clients: Set<WebSocket>; sessionId: number | null }>();
@@ -508,6 +592,21 @@ async function endAgentSession(sessionId: number | null, status: string) {
     await pool.query(`SELECT workbench.session_end($1, $2)`, [sessionId, status]);
   } catch { /* silent */ }
 }
+
+// Resolve tmux binary — node-pty's posix_spawnp may not inherit full PATH
+const TMUX_BIN = (() => {
+  // Try known locations first (macOS homebrew, Linux)
+  for (const p of ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]) {
+    if (fsSync.existsSync(p)) return p;
+  }
+  // Fallback: ask the shell
+  try {
+    return execFileSync("/bin/sh", ["-c", "command -v tmux"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  } catch {
+    return "tmux";
+  }
+})();
+log.info({ tmux: TMUX_BIN }, "Resolved tmux binary");
 
 function resolveWorkspaceRoot(): string {
   let dir = process.cwd();
@@ -569,16 +668,14 @@ wss.on("connection", async (ws: WebSocket, _req: http.IncomingMessage, mod: stri
       cols: 120,
       rows: 40,
       cwd: modPath,
-      env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
+      env: ptyEnv,
     });
 
     term = { proc, clients: new Set(), sessionId };
     terminals.set(mod, term);
 
     proc.onData((data: string) => {
-      for (const client of term!.clients) {
-        if (client.readyState === 1) client.send(data);
-      }
+      batchBroadcast(`terminal:${mod}`, data, term!.clients);
     });
 
     proc.onExit(({ exitCode }) => {
@@ -588,12 +685,14 @@ wss.on("connection", async (ws: WebSocket, _req: http.IncomingMessage, mod: stri
         client.send(`\r\n\x1b[33m[Terminal exited with code ${exitCode}]\x1b[0m\r\n`);
       }
       terminals.delete(mod);
+      outputBatches.delete(`terminal:${mod}`);
     });
 
     log.info({ mod, pid: proc.pid, cwd: modPath }, "Spawned agent terminal");
   }
 
   term.clients.add(ws);
+  setupWsPing(ws);
 
   ws.on("message", (data: Buffer | string) => {
     const msg = typeof data === "string" ? data : data.toString();
@@ -659,13 +758,21 @@ app.get("/api/messages", async (req, res) => {
   }
 });
 
-// --- tmux session monitoring (read-only agent observation) ---
-const tmuxWatchers = new Map<string, { tail: ChildProcess; clients: Set<WebSocket> }>();
+// --- tmux session monitoring (per-client node-pty attach, claude-command-center pattern) ---
+// Clean env (built once, reused). node-pty crashes on undefined values in env.
+const ptyEnv: Record<string, string> = {};
+for (const [k, v] of Object.entries(process.env)) {
+  if (v !== undefined) ptyEnv[k] = v;
+}
+ptyEnv.TERM = "xterm-256color";
+// CRITICAL: unset TMUX so nested tmux attach works (server may run inside tmux)
+delete ptyEnv.TMUX;
+delete ptyEnv.TMUX_PANE;
 
 app.get("/api/tmux", (_req, res) => {
   if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
   try {
-    const raw = execFileSync("tmux", [
+    const raw = execFileSync(TMUX_BIN, [
       "list-sessions", "-F",
       "#{session_name}\t#{session_created}\t#{session_activity}",
     ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -676,10 +783,10 @@ app.get("/api/tmux", (_req, res) => {
       let cwd = "";
       let dead = false;
       try {
-        cwd = execFileSync("tmux", ["display-message", "-t", name, "-p", "#{pane_current_path}"], {
+        cwd = execFileSync(TMUX_BIN, ["display-message", "-t", name, "-p", "#{pane_current_path}"], {
           encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
         }).trim();
-        const info = execFileSync("tmux", ["list-panes", "-t", name, "-F", "#{pane_dead}"], {
+        const info = execFileSync(TMUX_BIN, ["list-panes", "-t", name, "-F", "#{pane_dead}"], {
           encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
         }).trim();
         dead = info === "1";
@@ -696,7 +803,7 @@ app.get("/api/tmux", (_req, res) => {
 function handleTmuxAttach(ws: WebSocket, session: string) {
   // Check session exists
   try {
-    execFileSync("tmux", ["has-session", "-t", session], {
+    execFileSync(TMUX_BIN, ["has-session", "-t", session], {
       stdio: ["ignore", "pipe", "pipe"],
     });
   } catch {
@@ -705,55 +812,61 @@ function handleTmuxAttach(ws: WebSocket, session: string) {
     return;
   }
 
-  // Send initial scrollback (last 500 lines with ANSI escapes)
+  // Per-client node-pty attached to tmux — immediate creation at 80x24 (claude-command-center).
+  // Client sends resize on connect → pty.resize() → tmux repaints at correct size.
+  // Direct send, no server-side batching.
+  let proc: pty.IPty;
   try {
-    const scrollback = execFileSync("tmux", [
-      "capture-pane", "-p", "-e", "-t", session, "-S", "-500",
-    ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    if (scrollback) ws.send(scrollback);
-  } catch {}
-
-  // Join or create watcher for this session
-  let watcher = tmuxWatchers.get(session);
-  if (!watcher) {
-    const logPath = `/tmp/pgw-tmux-${session}.log`;
-    fsSync.writeFileSync(logPath, "");
-
-    // pipe-pane -o = output only (no input) → log file
-    try {
-      execFileSync("tmux", ["pipe-pane", "-o", "-t", session, `cat >> '${logPath}'`], {
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch {
-      ws.send(`\r\n\x1b[31mFailed to attach pipe-pane: ${session}\x1b[0m\r\n`);
-      ws.close();
-      return;
-    }
-
-    // tail -f for event-driven streaming
-    const tail = cpSpawn("tail", ["-f", logPath], {
-      stdio: ["ignore", "pipe", "ignore"],
+    proc = pty.spawn(TMUX_BIN, ["attach-session", "-t", session], {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      env: ptyEnv,
     });
-
-    watcher = { tail, clients: new Set() };
-    tmuxWatchers.set(session, watcher);
-
-    tail.stdout?.on("data", (chunk: Buffer) => {
-      const data = chunk.toString("utf8");
-      for (const client of watcher!.clients) {
-        if (client.readyState === 1) client.send(data);
-      }
-    });
-
-    tail.on("exit", () => {
-      tmuxWatchers.delete(session);
-      try { fsSync.unlinkSync(logPath); } catch {}
-    });
+  } catch (err) {
+    log.error({ err, tmux: TMUX_BIN, session }, "Failed to spawn pty for tmux attach");
+    ws.send(`\r\n\x1b[31mFailed to attach: ${session}\x1b[0m\r\n`);
+    ws.close();
+    return;
   }
 
-  watcher.clients.add(ws);
+  log.info({ session, pid: proc.pid }, "Attached pty to tmux session");
 
-  // Interactive: forward input to tmux, handle resize
+  // Direct send to WS client with backpressure recovery.
+  // When bufferedAmount exceeds limit, pause the pty until the buffer drains.
+  // This prevents silent data drops that cause garbled rendering (especially
+  // on the last terminal to connect, when all scrollbacks dump concurrently).
+  let paused = false;
+  proc.onData((chunk: string) => {
+    if (ws.readyState !== 1) return;
+    if (ws.bufferedAmount >= WS_BACKPRESSURE_LIMIT) {
+      if (!paused) {
+        paused = true;
+        proc.pause();
+        // Poll until buffer drains, then resume
+        const drain = setInterval(() => {
+          if (ws.readyState !== 1) { clearInterval(drain); return; }
+          if (ws.bufferedAmount < WS_BACKPRESSURE_LIMIT / 2) {
+            clearInterval(drain);
+            paused = false;
+            proc.resume();
+          }
+        }, 50);
+      }
+      return;
+    }
+    ws.send(chunk);
+  });
+
+  proc.onExit(({ exitCode }) => {
+    log.info({ session, exitCode }, "tmux pty exited");
+    if (ws.readyState === 1) {
+      ws.send(`\r\n\x1b[33m[tmux session ended]\x1b[0m\r\n`);
+    }
+  });
+
+  setupWsPing(ws);
+
   ws.on("message", (data: Buffer | string) => {
     const msg = typeof data === "string" ? data : data.toString();
     try {
@@ -761,39 +874,16 @@ function handleTmuxAttach(ws: WebSocket, session: string) {
       if (parsed.type === "resize" && parsed.cols && parsed.rows) {
         const cols = Math.max(20, Math.floor(parsed.cols));
         const rows = Math.max(5, Math.floor(parsed.rows));
-        try {
-          execFileSync("tmux", ["resize-window", "-t", session, "-x", String(cols), "-y", String(rows)], {
-            stdio: ["ignore", "pipe", "pipe"],
-          });
-        } catch {}
+        proc.resize(cols, rows);
         return;
       }
-    } catch {}
-    // Forward raw input to tmux via send-keys (async to avoid blocking event loop)
-    const parts = msg.split(/(\r\n|\r|\n)/);
-    for (const part of parts) {
-      if (!part) continue;
-      if (part === "\r" || part === "\n" || part === "\r\n") {
-        execFile("tmux", ["send-keys", "-t", session, "Enter"], () => {});
-      } else {
-        execFile("tmux", ["send-keys", "-t", session, "-l", "--", part], () => {});
-      }
-    }
+    } catch { /* not JSON, treat as input */ }
+    proc.write(msg);
   });
 
   ws.on("close", () => {
-    watcher?.clients.delete(ws);
-    if (watcher && watcher.clients.size === 0) {
-      watcher.tail.kill();
-      tmuxWatchers.delete(session);
-      // Disable pipe-pane
-      try {
-        execFileSync("tmux", ["pipe-pane", "-t", session], {
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-      } catch {}
-      try { fsSync.unlinkSync(`/tmp/pgw-tmux-${session}.log`); } catch {}
-    }
+    // Kill pty (detaches from tmux, session continues running)
+    try { proc.kill(); } catch {}
   });
 }
 
@@ -812,7 +902,7 @@ app.post("/api/agents/:module/spawn", async (req, res) => {
 
   // Already running?
   try {
-    execFileSync("tmux", ["has-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync(TMUX_BIN, ["has-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
     return res.json({ status: "already_running", module: mod, session, ws: `/ws/tmux/${session}` });
   } catch {}
 
@@ -831,15 +921,33 @@ app.post("/api/agents/:module/spawn", async (req, res) => {
   fsSync.writeFileSync(scriptFile, script, { mode: 0o700 });
 
   try {
-    execFileSync("tmux", [
+    execFileSync(TMUX_BIN, [
       "new-session", "-d", "-s", session, "-c", modPath, scriptFile,
     ], { stdio: ["ignore", "pipe", "pipe"] });
-    execFileSync("tmux", ["set-option", "-t", session, "history-limit", "50000"], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    execFileSync("tmux", ["set-option", "-t", session, "remain-on-exit", "on"], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    // Terminal config for proper xterm.js rendering (true color, unicode, history)
+    const tmuxOpts: [string, string][] = [
+      ["history-limit", "50000"],
+      ["remain-on-exit", "on"],
+      ["default-terminal", "xterm-256color"],
+      ["mouse", "off"],
+    ];
+    for (const [key, val] of tmuxOpts) {
+      execFileSync(TMUX_BIN, ["set-option", "-t", session, key, val], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    }
+    // True color passthrough, unicode, extended keys (Shift+Enter for Claude Code)
+    try {
+      execFileSync(TMUX_BIN, ["set-option", "-t", session, "-a", "terminal-overrides", ",xterm-256color:Tc"], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      execFileSync(TMUX_BIN, ["set-option", "-t", session, "extended-keys", "on"], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      execFileSync(TMUX_BIN, ["set-window-option", "-q", "-t", session, "utf8", "on"], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch { /* older tmux versions may not support these */ }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: msg });
@@ -859,16 +967,9 @@ app.post("/api/agents/:module/kill", async (req, res) => {
 
   // Kill tmux session if exists
   try {
-    execFileSync("tmux", ["has-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
-    execFileSync("tmux", ["kill-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
-    // Clean up watcher
-    const watcher = tmuxWatchers.get(session);
-    if (watcher) {
-      watcher.tail.kill();
-      for (const client of watcher.clients) client.close();
-      tmuxWatchers.delete(session);
-    }
-    try { fsSync.unlinkSync(`/tmp/pgw-tmux-${session}.log`); } catch {}
+    execFileSync(TMUX_BIN, ["has-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync(TMUX_BIN, ["kill-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
+    // Per-client ptys auto-detect tmux session death via onExit — no centralized cleanup needed
     try { fsSync.unlinkSync(`/tmp/pgw-spawn-${session}.sh`); } catch {}
     log.info({ mod, session }, "Killed Claude agent tmux session");
     return res.json({ status: "killed", module: mod, session });
