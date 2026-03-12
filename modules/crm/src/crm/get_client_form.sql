@@ -26,7 +26,7 @@ BEGIN
     v_title
   ]);
 
-  v_body := v_body || '<form data-rpc="client_save">';
+  v_body := v_body || '<form data-rpc="post_client_save">';
 
   IF p_id IS NOT NULL THEN
     v_body := v_body || '<input type="hidden" name="id" value="' || p_id || '">';

@@ -12,6 +12,8 @@ DECLARE
   v_tab_interactions text;
   v_body text;
   r record;
+  v_activity text;
+  v_rows text;
 BEGIN
   SELECT * INTO v_client FROM crm.client WHERE id = p_id;
   IF NOT FOUND THEN
@@ -47,7 +49,7 @@ BEGIN
         'Email', COALESCE(r.email, '—'),
         'Téléphone', COALESCE(r.phone, '—')
       ]),
-      pgv.action('contact_delete', 'Supprimer', jsonb_build_object('id', r.id), 'Supprimer ce contact ?', 'danger')
+      pgv.action('post_contact_delete', 'Supprimer', jsonb_build_object('id', r.id), 'Supprimer ce contact ?', 'danger')
     );
   END LOOP;
 
@@ -57,7 +59,7 @@ BEGIN
 
   v_contacts := v_contacts ||
     '<details><summary>Ajouter un contact</summary>'
-    '<form data-rpc="contact_add">'
+    '<form data-rpc="post_contact_add">'
     '<input type="hidden" name="client_id" value="' || p_id || '">'
     || pgv.input('name', 'text', 'Nom', NULL, true)
     || pgv.input('role', 'text', 'Rôle')
@@ -69,9 +71,49 @@ BEGIN
 
   v_tab_fiche := v_fiche || '<hr>' || '<h4>Contacts</h4>' || v_contacts;
 
+  -- Activité liée (cross-module)
+  v_activity := '';
+
+  BEGIN
+    v_rows := '';
+    FOR r IN EXECUTE 'SELECT id, numero, statut FROM quote.devis WHERE client_id = $1 ORDER BY id DESC' USING p_id LOOP
+      v_rows := v_rows || '| ' || pgv.esc(r.numero::text) || ' | ' || pgv.esc(r.statut::text) || ' | [Voir](/' || 'quote/devis?p_id=' || r.id || ') |' || E'\n';
+    END LOOP;
+    IF v_rows <> '' THEN
+      v_activity := v_activity || '<h4>Devis</h4><md>' || E'\n' || '| Numéro | Statut | |' || E'\n' || '|--------|--------|-|' || E'\n' || v_rows || '</md>';
+    END IF;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  BEGIN
+    v_rows := '';
+    FOR r IN EXECUTE 'SELECT id, numero, statut FROM project.chantier WHERE client_id = $1 ORDER BY id DESC' USING p_id LOOP
+      v_rows := v_rows || '| ' || pgv.esc(r.numero::text) || ' | ' || pgv.esc(r.statut::text) || ' | [Voir](/' || 'project/chantier?p_id=' || r.id || ') |' || E'\n';
+    END LOOP;
+    IF v_rows <> '' THEN
+      v_activity := v_activity || '<h4>Chantiers</h4><md>' || E'\n' || '| Numéro | Statut | |' || E'\n' || '|--------|--------|-|' || E'\n' || v_rows || '</md>';
+    END IF;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  BEGIN
+    v_rows := '';
+    FOR r IN EXECUTE 'SELECT id, numero, statut FROM purchase.commande WHERE fournisseur_id = $1 ORDER BY id DESC' USING p_id LOOP
+      v_rows := v_rows || '| ' || pgv.esc(r.numero::text) || ' | ' || pgv.esc(r.statut::text) || ' | [Voir](/' || 'purchase/commande?p_id=' || r.id || ') |' || E'\n';
+    END LOOP;
+    IF v_rows <> '' THEN
+      v_activity := v_activity || '<h4>Commandes fournisseur</h4><md>' || E'\n' || '| Numéro | Statut | |' || E'\n' || '|--------|--------|-|' || E'\n' || v_rows || '</md>';
+    END IF;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  IF v_activity <> '' THEN
+    v_tab_fiche := v_tab_fiche || '<hr><h4>Activité liée</h4>' || v_activity;
+  END IF;
+
   v_tab_fiche := v_tab_fiche || '<hr>'
     || format('<a href="%s" role="button">Modifier</a> ', pgv.call_ref('get_client_form', jsonb_build_object('p_id', p_id)))
-    || pgv.action('client_delete', 'Supprimer', jsonb_build_object('id', p_id), 'Supprimer définitivement ce client et tout son historique ?', 'danger');
+    || pgv.action('post_client_delete', 'Supprimer', jsonb_build_object('id', p_id), 'Supprimer définitivement ce client et tout son historique ?', 'danger');
 
   v_interactions := '';
   FOR r IN SELECT * FROM crm.interaction WHERE client_id = p_id ORDER BY created_at DESC LOOP
@@ -88,7 +130,7 @@ BEGIN
 
   v_interactions := v_interactions ||
     '<details><summary>Ajouter une interaction</summary>'
-    '<form data-rpc="interaction_add">'
+    '<form data-rpc="post_interaction_add">'
     '<input type="hidden" name="client_id" value="' || p_id || '">'
     || pgv.sel('type', 'Type', '[{"label":"Appel","value":"call"},{"label":"Visite","value":"visit"},{"label":"Courriel","value":"email"},{"label":"Note","value":"note"}]'::jsonb, 'note')
     || pgv.input('subject', 'text', 'Sujet', NULL, true)

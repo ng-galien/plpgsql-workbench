@@ -24,9 +24,9 @@ BEGIN
     pgv.stat('Hooks bloques', v_stats.hook_deny::text || ' / ' || v_stats.hook_total::text)
   ]);
 
-  -- Terminal container (xterm.js picks this up via Alpine)
+  -- Terminal container (auto-connects via x-init)
   v_body := v_body
-    || '<div x-data="opsTerminal" data-module="' || pgv.esc(p_module) || '" class="ops-terminal ops-terminal--detail">'
+    || '<div x-data="opsTerminal" data-module="' || pgv.esc(p_module) || '" x-init="$nextTick(() => connect())" class="ops-terminal ops-terminal--detail">'
     || '<div x-ref="terminal"></div>'
     || '<div x-show="!connected" class="ops-terminal-status">Connexion...</div>'
     || '</div>';

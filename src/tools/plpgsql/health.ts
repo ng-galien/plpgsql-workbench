@@ -6,17 +6,17 @@ import type { ToolHandler, WithClient } from "../../container.js";
 import type { ModuleRegistry, ModuleInfo } from "../../pgm/registry.js";
 import { text } from "../../helpers.js";
 
-export function createReviewTool({ withClient, moduleRegistry }: {
+export function createHealthTool({ withClient, moduleRegistry }: {
   withClient: WithClient;
   moduleRegistry: Promise<ModuleRegistry>;
 }): ToolHandler {
   return {
     metadata: {
-      name: "pg_review",
+      name: "ws_health",
       description:
-        "Audit all modules in one call.\n" +
-        "Returns: pending tasks, SQL export coherence (DB vs src/), git status per module.\n" +
-        "Use after delegating work to check everything is done.",
+        "Workspace health check — single call to assess overall state.\n" +
+        "Returns: pending tasks, SQL coherence (DB vs src/), git status per module.\n" +
+        "Use after delegating work to verify everything is clean.",
       schema: z.object({
         module: z.string().optional().describe("Filter by module name (default: all)"),
       }),

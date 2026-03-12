@@ -251,6 +251,8 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 
 **4. pgv primitives are platform** — `pgv.*` functions live in `modules/pgv/build/pgv.func.sql` (canonical source, exported via `pg_pack`). They are shared infrastructure, not app code. Each app gets pgv files via `pgm install`.
 
+**5. Alpine.js `$el` is context-dependent (GOTCHA)** — In `Alpine.data()` components, `$el` refers to the element where the current directive is evaluated, NOT the component root (`x-data` element). Inside `@click` handlers on nested elements, `$el` points to the clicked element. **Always capture the root in `init()`**: `this._rootEl = this.$el;` then use `this._rootEl` for DOM queries (`querySelector`, etc.). Similarly, use `$nextTick()` before accessing DOM that depends on reactive state changes (e.g., after setting `s.open = true`, the `x-show` container needs a tick to render before `querySelector` can find its children).
+
 ### pgView Files
 
 | File | Role |

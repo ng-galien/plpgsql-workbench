@@ -450,19 +450,27 @@ document.addEventListener('alpine:init', () => {
     /* ── Grid UI actions ── */
 
     toggle(s) {
-      s.open = !s.open;
-      console.log('[OPS:grid] toggle', s.name, 'open:', s.open);
-      if (s.open) {
-        // Wait for Alpine to render the x-show container before activating
+      const opening = !s.open;
+      console.log('[OPS:grid] toggle', s.name, 'opening:', opening);
+      // Accordion: close all others before opening
+      if (opening) {
+        for (const other of this.sessions) {
+          if (other !== s) other.open = false;
+        }
+      }
+      s.open = opening;
+      if (opening) {
         this.$nextTick(() => this.activateSession(s.name));
-      } else if (this.activeModule === s.name) {
-        this.activeModule = null;
+      } else {
+        this.deactivateSession(s.name);
       }
     },
 
     expandAll() {
-      for (const s of this.sessions) s.open = true;
+      // Accordion: open only the first session
+      for (const s of this.sessions) s.open = false;
       if (this.sessions.length > 0) {
+        this.sessions[0].open = true;
         this.$nextTick(() => this.activateSession(this.sessions[0].name));
       }
     },

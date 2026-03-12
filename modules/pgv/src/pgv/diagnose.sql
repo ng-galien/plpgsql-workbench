@@ -20,6 +20,8 @@ DECLARE
   v_missing text[];
   v_pages text[];
   v_page text;
+  v_path_only text;
+  v_params_jsonb jsonb;
   v_reports text := '';
   v_css_ok boolean;
 BEGIN
@@ -45,10 +47,24 @@ BEGIN
     v_rows := '';
     v_err := 0; v_warn := 0; v_ok := 0;
 
+    -- Parse query params from path
+    v_params_jsonb := '{}'::jsonb;
+    IF v_page LIKE '%?%' THEN
+      v_path_only := split_part(v_page, '?', 1);
+      FOR v_rec IN
+        SELECT split_part(pair, '=', 1) AS k, split_part(pair, '=', 2) AS v
+        FROM unnest(string_to_array(split_part(v_page, '?', 2), '&')) AS pair
+      LOOP
+        v_params_jsonb := v_params_jsonb || jsonb_build_object(v_rec.k, v_rec.v);
+      END LOOP;
+    ELSE
+      v_path_only := v_page;
+    END IF;
+
     -- Render page
     v_start := clock_timestamp();
     BEGIN
-      v_html := pgv.route(p_schema, v_page, 'GET', '{}'::jsonb);
+      v_html := pgv.route(p_schema, v_path_only, 'GET', v_params_jsonb);
     EXCEPTION WHEN OTHERS THEN
       v_reports := v_reports || pgv.error('500', p_schema || ':' || v_page, SQLERRM) || chr(10);
       CONTINUE;
@@ -103,29 +119,44 @@ BEGIN
       END IF;
     END LOOP;
 
-    -- 5. Internal href targets
+    -- 5. Internal href targets (cross-module aware)
     FOR v_rec IN
       SELECT DISTINCT x[1] AS raw_href FROM regexp_matches(v_html, 'href="(/[^"]*)"', 'g') t(x)
     LOOP
       v_href := v_rec.raw_href;
-      IF v_href LIKE '/' || p_schema || '/%' THEN
-        v_href := substr(v_href, length(p_schema) + 2);
-      ELSIF v_href = '/' || p_schema OR v_href = '/' || p_schema || '/' THEN
-        v_href := '/';
-      END IF;
+      -- Strip query params for resolution
       IF v_href LIKE '%?%' THEN v_href := split_part(v_href, '?', 1); END IF;
 
-      v_fn := CASE WHEN v_href = '/' THEN 'get_index'
-              ELSE 'get_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_') END;
+      -- Detect target schema from first path segment
+      v_ns := split_part(trim(LEADING '/' FROM v_href), '/', 1);
+      IF v_ns <> p_schema AND EXISTS (
+        SELECT 1 FROM pg_namespace WHERE nspname = v_ns
+      ) THEN
+        -- Cross-module link: /crm/client -> crm.get_client()
+        v_fn := CASE
+          WHEN trim(BOTH '/' FROM substr(v_href, length(v_ns) + 2)) = '' THEN 'get_index'
+          ELSE 'get_' || replace(replace(trim(BOTH '/' FROM substr(v_href, length(v_ns) + 2)), '/', '_'), '-', '_')
+        END;
+      ELSE
+        -- Same-module link: strip schema prefix if present
+        IF v_href LIKE '/' || p_schema || '/%' THEN
+          v_href := substr(v_href, length(p_schema) + 2);
+        ELSIF v_href = '/' || p_schema OR v_href = '/' || p_schema || '/' THEN
+          v_href := '/';
+        END IF;
+        v_ns := p_schema;
+        v_fn := CASE WHEN v_href = '/' THEN 'get_index'
+                ELSE 'get_' || replace(replace(trim(BOTH '/' FROM v_href), '/', '_'), '-', '_') END;
+      END IF;
 
       IF EXISTS (
         SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = p_schema AND p.proname = v_fn
+        WHERE n.nspname = v_ns AND p.proname = v_fn
       ) THEN
-        v_rows := v_rows || '| ' || pgv.badge('OK', 'success') || ' | Lien | `' || pgv.esc(v_rec.raw_href) || '` -> `' || v_fn || '()` |' || chr(10);
+        v_rows := v_rows || '| ' || pgv.badge('OK', 'success') || ' | Lien | `' || pgv.esc(v_rec.raw_href) || '` -> `' || v_ns || '.' || v_fn || '()` |' || chr(10);
         v_ok := v_ok + 1;
       ELSE
-        v_rows := v_rows || '| ' || pgv.badge('ERR', 'danger') || ' | Lien | `' || pgv.esc(v_rec.raw_href) || '` -> `' || v_fn || '()` introuvable |' || chr(10);
+        v_rows := v_rows || '| ' || pgv.badge('ERR', 'danger') || ' | Lien | `' || pgv.esc(v_rec.raw_href) || '` -> `' || v_ns || '.' || v_fn || '()` introuvable |' || chr(10);
         v_err := v_err + 1;
       END IF;
     END LOOP;
@@ -215,6 +246,60 @@ BEGIN
       || '</md>' || chr(10);
 
   END LOOP;
+
+  -- 9. Static RPC analysis (schema-wide, source code scan)
+  v_rows := '';
+  v_err := 0; v_ok := 0; v_warn := 0;
+  FOR v_rec IN
+    WITH rpc_refs AS (
+      -- data-rpc="xxx" in function bodies
+      SELECT p.proname AS source,
+             (regexp_matches(pg_get_functiondef(p.oid), 'data-rpc="([^"]+)"', 'g'))[1] AS rpc
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = p_schema
+      UNION
+      -- pgv.action('xxx', ...) calls
+      SELECT p.proname AS source,
+             (regexp_matches(pg_get_functiondef(p.oid), E'pgv\\.action\\(''([^'']+)''', 'g'))[1] AS rpc
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = p_schema
+    ),
+    resolved AS (
+      SELECT DISTINCT r.source, r.rpc,
+             CASE WHEN r.rpc LIKE '%.%' THEN split_part(r.rpc, '.', 1) ELSE p_schema END AS target_schema,
+             CASE WHEN r.rpc LIKE '%.%' THEN split_part(r.rpc, '.', 2) ELSE r.rpc END AS target_fn
+      FROM rpc_refs r
+    )
+    SELECT r.source, r.rpc, r.target_schema, r.target_fn,
+           EXISTS (
+             SELECT 1 FROM pg_proc p2 JOIN pg_namespace n2 ON n2.oid = p2.pronamespace
+             WHERE n2.nspname = r.target_schema AND p2.proname = r.target_fn
+           ) AS found
+    FROM resolved r
+    ORDER BY found, r.source, r.rpc
+  LOOP
+    IF v_rec.found THEN
+      v_ok := v_ok + 1;
+    ELSE
+      v_rows := v_rows || '| ' || pgv.badge('ERR', 'danger') || ' | ' || pgv.esc(v_rec.source) || ' | `' || v_rec.rpc || '` -> `' || v_rec.target_schema || '.' || v_rec.target_fn || '()` introuvable |' || chr(10);
+      v_err := v_err + 1;
+    END IF;
+  END LOOP;
+
+  IF v_err > 0 OR v_ok > 0 THEN
+    v_reports := v_reports || pgv.dl(
+      'Analyse statique RPC', p_schema,
+      'Bilan',
+        CASE WHEN v_err > 0 THEN pgv.badge(v_err || ' mort(s)', 'danger') || ' ' ELSE '' END
+        || pgv.badge(v_ok || ' ok', 'success'))
+      || '<md>' || chr(10)
+      || '| Niveau | Source | Detail |' || chr(10)
+      || '|--------|--------|--------|' || chr(10)
+      || v_rows
+      || '</md>' || chr(10);
+  END IF;
 
   RETURN v_reports;
 END;

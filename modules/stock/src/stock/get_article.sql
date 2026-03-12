@@ -97,7 +97,7 @@ BEGIN
   -- Actions
   v_body := v_body || format('<p><a href="%s" role="button">Modifier</a> ',
     pgv.call_ref('get_article_form', jsonb_build_object('p_id', p_id)));
-  v_body := v_body || pgv.action('Désactiver', 'post_article_delete',
+  v_body := v_body || pgv.action('post_article_delete', 'Désactiver',
     jsonb_build_object('id', p_id), 'Désactiver cet article ?') || '</p>';
 
   RETURN v_body;

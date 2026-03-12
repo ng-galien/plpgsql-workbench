@@ -112,9 +112,9 @@ BEGIN
     pgv.stat('Hooks bloques', v_stats.hook_deny::text || ' / ' || v_stats.hook_total::text)
   ]);
 
-  -- Terminal container (xterm.js picks this up via Alpine)
+  -- Terminal container (auto-connects via x-init)
   v_body := v_body
-    || '<div x-data="opsTerminal" data-module="' || pgv.esc(p_module) || '" class="ops-terminal ops-terminal--detail">'
+    || '<div x-data="opsTerminal" data-module="' || pgv.esc(p_module) || '" x-init="$nextTick(() => connect())" class="ops-terminal ops-terminal--detail">'
     || '<div x-ref="terminal"></div>'
     || '<div x-show="!connected" class="ops-terminal-status">Connexion...</div>'
     || '</div>';
@@ -188,7 +188,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION ops.get_agent(text) IS 'Vue detaillee d''un agent : terminal xterm.js + messages + hooks';
+COMMENT ON FUNCTION ops.get_agent(text) IS 'Agent detail page with auto-connecting terminal, messages and hooks';
 
 CREATE OR REPLACE FUNCTION ops.get_agents()
  RETURNS text
@@ -211,15 +211,18 @@ BEGIN
     || '<template x-for="s in sessions" :key="s.name">'
     || '<article class="ops-agent-card" :class="{ ''ops-agent-card--open'': s.open }">'
     || '<header class="ops-agent-card-header" @click="toggle(s)">'
-    || '<span class="ops-agent-dot" :class="{ connected: s._connected, disconnected: s._disconnected, loading: !s._connected && !s._disconnected }"></span>'
+    || '<span class="ops-agent-dot" :class="{ connected: s._connected, disconnected: s._disconnected && !s._reconnecting, loading: s._reconnecting }"></span>'
     || '<span class="ops-agent-name" x-text="s.name"></span>'
     || '<span class="ops-agent-status" :class="{ ''ops-agent-status--active'': s.status && s.status !== ''idle'' }" x-text="s.status || ''idle''"></span>'
     || '<span class="ops-agent-chevron">&#9654;</span>'
     || '</header>'
     || '<div class="ops-agent-body" x-show="s.open">'
-    || '<div x-data="opsTerminal" :data-module="s.name" x-effect="if(s.open && !_module) $nextTick(() => connect(s.name))" class="ops-terminal">'
-    || '<div x-ref="terminal"></div>'
-    || '<div x-show="!connected" class="ops-terminal-status">Connexion...</div>'
+    || '<div class="ops-terminal" :data-terminal-for="s.name" @click="activateSession(s.name)">'
+    || '<div class="ops-terminal-status"'
+    || ' x-show="activeModule === s.name && (s._reconnecting || s._backpressure || !s._connected)"'
+    || ' :class="{ ''ops-terminal-status--reconnecting'': s._reconnecting, ''ops-terminal-status--backpressure'': s._backpressure }">'
+    || '<span x-text="s._backpressure ? ''Buffer plein...'' : s._reconnecting ? ''Reconnexion...'' : ''Connexion...''"></span>'
+    || '</div>'
     || '</div>'
     || '</div>'
     || '</article>'
@@ -230,7 +233,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION ops.get_agents() IS 'Vue live agents — cards collapsibles avec status live dans header, terminal xterm.js lazy-connect';
+COMMENT ON FUNCTION ops.get_agents() IS 'Live agents grid page — single-terminal pattern with buffer cache';
 
 CREATE OR REPLACE FUNCTION ops.get_hooks(p_module text DEFAULT NULL::text)
  RETURNS text
