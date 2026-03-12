@@ -93,20 +93,25 @@ dev-init: dev-up dev-sync ## First start: load all build/*.sql into dev DB
 			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f "$$sql" -q 2>&1 | grep -v "^$$" || true; \
 		done; \
 	done
-	@echo "Creating QA schemas..."
+	@echo "Granting QA schema permissions..."
 	@for mod in modules/*/; do \
 		schema=$$(python3 -c "import json; print(json.load(open('$${mod}module.json')).get('schemas',{}).get('qa',''))" 2>/dev/null); \
 		if [ -n "$$schema" ]; then \
-			echo "  CREATE SCHEMA $$schema"; \
 			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -c \
-				"CREATE SCHEMA IF NOT EXISTS $$schema; GRANT USAGE ON SCHEMA $$schema TO web_anon; GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA $$schema TO web_anon;" -q 2>&1 | grep -v "^$$" || true; \
+				"GRANT USAGE ON SCHEMA $$schema TO web_anon; GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA $$schema TO web_anon; GRANT SELECT ON ALL TABLES IN SCHEMA $$schema TO web_anon;" -q 2>&1 | grep -v "^$$" || true; \
 		fi; \
 	done
-	@echo "Loading QA seeds..."
+	@echo "Seeding QA data..."
 	@for mod in modules/*/; do \
-		if [ -f "$${mod}qa/seed.sql" ]; then \
-			echo "  Loading $${mod}qa/seed.sql" && \
-			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f "$${mod}qa/seed.sql" -q 2>&1 | grep -v "^$$" || true; \
+		schema=$$(python3 -c "import json; print(json.load(open('$${mod}module.json')).get('schemas',{}).get('qa',''))" 2>/dev/null); \
+		if [ -n "$$schema" ]; then \
+			has_seed=$$(PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -tAc \
+				"SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = '$$schema' AND p.proname = 'seed'" 2>/dev/null); \
+			if [ "$$has_seed" = "1" ]; then \
+				echo "  $$schema.seed()"; \
+				PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -c \
+					"SET app.tenant_id = 'dev'; SELECT $$schema.seed();" -q 2>&1 | grep -v "^$$" || true; \
+			fi; \
 		fi; \
 	done
 	@echo "All modules loaded into dev DB"

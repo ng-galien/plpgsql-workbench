@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION pgv.app_nav()
  RETURNS jsonb
  LANGUAGE plpgsql
- STABLE SECURITY DEFINER
+ STABLE
 AS $function$
 DECLARE
   v_result jsonb := '[]'::jsonb;
@@ -15,10 +15,9 @@ BEGIN
       FROM workbench.tenant_module tm
      WHERE tm.active = true
        AND tm.module <> 'pgv'
-     ORDER BY tm.module
+     ORDER BY tm.sort_order, tm.module
   LOOP
     -- Resolve schema: find the namespace that has nav_items()
-    -- Priority: exact match (crm->crm), then prefix match (cad3d->cad)
     SELECT n.nspname INTO v_schema
       FROM pg_proc p
       JOIN pg_namespace n ON n.oid = p.pronamespace

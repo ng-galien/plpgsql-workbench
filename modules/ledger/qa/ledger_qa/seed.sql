@@ -5,6 +5,9 @@ AS $function$
 DECLARE
     v_entry_id integer;
 BEGIN
+    -- Set tenant context for RLS
+    PERFORM set_config('app.tenant_id', 'dev', true);
+
     -- Nettoyer les données QA existantes
     UPDATE ledger.journal_entry SET posted = false WHERE posted = true;
     DELETE FROM ledger.entry_line;

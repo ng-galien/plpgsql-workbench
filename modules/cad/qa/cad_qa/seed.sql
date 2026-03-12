@@ -11,6 +11,9 @@ DECLARE
   v_g_ossature int; v_g_toiture int; v_g_lisses int;
   v_g_face_av int; v_g_face_ar int;
 BEGIN
+  -- Set tenant context for RLS
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
   DELETE FROM cad.drawing WHERE name = 'QA — Abri bois';
 
   INSERT INTO cad.drawing (name, width, height, scale)
@@ -27,10 +30,8 @@ BEGIN
   v_par_d := cad.add_piece(v_did, '90x90', 2400, ARRAY[2000,2000,0], ARRAY[0,0,0], 'Poteau AR-D', 'poteau');
 
   -- === TRAVERSES HAUTES (4 côtés) ===
-  -- AV/AR: along X, RY=90
   v_tav := cad.add_piece(v_did, '45x90', 2000, ARRAY[0,0,2400],    ARRAY[0,90,0],  'Traverse AV',  'traverse');
   v_tar := cad.add_piece(v_did, '45x90', 2000, ARRAY[0,2000,2400], ARRAY[0,90,0],  'Traverse AR',  'traverse');
-  -- G/D: along Y, RX=-90 (section 90x45 pour garder 45mm en Z)
   v_tg  := cad.add_piece(v_did, '90x45', 2000, ARRAY[0,0,2400],    ARRAY[0,0,-90], 'Traverse G',   'traverse');
   v_td  := cad.add_piece(v_did, '90x45', 2000, ARRAY[2000,0,2400], ARRAY[0,0,-90], 'Traverse D',   'traverse');
 
@@ -40,7 +41,7 @@ BEGIN
   v_lg  := cad.add_piece(v_did, '90x45', 2000, ARRAY[0,0,0],       ARRAY[0,0,-90], 'Lisse G',   'lisse');
   v_ld  := cad.add_piece(v_did, '90x45', 2000, ARRAY[2000,0,0],    ARRAY[0,0,-90], 'Lisse D',   'lisse');
 
-  -- === CHEVRONS (5 en toiture, along Y, 120x45 -> 120mm wide, 45mm tall) ===
+  -- === CHEVRONS (5 en toiture) ===
   v_c1 := cad.add_piece(v_did, '120x45', 2200, ARRAY[0,  -100,2445],  ARRAY[0,0,-90], 'Chevron 1', 'chevron');
   v_c2 := cad.add_piece(v_did, '120x45', 2200, ARRAY[500, -100,2445], ARRAY[0,0,-90], 'Chevron 2', 'chevron');
   v_c3 := cad.add_piece(v_did, '120x45', 2200, ARRAY[1000,-100,2445], ARRAY[0,0,-90], 'Chevron 3', 'chevron');

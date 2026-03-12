@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS workbench.tenant_module (
   tenant_id   TEXT NOT NULL REFERENCES workbench.tenant(id) ON DELETE CASCADE,
   module      TEXT NOT NULL,
   active      BOOLEAN NOT NULL DEFAULT true,
+  sort_order  INTEGER NOT NULL DEFAULT 50,
   activated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, module)
 );
@@ -50,9 +51,13 @@ INSERT INTO workbench.tenant (id, name, slug, plan)
 VALUES ('dev', 'Dev Workbench', 'dev', 'equipe')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO workbench.tenant_module (tenant_id, module) VALUES
-  ('dev', 'pgv'), ('dev', 'cad'), ('dev', 'crm'),
-  ('dev', 'quote'), ('dev', 'ledger'), ('dev', 'ops')
+INSERT INTO workbench.tenant_module (tenant_id, module, sort_order) VALUES
+  ('dev', 'pgv',    0),
+  ('dev', 'crm',   10),
+  ('dev', 'quote', 20),
+  ('dev', 'cad',   30),
+  ('dev', 'ledger',40),
+  ('dev', 'ops',   90)
 ON CONFLICT DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS workbench.config (
@@ -234,8 +239,24 @@ LANGUAGE sql STABLE AS $$
    LIMIT 100;
 $$;
 
+-- PostgREST pre-request hook: set tenant context
+CREATE OR REPLACE FUNCTION workbench.postgrest_pre_request()
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+  v_tenant text;
+BEGIN
+  -- Try JWT claim first (production), fallback to 'dev' (development)
+  v_tenant := coalesce(
+    current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id',
+    'dev'
+  );
+  PERFORM set_config('app.tenant_id', v_tenant, true);
+END;
+$$;
+
 -- Grants for PostgREST
 GRANT USAGE ON SCHEMA workbench TO web_anon;
 GRANT SELECT, INSERT, UPDATE ON workbench.config TO web_anon;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA workbench TO web_anon;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA workbench TO web_anon;
+GRANT EXECUTE ON FUNCTION workbench.postgrest_pre_request() TO web_anon;

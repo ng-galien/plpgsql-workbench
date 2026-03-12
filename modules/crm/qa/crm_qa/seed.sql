@@ -6,6 +6,9 @@ DECLARE
   v_c1 int; v_c2 int; v_c3 int; v_c4 int;
   v_c5 int; v_c6 int; v_c7 int; v_c8 int;
 BEGIN
+  -- Set tenant context for RLS
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
   -- Clean existing QA data
   DELETE FROM crm.client WHERE name IN (
     'Jean Dupont', 'Menuiserie Leblanc', 'Sophie Martin', 'Charpentes du Sud',

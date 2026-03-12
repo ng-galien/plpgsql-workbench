@@ -12,6 +12,9 @@ DECLARE
   v_f1 int;
   v_f2 int;
 BEGIN
+  -- Set tenant context for RLS
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
   -- Cleanup
   DELETE FROM quote.ligne;
   DELETE FROM quote.facture;

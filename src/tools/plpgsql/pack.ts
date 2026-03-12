@@ -232,18 +232,20 @@ export function createPackTool({ withClient, moduleRegistry }: {
           dbFuncs.get(fn.schema)!.add(fn.name);
         }
 
-        // Check each packed function has a src/ file
+        // Check each packed function has a src/ (or qa/) file
         for (const [schema, names] of dbFuncs) {
+          const baseDir = schema.endsWith("_qa") ? path.join(mapping.modulePath, "qa") : srcDir;
           for (const name of names) {
-            const srcFile = path.join(srcDir, schema, `${name}.sql`);
+            const srcFile = path.join(baseDir, schema, `${name}.sql`);
             try { await fs.access(srcFile); }
             catch { missing.push(`${schema}/${name}.sql`); }
           }
         }
 
-        // Check for extra files in src/ not in DB
+        // Check for extra files in src/ (or qa/) not in DB
         for (const schema of schemas) {
-          const schemaDir = path.join(srcDir, schema);
+          const baseDir = schema.endsWith("_qa") ? path.join(mapping.modulePath, "qa") : srcDir;
+          const schemaDir = path.join(baseDir, schema);
           try {
             const files = await fs.readdir(schemaDir);
             const dbNames = dbFuncs.get(schema) ?? new Set();
