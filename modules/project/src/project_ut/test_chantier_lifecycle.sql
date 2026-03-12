@@ -4,7 +4,6 @@ CREATE OR REPLACE FUNCTION project_ut.test_chantier_lifecycle()
 AS $function$
 DECLARE
   v_id int;
-  v_result text;
   v_statut text;
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
@@ -13,7 +12,7 @@ BEGIN
   RETURN NEXT has_function('project', 'post_chantier_save', 'post_chantier_save exists');
 
   -- Create chantier
-  v_result := project.post_chantier_save(jsonb_build_object(
+  PERFORM project.post_chantier_save(jsonb_build_object(
     'client_id', (SELECT id FROM crm.client LIMIT 1),
     'objet', 'Test chantier lifecycle'
   ));

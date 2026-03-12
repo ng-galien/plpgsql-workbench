@@ -460,6 +460,59 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops TO web_anon;
 -- Schema: ops_ut
 CREATE SCHEMA IF NOT EXISTS ops_ut;
 
+CREATE OR REPLACE FUNCTION ops_ut.test_filtered_views()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  -- get_messages with filter
+  v_html := ops.get_messages('cad');
+  RETURN NEXT ok(v_html IS NOT NULL, 'get_messages(cad) returns HTML');
+
+  -- get_messages with non-existent module -> empty state
+  v_html := ops.get_messages('nonexistent_xyz');
+  RETURN NEXT ok(v_html LIKE '%pgv-empty%', 'get_messages(nonexistent) shows empty state');
+
+  -- get_hooks with filter
+  v_html := ops.get_hooks('cad');
+  RETURN NEXT ok(v_html IS NOT NULL, 'get_hooks(cad) returns HTML');
+
+  -- get_hooks with non-existent module -> empty state
+  v_html := ops.get_hooks('nonexistent_xyz');
+  RETURN NEXT ok(v_html LIKE '%pgv-empty%', 'get_hooks(nonexistent) shows empty state');
+
+  -- get_agent with non-existent module -> still renders (stats will be 0)
+  v_html := ops.get_agent('nonexistent_xyz');
+  RETURN NEXT ok(v_html IS NOT NULL, 'get_agent(nonexistent) renders without error');
+  RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'get_agent(nonexistent) still shows stat widgets');
+END;
+$function$;
+COMMENT ON FUNCTION ops_ut.test_filtered_views() IS 'Test get_messages and get_hooks with module filter and edge cases';
+
+CREATE OR REPLACE FUNCTION ops_ut.test_get_agents()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  v_html := ops.get_agents();
+  RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 0, 'get_agents renders HTML');
+  RETURN NEXT ok(v_html LIKE '%opsTmuxGrid%', 'get_agents contains Alpine grid component');
+  RETURN NEXT ok(v_html LIKE '%ops-agent-card%', 'get_agents contains card structure');
+  RETURN NEXT ok(v_html LIKE '%ops-agent-chevron%', 'get_agents contains chevron');
+  RETURN NEXT ok(v_html LIKE '%ops-agent-status%', 'get_agents contains status span');
+  RETURN NEXT ok(v_html LIKE '%expandAll()%', 'get_agents has expand all button');
+  RETURN NEXT ok(v_html LIKE '%collapseAll()%', 'get_agents has collapse all button');
+  RETURN NEXT ok(v_html LIKE '%pgv-empty%', 'get_agents has empty state fallback');
+  -- No inline styles
+  RETURN NEXT ok(v_html NOT LIKE '%style="%', 'get_agents has no inline styles');
+END;
+$function$;
+COMMENT ON FUNCTION ops_ut.test_get_agents() IS 'Test get_agents renders collapsible card structure with Alpine.js bindings';
+
 CREATE OR REPLACE FUNCTION ops_ut.test_module_list()
  RETURNS SETOF text
  LANGUAGE plpgsql

@@ -544,15 +544,14 @@ CREATE OR REPLACE FUNCTION stock.get_index()
 AS $function$
 DECLARE
   v_nb_articles int;
-  v_nb_depots int;
   v_nb_alertes int;
   v_nb_mouvements_mois int;
+  v_valeur_totale numeric;
   v_body text;
   v_rows text[];
   r record;
 BEGIN
   SELECT count(*)::int INTO v_nb_articles FROM stock.article WHERE active;
-  SELECT count(*)::int INTO v_nb_depots FROM stock.depot WHERE actif;
 
   -- Articles sous seuil
   SELECT count(*)::int INTO v_nb_alertes
@@ -564,9 +563,15 @@ BEGIN
   FROM stock.mouvement
   WHERE created_at >= date_trunc('month', now());
 
+  -- Valeur totale du stock (quantité * PMP par article)
+  SELECT coalesce(sum(stock._stock_actuel(a.id) * a.pmp), 0)
+  INTO v_valeur_totale
+  FROM stock.article a
+  WHERE a.active AND a.pmp > 0;
+
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat('Articles', v_nb_articles::text),
-    pgv.stat('Dépôts', v_nb_depots::text),
+    pgv.stat('Valeur stock', to_char(v_valeur_totale, 'FM999G999G990D00') || ' EUR'),
     pgv.stat('Alertes', v_nb_alertes::text, CASE WHEN v_nb_alertes > 0 THEN 'danger' ELSE NULL END),
     pgv.stat('Mouvements ce mois', v_nb_mouvements_mois::text)
   ]);
@@ -611,7 +616,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION stock.get_index() IS 'Dashboard stock: stats + derniers mouvements';
+COMMENT ON FUNCTION stock.get_index() IS 'Dashboard stock: stats (articles, valeur totale, alertes, mouvements) + derniers mouvements';
 
 CREATE OR REPLACE FUNCTION stock.get_mouvement_form(p_type text DEFAULT 'entree'::text)
  RETURNS text
@@ -1142,6 +1147,120 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock_ut.test_mouvement_transfert() IS 'Test mouvement transfert: 2 mouvements, vérif stock A et B';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_post_article_delete()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id int;
+  v_result text;
+  v_art stock.article;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
+  INSERT INTO stock.article (reference, designation, categorie, tenant_id)
+  VALUES ('TEST-DEL-01', 'À désactiver', 'bois', 'test')
+  RETURNING id INTO v_id;
+
+  v_result := stock.post_article_delete(jsonb_build_object('id', v_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'delete returns success');
+  RETURN NEXT ok(v_result LIKE '%data-redirect%', 'delete returns redirect');
+
+  SELECT * INTO v_art FROM stock.article WHERE id = v_id;
+  RETURN NEXT is(v_art.active, false, 'article soft-deleted');
+
+  -- Cleanup
+  DELETE FROM stock.article WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_post_article_delete() IS 'Test post_article_delete: soft delete';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_post_article_save()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result text;
+  v_art stock.article;
+  v_id int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
+  -- Create
+  v_result := stock.post_article_save(jsonb_build_object(
+    'reference', 'TEST-SAVE-01', 'designation', 'Article test save',
+    'categorie', 'bois', 'unite', 'm3', 'prix_achat', '100', 'seuil_mini', '5'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'create returns success');
+  RETURN NEXT ok(v_result LIKE '%data-redirect%', 'create returns redirect');
+
+  SELECT id INTO v_id FROM stock.article WHERE reference = 'TEST-SAVE-01' AND tenant_id = 'test';
+  SELECT * INTO v_art FROM stock.article WHERE id = v_id;
+  RETURN NEXT ok(FOUND, 'article created in DB');
+  RETURN NEXT is(v_art.designation, 'Article test save', 'designation saved');
+  RETURN NEXT is(v_art.categorie, 'bois', 'categorie saved');
+  RETURN NEXT is(v_art.unite, 'm3', 'unite saved');
+  RETURN NEXT is(v_art.prix_achat, 100::numeric(12,2), 'prix_achat saved');
+  RETURN NEXT is(v_art.seuil_mini, 5::numeric(10,2), 'seuil_mini saved');
+
+  -- Update
+  v_result := stock.post_article_save(jsonb_build_object(
+    'id', v_id, 'reference', 'TEST-SAVE-01', 'designation', 'Article modifié',
+    'categorie', 'quincaillerie', 'unite', 'u', 'prix_achat', '200', 'seuil_mini', '10'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'update returns success');
+
+  SELECT * INTO v_art FROM stock.article WHERE id = v_id;
+  RETURN NEXT is(v_art.designation, 'Article modifié', 'designation updated');
+  RETURN NEXT is(v_art.categorie, 'quincaillerie', 'categorie updated');
+  RETURN NEXT is(v_art.prix_achat, 200::numeric(12,2), 'prix_achat updated');
+
+  -- Cleanup
+  DELETE FROM stock.article WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_post_article_save() IS 'Test post_article_save: create + update';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_post_depot_save()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result text;
+  v_dep stock.depot;
+  v_id int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
+  -- Create
+  v_result := stock.post_depot_save(jsonb_build_object(
+    'nom', 'Dépôt test', 'type', 'atelier', 'adresse', '1 rue Test'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'create returns success');
+  RETURN NEXT ok(v_result LIKE '%data-redirect%', 'create returns redirect');
+
+  SELECT id INTO v_id FROM stock.depot WHERE nom = 'Dépôt test' AND tenant_id = 'test';
+  SELECT * INTO v_dep FROM stock.depot WHERE id = v_id;
+  RETURN NEXT ok(FOUND, 'depot created in DB');
+  RETURN NEXT is(v_dep.type, 'atelier', 'type saved');
+  RETURN NEXT is(v_dep.adresse, '1 rue Test', 'adresse saved');
+
+  -- Update
+  v_result := stock.post_depot_save(jsonb_build_object(
+    'id', v_id, 'nom', 'Dépôt modifié', 'type', 'chantier', 'adresse', '2 rue Modif'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'update returns success');
+
+  SELECT * INTO v_dep FROM stock.depot WHERE id = v_id;
+  RETURN NEXT is(v_dep.nom, 'Dépôt modifié', 'nom updated');
+  RETURN NEXT is(v_dep.type, 'chantier', 'type updated');
+
+  -- Cleanup
+  DELETE FROM stock.depot WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_post_depot_save() IS 'Test post_depot_save: create + update';
 
 GRANT USAGE ON SCHEMA stock_ut TO web_anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock_ut TO web_anon;

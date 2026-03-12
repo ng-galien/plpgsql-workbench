@@ -475,6 +475,7 @@ DECLARE
   v_receptions_attente int;
   v_factures_impayees int;
   v_achats_mois numeric(12,2);
+  v_total_a_payer numeric(12,2);
   v_body text;
   v_rows_c text[];
   v_rows_f text[];
@@ -498,11 +499,15 @@ BEGIN
    WHERE statut = 'payee'
      AND created_at >= date_trunc('month', now());
 
+  SELECT coalesce(sum(montant_ttc), 0) INTO v_total_a_payer
+    FROM purchase.facture_fournisseur WHERE statut IN ('recue', 'validee');
+
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat('Commandes en cours', v_cmd_en_cours::text),
     pgv.stat('A réceptionner', v_receptions_attente::text),
     pgv.stat('Factures impayées', v_factures_impayees::text),
-    pgv.stat('Achats du mois', to_char(v_achats_mois, 'FM999 990.00') || ' EUR')
+    pgv.stat('Achats du mois', to_char(v_achats_mois, 'FM999 990.00') || ' EUR'),
+    pgv.stat('Total à payer', to_char(v_total_a_payer, 'FM999 990.00') || ' EUR')
   ]);
 
   -- Tab: Commandes récentes
@@ -854,6 +859,64 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase TO web_anon;
 -- Schema: purchase_ut
 CREATE SCHEMA IF NOT EXISTS purchase_ut;
 
+CREATE OR REPLACE FUNCTION purchase_ut.test_commande_annuler()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id int;
+  v_result text;
+  v_fournisseur_id int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
+  INSERT INTO crm.client (type, name, tags)
+  VALUES ('company', '_test_annuler_', ARRAY['fournisseur'])
+  RETURNING id INTO v_fournisseur_id;
+
+  -- Create + add line
+  v_result := purchase.post_commande_save(jsonb_build_object(
+    'p_fournisseur_id', v_fournisseur_id,
+    'p_objet', 'Test annulation'
+  ));
+  SELECT id INTO v_id FROM purchase.commande WHERE objet = 'Test annulation';
+
+  v_result := purchase.post_ligne_ajouter(jsonb_build_object(
+    'p_commande_id', v_id,
+    'p_description', 'Ligne test',
+    'p_prix_unitaire', 10.00
+  ));
+
+  -- Cancel from brouillon
+  v_result := purchase.post_commande_annuler(jsonb_build_object('p_id', v_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'cancel brouillon succeeds');
+  RETURN NEXT is((SELECT statut FROM purchase.commande WHERE id = v_id), 'annulee', 'status is annulee');
+
+  -- Cannot cancel again
+  v_result := purchase.post_commande_annuler(jsonb_build_object('p_id', v_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'cannot cancel already cancelled');
+
+  -- Test cancel from envoyee
+  UPDATE purchase.commande SET statut = 'brouillon' WHERE id = v_id;
+  v_result := purchase.post_commande_envoyer(jsonb_build_object('p_id', v_id));
+  v_result := purchase.post_commande_annuler(jsonb_build_object('p_id', v_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'cancel envoyee succeeds');
+
+  -- Test cannot cancel with receptions
+  UPDATE purchase.commande SET statut = 'envoyee' WHERE id = v_id;
+  INSERT INTO purchase.reception (commande_id, numero) VALUES (v_id, 'REC-TEST-ANN');
+  v_result := purchase.post_commande_annuler(jsonb_build_object('p_id', v_id));
+  RETURN NEXT ok(v_result LIKE '%des réceptions existent%', 'cannot cancel with receptions');
+
+  -- Cleanup
+  DELETE FROM purchase.reception WHERE commande_id = v_id;
+  DELETE FROM purchase.ligne WHERE commande_id = v_id;
+  DELETE FROM purchase.commande WHERE id = v_id;
+  DELETE FROM crm.client WHERE id = v_fournisseur_id;
+END;
+$function$;
+COMMENT ON FUNCTION purchase_ut.test_commande_annuler() IS 'Test cancel order transitions and guards';
+
 CREATE OR REPLACE FUNCTION purchase_ut.test_commande_workflow()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -908,6 +971,125 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION purchase_ut.test_commande_workflow() IS 'Test full purchase order workflow: create, send, receive';
+
+CREATE OR REPLACE FUNCTION purchase_ut.test_facture_workflow()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_cmd_id int;
+  v_fac_id int;
+  v_result text;
+  v_fournisseur_id int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
+  INSERT INTO crm.client (type, name, tags)
+  VALUES ('company', '_test_facture_', ARRAY['fournisseur'])
+  RETURNING id INTO v_fournisseur_id;
+
+  -- Create a received order
+  INSERT INTO purchase.commande (numero, fournisseur_id, objet, statut)
+  VALUES ('CMD-TEST-FAC', v_fournisseur_id, 'Test facture', 'recue')
+  RETURNING id INTO v_cmd_id;
+
+  INSERT INTO purchase.ligne (commande_id, sort_order, description, quantite, prix_unitaire, tva_rate)
+  VALUES (v_cmd_id, 1, 'Article test', 2, 100.00, 20.00);
+
+  -- Saisir facture
+  v_result := purchase.post_facture_saisir(jsonb_build_object(
+    'p_commande_id', v_cmd_id,
+    'p_numero_fournisseur', 'FAC-TEST-001',
+    'p_montant_ht', 200.00,
+    'p_montant_ttc', 240.00,
+    'p_date_facture', now()::date::text
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'saisir facture succeeds');
+
+  SELECT id INTO v_fac_id FROM purchase.facture_fournisseur WHERE numero_fournisseur = 'FAC-TEST-001';
+  RETURN NEXT ok(v_fac_id IS NOT NULL, 'facture created');
+  RETURN NEXT is((SELECT statut FROM purchase.facture_fournisseur WHERE id = v_fac_id), 'recue', 'initial status is recue');
+
+  -- Valider
+  v_result := purchase.post_facture_valider(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'valider succeeds');
+  RETURN NEXT is((SELECT statut FROM purchase.facture_fournisseur WHERE id = v_fac_id), 'validee', 'status is validee');
+
+  -- Cannot validate again
+  v_result := purchase.post_facture_valider(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'cannot validate twice');
+
+  -- Payer
+  v_result := purchase.post_facture_payer(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'payer succeeds');
+  RETURN NEXT is((SELECT statut FROM purchase.facture_fournisseur WHERE id = v_fac_id), 'payee', 'status is payee');
+
+  -- Cannot pay again
+  v_result := purchase.post_facture_payer(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'cannot pay twice');
+
+  -- Cleanup
+  DELETE FROM purchase.facture_fournisseur WHERE id = v_fac_id;
+  DELETE FROM purchase.ligne WHERE commande_id = v_cmd_id;
+  DELETE FROM purchase.commande WHERE id = v_cmd_id;
+  DELETE FROM crm.client WHERE id = v_fournisseur_id;
+END;
+$function$;
+COMMENT ON FUNCTION purchase_ut.test_facture_workflow() IS 'Test supplier invoice lifecycle: saisir, valider, payer with guards';
+
+CREATE OR REPLACE FUNCTION purchase_ut.test_ligne_supprimer()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id int;
+  v_ligne_id int;
+  v_result text;
+  v_fournisseur_id int;
+  v_count int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
+  INSERT INTO crm.client (type, name, tags)
+  VALUES ('company', '_test_suppr_', ARRAY['fournisseur'])
+  RETURNING id INTO v_fournisseur_id;
+
+  v_result := purchase.post_commande_save(jsonb_build_object(
+    'p_fournisseur_id', v_fournisseur_id,
+    'p_objet', 'Test suppression ligne'
+  ));
+  SELECT id INTO v_id FROM purchase.commande WHERE objet = 'Test suppression ligne';
+
+  -- Add 2 lines
+  v_result := purchase.post_ligne_ajouter(jsonb_build_object(
+    'p_commande_id', v_id, 'p_description', 'Ligne A', 'p_prix_unitaire', 10.00));
+  v_result := purchase.post_ligne_ajouter(jsonb_build_object(
+    'p_commande_id', v_id, 'p_description', 'Ligne B', 'p_prix_unitaire', 20.00));
+
+  SELECT count(*)::int INTO v_count FROM purchase.ligne WHERE commande_id = v_id;
+  RETURN NEXT is(v_count, 2, '2 lines added');
+
+  -- Delete one
+  SELECT id INTO v_ligne_id FROM purchase.ligne WHERE commande_id = v_id ORDER BY sort_order LIMIT 1;
+  v_result := purchase.post_ligne_supprimer(jsonb_build_object('p_ligne_id', v_ligne_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'delete line succeeds');
+
+  SELECT count(*)::int INTO v_count FROM purchase.ligne WHERE commande_id = v_id;
+  RETURN NEXT is(v_count, 1, '1 line remaining');
+
+  -- Cannot delete on envoyee
+  v_result := purchase.post_commande_envoyer(jsonb_build_object('p_id', v_id));
+  SELECT id INTO v_ligne_id FROM purchase.ligne WHERE commande_id = v_id LIMIT 1;
+  v_result := purchase.post_ligne_supprimer(jsonb_build_object('p_ligne_id', v_ligne_id));
+  RETURN NEXT ok(v_result LIKE '%brouillon%', 'cannot delete line on sent order');
+
+  -- Cleanup
+  DELETE FROM purchase.ligne WHERE commande_id = v_id;
+  DELETE FROM purchase.commande WHERE id = v_id;
+  DELETE FROM crm.client WHERE id = v_fournisseur_id;
+END;
+$function$;
+COMMENT ON FUNCTION purchase_ut.test_ligne_supprimer() IS 'Test line deletion and guards';
 
 CREATE OR REPLACE FUNCTION purchase_ut.test_pages_render()
  RETURNS SETOF text

@@ -5,15 +5,14 @@ CREATE OR REPLACE FUNCTION stock.get_index()
 AS $function$
 DECLARE
   v_nb_articles int;
-  v_nb_depots int;
   v_nb_alertes int;
   v_nb_mouvements_mois int;
+  v_valeur_totale numeric;
   v_body text;
   v_rows text[];
   r record;
 BEGIN
   SELECT count(*)::int INTO v_nb_articles FROM stock.article WHERE active;
-  SELECT count(*)::int INTO v_nb_depots FROM stock.depot WHERE actif;
 
   -- Articles sous seuil
   SELECT count(*)::int INTO v_nb_alertes
@@ -25,9 +24,15 @@ BEGIN
   FROM stock.mouvement
   WHERE created_at >= date_trunc('month', now());
 
+  -- Valeur totale du stock (quantité * PMP par article)
+  SELECT coalesce(sum(stock._stock_actuel(a.id) * a.pmp), 0)
+  INTO v_valeur_totale
+  FROM stock.article a
+  WHERE a.active AND a.pmp > 0;
+
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat('Articles', v_nb_articles::text),
-    pgv.stat('Dépôts', v_nb_depots::text),
+    pgv.stat('Valeur stock', to_char(v_valeur_totale, 'FM999G999G990D00') || ' EUR'),
     pgv.stat('Alertes', v_nb_alertes::text, CASE WHEN v_nb_alertes > 0 THEN 'danger' ELSE NULL END),
     pgv.stat('Mouvements ce mois', v_nb_mouvements_mois::text)
   ]);

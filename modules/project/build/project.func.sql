@@ -409,8 +409,8 @@ AS $function$
 DECLARE
   v_en_cours int;
   v_preparation int;
+  v_clos_mois int;
   v_heures_semaine numeric;
-  v_jalons_a_venir int;
   v_body text;
   v_rows text[];
   r record;
@@ -421,21 +421,20 @@ BEGIN
   SELECT count(*)::int INTO v_preparation
     FROM project.chantier WHERE statut = 'preparation';
 
+  SELECT count(*)::int INTO v_clos_mois
+    FROM project.chantier
+   WHERE statut = 'clos'
+     AND date_fin_reelle >= date_trunc('month', CURRENT_DATE);
+
   SELECT COALESCE(sum(heures), 0) INTO v_heures_semaine
     FROM project.pointage
    WHERE date_pointage >= date_trunc('week', CURRENT_DATE);
 
-  SELECT count(*)::int INTO v_jalons_a_venir
-    FROM project.jalon j
-    JOIN project.chantier c ON c.id = j.chantier_id
-   WHERE j.statut = 'a_faire'
-     AND c.statut IN ('preparation', 'execution');
-
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat('En cours', v_en_cours::text),
     pgv.stat('En préparation', v_preparation::text),
-    pgv.stat('Heures semaine', v_heures_semaine::text || ' h'),
-    pgv.stat('Jalons à venir', v_jalons_a_venir::text)
+    pgv.stat('Terminés ce mois', v_clos_mois::text),
+    pgv.stat('Heures semaine', v_heures_semaine::text || ' h')
   ]);
 
   -- Liste chantiers actifs
@@ -791,7 +790,6 @@ CREATE OR REPLACE FUNCTION project_ut.test_chantier_lifecycle()
 AS $function$
 DECLARE
   v_id int;
-  v_result text;
   v_statut text;
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
@@ -800,7 +798,7 @@ BEGIN
   RETURN NEXT has_function('project', 'post_chantier_save', 'post_chantier_save exists');
 
   -- Create chantier
-  v_result := project.post_chantier_save(jsonb_build_object(
+  PERFORM project.post_chantier_save(jsonb_build_object(
     'client_id', (SELECT id FROM crm.client LIMIT 1),
     'objet', 'Test chantier lifecycle'
   ));
@@ -878,6 +876,227 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION project_ut.test_jalon_validation_sequentielle() IS 'Test que la validation sequentielle des jalons est enforced';
+
+CREATE OR REPLACE FUNCTION project_ut.test_pages_render()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_cid int;
+  v_html text;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+  PERFORM set_config('pgv.route_prefix', '/project', true);
+
+  -- brand & nav
+  RETURN NEXT is(project.brand(), 'Chantiers', 'brand returns Chantiers');
+  RETURN NEXT ok(project.nav_items() IS NOT NULL, 'nav_items returns jsonb');
+
+  -- get_index
+  v_html := project.get_index();
+  RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 50, 'get_index renders');
+  RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'get_index has stats');
+
+  -- get_chantiers
+  v_html := project.get_chantiers();
+  RETURN NEXT ok(v_html IS NOT NULL, 'get_chantiers renders');
+
+  -- get_chantier with seed data
+  SELECT id INTO v_cid FROM project.chantier LIMIT 1;
+  IF v_cid IS NOT NULL THEN
+    v_html := project.get_chantier(v_cid);
+    RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 100, 'get_chantier renders');
+    RETURN NEXT ok(v_html LIKE '%pgv-tabs%', 'get_chantier has tabs');
+    RETURN NEXT ok(v_html LIKE '%/crm/client%', 'get_chantier has crm link');
+  END IF;
+
+  -- get_chantier_form
+  v_html := project.get_chantier_form();
+  RETURN NEXT ok(v_html LIKE '%data-rpc="post_chantier_save"%', 'chantier_form has rpc');
+
+  -- get_chantier not found
+  v_html := project.get_chantier(-1);
+  RETURN NEXT ok(v_html LIKE '%introuvable%', 'get_chantier -1 returns empty');
+END;
+$function$;
+COMMENT ON FUNCTION project_ut.test_pages_render() IS 'Test que toutes les pages GET rendent sans erreur';
+
+CREATE OR REPLACE FUNCTION project_ut.test_post_chantier_save()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_client_id int;
+  v_id int;
+  v_result text;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+  SELECT id INTO v_client_id FROM crm.client LIMIT 1;
+
+  -- Create
+  v_result := project.post_chantier_save(jsonb_build_object(
+    'client_id', v_client_id, 'objet', 'UT save test', 'adresse', '1 rue Test'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'create returns success toast');
+
+  SELECT id INTO v_id FROM project.chantier WHERE objet = 'UT save test';
+  RETURN NEXT ok(v_id IS NOT NULL, 'chantier created');
+  RETURN NEXT ok((SELECT numero FROM project.chantier WHERE id = v_id) LIKE 'CHT-%', 'numero auto-generated');
+  RETURN NEXT is((SELECT adresse FROM project.chantier WHERE id = v_id), '1 rue Test', 'adresse saved');
+
+  -- Update
+  v_result := project.post_chantier_save(jsonb_build_object(
+    'id', v_id, 'client_id', v_client_id, 'objet', 'UT save updated', 'adresse', '2 rue Test'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'update returns success toast');
+  RETURN NEXT is((SELECT objet FROM project.chantier WHERE id = v_id), 'UT save updated', 'objet updated');
+
+  -- Cannot update non-preparation/execution
+  UPDATE project.chantier SET statut = 'clos' WHERE id = v_id;
+  RETURN NEXT throws_ok(
+    format('SELECT project.post_chantier_save(''{"id":%s,"client_id":%s,"objet":"fail"}''::jsonb)', v_id, v_client_id),
+    'Seuls les chantiers en préparation ou en cours sont modifiables',
+    'cannot update clos chantier'
+  );
+
+  DELETE FROM project.chantier WHERE id = v_id;
+END;
+$function$;
+COMMENT ON FUNCTION project_ut.test_post_chantier_save() IS 'Test creation et modification chantier';
+
+CREATE OR REPLACE FUNCTION project_ut.test_post_chantier_supprimer()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id int;
+  v_client_id int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+  SELECT id INTO v_client_id FROM crm.client LIMIT 1;
+
+  -- Create chantier in preparation
+  INSERT INTO project.chantier (numero, client_id, objet)
+  VALUES ('CHT-UT-DEL', v_client_id, 'UT delete test')
+  RETURNING id INTO v_id;
+
+  -- Cannot delete non-preparation
+  UPDATE project.chantier SET statut = 'execution' WHERE id = v_id;
+  RETURN NEXT throws_ok(
+    format('SELECT project.post_chantier_supprimer(%s)', v_id),
+    'Seuls les chantiers en préparation peuvent être supprimés',
+    'cannot delete execution chantier'
+  );
+
+  -- Can delete preparation
+  UPDATE project.chantier SET statut = 'preparation' WHERE id = v_id;
+  PERFORM project.post_chantier_supprimer(v_id);
+  RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM project.chantier WHERE id = v_id), 'chantier deleted');
+END;
+$function$;
+COMMENT ON FUNCTION project_ut.test_post_chantier_supprimer() IS 'Test suppression chantier et contraintes de statut';
+
+CREATE OR REPLACE FUNCTION project_ut.test_post_jalon_actions()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_cid int;
+  v_jid int;
+  v_result text;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
+  INSERT INTO project.chantier (numero, client_id, objet, statut)
+  VALUES ('CHT-UT-JAL', (SELECT id FROM crm.client LIMIT 1), 'UT jalon test', 'execution')
+  RETURNING id INTO v_cid;
+
+  -- Ajouter
+  v_result := project.post_jalon_ajouter(v_cid, 'Jalon UT');
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'jalon ajouter returns toast');
+  SELECT id INTO v_jid FROM project.jalon WHERE chantier_id = v_cid AND label = 'Jalon UT';
+  RETURN NEXT ok(v_jid IS NOT NULL, 'jalon created');
+  RETURN NEXT is((SELECT pct_avancement FROM project.jalon WHERE id = v_jid), 0::numeric, 'initial pct is 0');
+
+  -- Avancer
+  PERFORM project.post_jalon_avancer(v_jid, 50);
+  RETURN NEXT is((SELECT pct_avancement FROM project.jalon WHERE id = v_jid), 50::numeric, 'pct updated to 50');
+  RETURN NEXT is((SELECT statut FROM project.jalon WHERE id = v_jid), 'en_cours', 'statut auto en_cours');
+
+  -- Avancer to 100 -> auto valide
+  PERFORM project.post_jalon_avancer(v_jid, 100);
+  RETURN NEXT is((SELECT statut FROM project.jalon WHERE id = v_jid), 'valide', 'pct 100 -> auto valide');
+
+  -- Supprimer
+  PERFORM project.post_jalon_supprimer(v_jid);
+  RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM project.jalon WHERE id = v_jid), 'jalon deleted');
+
+  -- Cannot add to clos chantier
+  UPDATE project.chantier SET statut = 'clos' WHERE id = v_cid;
+  RETURN NEXT throws_ok(
+    format('SELECT project.post_jalon_ajouter(%s, ''test'')', v_cid),
+    'Chantier introuvable ou non modifiable',
+    'cannot add jalon to clos chantier'
+  );
+
+  DELETE FROM project.chantier WHERE id = v_cid;
+END;
+$function$;
+COMMENT ON FUNCTION project_ut.test_post_jalon_actions() IS 'Test jalon ajouter, avancer, supprimer';
+
+CREATE OR REPLACE FUNCTION project_ut.test_post_pointage_note()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_cid int;
+  v_pid int;
+  v_nid int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
+  INSERT INTO project.chantier (numero, client_id, objet, statut)
+  VALUES ('CHT-UT-PN', (SELECT id FROM crm.client LIMIT 1), 'UT pointage/note', 'execution')
+  RETURNING id INTO v_cid;
+
+  -- Pointage ajouter
+  PERFORM project.post_pointage_ajouter(v_cid, 7.5, 'Travail UT');
+  SELECT id INTO v_pid FROM project.pointage WHERE chantier_id = v_cid;
+  RETURN NEXT ok(v_pid IS NOT NULL, 'pointage created');
+  RETURN NEXT is((SELECT heures FROM project.pointage WHERE id = v_pid), 7.5::numeric, 'heures saved');
+  RETURN NEXT is((SELECT description FROM project.pointage WHERE id = v_pid), 'Travail UT', 'description saved');
+
+  -- Pointage supprimer
+  PERFORM project.post_pointage_supprimer(v_pid);
+  RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM project.pointage WHERE id = v_pid), 'pointage deleted');
+
+  -- Note ajouter
+  PERFORM project.post_note_ajouter(v_cid, 'Note UT test');
+  SELECT id INTO v_nid FROM project.note_chantier WHERE chantier_id = v_cid;
+  RETURN NEXT ok(v_nid IS NOT NULL, 'note created');
+  RETURN NEXT is((SELECT contenu FROM project.note_chantier WHERE id = v_nid), 'Note UT test', 'contenu saved');
+
+  -- Note supprimer
+  PERFORM project.post_note_supprimer(v_nid);
+  RETURN NEXT ok(NOT EXISTS (SELECT 1 FROM project.note_chantier WHERE id = v_nid), 'note deleted');
+
+  -- Cannot add to clos chantier
+  UPDATE project.chantier SET statut = 'clos' WHERE id = v_cid;
+  RETURN NEXT throws_ok(
+    format('SELECT project.post_pointage_ajouter(%s, 1, ''fail'')', v_cid),
+    'Chantier introuvable ou non modifiable',
+    'cannot add pointage to clos'
+  );
+  RETURN NEXT throws_ok(
+    format('SELECT project.post_note_ajouter(%s, ''fail'')', v_cid),
+    'Chantier introuvable ou non modifiable',
+    'cannot add note to clos'
+  );
+
+  DELETE FROM project.chantier WHERE id = v_cid;
+END;
+$function$;
+COMMENT ON FUNCTION project_ut.test_post_pointage_note() IS 'Test pointage et note CRUD';
 
 GRANT USAGE ON SCHEMA project_ut TO web_anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project_ut TO web_anon;

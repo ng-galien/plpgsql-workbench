@@ -7,6 +7,7 @@ DECLARE
   v_receptions_attente int;
   v_factures_impayees int;
   v_achats_mois numeric(12,2);
+  v_total_a_payer numeric(12,2);
   v_body text;
   v_rows_c text[];
   v_rows_f text[];
@@ -30,11 +31,15 @@ BEGIN
    WHERE statut = 'payee'
      AND created_at >= date_trunc('month', now());
 
+  SELECT coalesce(sum(montant_ttc), 0) INTO v_total_a_payer
+    FROM purchase.facture_fournisseur WHERE statut IN ('recue', 'validee');
+
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat('Commandes en cours', v_cmd_en_cours::text),
     pgv.stat('A réceptionner', v_receptions_attente::text),
     pgv.stat('Factures impayées', v_factures_impayees::text),
-    pgv.stat('Achats du mois', to_char(v_achats_mois, 'FM999 990.00') || ' EUR')
+    pgv.stat('Achats du mois', to_char(v_achats_mois, 'FM999 990.00') || ' EUR'),
+    pgv.stat('Total à payer', to_char(v_total_a_payer, 'FM999 990.00') || ' EUR')
   ]);
 
   -- Tab: Commandes récentes

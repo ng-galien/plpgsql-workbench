@@ -5,8 +5,8 @@ AS $function$
 DECLARE
   v_en_cours int;
   v_preparation int;
+  v_clos_mois int;
   v_heures_semaine numeric;
-  v_jalons_a_venir int;
   v_body text;
   v_rows text[];
   r record;
@@ -17,21 +17,20 @@ BEGIN
   SELECT count(*)::int INTO v_preparation
     FROM project.chantier WHERE statut = 'preparation';
 
+  SELECT count(*)::int INTO v_clos_mois
+    FROM project.chantier
+   WHERE statut = 'clos'
+     AND date_fin_reelle >= date_trunc('month', CURRENT_DATE);
+
   SELECT COALESCE(sum(heures), 0) INTO v_heures_semaine
     FROM project.pointage
    WHERE date_pointage >= date_trunc('week', CURRENT_DATE);
 
-  SELECT count(*)::int INTO v_jalons_a_venir
-    FROM project.jalon j
-    JOIN project.chantier c ON c.id = j.chantier_id
-   WHERE j.statut = 'a_faire'
-     AND c.statut IN ('preparation', 'execution');
-
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat('En cours', v_en_cours::text),
     pgv.stat('En préparation', v_preparation::text),
-    pgv.stat('Heures semaine', v_heures_semaine::text || ' h'),
-    pgv.stat('Jalons à venir', v_jalons_a_venir::text)
+    pgv.stat('Terminés ce mois', v_clos_mois::text),
+    pgv.stat('Heures semaine', v_heures_semaine::text || ' h')
   ]);
 
   -- Liste chantiers actifs
