@@ -1,0 +1,54 @@
+CREATE OR REPLACE FUNCTION expense_qa.seed()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_n1 int; v_n2 int; v_n3 int; v_n4 int;
+  v_cat_repas int; v_cat_depl int; v_cat_hotel int; v_cat_outil int;
+BEGIN
+  -- Get category IDs
+  SELECT id INTO v_cat_repas FROM expense.categorie WHERE nom = 'Repas';
+  SELECT id INTO v_cat_depl FROM expense.categorie WHERE nom = 'Déplacement véhicule';
+  SELECT id INTO v_cat_hotel FROM expense.categorie WHERE nom = 'Hébergement';
+  SELECT id INTO v_cat_outil FROM expense.categorie WHERE nom = 'Outillage';
+
+  -- Note 1: remboursée
+  INSERT INTO expense.note (reference, auteur, date_debut, date_fin, statut)
+  VALUES ('NDF-2026-001', 'Jean Dupont', '2026-01-01', '2026-01-31', 'remboursee')
+  RETURNING id INTO v_n1;
+
+  INSERT INTO expense.ligne (note_id, date_depense, categorie_id, description, montant_ht, tva, km) VALUES
+    (v_n1, '2026-01-05', v_cat_repas, 'Déjeuner client Leroy', 18.50, 1.85, NULL),
+    (v_n1, '2026-01-12', v_cat_depl, 'Chantier Marseille A/R', 0, 0, 320),
+    (v_n1, '2026-01-12', v_cat_hotel, 'Hôtel Marseille 1 nuit', 85.00, 8.50, NULL);
+
+  -- Note 2: validée (prête à rembourser)
+  INSERT INTO expense.note (reference, auteur, date_debut, date_fin, statut)
+  VALUES ('NDF-2026-002', 'Jean Dupont', '2026-02-01', '2026-02-28', 'validee')
+  RETURNING id INTO v_n2;
+
+  INSERT INTO expense.ligne (note_id, date_depense, categorie_id, description, montant_ht, tva, km) VALUES
+    (v_n2, '2026-02-03', v_cat_outil, 'Lame scie circulaire Bosch', 42.00, 8.40, NULL),
+    (v_n2, '2026-02-15', v_cat_repas, 'Repas équipe chantier', 35.00, 3.50, NULL);
+
+  -- Note 3: soumise (en attente validation)
+  INSERT INTO expense.note (reference, auteur, date_debut, date_fin, statut)
+  VALUES ('NDF-2026-003', 'Marie Martin', '2026-03-01', '2026-03-10', 'soumise')
+  RETURNING id INTO v_n3;
+
+  INSERT INTO expense.ligne (note_id, date_depense, categorie_id, description, montant_ht, tva, km) VALUES
+    (v_n3, '2026-03-02', v_cat_depl, 'Visite fournisseur Lyon', 0, 0, 180),
+    (v_n3, '2026-03-02', v_cat_repas, 'Déjeuner fournisseur', 22.00, 2.20, NULL),
+    (v_n3, '2026-03-08', v_cat_outil, 'Embouts visseuse Makita', 15.00, 3.00, NULL);
+
+  -- Note 4: brouillon (en cours de saisie)
+  INSERT INTO expense.note (reference, auteur, date_debut, date_fin, statut)
+  VALUES ('NDF-2026-004', 'Marie Martin', '2026-03-10', '2026-03-31', 'brouillon')
+  RETURNING id INTO v_n4;
+
+  INSERT INTO expense.ligne (note_id, date_depense, categorie_id, description, montant_ht, tva, km) VALUES
+    (v_n4, '2026-03-11', v_cat_depl, 'Chantier Aix-en-Provence', 0, 0, 90);
+
+  RETURN '4 notes de frais seed (remboursee, validee, soumise, brouillon)';
+END;
+$function$;

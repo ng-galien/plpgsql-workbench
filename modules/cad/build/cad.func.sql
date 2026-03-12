@@ -2957,6 +2957,47 @@ END;
 $function$;
 COMMENT ON FUNCTION cad_ut.test__piece_tree_children() IS 'Test _piece_tree_children via fragment_piece_tree: exercises both grouped and ungrouped paths.';
 
+CREATE OR REPLACE FUNCTION cad_ut.test_add_beam()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_did int;
+  v_pid int;
+  v_rec record;
+BEGIN
+  INSERT INTO cad.drawing (name) VALUES ('test_beam') RETURNING id INTO v_did;
+
+  -- Horizontal beam along X axis
+  v_pid := cad.add_beam(v_did, '60x90', ARRAY[0,0,0]::real[], ARRAY[2000,0,0]::real[], 'poutre1', 'solive');
+  RETURN NEXT ok(v_pid IS NOT NULL, 'add_beam returns an id');
+
+  SELECT * INTO v_rec FROM cad.piece WHERE id = v_pid;
+  RETURN NEXT is(v_rec.section, '60x90', 'section stored');
+  RETURN NEXT is(v_rec.wood_type, 'pin', 'default wood_type is pin');
+  RETURN NEXT is(v_rec.label, 'poutre1', 'label stored');
+  RETURN NEXT is(v_rec.role, 'solive', 'role stored');
+  RETURN NEXT ok(v_rec.length_mm = 2000, 'length computed from start/end');
+  RETURN NEXT ok(v_rec.geom IS NOT NULL, 'geom generated');
+  RETURN NEXT ok(v_rec.profile IS NOT NULL, 'profile generated');
+  RETURN NEXT ok(ST_Volume(v_rec.geom) > 0, 'solid has volume');
+
+  -- Diagonal beam
+  v_pid := cad.add_beam(v_did, '45x45', ARRAY[0,0,0]::real[], ARRAY[1000,1000,0]::real[]);
+  SELECT length_mm INTO v_rec FROM cad.piece WHERE id = v_pid;
+  RETURN NEXT ok(abs(v_rec.length_mm - 1414.2) < 1, 'diagonal length ~1414mm');
+
+  -- Error: zero-length beam
+  BEGIN
+    PERFORM cad.add_beam(v_did, '60x90', ARRAY[0,0,0]::real[], ARRAY[0,0,0]::real[]);
+    RETURN NEXT fail('should raise on zero-length beam');
+  EXCEPTION WHEN OTHERS THEN
+    RETURN NEXT pass('zero-length beam raises exception');
+  END;
+END;
+$function$;
+COMMENT ON FUNCTION cad_ut.test_add_beam() IS 'Test cad.add_beam: creation, geometry, diagonal, zero-length error';
+
 CREATE OR REPLACE FUNCTION cad_ut.test_add_shape()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -2979,6 +3020,43 @@ BEGIN
   );
 END;
 $function$;
+
+CREATE OR REPLACE FUNCTION cad_ut.test_bill_of_materials()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_did int;
+  v_pid1 int;
+  v_pid2 int;
+  v_bom text;
+BEGIN
+  INSERT INTO cad.drawing (name) VALUES ('test_bom') RETURNING id INTO v_did;
+
+  -- Add two beams
+  v_pid1 := cad.add_beam(v_did, '60x90', ARRAY[0,0,0]::real[], ARRAY[2000,0,0]::real[], 'S1', 'solive');
+  v_pid2 := cad.add_beam(v_did, '60x90', ARRAY[0,500,0]::real[], ARRAY[2000,500,0]::real[], 'S2', 'solive');
+
+  -- BOM without groups
+  v_bom := cad.bill_of_materials(v_did);
+  RETURN NEXT ok(v_bom IS NOT NULL, 'bom returns text');
+  RETURN NEXT ok(v_bom LIKE '%2x 60x90%', 'bom shows 2x 60x90');
+  RETURN NEXT ok(v_bom LIKE '%Total: 2 pieces%', 'bom total = 2 pieces');
+  RETURN NEXT ok(v_bom LIKE '%solive%', 'bom shows role');
+
+  -- Group pieces and re-check
+  PERFORM cad.group_pieces(v_did, ARRAY[v_pid1, v_pid2], 'Plancher');
+  v_bom := cad.bill_of_materials(v_did);
+  RETURN NEXT ok(v_bom LIKE '%Plancher%', 'bom shows group label');
+  RETURN NEXT ok(v_bom LIKE '%Total: 2 pieces%', 'grouped bom total still 2');
+
+  -- Empty drawing
+  INSERT INTO cad.drawing (name) VALUES ('test_bom_empty') RETURNING id INTO v_did;
+  v_bom := cad.bill_of_materials(v_did);
+  RETURN NEXT ok(v_bom LIKE '%Total: 0 pieces%', 'empty drawing = 0 pieces');
+END;
+$function$;
+COMMENT ON FUNCTION cad_ut.test_bill_of_materials() IS 'Test cad.bill_of_materials: ungrouped, grouped, empty drawing';
 
 CREATE OR REPLACE FUNCTION cad_ut.test_delete_shape()
  RETURNS SETOF text
@@ -3082,6 +3160,35 @@ END;
 $function$;
 COMMENT ON FUNCTION cad_ut.test_fragment_piece_tree() IS 'Test fragment_piece_tree: ungrouped pieces, grouped pieces, pgv.tree output structure.';
 
+CREATE OR REPLACE FUNCTION cad_ut.test_move_piece()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_did int;
+  v_pid int;
+  v_result text;
+  v_xmin_before float;
+  v_xmin_after float;
+BEGIN
+  INSERT INTO cad.drawing (name) VALUES ('test_move') RETURNING id INTO v_did;
+  v_pid := cad.add_beam(v_did, '60x90', ARRAY[0,0,0]::real[], ARRAY[1000,0,0]::real[], 'P1', 'montant');
+
+  SELECT ST_XMin(geom) INTO v_xmin_before FROM cad.piece WHERE id = v_pid;
+
+  v_result := cad.move_piece(v_pid, 500, 200, 100);
+  RETURN NEXT ok(v_result LIKE '%moved P1%', 'move returns confirmation');
+
+  SELECT ST_XMin(geom) INTO v_xmin_after FROM cad.piece WHERE id = v_pid;
+  RETURN NEXT ok(abs(v_xmin_after - v_xmin_before - 500) < 0.1, 'X moved by 500');
+
+  -- Not found
+  v_result := cad.move_piece(-1, 0, 0, 0);
+  RETURN NEXT is(v_result, 'piece not found', 'missing piece returns error');
+END;
+$function$;
+COMMENT ON FUNCTION cad_ut.test_move_piece() IS 'Test cad.move_piece: translation, coordinates, not-found';
+
 CREATE OR REPLACE FUNCTION cad_ut.test_move_shape()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -3104,6 +3211,35 @@ BEGIN
   RETURN NEXT is((v_g->>'x2')::real, 110::real, 'x2 moved +10');
 END;
 $function$;
+
+CREATE OR REPLACE FUNCTION cad_ut.test_remove_piece()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_did int;
+  v_pid int;
+  v_result text;
+  v_count int;
+BEGIN
+  INSERT INTO cad.drawing (name) VALUES ('test_remove') RETURNING id INTO v_did;
+  v_pid := cad.add_beam(v_did, '60x90', ARRAY[0,0,0]::real[], ARRAY[1000,0,0]::real[], 'P1', 'montant');
+
+  SELECT count(*) INTO v_count FROM cad.piece WHERE drawing_id = v_did;
+  RETURN NEXT is(v_count, 1, 'piece exists before remove');
+
+  v_result := cad.remove_piece(v_pid);
+  RETURN NEXT ok(v_result LIKE '%removed: P1%', 'remove returns confirmation');
+
+  SELECT count(*) INTO v_count FROM cad.piece WHERE drawing_id = v_did;
+  RETURN NEXT is(v_count, 0, 'piece deleted after remove');
+
+  -- Not found
+  v_result := cad.remove_piece(-1);
+  RETURN NEXT ok(v_result LIKE '%not found%', 'missing piece returns error');
+END;
+$function$;
+COMMENT ON FUNCTION cad_ut.test_remove_piece() IS 'Test cad.remove_piece: deletion, confirmation, not-found';
 
 CREATE OR REPLACE FUNCTION cad_ut.test_render_svg()
  RETURNS SETOF text
@@ -3131,6 +3267,47 @@ BEGIN
   RETURN NEXT ok(v_svg LIKE '%stroke="#ff0000"%', 'layer color applied');
 END;
 $function$;
+
+CREATE OR REPLACE FUNCTION cad_ut.test_scene_json()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_did int;
+  v_pid int;
+  v_json jsonb;
+  v_piece jsonb;
+BEGIN
+  INSERT INTO cad.drawing (name) VALUES ('test_scene') RETURNING id INTO v_did;
+
+  -- Empty drawing
+  v_json := cad.scene_json(v_did);
+  RETURN NEXT ok(v_json IS NOT NULL, 'scene_json returns jsonb');
+  RETURN NEXT is((v_json->'pieces')::text, '[]'::text, 'empty drawing has empty pieces');
+  RETURN NEXT is((v_json->'groups')::text, '[]'::text, 'empty drawing has empty groups');
+
+  -- Add a beam
+  v_pid := cad.add_beam(v_did, '60x90', ARRAY[0,0,0]::real[], ARRAY[1000,0,0]::real[], 'P1', 'montant', 'chene');
+  v_json := cad.scene_json(v_did);
+  RETURN NEXT is(jsonb_array_length(v_json->'pieces'), 1, 'one piece in scene');
+
+  v_piece := v_json->'pieces'->0;
+  RETURN NEXT is((v_piece->>'label'), 'P1', 'piece label');
+  RETURN NEXT is((v_piece->>'role'), 'montant', 'piece role');
+  RETURN NEXT is((v_piece->>'wood_type'), 'chene', 'piece wood_type');
+  RETURN NEXT is((v_piece->>'section'), '60x90', 'piece section');
+  RETURN NEXT ok(v_piece->'mesh' IS NOT NULL, 'piece has mesh');
+  RETURN NEXT ok((v_piece->'mesh'->>'type') = 'GeometryCollection', 'mesh is GeometryCollection');
+
+  -- Add group
+  PERFORM cad.group_pieces(v_did, ARRAY[v_pid], 'Mur1');
+  v_json := cad.scene_json(v_did);
+  RETURN NEXT is(jsonb_array_length(v_json->'groups'), 1, 'one group in scene');
+  RETURN NEXT is((v_json->'groups'->0->>'label'), 'Mur1', 'group label');
+  RETURN NEXT is((v_json->'pieces'->0->>'group_label'), 'Mur1', 'piece has group_label');
+END;
+$function$;
+COMMENT ON FUNCTION cad_ut.test_scene_json() IS 'Test cad.scene_json: empty, single piece, grouped piece, mesh format';
 
 CREATE OR REPLACE FUNCTION cad_ut.test_shape_add()
  RETURNS SETOF text
