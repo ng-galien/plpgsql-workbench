@@ -34,11 +34,27 @@ document.addEventListener('alpine:init', () => {
             selectionBackground: '#33467c'
           }
         });
-        const fitAddon = new FitAddon.FitAddon();
-        this.term.loadAddon(fitAddon);
+        this.fitAddon = new FitAddon.FitAddon();
+        this.term.loadAddon(this.fitAddon);
         this.term.open(el);
-        fitAddon.fit();
 
+        // Delay fit until layout is stable
+        requestAnimationFrame(() => {
+          this.fitAddon.fit();
+          // Connect WS only after first fit so server gets correct cols/rows
+          this._connectWs(wsUrl);
+        });
+
+        // Debounced ResizeObserver to avoid fit() spam
+        let resizeTimer;
+        new ResizeObserver(() => {
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => this.fitAddon.fit(), 100);
+        }).observe(el);
+      });
+    },
+
+    _connectWs(wsUrl) {
         this.ws = new WebSocket(wsUrl);
         this.ws.onopen = () => {
           this.connected = true;
@@ -58,9 +74,6 @@ document.addEventListener('alpine:init', () => {
           if (this.ws?.readyState === 1)
             this.ws.send(JSON.stringify({ type: 'resize', cols, rows }));
         });
-
-        new ResizeObserver(() => fitAddon.fit()).observe(el);
-      });
     },
 
     _updateParent(key, value) {
@@ -97,6 +110,30 @@ document.addEventListener('alpine:init', () => {
 
     destroy() {
       clearInterval(this._interval);
+    },
+
+    trigResize() {
+      document.querySelectorAll('.ops-terminal').forEach(el => {
+        const comp = Alpine.$data(el);
+        if (comp?.fitAddon) comp.fitAddon.fit();
+      });
+    },
+
+    scrollBottom() {
+      document.querySelectorAll('.ops-terminal').forEach(el => {
+        const comp = Alpine.$data(el);
+        if (comp?.term) comp.term.scrollToBottom();
+      });
+    },
+
+    pingAll() {
+      // Send "Ping" + Enter to each agent's tmux session via WebSocket
+      document.querySelectorAll('.ops-terminal').forEach(el => {
+        const comp = Alpine.$data(el);
+        if (comp?.ws?.readyState === 1) {
+          comp.ws.send('Ping\r');
+        }
+      });
     },
 
     async refresh() {

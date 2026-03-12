@@ -160,11 +160,9 @@ moduleRegistryPromise.then((r) => { moduleRegistry = r; }).catch(() => {});
 function logHook(mod: string, tool: string, action: string, allowed: boolean, reason?: string) {
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    pool.query(
-      `INSERT INTO workbench.hook_log (module, tool, action, allowed, reason)
-       VALUES ($1, $2, $3, $4, $5)`,
+    pool.query(`SELECT workbench.log_hook($1,$2,$3,$4,$5)`,
       [mod, tool, action, allowed, reason ?? null],
-    ).catch(() => {}); // fire-and-forget, table may not exist
+    ).catch(() => {});
   } catch { /* pool not ready */ }
 }
 
@@ -177,9 +175,25 @@ function allow(res: import("express").Response, mod?: string, tool?: string, act
   res.json({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" } });
 }
 
+// Validate module name on all hook endpoints — one agent = one module, no comma lists
+function validateModuleName(req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) {
+  const mod = req.params.module as string;
+  if (!mod || mod.includes(",")) {
+    return res.status(400).json({
+      error: `Invalid module name "${mod}". Each agent must have a single unique module name — no comma-separated lists.`,
+    });
+  }
+  next();
+}
+app.post("/hooks/:module", validateModuleName);
+app.post("/hooks/:module/session", validateModuleName);
+app.post("/hooks/:module/stop", validateModuleName);
+
 app.post("/hooks/:module", (req, res) => {
   const mod = req.params.module;
   const { tool_name, tool_input } = req.body ?? {};
+  // Lead agent (orchestrator) bypasses all restrictions
+  if (mod === "lead") return allow(res, mod, tool_name);
   if (!moduleRegistry) {
     // Registry not loaded yet — allow (fail-open during startup)
     return allow(res, mod, tool_name, "startup");
@@ -209,7 +223,7 @@ app.post("/hooks/:module", (req, res) => {
     const filePath = path.resolve((tool_input?.file_path ?? "") as string);
     const content = (tool_input?.content ?? tool_input?.new_string ?? "") as string;
     const modulePath = mapping?.modulePath;
-    if (modulePath && !filePath.startsWith(path.resolve(modulePath))) {
+    if (mod !== "lead" && modulePath && !filePath.startsWith(path.resolve(modulePath))) {
       log.warn({ mod, file: filePath, allowed: modulePath }, "hook: blocked file op outside module");
       return deny(res, `Module ${mod}: ${tool_name} interdit hors du repertoire du module (${modulePath}). Travaille uniquement dans le repertoire du module.`, mod, tool_name, filePath);
     }
@@ -277,19 +291,13 @@ app.post("/hooks/:module", (req, res) => {
 
 // --- SessionStart hook — inject inbox on agent startup ---
 app.post("/hooks/:module/session", async (req, res) => {
-  const names = req.params.module.split(",");
+  const mod = req.params.module;
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const ph = names.map((_, i) => `$${i + 1}`).join(", ");
     const { rows } = await pool.query(
-      `SELECT id, from_module, msg_type, subject
-       FROM workbench.agent_message
-       WHERE to_module IN (${ph}) AND status IN ('new', 'acknowledged')
-       ORDER BY created_at LIMIT 10`,
-      names,
+      `SELECT * FROM workbench.inbox_pending($1)`, [mod],
     );
     if (rows.length > 0) {
-      const mod = names[0];
       const lines = rows.map((r: any) =>
         `  #${r.id} [${r.msg_type}] from ${r.from_module}: ${r.subject}`
       );
@@ -311,30 +319,11 @@ app.post("/hooks/:module/session", async (req, res) => {
 
 // --- Stop hook — block if pending messages, let pass otherwise ---
 app.post("/hooks/:module/stop", async (req, res) => {
-  const names = req.params.module.split(",");
-  const mod = names[0];
+  const mod = req.params.module;
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const ph = names.map((_, i) => `$${i + 1}`).join(", ");
-
-    // 1. New messages for this module
-    const inbox = await pool.query(
-      `SELECT id, from_module, msg_type, subject
-       FROM workbench.agent_message
-       WHERE to_module IN (${ph}) AND status = 'new'
-       ORDER BY created_at LIMIT 10`,
-      names,
-    );
-
-    // 2. Messages SENT by this module that were resolved (unseen) — auto-ack
-    const resolved = await pool.query(
-      `UPDATE workbench.agent_message
-       SET acknowledged_at = resolved_at
-       WHERE from_module IN (${ph}) AND status = 'resolved'
-         AND (acknowledged_at IS NULL OR resolved_at > acknowledged_at)
-       RETURNING id, to_module, msg_type, subject, resolution`,
-      names,
-    );
+    const inbox = await pool.query(`SELECT * FROM workbench.inbox_new($1)`, [mod]);
+    const resolved = await pool.query(`SELECT * FROM workbench.ack_resolved($1)`, [mod]);
 
     const parts: string[] = [];
 
@@ -500,11 +489,9 @@ async function createAgentSession(mod: string): Promise<number | null> {
   try {
     const pool: import("pg").Pool = container.resolve("pool");
     const { rows } = await pool.query(
-      `INSERT INTO workbench.agent_session (module, status, pid, started_at)
-       VALUES ($1, 'running', $2, now()) RETURNING id`,
-      [mod, process.pid],
+      `SELECT workbench.session_create($1, $2)`, [mod, process.pid],
     );
-    return rows[0]?.id ?? null;
+    return rows[0]?.session_create ?? null;
   } catch { return null; }
 }
 
@@ -512,10 +499,7 @@ async function endAgentSession(sessionId: number | null, status: string) {
   if (!sessionId) return;
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    await pool.query(
-      `UPDATE workbench.agent_session SET status = $1, ended_at = now() WHERE id = $2`,
-      [status, sessionId],
-    );
+    await pool.query(`SELECT workbench.session_end($1, $2)`, [sessionId, status]);
   } catch { /* silent */ }
 }
 
@@ -629,17 +613,12 @@ app.get("/api/agents", async (_req, res) => {
   if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const { rows } = await pool.query(
-      `SELECT module, status, pid, started_at, ended_at, last_activity
-       FROM workbench.agent_session
-       ORDER BY started_at DESC LIMIT 50`,
-    );
-    // Annotate with live terminal status
+    const { rows } = await pool.query(`SELECT * FROM workbench.api_sessions()`);
     for (const row of rows) {
       row.has_terminal = terminals.has(row.module);
     }
     res.json(rows);
-  } catch (err) {
+  } catch {
     res.json([]);
   }
 });
@@ -649,13 +628,9 @@ app.get("/api/hooks", async (req, res) => {
   const mod = req.query.module as string | undefined;
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const where = mod ? "WHERE module = $1" : "";
-    const params = mod ? [mod] : [];
     const { rows } = await pool.query(
-      `SELECT id, module, tool, action, allowed, reason, created_at
-       FROM workbench.hook_log ${where}
-       ORDER BY created_at DESC LIMIT 100`,
-      params,
+      `SELECT * FROM workbench.api_hooks($1)`,
+      [mod ?? null],
     );
     res.json(rows);
   } catch {
@@ -668,15 +643,9 @@ app.get("/api/messages", async (req, res) => {
   const mod = req.query.module as string | undefined;
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const where = mod
-      ? "WHERE from_module = $1 OR to_module = $1 OR ',' || to_module || ',' LIKE '%,' || $1 || ',%'"
-      : "";
-    const params = mod ? [mod] : [];
     const { rows } = await pool.query(
-      `SELECT id, from_module, to_module, msg_type, subject, status, resolution, created_at, resolved_at
-       FROM workbench.agent_message ${where}
-       ORDER BY created_at DESC LIMIT 100`,
-      params,
+      `SELECT * FROM workbench.api_messages($1)`,
+      [mod ?? null],
     );
     res.json(rows);
   } catch {

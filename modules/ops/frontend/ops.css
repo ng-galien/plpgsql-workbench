@@ -1,5 +1,18 @@
 /* ops.css — Agent Dashboard layout */
 
+/* ── Toolbar ── */
+.ops-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ops-toolbar button {
+  margin: 0;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}
+
 /* ── Live agents grid ── */
 .ops-agents-live {
   display: grid;
