@@ -23,6 +23,29 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION crm.brand() IS 'Brand name for CRM module';
 
+CREATE OR REPLACE FUNCTION crm.client_options(p_search text DEFAULT NULL::text)
+ RETURNS TABLE(value text, label text, detail text)
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT
+    c.id::text,
+    c.name,
+    concat_ws(' / ',
+      nullif(c.city, ''),
+      nullif(c.email, '')
+    )
+  FROM crm.client c
+  WHERE c.active
+    AND (p_search IS NULL OR p_search = ''
+         OR c.name ILIKE '%' || p_search || '%'
+         OR c.email ILIKE '%' || p_search || '%'
+         OR c.city ILIKE '%' || p_search || '%')
+  ORDER BY c.name
+  LIMIT 20;
+$function$;
+COMMENT ON FUNCTION crm.client_options(text) IS 'Search active clients for select_search — returns value/label/detail rows filtered by ILIKE on name, email, city';
+
 CREATE OR REPLACE FUNCTION crm.display_name(p_client crm.client)
  RETURNS text
  LANGUAGE sql
@@ -485,6 +508,9 @@ DECLARE
   v_activity text;
   v_rows text;
   v_timeline jsonb;
+  v_stats text;
+  v_n int;
+  v_ca numeric;
 BEGIN
   SELECT * INTO v_client FROM crm.client WHERE id = p_id;
   IF NOT FOUND THEN
@@ -544,6 +570,38 @@ BEGIN
 
   -- Activité liée (cross-module)
   v_activity := '';
+  v_stats := '';
+
+  BEGIN
+    EXECUTE 'SELECT count(*) FROM quote.devis WHERE client_id = $1' INTO v_n USING p_id;
+    IF v_n > 0 THEN v_stats := v_stats || pgv.stat('Devis', v_n::text); END IF;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  BEGIN
+    EXECUTE '
+      SELECT count(DISTINCT f.id),
+             coalesce(sum(l.quantite * l.prix_unitaire * (1 + l.tva_rate / 100)), 0)
+      FROM quote.facture f
+      LEFT JOIN quote.ligne l ON l.facture_id = f.id
+      WHERE f.client_id = $1'
+    INTO v_n, v_ca USING p_id;
+    IF v_n > 0 THEN
+      v_stats := v_stats || pgv.stat('Factures', v_n::text);
+      v_stats := v_stats || pgv.stat('CA TTC', to_char(v_ca, 'FM999G999G990D00') || E' \u20ac');
+    END IF;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  BEGIN
+    EXECUTE 'SELECT count(*) FROM project.chantier WHERE client_id = $1' INTO v_n USING p_id;
+    IF v_n > 0 THEN v_stats := v_stats || pgv.stat('Chantiers', v_n::text); END IF;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  IF v_stats <> '' THEN
+    v_activity := pgv.grid(v_stats) || v_activity;
+  END IF;
 
   BEGIN
     v_rows := '';
@@ -746,6 +804,54 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm TO web_anon;
 
 -- Schema: crm_ut
 CREATE SCHEMA IF NOT EXISTS crm_ut;
+
+CREATE OR REPLACE FUNCTION crm_ut.test_client_options()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id int;
+  v_row record;
+  v_count int;
+BEGIN
+  -- Setup: insert a test client
+  INSERT INTO crm.client (name, type, email, city, active)
+  VALUES ('UT_Options_Test', 'individual', 'ut@test.com', 'Grenoble', true)
+  RETURNING id INTO v_id;
+
+  -- Test 1: found by name
+  SELECT count(*) INTO v_count FROM crm.client_options('UT_Options');
+  RETURN NEXT ok(v_count = 1, 'search by name finds client');
+
+  -- Test 2: found by city
+  SELECT count(*) INTO v_count FROM crm.client_options('Grenoble');
+  RETURN NEXT ok(v_count >= 1, 'search by city finds client');
+
+  -- Test 3: found by email
+  SELECT count(*) INTO v_count FROM crm.client_options('ut@test');
+  RETURN NEXT ok(v_count = 1, 'search by email finds client');
+
+  -- Test 4: detail format contains city and email
+  SELECT * INTO v_row FROM crm.client_options('UT_Options') LIMIT 1;
+  RETURN NEXT ok(v_row.value = v_id::text, 'value is client id');
+  RETURN NEXT ok(v_row.label = 'UT_Options_Test', 'label is client name');
+  RETURN NEXT ok(v_row.detail LIKE '%Grenoble%', 'detail contains city');
+  RETURN NEXT ok(v_row.detail LIKE '%ut@test.com%', 'detail contains email');
+
+  -- Test 5: inactive client not returned
+  UPDATE crm.client SET active = false WHERE id = v_id;
+  SELECT count(*) INTO v_count FROM crm.client_options('UT_Options');
+  RETURN NEXT ok(v_count = 0, 'inactive client excluded');
+
+  -- Test 6: NULL search returns results
+  SELECT count(*) INTO v_count FROM crm.client_options(NULL);
+  RETURN NEXT ok(v_count > 0, 'NULL search returns all active');
+
+  -- Cleanup
+  DELETE FROM crm.client WHERE id = v_id;
+END;
+$function$;
+COMMENT ON FUNCTION crm_ut.test_client_options() IS 'Unit test for crm.client_options — search, filtering, detail format';
 
 CREATE OR REPLACE FUNCTION crm_ut.test_display_name()
  RETURNS SETOF text

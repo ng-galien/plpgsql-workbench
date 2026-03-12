@@ -4,18 +4,17 @@ CREATE OR REPLACE FUNCTION stock.get_mouvement_form(p_type text DEFAULT 'entree'
  STABLE
 AS $function$
 DECLARE
-  v_article_options text;
   v_depot_options text;
   v_type_options text;
   v_body text;
+  v_article_search text;
 BEGIN
-  -- Articles actifs
-  v_article_options := '<option value="">-- Article --</option>';
-  SELECT v_article_options || string_agg(
-    format('<option value="%s">%s — %s</option>', a.id, pgv.esc(a.reference), pgv.esc(a.designation)),
-    '' ORDER BY a.designation
-  ) INTO v_article_options
-  FROM stock.article a WHERE a.active;
+  -- Article via select_search
+  v_article_search := pgv.select_search(
+    'article_id', 'Article',
+    'article_options',
+    'Rechercher un article...'
+  );
 
   -- Dépôts actifs
   v_depot_options := '<option value="">-- Dépôt --</option>';
@@ -33,7 +32,7 @@ BEGIN
 
   v_body := format('<form data-rpc="post_mouvement_save">
     <label>Type <select name="type" required>%s</select></label>
-    <label>Article <select name="article_id" required>%s</select></label>
+    %s
     <label>Dépôt <select name="depot_id" required>%s</select></label>
     <label>Quantité <input type="number" name="quantite" step="0.01" min="0.01" required></label>
     <label>Prix unitaire <input type="number" name="prix_unitaire" step="0.01" min="0"></label>
@@ -43,7 +42,7 @@ BEGIN
     <button type="submit">Enregistrer</button>
   </form>',
     v_type_options,
-    v_article_options,
+    v_article_search,
     v_depot_options,
     v_depot_options  -- same options for destination
   );

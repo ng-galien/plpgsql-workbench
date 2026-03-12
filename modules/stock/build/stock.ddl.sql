@@ -106,6 +106,10 @@ GRANT USAGE ON SEQUENCE stock.mouvement_id_seq TO web_anon;
 GRANT USAGE ON SCHEMA stock_ut TO web_anon;
 GRANT USAGE ON SCHEMA stock_qa TO web_anon;
 
+-- Lien vers catalog (soft FK — catalog peut ne pas être déployé)
+ALTER TABLE stock.article ADD COLUMN IF NOT EXISTS catalog_article_id integer;
+CREATE INDEX IF NOT EXISTS idx_article_catalog ON stock.article(catalog_article_id);
+
 -- Default privileges pour fonctions créées après DDL
 ALTER DEFAULT PRIVILEGES IN SCHEMA stock GRANT EXECUTE ON FUNCTIONS TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA stock_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;

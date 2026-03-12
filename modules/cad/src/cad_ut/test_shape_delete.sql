@@ -16,11 +16,11 @@ BEGIN
   v_sid := cad.add_shape(v_did, v_lid, 'rect', '{"x":0,"y":0,"w":50,"h":30}'::jsonb);
 
   -- Test: null shape_id returns error
-  v_result := cad.shape_delete(NULL, v_did);
+  v_result := cad.post_shape_delete(NULL, v_did);
   RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'null shape_id returns error');
 
   -- Test: valid delete returns success
-  v_result := cad.shape_delete(v_sid, v_did);
+  v_result := cad.post_shape_delete(v_sid, v_did);
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'delete returns success toast');
   RETURN NEXT ok(v_result LIKE '%data-redirect%', 'delete returns redirect');
 

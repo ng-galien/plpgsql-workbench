@@ -13,6 +13,9 @@ DECLARE
   v_msg_new_total int;
   v_hook_deny_today int;
   v_module_count int;
+  v_total_funcs int;
+  v_total_tests int;
+  v_resolved_tasks int;
   r record;
 BEGIN
   -- Global stats
@@ -29,11 +32,35 @@ BEGIN
   SELECT count(*)::int INTO v_module_count
     FROM ops._module_list();
 
+  -- Total functions across all module schemas
+  SELECT count(*)::int INTO v_total_funcs
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname IN (SELECT module FROM ops._module_list());
+
+  -- Total tests across all _ut schemas
+  SELECT count(*)::int INTO v_total_tests
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname IN (SELECT module || '_ut' FROM ops._module_list())
+     AND p.proname LIKE 'test\_%' ESCAPE '\';
+
+  -- Resolved tasks
+  SELECT count(*)::int INTO v_resolved_tasks
+    FROM workbench.agent_message
+   WHERE status = 'resolved' AND msg_type = 'task';
+
   v_body := pgv.grid(VARIADIC ARRAY[
+    pgv.stat('Modules', v_module_count::text),
+    pgv.stat('Fonctions', v_total_funcs::text, 'tous modules'),
+    pgv.stat('Tests', v_total_tests::text, 'pgTAP'),
+    pgv.stat('Taches resolues', v_resolved_tasks::text)
+  ]);
+
+  v_body := v_body || pgv.grid(VARIADIC ARRAY[
     pgv.stat('Agents actifs', v_active_count::text),
     pgv.stat('Messages non lus', v_msg_new_total::text),
-    pgv.stat('Hooks bloques', v_hook_deny_today::text, 'aujourd''hui'),
-    pgv.stat('Modules', v_module_count::text)
+    pgv.stat('Hooks bloques', v_hook_deny_today::text, 'aujourd''hui')
   ]);
 
   -- Agent cards

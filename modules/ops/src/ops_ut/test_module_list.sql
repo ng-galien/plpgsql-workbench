@@ -3,15 +3,14 @@ CREATE OR REPLACE FUNCTION ops_ut.test_module_list()
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_count int;
+  v_html text;
 BEGIN
-  -- Test indirectly: get_index uses _module_list and renders cards
-  -- If _module_list returns modules, get_index will contain agent cards
-  SELECT length(ops.get_index()) INTO v_count;
-  RETURN NEXT ok(v_count > 100, 'get_index returns substantial HTML (uses _module_list)');
-  RETURN NEXT ok(
-    ops.get_index() LIKE '%cad%',
-    'get_index contains cad module card'
-  );
+  v_html := ops.get_index();
+  RETURN NEXT ok(length(v_html) > 100, 'get_index returns substantial HTML (uses _module_list)');
+  RETURN NEXT ok(v_html LIKE '%cad%', 'get_index contains cad module card');
+  -- New global stats
+  RETURN NEXT ok(v_html LIKE '%Fonctions%', 'get_index shows total functions');
+  RETURN NEXT ok(v_html LIKE '%Tests%', 'get_index shows total tests');
+  RETURN NEXT ok(v_html LIKE '%Taches resolues%', 'get_index shows resolved tasks');
 END;
 $function$;

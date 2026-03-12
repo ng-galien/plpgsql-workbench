@@ -14,19 +14,19 @@ BEGIN
   VALUES (v_did, 'L1', '#000', 1) RETURNING id INTO v_lid;
 
   -- Test: missing params returns error
-  v_result := cad.shape_add(v_did, NULL, NULL);
+  v_result := cad.post_shape_add(v_did, NULL, NULL);
   RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'missing params returns error');
 
   -- Test: invalid geometry JSON returns error
-  v_result := cad.shape_add(v_did, v_lid, 'line', '{bad json}');
+  v_result := cad.post_shape_add(v_did, v_lid, 'line', '{bad json}');
   RETURN NEXT ok(v_result LIKE '%Géométrie JSON invalide%', 'bad geometry returns error');
 
   -- Test: invalid props JSON returns error
-  v_result := cad.shape_add(v_did, v_lid, 'line', '{"x1":0}', '{bad}');
+  v_result := cad.post_shape_add(v_did, v_lid, 'line', '{"x1":0}', '{bad}');
   RETURN NEXT ok(v_result LIKE '%Props JSON invalides%', 'bad props returns error');
 
   -- Test: valid shape_add returns success + redirect
-  v_result := cad.shape_add(v_did, v_lid, 'line', '{"x1":0,"y1":0,"x2":100,"y2":0}', '{}', 'TestLine');
+  v_result := cad.post_shape_add(v_did, v_lid, 'line', '{"x1":0,"y1":0,"x2":100,"y2":0}', '{}', 'TestLine');
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'valid add returns success toast');
   RETURN NEXT ok(v_result LIKE '%data-redirect%', 'valid add returns redirect');
 

@@ -15,6 +15,9 @@ DECLARE
   v_activity text;
   v_rows text;
   v_timeline jsonb;
+  v_stats text;
+  v_n int;
+  v_ca numeric;
 BEGIN
   SELECT * INTO v_client FROM crm.client WHERE id = p_id;
   IF NOT FOUND THEN
@@ -74,6 +77,38 @@ BEGIN
 
   -- Activité liée (cross-module)
   v_activity := '';
+  v_stats := '';
+
+  BEGIN
+    EXECUTE 'SELECT count(*) FROM quote.devis WHERE client_id = $1' INTO v_n USING p_id;
+    IF v_n > 0 THEN v_stats := v_stats || pgv.stat('Devis', v_n::text); END IF;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  BEGIN
+    EXECUTE '
+      SELECT count(DISTINCT f.id),
+             coalesce(sum(l.quantite * l.prix_unitaire * (1 + l.tva_rate / 100)), 0)
+      FROM quote.facture f
+      LEFT JOIN quote.ligne l ON l.facture_id = f.id
+      WHERE f.client_id = $1'
+    INTO v_n, v_ca USING p_id;
+    IF v_n > 0 THEN
+      v_stats := v_stats || pgv.stat('Factures', v_n::text);
+      v_stats := v_stats || pgv.stat('CA TTC', to_char(v_ca, 'FM999G999G990D00') || E' \u20ac');
+    END IF;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  BEGIN
+    EXECUTE 'SELECT count(*) FROM project.chantier WHERE client_id = $1' INTO v_n USING p_id;
+    IF v_n > 0 THEN v_stats := v_stats || pgv.stat('Chantiers', v_n::text); END IF;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  IF v_stats <> '' THEN
+    v_activity := pgv.grid(v_stats) || v_activity;
+  END IF;
 
   BEGIN
     v_rows := '';

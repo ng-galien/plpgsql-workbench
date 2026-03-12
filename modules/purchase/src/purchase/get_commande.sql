@@ -121,7 +121,7 @@ BEGIN
       || '<label>Prix unitaire<input type="number" name="p_prix_unitaire" step="0.01" min="0" required></label>'
       || '<label>TVA %<select name="p_tva_rate"><option value="20.00" selected>20%</option><option value="10.00">10%</option><option value="5.50">5.5%</option><option value="0.00">0%</option></select></label>'
       || '</div>'
-      || '<label>Article stock<select name="p_article_id">' || purchase._article_options() || '</select></label>'
+      || pgv.select_search('p_article_id', 'Article stock', 'article_options', 'Rechercher un article...')
       || '<button type="submit">Ajouter</button>'
       || '</form></details>';
   END IF;

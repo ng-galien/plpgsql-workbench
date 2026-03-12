@@ -8,15 +8,15 @@ DECLARE
   v_layer_count int;
 BEGIN
   -- Test: empty name returns error toast
-  v_result := cad.drawing_add('');
+  v_result := cad.post_drawing_add('');
   RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'empty name returns error toast');
 
   -- Test: null name returns error toast
-  v_result := cad.drawing_add(NULL);
+  v_result := cad.post_drawing_add(NULL);
   RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'null name returns error toast');
 
   -- Test: valid name creates drawing + redirects
-  v_result := cad.drawing_add('Test Audit');
+  v_result := cad.post_drawing_add('Test Audit');
   RETURN NEXT ok(v_result LIKE '%data-redirect%', 'valid name returns redirect');
 
   -- Get created drawing

@@ -15,6 +15,9 @@ DECLARE
   v_rows_n text[];
   v_rows_a text[];
   r record;
+  v_has_expense boolean;
+  v_total_frais numeric;
+  v_expense_rows text[];
 BEGIN
   SELECT * INTO c FROM project.chantier WHERE id = p_id;
   IF NOT FOUND THEN RETURN pgv.empty('Chantier introuvable'); END IF;
@@ -29,6 +32,46 @@ BEGIN
   SELECT COALESCE(sum(heures), 0) INTO v_heures_total
     FROM project.pointage WHERE chantier_id = p_id;
 
+  -- Check if expense module has chantier_id on note (via pg_catalog)
+  SELECT EXISTS(
+    SELECT 1 FROM pg_catalog.pg_attribute a
+      JOIN pg_catalog.pg_class cl ON cl.oid = a.attrelid
+      JOIN pg_catalog.pg_namespace ns ON ns.oid = cl.relnamespace
+     WHERE ns.nspname = 'expense' AND cl.relname = 'note'
+       AND a.attname = 'chantier_id' AND NOT a.attisdropped
+  ) INTO v_has_expense;
+
+  -- Fetch expense data if available
+  v_total_frais := 0;
+  v_expense_rows := ARRAY[]::text[];
+  IF v_has_expense THEN
+    EXECUTE format(
+      'SELECT COALESCE(sum(l.montant_ttc), 0)
+         FROM expense.note n JOIN expense.ligne l ON l.note_id = n.id
+        WHERE n.chantier_id = %s', p_id
+    ) INTO v_total_frais;
+
+    EXECUTE format(
+      $q$SELECT array_agg(x ORDER BY x.rn) FROM (
+        SELECT row_number() OVER () AS rn,
+               format('<a href="/expense/note?p_id=%%s">%%s</a>', n.id, pgv.esc(COALESCE(n.reference, '#' || n.id))),
+               pgv.esc(n.auteur),
+               to_char(n.date_debut, 'DD/MM/YYYY') || ' → ' || to_char(n.date_fin, 'DD/MM/YYYY'),
+               pgv.badge(
+                 CASE n.statut WHEN 'brouillon' THEN 'Brouillon' WHEN 'soumise' THEN 'Soumise' WHEN 'validee' THEN 'Validée' WHEN 'refusee' THEN 'Refusée' ELSE n.statut END,
+                 CASE n.statut WHEN 'brouillon' THEN 'default' WHEN 'soumise' THEN 'info' WHEN 'validee' THEN 'success' WHEN 'refusee' THEN 'danger' ELSE 'default' END
+               ),
+               to_char(COALESCE(sum(l.montant_ttc), 0), 'FM999 999.00') || ' €'
+          FROM expense.note n
+          LEFT JOIN expense.ligne l ON l.note_id = n.id
+         WHERE n.chantier_id = %s
+         GROUP BY n.id ORDER BY n.date_debut DESC
+      ) x$q$, p_id
+    ) INTO v_expense_rows;
+
+    IF v_expense_rows IS NULL THEN v_expense_rows := ARRAY[]::text[]; END IF;
+  END IF;
+
   v_body := pgv.breadcrumb(VARIADIC ARRAY[
     'Chantiers', pgv.call_ref('get_chantiers'),
     c.numero
@@ -40,7 +83,10 @@ BEGIN
     pgv.stat('Avancement', v_pct::text || ' %'),
     pgv.stat('Heures totales', v_heures_total::text || ' h'),
     pgv.stat('Client', format('<a href="/crm/client?p_id=%s">%s</a>', c.client_id, pgv.esc(v_client_name)))
-  ]);
+  ] || CASE WHEN v_has_expense AND v_total_frais > 0
+    THEN ARRAY[pgv.stat('Frais', to_char(v_total_frais, 'FM999 999.00') || ' €')]
+    ELSE ARRAY[]::text[]
+  END);
 
   -- Info card
   v_body := v_body || pgv.card('Informations',
@@ -198,7 +244,13 @@ BEGIN
       || '<button type="submit">Ajouter</button>'
       || '</form>'
     ELSE '' END
-  ]);
+  ] || CASE WHEN v_has_expense THEN ARRAY[
+    'Notes de frais (' || COALESCE(array_length(v_expense_rows, 1) / 5, 0) || ')',
+    CASE WHEN array_length(v_expense_rows, 1) IS NULL
+      THEN pgv.empty('Aucune note de frais liée')
+      ELSE pgv.md_table(ARRAY['Référence', 'Auteur', 'Période', 'Statut', 'Total TTC'], v_expense_rows)
+    END
+  ] ELSE ARRAY[]::text[] END);
 
   RETURN v_body;
 END;

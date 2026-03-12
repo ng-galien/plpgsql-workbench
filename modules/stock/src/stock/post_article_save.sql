@@ -16,13 +16,14 @@ BEGIN
       prix_achat = nullif(p_data->>'prix_achat', '')::numeric,
       seuil_mini = coalesce(nullif(p_data->>'seuil_mini', '')::numeric, 0),
       fournisseur_id = nullif(p_data->>'fournisseur_id', '')::int,
+      catalog_article_id = nullif(p_data->>'catalog_article_id', '')::int,
       notes = coalesce(p_data->>'notes', '')
     WHERE id = v_id;
 
     RETURN '<template data-toast="success">Article modifié</template>'
       || format('<template data-redirect="%s"></template>', pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
   ELSE
-    INSERT INTO stock.article (reference, designation, categorie, unite, prix_achat, seuil_mini, fournisseur_id, notes)
+    INSERT INTO stock.article (reference, designation, categorie, unite, prix_achat, seuil_mini, fournisseur_id, catalog_article_id, notes)
     VALUES (
       p_data->>'reference',
       p_data->>'designation',
@@ -31,6 +32,7 @@ BEGIN
       nullif(p_data->>'prix_achat', '')::numeric,
       coalesce(nullif(p_data->>'seuil_mini', '')::numeric, 0),
       nullif(p_data->>'fournisseur_id', '')::int,
+      nullif(p_data->>'catalog_article_id', '')::int,
       coalesce(p_data->>'notes', '')
     ) RETURNING id INTO v_id;
 

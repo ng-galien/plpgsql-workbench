@@ -370,6 +370,9 @@ DECLARE
   v_msg_new_total int;
   v_hook_deny_today int;
   v_module_count int;
+  v_total_funcs int;
+  v_total_tests int;
+  v_resolved_tasks int;
   r record;
 BEGIN
   -- Global stats
@@ -386,11 +389,35 @@ BEGIN
   SELECT count(*)::int INTO v_module_count
     FROM ops._module_list();
 
+  -- Total functions across all module schemas
+  SELECT count(*)::int INTO v_total_funcs
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname IN (SELECT module FROM ops._module_list());
+
+  -- Total tests across all _ut schemas
+  SELECT count(*)::int INTO v_total_tests
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname IN (SELECT module || '_ut' FROM ops._module_list())
+     AND p.proname LIKE 'test\_%' ESCAPE '\';
+
+  -- Resolved tasks
+  SELECT count(*)::int INTO v_resolved_tasks
+    FROM workbench.agent_message
+   WHERE status = 'resolved' AND msg_type = 'task';
+
   v_body := pgv.grid(VARIADIC ARRAY[
+    pgv.stat('Modules', v_module_count::text),
+    pgv.stat('Fonctions', v_total_funcs::text, 'tous modules'),
+    pgv.stat('Tests', v_total_tests::text, 'pgTAP'),
+    pgv.stat('Taches resolues', v_resolved_tasks::text)
+  ]);
+
+  v_body := v_body || pgv.grid(VARIADIC ARRAY[
     pgv.stat('Agents actifs', v_active_count::text),
     pgv.stat('Messages non lus', v_msg_new_total::text),
-    pgv.stat('Hooks bloques', v_hook_deny_today::text, 'aujourd''hui'),
-    pgv.stat('Modules', v_module_count::text)
+    pgv.stat('Hooks bloques', v_hook_deny_today::text, 'aujourd''hui')
   ]);
 
   -- Agent cards
@@ -451,7 +478,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION ops.get_index() IS 'Dashboard principal — grille d''agents avec liens rapides module, stats globales, timeline';
+COMMENT ON FUNCTION ops.get_index() IS 'Dashboard principal — stats globales enrichies (fonctions, tests, tâches résolues), grille agents, timeline';
 
 CREATE OR REPLACE FUNCTION ops.get_message(p_id integer)
  RETURNS text
@@ -642,13 +669,79 @@ END;
 $function$;
 COMMENT ON FUNCTION ops.get_messages(text) IS 'Liste paginée des messages inter-agents, filtrable par module, avec lien détail';
 
+CREATE OR REPLACE FUNCTION ops.get_modules()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_rows text[];
+  v_mod text;
+  v_stats record;
+  v_first_seen timestamptz;
+  v_is_new boolean;
+  v_total_funcs int := 0;
+  v_total_tests int := 0;
+  v_module_count int := 0;
+BEGIN
+  v_rows := ARRAY[]::text[];
+
+  FOR v_mod IN SELECT module FROM ops._module_list()
+  LOOP
+    SELECT * INTO v_stats FROM ops._module_stats(v_mod);
+    v_module_count := v_module_count + 1;
+    v_total_funcs := v_total_funcs + v_stats.func_count;
+    v_total_tests := v_total_tests + v_stats.test_count;
+
+    -- Detect "new" modules: first activity within 7 days or no activity at all
+    SELECT LEAST(
+      (SELECT min(created_at) FROM workbench.agent_message
+       WHERE to_module = v_mod OR from_module = v_mod),
+      (SELECT min(created_at) FROM workbench.hook_log WHERE module = v_mod)
+    ) INTO v_first_seen;
+
+    v_is_new := v_first_seen IS NULL OR v_first_seen > now() - interval '7 days';
+
+    v_rows := v_rows || ARRAY[
+      '<a href="/' || pgv.esc(v_mod) || '/">' || pgv.esc(v_mod) || '</a>'
+        || CASE WHEN v_is_new THEN ' ' || pgv.badge('nouveau', 'success') ELSE '' END,
+      v_stats.func_count::text,
+      v_stats.test_count::text,
+      v_stats.msg_total::text,
+      CASE WHEN v_stats.last_hook_at IS NOT NULL
+        THEN to_char(v_stats.last_hook_at, 'DD/MM HH24:MI')
+        ELSE '-'
+      END
+    ];
+  END LOOP;
+
+  IF v_module_count = 0 THEN
+    RETURN pgv.empty('Aucun module', 'Deployer des modules pour les voir ici.');
+  END IF;
+
+  v_body := pgv.grid(VARIADIC ARRAY[
+    pgv.stat('Modules', v_module_count::text),
+    pgv.stat('Fonctions', v_total_funcs::text, 'tous modules'),
+    pgv.stat('Tests', v_total_tests::text, 'pgTAP')
+  ]);
+
+  v_body := v_body || pgv.md_table(
+    ARRAY['Module', 'Fonctions', 'Tests', 'Messages', 'Derniere activite'],
+    v_rows
+  );
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION ops.get_modules() IS 'Liste tous les modules avec stats (fonctions, tests, messages, activité), badge nouveau pour modules récents';
+
 CREATE OR REPLACE FUNCTION ops.nav_items()
  RETURNS jsonb
  LANGUAGE sql
- STABLE
 AS $function$
 SELECT '[
     {"href":"/","label":"Dashboard","icon":"monitor"},
+    {"href":"/modules","label":"Modules","icon":"package"},
     {"href":"/dashboard","label":"Sante","icon":"activity"},
     {"href":"/agents","label":"Agents","icon":"terminal"},
     {"href":"/messages","label":"Messages","icon":"mail"},
@@ -763,24 +856,44 @@ END;
 $function$;
 COMMENT ON FUNCTION ops_ut.test_get_message() IS 'Test get_message detail page — existing message and not found';
 
+CREATE OR REPLACE FUNCTION ops_ut.test_get_modules()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  v_html := ops.get_modules();
+  RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 0, 'get_modules renders HTML');
+  RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'get_modules contains stat widgets');
+  RETURN NEXT ok(v_html LIKE '%Modules%', 'get_modules shows module count');
+  RETURN NEXT ok(v_html LIKE '%Fonctions%', 'get_modules shows function count');
+  RETURN NEXT ok(v_html LIKE '%Tests%', 'get_modules shows test count');
+  RETURN NEXT ok(v_html LIKE '%cad%', 'get_modules lists cad module');
+  RETURN NEXT ok(v_html LIKE '%crm%', 'get_modules lists crm module');
+  -- No inline styles
+  RETURN NEXT ok(v_html NOT LIKE '%style="%', 'get_modules has no inline styles');
+END;
+$function$;
+COMMENT ON FUNCTION ops_ut.test_get_modules() IS 'Test get_modules affiche la registry avec stats et badge nouveau';
+
 CREATE OR REPLACE FUNCTION ops_ut.test_module_list()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_count int;
+  v_html text;
 BEGIN
-  -- Test indirectly: get_index uses _module_list and renders cards
-  -- If _module_list returns modules, get_index will contain agent cards
-  SELECT length(ops.get_index()) INTO v_count;
-  RETURN NEXT ok(v_count > 100, 'get_index returns substantial HTML (uses _module_list)');
-  RETURN NEXT ok(
-    ops.get_index() LIKE '%cad%',
-    'get_index contains cad module card'
-  );
+  v_html := ops.get_index();
+  RETURN NEXT ok(length(v_html) > 100, 'get_index returns substantial HTML (uses _module_list)');
+  RETURN NEXT ok(v_html LIKE '%cad%', 'get_index contains cad module card');
+  -- New global stats
+  RETURN NEXT ok(v_html LIKE '%Fonctions%', 'get_index shows total functions');
+  RETURN NEXT ok(v_html LIKE '%Tests%', 'get_index shows total tests');
+  RETURN NEXT ok(v_html LIKE '%Taches resolues%', 'get_index shows resolved tasks');
 END;
 $function$;
-COMMENT ON FUNCTION ops_ut.test_module_list() IS 'Test _module_list retourne au moins 1 module';
+COMMENT ON FUNCTION ops_ut.test_module_list() IS 'Test _module_list et stats globales sur get_index';
 
 CREATE OR REPLACE FUNCTION ops_ut.test_module_stats()
  RETURNS SETOF text
@@ -803,6 +916,7 @@ CREATE OR REPLACE FUNCTION ops_ut.test_pages_render()
 AS $function$
 BEGIN
   RETURN NEXT ok(length(ops.get_index()) > 0, 'get_index renders HTML');
+  RETURN NEXT ok(length(ops.get_modules()) > 0, 'get_modules renders HTML');
   RETURN NEXT ok(length(ops.get_messages()) > 0, 'get_messages renders HTML');
   RETURN NEXT ok(length(ops.get_hooks()) > 0, 'get_hooks renders HTML');
   RETURN NEXT ok(length(ops.get_agent('cad')) > 0, 'get_agent renders HTML');
@@ -812,6 +926,10 @@ BEGIN
   RETURN NEXT ok(
     (ops.nav_items())::text LIKE '%Dashboard%',
     'nav_items contains Dashboard'
+  );
+  RETURN NEXT ok(
+    (ops.nav_items())::text LIKE '%Modules%',
+    'nav_items contains Modules'
   );
 END;
 $function$;

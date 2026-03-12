@@ -664,27 +664,6 @@ END;
 $function$;
 COMMENT ON FUNCTION cad.delete_shape(integer) IS 'Supprimer une shape 2D.';
 
-CREATE OR REPLACE FUNCTION cad.drawing_add(name text)
- RETURNS "text/html"
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_id int;
-BEGIN
-  IF name IS NULL OR trim(name) = '' THEN
-    RETURN '<template data-toast="error">Nom requis</template>';
-  END IF;
-
-  INSERT INTO cad.drawing (name) VALUES (trim(name)) RETURNING id INTO v_id;
-
-  INSERT INTO cad.layer (drawing_id, name, color, stroke_width)
-  VALUES (v_id, 'Structure', '#333333', 1.5);
-
-  RETURN format('<template data-redirect="/drawing?p_id=%s"></template>', v_id);
-END;
-$function$;
-COMMENT ON FUNCTION cad.drawing_add(text) IS 'Creer un nouveau dessin.';
-
 CREATE OR REPLACE FUNCTION cad.duplicate_group(p_group_id integer, p_dx real DEFAULT 0, p_dy real DEFAULT 0, p_dz real DEFAULT 0, p_label text DEFAULT NULL::text)
  RETURNS integer
  LANGUAGE plpgsql
@@ -1586,6 +1565,77 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION cad.page(text,jsonb) IS 'Router wrapper for cad pages — delegates to pgv.route with query param parsing.';
+
+CREATE OR REPLACE FUNCTION cad.post_drawing_add(name text)
+ RETURNS "text/html"
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id int;
+BEGIN
+  IF name IS NULL OR trim(name) = '' THEN
+    RETURN '<template data-toast="error">Nom requis</template>';
+  END IF;
+
+  INSERT INTO cad.drawing (name) VALUES (trim(name)) RETURNING id INTO v_id;
+
+  INSERT INTO cad.layer (drawing_id, name, color, stroke_width)
+  VALUES (v_id, 'Structure', '#333333', 1.5);
+
+  RETURN format('<template data-redirect="/drawing?p_id=%s"></template>', v_id);
+END;
+$function$;
+COMMENT ON FUNCTION cad.post_drawing_add(text) IS 'Creer un nouveau dessin.';
+
+CREATE OR REPLACE FUNCTION cad.post_shape_add(drawing_id integer, layer_id integer, type text, geometry text DEFAULT '{}'::text, props text DEFAULT '{}'::text, label text DEFAULT NULL::text)
+ RETURNS "text/html"
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_geometry jsonb;
+  v_props jsonb;
+  v_shape_id int;
+BEGIN
+  IF layer_id IS NULL OR type IS NULL THEN
+    RETURN '<template data-toast="error">Calque et type requis</template>';
+  END IF;
+
+  BEGIN
+    v_geometry := geometry::jsonb;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN '<template data-toast="error">Géométrie JSON invalide</template>';
+  END;
+
+  BEGIN
+    v_props := props::jsonb;
+  EXCEPTION WHEN OTHERS THEN
+    RETURN '<template data-toast="error">Props JSON invalides</template>';
+  END;
+
+  v_shape_id := cad.add_shape(drawing_id, layer_id, type, v_geometry, v_props, nullif(trim(COALESCE(label, '')), ''));
+
+  RETURN format('<template data-toast="success">Shape #%s ajoutée</template>', v_shape_id)
+    || format('<template data-redirect="/drawing?p_id=%s"></template>', drawing_id);
+END;
+$function$;
+COMMENT ON FUNCTION cad.post_shape_add(integer,integer,text,text,text,text) IS 'Ajouter une shape à un dessin via RPC.';
+
+CREATE OR REPLACE FUNCTION cad.post_shape_delete(shape_id integer, drawing_id integer)
+ RETURNS "text/html"
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF shape_id IS NULL THEN
+    RETURN '<template data-toast="error">shape_id requis</template>';
+  END IF;
+
+  PERFORM cad.delete_shape(shape_id);
+
+  RETURN format('<template data-toast="success">Shape #%s supprimée</template>', shape_id)
+    || format('<template data-redirect="/drawing?p_id=%s"></template>', drawing_id);
+END;
+$function$;
+COMMENT ON FUNCTION cad.post_shape_delete(integer,integer) IS 'Supprimer une shape d''un dessin via RPC.';
 
 CREATE OR REPLACE FUNCTION cad.remove_group(p_group_id integer, p_keep_pieces boolean DEFAULT false)
  RETURNS text
@@ -2614,56 +2664,6 @@ END;
 $function$;
 COMMENT ON FUNCTION cad.scene_json(integer) IS 'Export GeoJSON: tesselation des solides en triangles pour Three.js. Inclut groupes.';
 
-CREATE OR REPLACE FUNCTION cad.shape_add(drawing_id integer, layer_id integer, type text, geometry text DEFAULT '{}'::text, props text DEFAULT '{}'::text, label text DEFAULT NULL::text)
- RETURNS "text/html"
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_geometry jsonb;
-  v_props jsonb;
-  v_shape_id int;
-BEGIN
-  IF layer_id IS NULL OR type IS NULL THEN
-    RETURN '<template data-toast="error">Calque et type requis</template>';
-  END IF;
-
-  BEGIN
-    v_geometry := geometry::jsonb;
-  EXCEPTION WHEN OTHERS THEN
-    RETURN '<template data-toast="error">Géométrie JSON invalide</template>';
-  END;
-
-  BEGIN
-    v_props := props::jsonb;
-  EXCEPTION WHEN OTHERS THEN
-    RETURN '<template data-toast="error">Props JSON invalides</template>';
-  END;
-
-  v_shape_id := cad.add_shape(drawing_id, layer_id, type, v_geometry, v_props, nullif(trim(COALESCE(label, '')), ''));
-
-  RETURN format('<template data-toast="success">Shape #%s ajoutée</template>', v_shape_id)
-    || format('<template data-redirect="/drawing?p_id=%s"></template>', drawing_id);
-END;
-$function$;
-COMMENT ON FUNCTION cad.shape_add(integer,integer,text,text,text,text) IS 'Ajouter une shape à un dessin via RPC.';
-
-CREATE OR REPLACE FUNCTION cad.shape_delete(shape_id integer, drawing_id integer)
- RETURNS "text/html"
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF shape_id IS NULL THEN
-    RETURN '<template data-toast="error">shape_id requis</template>';
-  END IF;
-
-  PERFORM cad.delete_shape(shape_id);
-
-  RETURN format('<template data-toast="success">Shape #%s supprimée</template>', shape_id)
-    || format('<template data-redirect="/drawing?p_id=%s"></template>', drawing_id);
-END;
-$function$;
-COMMENT ON FUNCTION cad.shape_delete(integer,integer) IS 'Supprimer une shape d''un dessin via RPC.';
-
 CREATE OR REPLACE FUNCTION cad.snap_piece(p_piece_id integer, p_target_id integer, p_face text)
  RETURNS text
  LANGUAGE plpgsql
@@ -3012,15 +3012,15 @@ DECLARE
   v_layer_count int;
 BEGIN
   -- Test: empty name returns error toast
-  v_result := cad.drawing_add('');
+  v_result := cad.post_drawing_add('');
   RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'empty name returns error toast');
 
   -- Test: null name returns error toast
-  v_result := cad.drawing_add(NULL);
+  v_result := cad.post_drawing_add(NULL);
   RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'null name returns error toast');
 
   -- Test: valid name creates drawing + redirects
-  v_result := cad.drawing_add('Test Audit');
+  v_result := cad.post_drawing_add('Test Audit');
   RETURN NEXT ok(v_result LIKE '%data-redirect%', 'valid name returns redirect');
 
   -- Get created drawing
@@ -3036,7 +3036,7 @@ BEGIN
   DELETE FROM cad.drawing WHERE id = v_id;
 END;
 $function$;
-COMMENT ON FUNCTION cad_ut.test_drawing_add() IS 'Test RPC drawing_add: validates creation, default layer, and empty name rejection.';
+COMMENT ON FUNCTION cad_ut.test_drawing_add() IS 'Test RPC post_drawing_add: validates creation, default layer, and empty name rejection.';
 
 CREATE OR REPLACE FUNCTION cad_ut.test_fragment_piece_tree()
  RETURNS SETOF text
@@ -3148,19 +3148,19 @@ BEGIN
   VALUES (v_did, 'L1', '#000', 1) RETURNING id INTO v_lid;
 
   -- Test: missing params returns error
-  v_result := cad.shape_add(v_did, NULL, NULL);
+  v_result := cad.post_shape_add(v_did, NULL, NULL);
   RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'missing params returns error');
 
   -- Test: invalid geometry JSON returns error
-  v_result := cad.shape_add(v_did, v_lid, 'line', '{bad json}');
+  v_result := cad.post_shape_add(v_did, v_lid, 'line', '{bad json}');
   RETURN NEXT ok(v_result LIKE '%Géométrie JSON invalide%', 'bad geometry returns error');
 
   -- Test: invalid props JSON returns error
-  v_result := cad.shape_add(v_did, v_lid, 'line', '{"x1":0}', '{bad}');
+  v_result := cad.post_shape_add(v_did, v_lid, 'line', '{"x1":0}', '{bad}');
   RETURN NEXT ok(v_result LIKE '%Props JSON invalides%', 'bad props returns error');
 
   -- Test: valid shape_add returns success + redirect
-  v_result := cad.shape_add(v_did, v_lid, 'line', '{"x1":0,"y1":0,"x2":100,"y2":0}', '{}', 'TestLine');
+  v_result := cad.post_shape_add(v_did, v_lid, 'line', '{"x1":0,"y1":0,"x2":100,"y2":0}', '{}', 'TestLine');
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'valid add returns success toast');
   RETURN NEXT ok(v_result LIKE '%data-redirect%', 'valid add returns redirect');
 
@@ -3174,7 +3174,7 @@ BEGIN
   DELETE FROM cad.drawing WHERE id = v_did;
 END;
 $function$;
-COMMENT ON FUNCTION cad_ut.test_shape_add() IS 'Test RPC shape_add: validates creation, error on missing params, JSON parse errors.';
+COMMENT ON FUNCTION cad_ut.test_shape_add() IS 'Test RPC post_shape_add: validates creation, error on missing params, JSON parse errors.';
 
 CREATE OR REPLACE FUNCTION cad_ut.test_shape_delete()
  RETURNS SETOF text
@@ -3194,11 +3194,11 @@ BEGIN
   v_sid := cad.add_shape(v_did, v_lid, 'rect', '{"x":0,"y":0,"w":50,"h":30}'::jsonb);
 
   -- Test: null shape_id returns error
-  v_result := cad.shape_delete(NULL, v_did);
+  v_result := cad.post_shape_delete(NULL, v_did);
   RETURN NEXT ok(v_result LIKE '%data-toast="error"%', 'null shape_id returns error');
 
   -- Test: valid delete returns success
-  v_result := cad.shape_delete(v_sid, v_did);
+  v_result := cad.post_shape_delete(v_sid, v_did);
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'delete returns success toast');
   RETURN NEXT ok(v_result LIKE '%data-redirect%', 'delete returns redirect');
 
@@ -3211,7 +3211,7 @@ BEGIN
   DELETE FROM cad.drawing WHERE id = v_did;
 END;
 $function$;
-COMMENT ON FUNCTION cad_ut.test_shape_delete() IS 'Test RPC shape_delete: validates deletion, error on null shape_id.';
+COMMENT ON FUNCTION cad_ut.test_shape_delete() IS 'Test RPC post_shape_delete: validates deletion, error on null shape_id.';
 
 CREATE OR REPLACE FUNCTION cad_ut.test_group_shapes()
  RETURNS SETOF text

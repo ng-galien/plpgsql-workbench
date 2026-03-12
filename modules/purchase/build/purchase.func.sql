@@ -164,6 +164,44 @@ END;
 $function$;
 COMMENT ON FUNCTION purchase._total_ttc(integer) IS 'Total TTC for a purchase order';
 
+CREATE OR REPLACE FUNCTION purchase.article_options(p_search text DEFAULT ''::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_result jsonb := '[]'::jsonb;
+BEGIN
+  -- Priority: catalog > stock
+  IF EXISTS (SELECT 1 FROM pg_namespace n
+             JOIN pg_proc p ON p.pronamespace = n.oid AND p.proname = 'article_options'
+             WHERE n.nspname = 'catalog'
+             AND pg_get_function_arguments(p.oid) LIKE '%p_search text%') THEN
+    EXECUTE format('SELECT catalog.article_options(%L)', p_search) INTO v_result;
+    RETURN coalesce(v_result, '[]'::jsonb);
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'stock') THEN
+    EXECUTE format(
+      'SELECT coalesce(jsonb_agg(jsonb_build_object(
+         ''value'', id::text,
+         ''label'', reference || '' — '' || designation,
+         ''detail'', coalesce(unite, ''u'')
+       )), ''[]''::jsonb)
+       FROM stock.article
+       WHERE active = true
+         AND (%L = '''' OR reference ILIKE ''%%'' || %L || ''%%'' OR designation ILIKE ''%%'' || %L || ''%%'')
+       ORDER BY reference
+       LIMIT 30',
+      p_search, p_search, p_search
+    ) INTO v_result;
+  END IF;
+
+  RETURN coalesce(v_result, '[]'::jsonb);
+END;
+$function$;
+COMMENT ON FUNCTION purchase.article_options(text) IS 'Search-select RPC: returns jsonb array of stock articles matching search term';
+
 CREATE OR REPLACE FUNCTION purchase.brand()
  RETURNS text
  LANGUAGE plpgsql
@@ -173,6 +211,33 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION purchase.brand() IS 'Brand name for purchase module';
+
+CREATE OR REPLACE FUNCTION purchase.fournisseur_options(p_search text DEFAULT ''::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_result jsonb;
+BEGIN
+  SELECT coalesce(jsonb_agg(row_j ORDER BY row_j->>'label'), '[]'::jsonb)
+  INTO v_result
+  FROM (
+    SELECT jsonb_build_object(
+      'value', id::text,
+      'label', name,
+      'detail', coalesce(email, phone, '')
+    ) AS row_j
+    FROM crm.client
+    WHERE active
+      AND (p_search = '' OR name ILIKE '%' || p_search || '%' OR email ILIKE '%' || p_search || '%')
+    LIMIT 30
+  ) sub;
+
+  RETURN coalesce(v_result, '[]'::jsonb);
+END;
+$function$;
+COMMENT ON FUNCTION purchase.fournisseur_options(text) IS 'Search-select RPC: returns jsonb array of CRM clients matching search term';
 
 CREATE OR REPLACE FUNCTION purchase.get_article_prix(p_article_id integer)
  RETURNS text
@@ -471,7 +536,7 @@ BEGIN
       || '<label>Prix unitaire<input type="number" name="p_prix_unitaire" step="0.01" min="0" required></label>'
       || '<label>TVA %<select name="p_tva_rate"><option value="20.00" selected>20%</option><option value="10.00">10%</option><option value="5.50">5.5%</option><option value="0.00">0%</option></select></label>'
       || '</div>'
-      || '<label>Article stock<select name="p_article_id">' || purchase._article_options() || '</select></label>'
+      || pgv.select_search('p_article_id', 'Article stock', 'article_options', 'Rechercher un article...')
       || '<button type="submit">Ajouter</button>'
       || '</form></details>';
   END IF;
@@ -552,17 +617,19 @@ BEGIN
     v_body := v_body || format('<input type="hidden" name="p_id" value="%s">', p_id);
   END IF;
 
-  v_body := v_body
-    || '<label>Fournisseur<select name="p_fournisseur_id" required>'
-    || purchase._fournisseur_options()
-    || '</select></label>';
-
-  -- Pre-select if editing
-  IF p_id IS NOT NULL THEN
-    v_body := replace(v_body,
-      format('value="%s">', v_cmd.fournisseur_id),
-      format('value="%s" selected>', v_cmd.fournisseur_id));
-  END IF;
+  -- Fournisseur select_search (pre-filled on edit)
+  DECLARE
+    v_fournisseur_name text;
+  BEGIN
+    IF p_id IS NOT NULL THEN
+      SELECT name INTO v_fournisseur_name FROM crm.client WHERE id = v_cmd.fournisseur_id;
+    END IF;
+    v_body := v_body
+      || pgv.select_search('p_fournisseur_id', 'Fournisseur',
+           'fournisseur_options', 'Rechercher un fournisseur...',
+           CASE WHEN p_id IS NOT NULL THEN v_cmd.fournisseur_id::text END,
+           v_fournisseur_name);
+  END;
 
   v_body := v_body
     || format('<label>Objet<input type="text" name="p_objet" value="%s" required></label>',
@@ -1351,6 +1418,22 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase TO web_anon;
 -- Schema: purchase_ut
 CREATE SCHEMA IF NOT EXISTS purchase_ut;
 
+CREATE OR REPLACE FUNCTION purchase_ut.test_article_options()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result jsonb;
+BEGIN
+  v_result := purchase.article_options();
+  RETURN NEXT ok(jsonb_typeof(v_result) = 'array', 'article_options() returns array');
+
+  v_result := purchase.article_options('xyz_no_match');
+  RETURN NEXT ok(jsonb_typeof(v_result) = 'array', 'article_options(search) returns array');
+END;
+$function$;
+COMMENT ON FUNCTION purchase_ut.test_article_options() IS 'Test article_options returns valid jsonb array for select_search';
+
 CREATE OR REPLACE FUNCTION purchase_ut.test_commande_annuler()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -1633,6 +1716,29 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION purchase_ut.test_facture_workflow() IS 'Test supplier invoice lifecycle: saisir, valider, payer with guards';
+
+CREATE OR REPLACE FUNCTION purchase_ut.test_fournisseur_options()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result jsonb;
+  v_item jsonb;
+BEGIN
+  v_result := purchase.fournisseur_options();
+  RETURN NEXT ok(jsonb_typeof(v_result) = 'array', 'fournisseur_options() returns array');
+  RETURN NEXT ok(jsonb_array_length(v_result) > 0, 'fournisseur_options() has items');
+
+  v_item := v_result->0;
+  RETURN NEXT ok(v_item ? 'value', 'item has value key');
+  RETURN NEXT ok(v_item ? 'label', 'item has label key');
+  RETURN NEXT ok(v_item ? 'detail', 'item has detail key');
+
+  v_result := purchase.fournisseur_options('xyz_no_match');
+  RETURN NEXT ok(jsonb_array_length(v_result) = 0, 'fournisseur_options(no_match) returns empty');
+END;
+$function$;
+COMMENT ON FUNCTION purchase_ut.test_fournisseur_options() IS 'Test fournisseur_options returns valid jsonb array for select_search';
 
 CREATE OR REPLACE FUNCTION purchase_ut.test_ligne_supprimer()
  RETURNS SETOF text

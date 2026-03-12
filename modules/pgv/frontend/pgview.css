@@ -1109,3 +1109,55 @@ dialog article {
 /* Future state */
 .pgv-wf-future .pgv-wf-dot { background: var(--pgv-surface); border-color: var(--pgv-border); }
 .pgv-wf-future .pgv-wf-label { color: var(--pgv-muted); opacity: 0.6; }
+
+/* ── Timeline (pgv.timeline) ─────────────────────────────────── */
+.pgv-tl {
+  position: relative;
+  padding-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.pgv-tl::before {
+  content: '';
+  position: absolute;
+  left: 0.45rem;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  width: 2px;
+  background: var(--pgv-border);
+}
+.pgv-tl-item {
+  position: relative;
+  padding-bottom: 1rem;
+}
+.pgv-tl-item:last-child { padding-bottom: 0; }
+.pgv-tl-dot {
+  position: absolute;
+  left: -1.15rem;
+  top: 0.15rem;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: var(--pgv-border-strong);
+  border: 2px solid var(--pgv-surface);
+}
+.pgv-tl-dot-success { background: var(--pgv-badge-success-fg); }
+.pgv-tl-dot-danger  { background: var(--pgv-badge-danger-fg); }
+.pgv-tl-dot-warning { background: var(--pgv-badge-warning-fg); }
+.pgv-tl-dot-info    { background: var(--pgv-badge-info-fg); }
+.pgv-tl-dot-primary { background: var(--pgv-accent); }
+.pgv-tl-date {
+  font-size: 0.7rem;
+  color: var(--pgv-muted);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.pgv-tl-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--pgv-text);
+}
+.pgv-tl-detail {
+  font-size: 0.8rem;
+  color: var(--pgv-muted);
+  margin-top: 0.1rem;
+}

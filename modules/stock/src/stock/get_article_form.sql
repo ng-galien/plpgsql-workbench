@@ -9,6 +9,8 @@ DECLARE
   v_cat_options text;
   v_unite_options text;
   v_fournisseur_options text;
+  v_catalog_search text;
+  v_catalog_display text;
 BEGIN
   IF p_id IS NOT NULL THEN
     SELECT * INTO v_art FROM stock.article WHERE id = p_id;
@@ -43,6 +45,24 @@ BEGIN
   ) INTO v_fournisseur_options
   FROM crm.client c WHERE c.type = 'company' AND c.active;
 
+  -- Catalog article search (cross-module guard)
+  v_catalog_search := '';
+  IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'catalog') THEN
+    -- Resolve current display value
+    v_catalog_display := NULL;
+    IF v_art.catalog_article_id IS NOT NULL THEN
+      SELECT ca.designation INTO v_catalog_display
+      FROM catalog.article ca WHERE ca.id = v_art.catalog_article_id;
+    END IF;
+    v_catalog_search := pgv.select_search(
+      'catalog_article_id', 'Article catalog',
+      'catalog.article_options',
+      'Rechercher un article catalog...',
+      v_art.catalog_article_id::text,
+      v_catalog_display
+    );
+  END IF;
+
   v_body := format('<form data-rpc="post_article_save">
     <input type="hidden" name="id" value="%s">
     <label>Référence <input type="text" name="reference" value="%s" required></label>
@@ -52,6 +72,7 @@ BEGIN
     <label>Prix d''achat <input type="number" name="prix_achat" value="%s" step="0.01" min="0"></label>
     <label>Seuil mini <input type="number" name="seuil_mini" value="%s" step="0.01" min="0"></label>
     <label>Fournisseur <select name="fournisseur_id">%s</select></label>
+    %s
     <label>Notes <textarea name="notes">%s</textarea></label>
     <button type="submit">%s</button>
   </form>',
@@ -63,6 +84,7 @@ BEGIN
     coalesce(v_art.prix_achat::text, ''),
     coalesce(v_art.seuil_mini::text, '0'),
     v_fournisseur_options,
+    v_catalog_search,
     coalesce(pgv.esc(v_art.notes), ''),
     CASE WHEN p_id IS NOT NULL THEN 'Modifier' ELSE 'Créer' END
   );

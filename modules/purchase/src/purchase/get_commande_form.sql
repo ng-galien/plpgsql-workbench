@@ -21,17 +21,19 @@ BEGIN
     v_body := v_body || format('<input type="hidden" name="p_id" value="%s">', p_id);
   END IF;
 
-  v_body := v_body
-    || '<label>Fournisseur<select name="p_fournisseur_id" required>'
-    || purchase._fournisseur_options()
-    || '</select></label>';
-
-  -- Pre-select if editing
-  IF p_id IS NOT NULL THEN
-    v_body := replace(v_body,
-      format('value="%s">', v_cmd.fournisseur_id),
-      format('value="%s" selected>', v_cmd.fournisseur_id));
-  END IF;
+  -- Fournisseur select_search (pre-filled on edit)
+  DECLARE
+    v_fournisseur_name text;
+  BEGIN
+    IF p_id IS NOT NULL THEN
+      SELECT name INTO v_fournisseur_name FROM crm.client WHERE id = v_cmd.fournisseur_id;
+    END IF;
+    v_body := v_body
+      || pgv.select_search('p_fournisseur_id', 'Fournisseur',
+           'fournisseur_options', 'Rechercher un fournisseur...',
+           CASE WHEN p_id IS NOT NULL THEN v_cmd.fournisseur_id::text END,
+           v_fournisseur_name);
+  END;
 
   v_body := v_body
     || format('<label>Objet<input type="text" name="p_objet" value="%s" required></label>',

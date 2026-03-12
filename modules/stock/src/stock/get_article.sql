@@ -10,6 +10,7 @@ DECLARE
   v_fournisseur text;
   v_fournisseur_link text;
   v_stock_total numeric;
+  v_catalog_link text;
   r record;
 BEGIN
   SELECT * INTO v_art FROM stock.article WHERE id = p_id;
@@ -23,6 +24,17 @@ BEGIN
     v_fournisseur_link := format('<a href="/crm/client?p_id=%s">%s</a>', v_art.fournisseur_id, pgv.esc(v_fournisseur));
   ELSE
     v_fournisseur_link := '—';
+  END IF;
+
+  -- Lien catalog (cross-module, guard pg_proc)
+  v_catalog_link := '—';
+  IF v_art.catalog_article_id IS NOT NULL
+    AND EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'catalog')
+    AND EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'catalog' AND p.proname = 'get_article')
+  THEN
+    v_catalog_link := format('<a href="/catalog/article?p_id=%s">Voir fiche catalog</a>', v_art.catalog_article_id);
+  ELSIF v_art.catalog_article_id IS NOT NULL THEN
+    v_catalog_link := format('#%s (catalog non disponible)', v_art.catalog_article_id);
   END IF;
 
   -- Header stats
@@ -39,6 +51,11 @@ BEGIN
     pgv.badge(v_art.categorie, NULL),
     CASE WHEN v_art.active THEN 'Oui' ELSE 'Non' END
   );
+
+  -- Catalog link
+  IF v_catalog_link <> '—' THEN
+    v_body := v_body || format('<p><strong>Catalog:</strong> %s</p>', v_catalog_link);
+  END IF;
 
   -- Stock par dépôt
   v_rows := ARRAY[]::text[];

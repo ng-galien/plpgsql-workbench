@@ -82,6 +82,9 @@ BEGIN
     || pgv.progress(3, 10, 'Etapes')
     || pgv.progress(100, 100, 'Termine')
     || '</section>'
+    || '<section><h4>pgv.workflow</h4>'
+    || pgv.workflow('[{"key":"brouillon","label":"Brouillon"},{"key":"soumise","label":"Soumise"},{"key":"validee","label":"Validée"},{"key":"remboursee","label":"Remboursée"}]'::jsonb, 'soumise')
+    || '</section>'
     || '<section><h4>pgv.avatar</h4>'
     || '<p>'
     || pgv.avatar('Jean Dupont') || ' '
@@ -103,6 +106,9 @@ BEGIN
     || '</section>'
     || '<section><h4>pgv.breadcrumb</h4>'
     || pgv.breadcrumb('Dashboard', pgv.call_ref('get_index'), 'Composants', pgv.call_ref('get_atoms'), 'Detail')
+    || '</section>'
+    || '<section><h4>pgv.timeline</h4>'
+    || pgv.timeline('[{"date":"2026-03-10","label":"Devis créé","detail":"Montant: 1 500 € HT","badge":"info"},{"date":"2026-03-11","label":"Devis envoyé au client","badge":"success"},{"date":"2026-03-12","label":"Relance effectuée","badge":"warning"},{"date":"2026-03-12","label":"Paiement reçu","detail":"Virement bancaire","badge":"primary"}]'::jsonb)
     || '</section>'
     || '<section><h4>pgv.tree</h4>'
     || pgv.tree('[{"label": "Documents", "children": [
