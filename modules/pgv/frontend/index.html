@@ -116,6 +116,20 @@
     </article>
   </dialog>
 
+  <!-- Confirm Dialog (replaces native confirm()) -->
+  <dialog x-ref="confirmDialog" class="pgv-confirm-dialog">
+    <article class="pgv-confirm-article">
+      <header class="pgv-confirm-header">
+        <strong>Confirmation</strong>
+      </header>
+      <div class="pgv-confirm-body" x-ref="confirmMsg"></div>
+      <footer class="pgv-confirm-footer">
+        <button class="secondary" x-ref="confirmNo">Annuler</button>
+        <button x-ref="confirmYes">Confirmer</button>
+      </footer>
+    </article>
+  </dialog>
+
   <script>
   document.addEventListener('alpine:init', function() {
     Alpine.data('pgview', function() { return {
@@ -198,8 +212,13 @@
           var btn = e.target.closest('button[data-rpc]');
           if (btn) {
             e.preventDefault();
-            if (btn.dataset.confirm && !confirm(btn.dataset.confirm)) return;
             var params = btn.dataset.params ? JSON.parse(btn.dataset.params) : {};
+            if (btn.dataset.confirm) {
+              self._confirm(btn.dataset.confirm).then(function(ok) {
+                if (ok) self.post(btn.dataset.rpc, params);
+              });
+              return;
+            }
             return self.post(btn.dataset.rpc, params);
           }
 
@@ -749,6 +768,26 @@
           if (input) input.value = pathEl.textContent.trim();
         }
         this.$refs.dialog.close();
+      },
+
+      /* ── Confirm Dialog ────────────────────────────── */
+      _confirm: function(msg) {
+        var dlg = this.$refs.confirmDialog;
+        this.$refs.confirmMsg.textContent = msg;
+        dlg.showModal();
+        var self = this;
+        return new Promise(function(resolve) {
+          function cleanup() {
+            self.$refs.confirmYes.removeEventListener('click', onYes);
+            self.$refs.confirmNo.removeEventListener('click', onNo);
+            dlg.removeEventListener('cancel', onNo);
+          }
+          function onYes() { cleanup(); dlg.close(); resolve(true); }
+          function onNo()  { cleanup(); dlg.close(); resolve(false); }
+          self.$refs.confirmYes.addEventListener('click', onYes);
+          self.$refs.confirmNo.addEventListener('click', onNo);
+          dlg.addEventListener('cancel', onNo);
+        });
       },
 
       /* ── Bug Report ─────────────────────────────────── */

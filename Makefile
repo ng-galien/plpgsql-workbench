@@ -162,7 +162,7 @@ agents: ## Spawn Claude agents (one tmux session per module)
 		if tmux has-session -t "$$name" 2>/dev/null; then \
 			echo "  OK    $$name (already running)"; \
 		else \
-			printf '#!/bin/sh\nunset $(STRIP_VARS)\nexec claude\n' > "/tmp/pgw-spawn-$$name.sh"; \
+			printf '#!/bin/sh\nunset $(STRIP_VARS)\nclaude -c 2>/dev/null || exec claude\n' > "/tmp/pgw-spawn-$$name.sh"; \
 			chmod 700 "/tmp/pgw-spawn-$$name.sh"; \
 			tmux new-session -d -s "$$name" -c "$$mod" "/tmp/pgw-spawn-$$name.sh"; \
 			tmux set-option -t "$$name" history-limit 50000 2>/dev/null || true; \
@@ -213,7 +213,7 @@ agent: ## Spawn one agent (M=name required). Ex: make agent M=catalog
 	@if tmux has-session -t "$(M)" 2>/dev/null; then \
 		echo "  OK    $(M) (already running)"; \
 	else \
-		printf '#!/bin/sh\nunset $(STRIP_VARS)\nexec claude\n' > "/tmp/pgw-spawn-$(M).sh"; \
+		printf '#!/bin/sh\nunset $(STRIP_VARS)\nclaude -c 2>/dev/null || exec claude\n' > "/tmp/pgw-spawn-$(M).sh"; \
 		chmod 700 "/tmp/pgw-spawn-$(M).sh"; \
 		tmux new-session -d -s "$(M)" -c "modules/$(M)" "/tmp/pgw-spawn-$(M).sh"; \
 		tmux set-option -t "$(M)" history-limit 50000 2>/dev/null || true; \

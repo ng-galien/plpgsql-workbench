@@ -1211,6 +1211,42 @@ dialog article {
   border-top: 1px solid var(--pgv-border);
 }
 
+/* ── Confirm Dialog ──────────────────────────────────────────── */
+.pgv-confirm-dialog {
+  border: 1px solid var(--pgv-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.15);
+  padding: 0;
+  max-width: min(90vw, 380px);
+}
+.pgv-confirm-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+  animation: pgv-fade-in 0.12s ease-out;
+}
+.pgv-confirm-article {
+  border: none;
+  box-shadow: none;
+  margin: 0;
+}
+.pgv-confirm-header {
+  font-size: 0.875rem;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--pgv-border);
+}
+.pgv-confirm-body {
+  padding: 1rem 0.85rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--pgv-text);
+}
+.pgv-confirm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--pgv-border);
+}
+
 /* ── Timeline (pgv.timeline) ─────────────────────────────────── */
 .pgv-tl {
   position: relative;

@@ -9,7 +9,17 @@ BEGIN
   RETURN NEXT ok(pgv.href('mailto:a@b.com') = 'mailto:a@b.com', 'href passes mailto');
   RETURN NEXT ok(pgv.href('tel:+33123') = 'tel:+33123', 'href passes tel');
 
-  RETURN NEXT ok(pgv.href('/atoms') IS NULL, 'href rejects internal path /atoms');
-  RETURN NEXT ok(pgv.href('/') IS NULL, 'href rejects internal path /');
+  RETURN NEXT throws_ok(
+    $$SELECT pgv.href('/atoms')$$,
+    'P0001',
+    'pgv.href() is for external URLs only — use a raw href="/..." for internal links, or pgv.call_ref() for cross-module refs. Got: /atoms',
+    'href RAISEs on internal path /atoms'
+  );
+  RETURN NEXT throws_ok(
+    $$SELECT pgv.href('/')$$,
+    'P0001',
+    'pgv.href() is for external URLs only — use a raw href="/..." for internal links, or pgv.call_ref() for cross-module refs. Got: /',
+    'href RAISEs on internal path /'
+  );
 END;
 $function$;

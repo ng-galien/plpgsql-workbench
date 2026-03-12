@@ -319,19 +319,20 @@ $function$;
 
 CREATE OR REPLACE FUNCTION pgv.href(p_url text)
  RETURNS text
- LANGUAGE sql
+ LANGUAGE plpgsql
  IMMUTABLE
 AS $function$
-  SELECT CASE
-    WHEN left(p_url, 8) = 'https://' THEN p_url
-    WHEN left(p_url, 7) = 'http://'  THEN p_url
-    WHEN left(p_url, 2) = '//'       THEN p_url
-    WHEN left(p_url, 7) = 'mailto:'  THEN p_url
-    WHEN left(p_url, 4) = 'tel:'     THEN p_url
-    ELSE NULL
-  END;
+BEGIN
+  IF left(p_url, 8) = 'https://' THEN RETURN p_url; END IF;
+  IF left(p_url, 7) = 'http://'  THEN RETURN p_url; END IF;
+  IF left(p_url, 2) = '//'       THEN RETURN p_url; END IF;
+  IF left(p_url, 7) = 'mailto:'  THEN RETURN p_url; END IF;
+  IF left(p_url, 4) = 'tel:'     THEN RETURN p_url; END IF;
+
+  RAISE EXCEPTION 'pgv.href() is for external URLs only — use a raw href="/..." for internal links, or pgv.call_ref() for cross-module refs. Got: %', p_url;
+END;
 $function$;
-COMMENT ON FUNCTION pgv.href(text) IS 'External links only. Returns NULL for internal paths — use pgv.call_ref() instead.';
+COMMENT ON FUNCTION pgv.href(text) IS 'External links only. RAISEs on internal paths — use raw href or pgv.call_ref() instead.';
 
 CREATE OR REPLACE FUNCTION pgv.input(p_name text, p_type text, p_label text, p_value text DEFAULT NULL::text, p_required boolean DEFAULT false)
  RETURNS text
@@ -1786,11 +1787,21 @@ BEGIN
   RETURN NEXT ok(pgv.href('mailto:a@b.com') = 'mailto:a@b.com', 'href passes mailto');
   RETURN NEXT ok(pgv.href('tel:+33123') = 'tel:+33123', 'href passes tel');
 
-  RETURN NEXT ok(pgv.href('/atoms') IS NULL, 'href rejects internal path /atoms');
-  RETURN NEXT ok(pgv.href('/') IS NULL, 'href rejects internal path /');
+  RETURN NEXT throws_ok(
+    $$SELECT pgv.href('/atoms')$$,
+    'P0001',
+    'pgv.href() is for external URLs only — use a raw href="/..." for internal links, or pgv.call_ref() for cross-module refs. Got: /atoms',
+    'href RAISEs on internal path /atoms'
+  );
+  RETURN NEXT throws_ok(
+    $$SELECT pgv.href('/')$$,
+    'P0001',
+    'pgv.href() is for external URLs only — use a raw href="/..." for internal links, or pgv.call_ref() for cross-module refs. Got: /',
+    'href RAISEs on internal path /'
+  );
 END;
 $function$;
-COMMENT ON FUNCTION pgv_ut.test_href() IS 'Unit tests for pgv.href: whitelist protocols, rejects internal paths with NULL';
+COMMENT ON FUNCTION pgv_ut.test_href() IS 'Unit tests for pgv.href: whitelist protocols, RAISEs on internal paths';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_lazy()
  RETURNS SETOF text
