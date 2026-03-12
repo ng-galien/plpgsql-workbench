@@ -5,6 +5,7 @@ AS $function$
 DECLARE
   v_pieces jsonb;
   v_groups jsonb;
+  v_total_volume numeric;
 BEGIN
   -- Pièces avec info groupe
   SELECT COALESCE(jsonb_agg(piece_data), '[]'::jsonb) INTO v_pieces
@@ -36,6 +37,12 @@ BEGIN
   FROM cad.piece_group
   WHERE drawing_id = p_drawing_id;
 
-  RETURN jsonb_build_object('pieces', v_pieces, 'groups', v_groups);
+  -- Volume total PostGIS (m³)
+  SELECT COALESCE(round((sum(ST_Volume(geom)) / 1e9)::numeric, 6), 0)
+  INTO v_total_volume
+  FROM cad.piece
+  WHERE drawing_id = p_drawing_id;
+
+  RETURN jsonb_build_object('pieces', v_pieces, 'groups', v_groups, 'total_volume', v_total_volume);
 END;
 $function$;

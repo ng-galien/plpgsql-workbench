@@ -23,8 +23,7 @@
     var _gl = { scene: null, camera: null, renderer: null, controls: null,
       raycaster: null, mouse: null, lastMouse: { x: 0, y: 0 },
       cameraSet: false, selections: [],
-      groupMap: {} }; // group_id -> [mesh, mesh, ...]
-    window._gl = _gl; // DEBUG
+      groupMap: {}, pieceMeshes: [], _animId: null, _ro: null }; // group_id -> [mesh, mesh, ...]
 
     return {
       drawingId: null,
@@ -42,7 +41,7 @@
         // Lazy-load Three.js + OrbitControls (UMD bundle r183)
         if (typeof THREE === 'undefined') {
           var s = document.createElement('script');
-          s.src = 'https://cdn.jsdelivr.net/gh/paulmasson/threejs-with-controls@r183/build/three.min.js';
+          s.src = '/cad/three.min.js';
           s.onload = function() { self._init3d(container); self._loadScene(); };
           document.head.appendChild(s);
         } else {
@@ -109,8 +108,7 @@
           _gl.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
           _gl.raycaster.setFromCamera(_gl.mouse, camera);
 
-          var meshes = scene.children.filter(function(c) { return c.userData && c.userData.piece; });
-          var hits = _gl.raycaster.intersectObjects(meshes);
+          var hits = _gl.raycaster.intersectObjects(_gl.pieceMeshes);
 
           if (hits.length > 0) {
             var mesh = hits[0].object;
@@ -142,8 +140,7 @@
           _gl.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
           _gl.raycaster.setFromCamera(_gl.mouse, camera);
 
-          var meshes = scene.children.filter(function(c) { return c.userData && c.userData.piece; });
-          var hits = _gl.raycaster.intersectObjects(meshes);
+          var hits = _gl.raycaster.intersectObjects(_gl.pieceMeshes);
 
           if (hits.length > 0) {
             self._clearSelections();
@@ -152,26 +149,32 @@
           }
         });
 
+        var _hoverPending = false;
         canvas.addEventListener('mousemove', function(e) {
-          var rect = canvas.getBoundingClientRect();
-          _gl.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-          _gl.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-          _gl.raycaster.setFromCamera(_gl.mouse, camera);
-          var meshes = scene.children.filter(function(c) { return c.userData && c.userData.piece; });
-          var hits = _gl.raycaster.intersectObjects(meshes);
-          canvas.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+          if (_hoverPending) return;
+          _hoverPending = true;
+          var ex = e.clientX, ey = e.clientY;
+          requestAnimationFrame(function() {
+            _hoverPending = false;
+            var rect = canvas.getBoundingClientRect();
+            _gl.mouse.x = ((ex - rect.left) / rect.width) * 2 - 1;
+            _gl.mouse.y = -((ey - rect.top) / rect.height) * 2 + 1;
+            _gl.raycaster.setFromCamera(_gl.mouse, camera);
+            var hits = _gl.raycaster.intersectObjects(_gl.pieceMeshes);
+            canvas.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+          });
         });
 
         // Animate
         function animate() {
-          requestAnimationFrame(animate);
+          _gl._animId = requestAnimationFrame(animate);
           controls.update();
           renderer.render(scene, camera);
         }
         animate();
 
         // Resize observer
-        var ro = new ResizeObserver(function() {
+        _gl._ro = new ResizeObserver(function() {
           var w2 = container.clientWidth;
           var h2 = container.clientHeight;
           if (w2 === 0 || h2 === 0) return;
@@ -179,7 +182,7 @@
           camera.updateProjectionMatrix();
           renderer.setSize(w2, h2);
         });
-        ro.observe(container);
+        _gl._ro.observe(container);
       },
 
       _loadScene: function() {
@@ -193,7 +196,7 @@
         .then(function(data) {
           var pieces = Array.isArray(data) ? data : (data.pieces || []);
           self._buildMeshes(pieces);
-          self._updateHud(pieces);
+          self._updateHud(pieces.length, data.total_volume || 0);
         })
         .catch(function(e) { self.hud = 'Erreur: ' + e.message; });
       },
@@ -230,6 +233,7 @@
             section: p.section, length_mm: p.length_mm, wood_type: p.wood_type,
             group_id: p.group_id || null, group_label: p.group_label || null };
           scene.add(mesh);
+          _gl.pieceMeshes.push(mesh);
           allVerts.push.apply(allVerts, verts);
 
           // Build group map
@@ -287,13 +291,8 @@
         this.info = null;
       },
 
-      _updateHud: function(pieces) {
-        var total = pieces.length;
-        var volume = pieces.reduce(function(sum, p) {
-          var s = (p.section || '0x0').split('x');
-          return sum + (parseFloat(s[0]) * parseFloat(s[1]) * (p.length_mm || 0));
-        }, 0);
-        this.hud = total + ' pi\u00e8ces \u2014 ' + (volume / 1e9).toFixed(4) + ' m\u00b3 bois';
+      _updateHud: function(count, totalVolume) {
+        this.hud = count + ' pi\u00e8ces \u2014 ' + parseFloat(totalVolume).toFixed(4) + ' m\u00b3 bois';
       },
 
       _updateInfo: function() {
@@ -343,13 +342,11 @@
       resetCamera: function() {
         _gl.cameraSet = false;
         var allVerts = [];
-        _gl.scene.children.forEach(function(c) {
-          if (c.userData && c.userData.piece && c.geometry) {
-            var pos = c.geometry.getAttribute('position');
-            if (pos) {
-              for (var i = 0; i < pos.count; i++) {
-                allVerts.push(pos.getX(i), pos.getY(i), pos.getZ(i));
-              }
+        _gl.pieceMeshes.forEach(function(m) {
+          var pos = m.geometry.getAttribute('position');
+          if (pos) {
+            for (var i = 0; i < pos.count; i++) {
+              allVerts.push(pos.getX(i), pos.getY(i), pos.getZ(i));
             }
           }
         });
@@ -380,10 +377,8 @@
         var ids = detail.pieceIds || [];
         this._clearSelections();
         var self = this;
-        _gl.scene.children.forEach(function(c) {
-          if (c.userData && c.userData.piece && ids.indexOf(c.userData.id) >= 0) {
-            self._addSelection(c);
-          }
+        _gl.pieceMeshes.forEach(function(m) {
+          if (ids.indexOf(m.userData.id) >= 0) self._addSelection(m);
         });
         this._updateInfo();
       },
@@ -391,11 +386,27 @@
       toggleById: function(detail) {
         var pieceId = detail.pieceId;
         var visible = detail.visible;
-        _gl.scene.children.forEach(function(c) {
-          if (c.userData && c.userData.piece && c.userData.id === pieceId) {
-            c.visible = visible;
-          }
+        _gl.pieceMeshes.forEach(function(m) {
+          if (m.userData.id === pieceId) m.visible = visible;
         });
+      },
+
+      destroy: function() {
+        if (_gl._animId) cancelAnimationFrame(_gl._animId);
+        if (_gl._ro) _gl._ro.disconnect();
+        _gl.pieceMeshes.forEach(function(m) {
+          m.geometry.dispose();
+          m.material.dispose();
+        });
+        if (_gl.controls) _gl.controls.dispose();
+        if (_gl.renderer) {
+          _gl.renderer.dispose();
+          _gl.renderer.domElement.remove();
+        }
+        _gl.scene = null;
+        _gl.pieceMeshes = [];
+        _gl.selections = [];
+        _gl.groupMap = {};
       },
 
       toggleGroupById: function(detail) {

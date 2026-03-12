@@ -21,6 +21,7 @@
   "assets": {
     "frontend": [],
     "scripts": [
+      "frontend/three.min.js",
       "frontend/cad.js"
     ],
     "styles": [

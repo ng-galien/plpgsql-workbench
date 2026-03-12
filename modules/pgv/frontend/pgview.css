@@ -574,6 +574,15 @@ section > h4:first-child {
   border-left: 3px solid var(--pico-del-color, #dc2626);
 }
 
+.pgv-error-report {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: var(--pgv-muted);
+  text-decoration: none;
+  cursor: pointer;
+}
+.pgv-error-report:hover { color: var(--pgv-text); text-decoration: underline; }
+
 /* ── Alert ─────────────────────────────────────────────────────── */
 .pgv-alert {
   padding: 0.6rem 0.85rem;
@@ -833,6 +842,16 @@ nav.pgv-breadcrumb[aria-label] ul li a { display: inline; }
 
 #toast .toast-success { border-left: 3px solid #16a34a; }
 #toast .toast-error   { border-left: 3px solid #dc2626; }
+
+.pgv-toast-report {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--pgv-muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.pgv-toast-report:hover { color: var(--pgv-text); }
 
 #toast .toast-close {
   float: right;

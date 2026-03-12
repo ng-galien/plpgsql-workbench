@@ -78,6 +78,8 @@
       <div style="font-weight:600;margin-bottom:0.15rem" x-text="toast.msg"></div>
       <div x-show="toast.detail" style="color:var(--pgv-muted);font-size:0.8rem"
            x-text="toast.detail"></div>
+      <a x-show="toast.level === 'error'" class="pgv-toast-report" href="#"
+         @click.prevent="bugFromError()">Signaler</a>
     </article>
   </div>
 
@@ -791,6 +793,13 @@
       },
 
       /* ── Bug Report ─────────────────────────────────── */
+      bugFromError: function() {
+        var desc = this.toast.msg || '';
+        if (this.toast.detail) desc += '\n' + this.toast.detail;
+        this.toast.show = false;
+        this.bug = { open: true, desc: desc };
+      },
+
       bugOpen: function() {
         this.bug = { open: true, desc: '' };
       },
