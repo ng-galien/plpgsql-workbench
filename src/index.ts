@@ -854,7 +854,17 @@ app.get("/api/tmux", (_req, res) => {
         }).trim();
         dead = info === "1";
       } catch {}
-      return { name, created: parseInt(created) * 1000, activity: parseInt(activity) * 1000, cwd, dead };
+      // Extract current activity from pane content (same pattern as `make agents-status`)
+      let status = "idle";
+      try {
+        const pane = execFileSync(TMUX_BIN, ["capture-pane", "-t", name, "-p"], {
+          encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+        });
+        const activityRe = /(?:Brewing|Cascading|Crunching|Churning|Cooking|Embellishing|Manifesting|Sautéed|Thinking|Worked|Cooked|Crunched|thinking|pg_func_set|pg_pack|pg_schema|pg_test|pg_query|pg_msg|Write|Edit|Read)/;
+        const lines = pane.split("\n").filter(l => activityRe.test(l));
+        if (lines.length > 0) status = lines[lines.length - 1].trim();
+      } catch {}
+      return { name, created: parseInt(created) * 1000, activity: parseInt(activity) * 1000, cwd, dead, status };
     }).filter(s => s.cwd.startsWith(wsRoot) && !s.dead);
 
     res.json(sessions);

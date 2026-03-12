@@ -14,6 +14,12 @@ export interface ModuleMapping {
   schemas: string[];         // all schemas owned by this module
 }
 
+export interface ModuleInfo {
+  name: string;
+  path: string;
+  schemas: { public?: string; test?: string; qa?: string };
+}
+
 export interface ModuleRegistry {
   /** Resolve a list of schemas to a module. Returns null if no module owns ALL schemas. */
   resolve(schemas: string[]): ModuleMapping | null;
@@ -21,6 +27,10 @@ export interface ModuleRegistry {
   resolveByName(name: string): ModuleMapping | null;
   /** Get the module path for pg_func_save given a schema. */
   savePath(schema: string): string | null;
+  /** List all registered modules with their schemas. */
+  allModules(): ModuleInfo[];
+  /** Workspace root directory. */
+  workspaceRoot: string;
 }
 
 export async function buildModuleRegistry(workspaceRoot: string): Promise<ModuleRegistry> {
@@ -63,6 +73,17 @@ export async function buildModuleRegistry(workspaceRoot: string): Promise<Module
   }
 
   return {
+    workspaceRoot,
+
+    allModules(): ModuleInfo[] {
+      return mappings.map(m => {
+        const pub = m.schemas.find(s => !s.endsWith("_ut") && !s.endsWith("_it") && !s.endsWith("_qa"));
+        const test = m.schemas.find(s => s.endsWith("_ut"));
+        const qa = m.schemas.find(s => s.endsWith("_qa"));
+        return { name: m.module, path: m.modulePath, schemas: { public: pub, test, qa } };
+      });
+    },
+
     resolve(schemas: string[]): ModuleMapping | null {
       // Find a module that owns ALL given schemas
       for (const m of mappings) {

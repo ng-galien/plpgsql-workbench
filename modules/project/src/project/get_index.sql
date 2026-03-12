@@ -1,0 +1,74 @@
+CREATE OR REPLACE FUNCTION project.get_index()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_en_cours int;
+  v_preparation int;
+  v_heures_semaine numeric;
+  v_jalons_a_venir int;
+  v_body text;
+  v_rows text[];
+  r record;
+BEGIN
+  SELECT count(*)::int INTO v_en_cours
+    FROM project.chantier WHERE statut = 'execution';
+
+  SELECT count(*)::int INTO v_preparation
+    FROM project.chantier WHERE statut = 'preparation';
+
+  SELECT COALESCE(sum(heures), 0) INTO v_heures_semaine
+    FROM project.pointage
+   WHERE date_pointage >= date_trunc('week', CURRENT_DATE);
+
+  SELECT count(*)::int INTO v_jalons_a_venir
+    FROM project.jalon j
+    JOIN project.chantier c ON c.id = j.chantier_id
+   WHERE j.statut = 'a_faire'
+     AND c.statut IN ('preparation', 'execution');
+
+  v_body := pgv.grid(VARIADIC ARRAY[
+    pgv.stat('En cours', v_en_cours::text),
+    pgv.stat('En préparation', v_preparation::text),
+    pgv.stat('Heures semaine', v_heures_semaine::text || ' h'),
+    pgv.stat('Jalons à venir', v_jalons_a_venir::text)
+  ]);
+
+  -- Liste chantiers actifs
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT c.id, c.client_id, c.numero, cl.name AS client, c.objet, c.statut,
+           project._avancement_global(c.id) AS pct,
+           c.date_debut
+      FROM project.chantier c
+      JOIN crm.client cl ON cl.id = c.client_id
+     WHERE c.statut IN ('preparation', 'execution', 'reception')
+     ORDER BY c.updated_at DESC
+     LIMIT 20
+  LOOP
+    v_rows := v_rows || ARRAY[
+      format('<a href="%s">%s</a>', pgv.call_ref('get_chantier', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
+      format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
+      pgv.esc(r.objet),
+      project._statut_badge(r.statut),
+      pgv.badge(r.pct::text || ' %'),
+      COALESCE(to_char(r.date_debut, 'DD/MM/YYYY'), '—')
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NULL THEN
+    v_body := v_body || pgv.empty('Aucun chantier actif', 'Créez votre premier chantier pour commencer.');
+  ELSE
+    v_body := v_body || pgv.md_table(
+      ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Avancement', 'Début'],
+      v_rows, 10
+    );
+  END IF;
+
+  v_body := v_body || '<p>'
+    || format('<a href="%s" role="button">Nouveau chantier</a>', pgv.call_ref('get_chantier_form'))
+    || '</p>';
+
+  RETURN v_body;
+END;
+$function$;

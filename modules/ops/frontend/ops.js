@@ -277,32 +277,46 @@ document.addEventListener('alpine:init', () => {
     }
   }));
 
-  // Live tmux grid — fetches active tmux sessions and renders terminal cards
+  // Live tmux grid — fetches active tmux sessions and renders collapsible cards
   Alpine.data('opsTmuxGrid', () => ({
     sessions: [],
     loading: true,
 
     init() {
       this.refresh();
-      this._interval = setInterval(() => this.refresh(), 10000);
+      this._interval = setInterval(() => this.refresh(), 1000);
     },
 
     destroy() {
       clearInterval(this._interval);
     },
 
-    trigResize() {
-      document.querySelectorAll('.ops-terminal').forEach(el => {
-        const comp = Alpine.$data(el);
-        if (comp?.fitAddon) comp.fitAddon.fit();
-      });
+    toggle(s) {
+      s.open = !s.open;
+      if (s.open) {
+        // Refit terminal if already connected
+        setTimeout(() => {
+          const el = document.querySelector(`[data-module="${s.name}"].ops-terminal`);
+          if (el) {
+            const comp = Alpine.$data(el);
+            if (comp?.fitAddon) comp.fitAddon.fit();
+          }
+        }, 50);
+      }
     },
 
-    scrollBottom() {
-      document.querySelectorAll('.ops-terminal').forEach(el => {
-        const comp = Alpine.$data(el);
-        if (comp?.term) comp.term.scrollToBottom();
-      });
+    expandAll() {
+      for (const s of this.sessions) s.open = true;
+      setTimeout(() => {
+        document.querySelectorAll('.ops-terminal').forEach(el => {
+          const comp = Alpine.$data(el);
+          if (comp?.fitAddon) comp.fitAddon.fit();
+        });
+      }, 50);
+    },
+
+    collapseAll() {
+      for (const s of this.sessions) s.open = false;
     },
 
     pingAll() {
@@ -327,9 +341,10 @@ document.addEventListener('alpine:init', () => {
           const old = oldMap.get(s.name);
           if (old) { old.dead = s.dead; old.activity = s.activity; }
         }
-        // Add new sessions, remove gone ones
+        // Add new sessions with open: false, remove gone ones
         const oldNames = new Set(oldMap.keys());
         const added = list.filter(s => !oldNames.has(s.name));
+        for (const s of added) s.open = false;
         const kept = this.sessions.filter(s => newNames.has(s.name));
         if (added.length || kept.length !== this.sessions.length) {
           this.sessions = [...kept, ...added];

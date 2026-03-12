@@ -154,7 +154,7 @@ STRIP_VARS := CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_SESSION_ID \
 	CLAUDE_CODE_CONVERSATION_ID CLAUDE_CODE_TASK_ID \
 	NON_INTERACTIVE MCP_TRANSPORT MCP_SESSION_ID
 
-.PHONY: agents agents-kill agents-restart
+.PHONY: agents agents-kill agents-restart agents-status agents-ping
 
 agents: ## Spawn Claude agents (one tmux session per module)
 	@for mod in modules/*/; do \
@@ -182,6 +182,29 @@ agents-kill: ## Kill all agent tmux sessions
 	done
 
 agents-restart: agents-kill agents ## Kill then respawn all agents
+
+agents-status: ## Show current activity of each agent
+	@for mod in modules/*/; do \
+		name=$$(basename "$$mod"); \
+		if tmux has-session -t "$$name" 2>/dev/null; then \
+			pane=$$(tmux capture-pane -t "$$name" -p 2>/dev/null); \
+			activity=$$(echo "$$pane" | grep -E '(Brewing|Cascading|Crunching|Churning|Cooking|Embellishing|Manifesting|Sautéed|Thinking|Worked|Cooked|Crunched|thinking|pg_func_set|pg_pack|pg_schema|pg_test|pg_query|pg_msg|Write|Edit|Read)' | tail -1); \
+			if [ -n "$$activity" ]; then \
+				printf "  \033[1;33m⚡ %-12s\033[0m %s\n" "$$name" "$$activity"; \
+			else \
+				printf "  \033[2m·  %-12s\033[0m idle\n" "$$name"; \
+			fi; \
+		fi; \
+	done
+
+agents-ping: ## Send "ping" to all agent tmux sessions
+	@for mod in modules/*/; do \
+		name=$$(basename "$$mod"); \
+		if tmux has-session -t "$$name" 2>/dev/null; then \
+			tmux send-keys -t "$$name" "ping" Enter; \
+			echo "  PING  $$name"; \
+		fi; \
+	done
 
 # --- Build ---
 

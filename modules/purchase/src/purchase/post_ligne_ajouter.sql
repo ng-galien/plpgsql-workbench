@@ -1,0 +1,32 @@
+CREATE OR REPLACE FUNCTION purchase.post_ligne_ajouter(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_commande_id int := (p_data->>'p_commande_id')::int;
+  v_statut text;
+  v_sort int;
+BEGIN
+  SELECT statut INTO v_statut FROM purchase.commande WHERE id = v_commande_id;
+  IF v_statut IS NULL OR v_statut <> 'brouillon' THEN
+    RETURN '<template data-toast="error">Lignes modifiables uniquement sur brouillon</template>';
+  END IF;
+
+  SELECT coalesce(max(sort_order), 0) + 1 INTO v_sort
+    FROM purchase.ligne WHERE commande_id = v_commande_id;
+
+  INSERT INTO purchase.ligne (commande_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate)
+  VALUES (
+    v_commande_id,
+    v_sort,
+    p_data->>'p_description',
+    coalesce((p_data->>'p_quantite')::numeric, 1),
+    coalesce(p_data->>'p_unite', 'u'),
+    (p_data->>'p_prix_unitaire')::numeric,
+    coalesce((p_data->>'p_tva_rate')::numeric, 20.00)
+  );
+
+  RETURN format('<template data-toast="success">Ligne ajoutée</template><template data-redirect="%s"></template>',
+    pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
+END;
+$function$;

@@ -35,6 +35,7 @@ import { createPackTool } from "../tools/plpgsql/pack.js";
 import { createFuncDelTool } from "../tools/plpgsql/func-del.js";
 import { createMsgTool, createMsgInboxTool } from "../tools/plpgsql/msg.js";
 import { createPreviewTool } from "../tools/plpgsql/preview.js";
+import { createReviewTool } from "../tools/plpgsql/review.js";
 
 export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record<string, unknown>) => {
   const connectionString = (config.connectionString as string) ??
@@ -103,5 +104,6 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
     msgTool: asFunction(createMsgTool).singleton(),
     msgInboxTool: asFunction(createMsgInboxTool).singleton(),
     previewTool: asFunction(createPreviewTool).singleton(),
+    reviewTool: asFunction(createReviewTool).singleton(),
   });
 };

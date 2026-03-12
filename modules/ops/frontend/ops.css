@@ -13,12 +13,12 @@
   font-size: 0.8rem;
 }
 
-/* ── Live agents grid ── */
-.ops-agents-live {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.75rem;
-  margin: 0.75rem 0;
+/* ── Live agents list (collapsible cards) ── */
+.ops-agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
 }
 
 /* Agent card */
@@ -33,10 +33,42 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.3rem 0.6rem;
   background: color-mix(in srgb, var(--pico-card-background-color) 90%, var(--pico-muted-color));
   border-bottom: 1px solid var(--pico-muted-border-color);
   font-size: 0.8rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ops-agent-status {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-family: var(--pico-font-family-monospace, monospace);
+  color: var(--pico-muted-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50%;
+}
+
+.ops-agent-status--active {
+  color: #d29922;
+}
+
+.ops-agent-card:not(.ops-agent-card--open) .ops-agent-card-header {
+  border-bottom: none;
+}
+
+.ops-agent-chevron {
+  flex-shrink: 0;
+  font-size: 0.6rem;
+  transition: transform 0.2s;
+  color: var(--pico-muted-color);
+}
+
+.ops-agent-card--open .ops-agent-chevron {
+  transform: rotate(90deg);
 }
 
 .ops-agent-dot {
@@ -71,7 +103,7 @@
 /* Terminal container */
 .ops-terminal {
   position: relative;
-  height: 300px;
+  height: 200px;
   background: #1a1b26;
 }
 
