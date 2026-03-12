@@ -23,6 +23,15 @@ BEGIN
     RETURN NEXT ok(length(purchase.get_bon_commande(v_cid)) > 0, 'get_bon_commande() returns HTML');
     RETURN NEXT ok(purchase.get_bon_commande(v_cid) LIKE '%pgv-print%', 'get_bon_commande() has print class');
   END;
+
+  -- get_recapitulatif
+  RETURN NEXT ok(length(purchase.get_recapitulatif()) > 0, 'get_recapitulatif() returns HTML');
+  RETURN NEXT ok(purchase.get_recapitulatif() LIKE '%Récapitulatif achats%', 'get_recapitulatif() has title');
+
+  -- get_article_prix (with non-existent article -> empty state)
+  RETURN NEXT ok(length(purchase.get_article_prix(99999)) > 0, 'get_article_prix() returns HTML');
+  RETURN NEXT ok(purchase.get_article_prix(99999) LIKE '%Aucun achat%', 'get_article_prix() empty state');
+
   PERFORM purchase_qa.clean();
 END;
 $function$;

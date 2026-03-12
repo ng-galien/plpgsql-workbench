@@ -38,7 +38,27 @@ BEGIN
       RETURN pgv.empty('Aucune facture fournisseur', 'Les factures apparaissent ici après saisie.');
     END IF;
 
-    RETURN pgv.md_table(ARRAY['N° fournisseur', 'Fournisseur', 'Commande', 'Statut', 'Montant TTC', 'Date facture', 'Echéance'], v_rows);
+    v_body := '<details><summary>Saisir une facture fournisseur</summary>'
+      || '<form data-rpc="post_facture_saisir">'
+      || '<label>N° fournisseur<input type="text" name="p_numero_fournisseur" required placeholder="ex: FAC-2026-042"></label>'
+      || '<div class="pgv-grid">'
+      || '<label>Montant HT<input type="number" name="p_montant_ht" step="0.01" min="0" required></label>'
+      || '<label>Montant TTC<input type="number" name="p_montant_ttc" step="0.01" min="0" required></label>'
+      || '</div>'
+      || '<div class="pgv-grid">'
+      || '<label>Date facture<input type="date" name="p_date_facture" required></label>'
+      || '<label>Date échéance<input type="date" name="p_date_echeance"></label>'
+      || '</div>'
+      || '<label>Commande liée<select name="p_commande_id"><option value="">(aucune)</option>';
+    FOR r IN SELECT id, numero FROM purchase.commande ORDER BY created_at DESC LIMIT 20 LOOP
+      v_body := v_body || format('<option value="%s">%s</option>', r.id, pgv.esc(r.numero));
+    END LOOP;
+    RETURN v_body
+      || '</select></label>'
+      || '<label>Notes<textarea name="p_notes"></textarea></label>'
+      || '<button type="submit">Saisir</button>'
+      || '</form></details>'
+      || pgv.md_table(ARRAY['N° fournisseur', 'Fournisseur', 'Commande', 'Statut', 'Montant TTC', 'Date facture', 'Echéance'], v_rows);
   END IF;
 
   -- Détail

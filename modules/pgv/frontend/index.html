@@ -432,6 +432,84 @@
         });
         // Initialize Alpine.js on new DOM (module fragments with x-data)
         if (typeof Alpine !== 'undefined') Alpine.initTree(el);
+        // Select-search: async combo input + dropdown from RPC
+        el.querySelectorAll('[data-ss-rpc]:not([data-ss-init])').forEach(function(ss) {
+          ss.setAttribute('data-ss-init', '');
+          var rpc = ss.dataset.ssRpc;
+          var parts = rpc.split('.');
+          var schema = parts.length > 1 ? parts[0] : self._currentSchema;
+          var fn = parts.length > 1 ? parts[1] : parts[0];
+          var inp = ss.querySelector('.pgv-ss-input');
+          var hid = ss.querySelector('input[type="hidden"]');
+          var box = ss.querySelector('.pgv-ss-results');
+          var timer = null;
+          var idx = -1;
+
+          function doFetch(q) {
+            box.innerHTML = '<div class="pgv-ss-loading">...</div>';
+            ss.classList.add('open');
+            var body = {};
+            if (q) body.p_search = q;
+            fetch('/rpc/' + fn, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': schema },
+              body: JSON.stringify(body)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(rows) {
+              if (!rows || !rows.length) { box.innerHTML = '<div class="pgv-ss-empty">Aucun resultat</div>'; return; }
+              idx = -1;
+              box.innerHTML = '';
+              rows.forEach(function(r, i) {
+                var d = document.createElement('div');
+                d.className = 'pgv-ss-item';
+                d.dataset.value = r.value;
+                d.textContent = r.label || r.value;
+                if (r.detail) { var s = document.createElement('small'); s.textContent = r.detail; d.appendChild(s); }
+                d.addEventListener('mousedown', function(e) {
+                  e.preventDefault();
+                  pick(r.value, r.label || r.value);
+                });
+                box.appendChild(d);
+              });
+            })
+            .catch(function() { box.innerHTML = '<div class="pgv-ss-empty">Erreur</div>'; });
+          }
+
+          function pick(val, label) {
+            hid.value = val;
+            inp.value = label;
+            ss.classList.remove('open');
+            hid.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+
+          function nav(dir) {
+            var items = box.querySelectorAll('.pgv-ss-item');
+            if (!items.length) return;
+            if (idx >= 0 && idx < items.length) items[idx].classList.remove('active');
+            idx = Math.max(0, Math.min(items.length - 1, idx + dir));
+            items[idx].classList.add('active');
+            items[idx].scrollIntoView({ block: 'nearest' });
+          }
+
+          inp.addEventListener('focus', function() { if (!box.children.length) doFetch(inp.value); else ss.classList.add('open'); });
+          inp.addEventListener('input', function() {
+            hid.value = '';
+            clearTimeout(timer);
+            timer = setTimeout(function() { doFetch(inp.value); }, 200);
+          });
+          inp.addEventListener('blur', function() { setTimeout(function() { ss.classList.remove('open'); }, 150); });
+          inp.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); nav(1); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); nav(-1); }
+            else if (e.key === 'Enter') {
+              e.preventDefault();
+              var items = box.querySelectorAll('.pgv-ss-item');
+              if (idx >= 0 && idx < items.length) pick(items[idx].dataset.value, items[idx].textContent.split('\n')[0]);
+            }
+            else if (e.key === 'Escape') { ss.classList.remove('open'); inp.blur(); }
+          });
+        });
         // Lazy-load containers: fetch content when scrolled into view
         el.querySelectorAll('[data-lazy]:not([data-loaded])').forEach(function(lazy) {
           var obs = new IntersectionObserver(function(entries) {

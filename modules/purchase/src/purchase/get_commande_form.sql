@@ -38,6 +38,8 @@ BEGIN
        coalesce(pgv.esc(v_cmd.objet), ''))
     || format('<label>Date livraison prévue<input type="date" name="p_date_livraison" value="%s"></label>',
        coalesce(v_cmd.date_livraison::text, ''))
+    || format('<label>Conditions paiement<input type="text" name="p_conditions_paiement" value="%s" placeholder="ex: 30j fin de mois"></label>',
+       coalesce(pgv.esc(v_cmd.conditions_paiement), ''))
     || format('<label>Notes<textarea name="p_notes">%s</textarea></label>',
        coalesce(pgv.esc(v_cmd.notes), ''))
     || '<button type="submit">Enregistrer</button>'

@@ -8,6 +8,7 @@ DECLARE
   v_ht numeric(12,2);
   v_tva numeric(12,2);
   v_ttc numeric(12,2);
+  v_days_since int;
   f record;
   r record;
 BEGIN
@@ -63,11 +64,18 @@ BEGIN
     f.numero
   ]);
 
+  -- Badge relance si envoyée > 30j
+  v_days_since := extract(day FROM now() - f.created_at)::int;
+
   v_body := v_body || pgv.dl(VARIADIC ARRAY[
     'Numéro', f.numero,
     'Client', format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || f.client_id), pgv.esc(f.client_name)),
     'Objet', pgv.esc(f.objet),
-    'Statut', quote._statut_badge(f.statut),
+    'Statut', quote._statut_badge(f.statut)
+      || CASE WHEN f.statut = 'envoyee' AND v_days_since > 30
+           THEN ' ' || pgv.badge('Relance', 'danger')
+           ELSE ''
+         END,
     'Devis', CASE WHEN f.devis_numero IS NOT NULL
       THEN format('<a href="%s">%s</a>', pgv.call_ref('get_devis', jsonb_build_object('p_id', f.devis_pk)), pgv.esc(f.devis_numero))
       ELSE 'Facture directe'
@@ -142,12 +150,19 @@ BEGIN
   ELSIF f.statut = 'envoyee' THEN
     v_body := v_body
       || pgv.action('post_facture_payer', 'Marquer payée', jsonb_build_object('id', p_id), 'Marquer cette facture comme payée ?');
+    IF v_days_since > 30 THEN
+      v_body := v_body
+        || pgv.action('post_facture_relancer', 'Relancer', jsonb_build_object('id', p_id), 'Marquer cette facture en relance ?', 'danger');
+    END IF;
   END IF;
   v_body := v_body || '</div>';
 
   IF f.notes <> '' THEN
     v_body := v_body || '<h4>Notes</h4><p>' || pgv.esc(f.notes) || '</p>';
   END IF;
+
+  -- Mentions légales
+  v_body := v_body || quote._mentions_html();
 
   RETURN v_body;
 END;

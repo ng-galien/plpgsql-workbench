@@ -9,17 +9,28 @@ CREATE OR REPLACE FUNCTION purchase._article_options()
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_stock_exists boolean;
   v_html text := '<option value="">— aucun —</option>';
+  v_opts text;
+  v_sql text;
   r record;
 BEGIN
-  SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'stock') INTO v_stock_exists;
-  IF NOT v_stock_exists THEN RETURN v_html; END IF;
+  -- Priority: catalog > stock > empty
+  SELECT 'SELECT ' || n.nspname || '.article_options()'
+    INTO v_sql
+    FROM pg_namespace n
+    JOIN pg_proc p ON p.pronamespace = n.oid AND p.proname = 'article_options'
+   WHERE n.nspname = 'catalog';
+  IF v_sql IS NOT NULL THEN
+    EXECUTE v_sql INTO v_opts;
+    RETURN v_html || coalesce(v_opts, '');
+  END IF;
 
-  FOR r IN EXECUTE 'SELECT id, reference, designation FROM stock.article WHERE active = true ORDER BY reference'
-  LOOP
-    v_html := v_html || format('<option value="%s">%s — %s</option>', r.id, pgv.esc(r.reference), pgv.esc(r.designation));
-  END LOOP;
+  IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'stock') THEN
+    FOR r IN EXECUTE 'SELECT id, reference, designation FROM stock.article WHERE active = true ORDER BY reference'
+    LOOP
+      v_html := v_html || format('<option value="%s">%s — %s</option>', r.id, pgv.esc(r.reference), pgv.esc(r.designation));
+    END LOOP;
+  END IF;
 
   RETURN v_html;
 END;
@@ -163,6 +174,89 @@ END;
 $function$;
 COMMENT ON FUNCTION purchase.brand() IS 'Brand name for purchase module';
 
+CREATE OR REPLACE FUNCTION purchase.get_article_prix(p_article_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_ref text;
+  v_designation text;
+  v_body text;
+  v_rows text[];
+  r record;
+BEGIN
+  -- Retrieve article info (priority: catalog > stock)
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'catalog' AND c.relname = 'article') THEN
+    EXECUTE format('SELECT reference, designation FROM catalog.article WHERE id = %L', p_article_id)
+      INTO v_ref, v_designation;
+  ELSIF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'stock') THEN
+    EXECUTE format('SELECT reference, designation FROM stock.article WHERE id = %L', p_article_id)
+      INTO v_ref, v_designation;
+  END IF;
+
+  IF v_ref IS NULL THEN
+    v_ref := '#' || p_article_id;
+    v_designation := 'Article ' || p_article_id;
+  END IF;
+
+  v_body := '<h3>Historique prix — ' || pgv.esc(v_ref) || ' ' || pgv.esc(v_designation) || '</h3>';
+
+  -- Price history: all purchase lines with this article_id, grouped by supplier
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT cl.name AS fournisseur, c.numero, l.prix_unitaire, l.unite,
+           l.quantite, c.created_at,
+           purchase._statut_badge(c.statut) AS badge
+      FROM purchase.ligne l
+      JOIN purchase.commande c ON c.id = l.commande_id
+      JOIN crm.client cl ON cl.id = c.fournisseur_id
+     WHERE l.article_id = p_article_id
+     ORDER BY c.created_at DESC
+  LOOP
+    v_rows := v_rows || ARRAY[
+      pgv.esc(r.fournisseur),
+      pgv.esc(r.numero),
+      to_char(r.prix_unitaire, 'FM999 990.00') || ' EUR/' || r.unite,
+      r.quantite::text || ' ' || r.unite,
+      r.badge,
+      to_char(r.created_at, 'DD/MM/YYYY')
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NULL THEN
+    v_body := v_body || pgv.empty('Aucun achat enregistré pour cet article');
+  ELSE
+    -- Stats summary
+    v_body := v_body || pgv.grid(VARIADIC ARRAY[
+      pgv.stat('Achats', (array_length(v_rows, 1) / 6)::text),
+      pgv.stat('Prix min', (SELECT to_char(min(l.prix_unitaire), 'FM999 990.00') || ' EUR'
+        FROM purchase.ligne l WHERE l.article_id = p_article_id)),
+      pgv.stat('Prix max', (SELECT to_char(max(l.prix_unitaire), 'FM999 990.00') || ' EUR'
+        FROM purchase.ligne l WHERE l.article_id = p_article_id)),
+      pgv.stat('Prix moyen', (SELECT to_char(avg(l.prix_unitaire), 'FM999 990.00') || ' EUR'
+        FROM purchase.ligne l WHERE l.article_id = p_article_id))
+    ]);
+    v_body := v_body || pgv.md_table(
+      ARRAY['Fournisseur', 'Commande', 'Prix unitaire', 'Quantité', 'Statut', 'Date'],
+      v_rows);
+  END IF;
+
+  -- Link to catalog if available
+  IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             WHERE n.nspname = 'catalog' AND c.relname = 'article') THEN
+    v_body := v_body || format('<p><a href="/catalog/article?p_id=%s">Voir fiche article</a> | ', p_article_id);
+  ELSE
+    v_body := v_body || '<p>';
+  END IF;
+  v_body := v_body || format('<a href="%s">Retour commandes</a></p>', pgv.call_ref('get_commande'));
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION purchase.get_article_prix(integer) IS 'Historique des prix d achat d un article par fournisseur';
+
 CREATE OR REPLACE FUNCTION purchase.get_bon_commande(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
@@ -200,6 +294,9 @@ BEGIN
       || '<br><strong>Objet :</strong> ' || pgv.esc(v_cmd.objet)
       || CASE WHEN v_cmd.date_livraison IS NOT NULL
          THEN '<br><strong>Livraison souhaitée :</strong> ' || to_char(v_cmd.date_livraison, 'DD/MM/YYYY')
+         ELSE '' END
+      || CASE WHEN v_cmd.conditions_paiement <> ''
+         THEN '<br><strong>Paiement :</strong> ' || pgv.esc(v_cmd.conditions_paiement)
          ELSE '' END
     )
   ]);
@@ -310,6 +407,9 @@ BEGIN
   IF v_cmd.objet <> '' THEN
     v_body := v_body || '<p><strong>Objet :</strong> ' || pgv.esc(v_cmd.objet) || '</p>';
   END IF;
+  IF v_cmd.conditions_paiement <> '' THEN
+    v_body := v_body || '<p><strong>Conditions paiement :</strong> ' || pgv.esc(v_cmd.conditions_paiement) || '</p>';
+  END IF;
   IF v_cmd.notes <> '' THEN
     v_body := v_body || '<p><strong>Notes :</strong> ' || pgv.esc(v_cmd.notes) || '</p>';
   END IF;
@@ -327,7 +427,8 @@ BEGIN
   LOOP
     v_rows := v_rows || ARRAY[
       pgv.esc(r.description) || CASE WHEN r.article_id IS NOT NULL
-        THEN ' ' || pgv.badge('art. #' || r.article_id, 'info')
+        THEN ' ' || format('<a href="%s">', pgv.call_ref('get_article_prix', jsonb_build_object('p_article_id', r.article_id)))
+          || pgv.badge('art. #' || r.article_id, 'info') || '</a>'
         ELSE '' END,
       r.quantite::text || ' ' || r.unite,
       to_char(r.prix_unitaire, 'FM999 990.00') || ' EUR',
@@ -468,6 +569,8 @@ BEGIN
        coalesce(pgv.esc(v_cmd.objet), ''))
     || format('<label>Date livraison prévue<input type="date" name="p_date_livraison" value="%s"></label>',
        coalesce(v_cmd.date_livraison::text, ''))
+    || format('<label>Conditions paiement<input type="text" name="p_conditions_paiement" value="%s" placeholder="ex: 30j fin de mois"></label>',
+       coalesce(pgv.esc(v_cmd.conditions_paiement), ''))
     || format('<label>Notes<textarea name="p_notes">%s</textarea></label>',
        coalesce(pgv.esc(v_cmd.notes), ''))
     || '<button type="submit">Enregistrer</button>'
@@ -518,7 +621,27 @@ BEGIN
       RETURN pgv.empty('Aucune facture fournisseur', 'Les factures apparaissent ici après saisie.');
     END IF;
 
-    RETURN pgv.md_table(ARRAY['N° fournisseur', 'Fournisseur', 'Commande', 'Statut', 'Montant TTC', 'Date facture', 'Echéance'], v_rows);
+    v_body := '<details><summary>Saisir une facture fournisseur</summary>'
+      || '<form data-rpc="post_facture_saisir">'
+      || '<label>N° fournisseur<input type="text" name="p_numero_fournisseur" required placeholder="ex: FAC-2026-042"></label>'
+      || '<div class="pgv-grid">'
+      || '<label>Montant HT<input type="number" name="p_montant_ht" step="0.01" min="0" required></label>'
+      || '<label>Montant TTC<input type="number" name="p_montant_ttc" step="0.01" min="0" required></label>'
+      || '</div>'
+      || '<div class="pgv-grid">'
+      || '<label>Date facture<input type="date" name="p_date_facture" required></label>'
+      || '<label>Date échéance<input type="date" name="p_date_echeance"></label>'
+      || '</div>'
+      || '<label>Commande liée<select name="p_commande_id"><option value="">(aucune)</option>';
+    FOR r IN SELECT id, numero FROM purchase.commande ORDER BY created_at DESC LIMIT 20 LOOP
+      v_body := v_body || format('<option value="%s">%s</option>', r.id, pgv.esc(r.numero));
+    END LOOP;
+    RETURN v_body
+      || '</select></label>'
+      || '<label>Notes<textarea name="p_notes"></textarea></label>'
+      || '<button type="submit">Saisir</button>'
+      || '</form></details>'
+      || pgv.md_table(ARRAY['N° fournisseur', 'Fournisseur', 'Commande', 'Statut', 'Montant TTC', 'Date facture', 'Echéance'], v_rows);
   END IF;
 
   -- Détail
@@ -740,12 +863,115 @@ END;
 $function$;
 COMMENT ON FUNCTION purchase.get_index() IS 'Dashboard purchase: KPI stats + tabs commandes/factures récentes';
 
+CREATE OR REPLACE FUNCTION purchase.get_recapitulatif(p_annee integer DEFAULT NULL::integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_annee int := coalesce(p_annee, extract(year FROM now())::int);
+  v_body text;
+  v_headers text[] := ARRAY['Fournisseur','Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc','Total'];
+  v_rows text[];
+  r record;
+  v_total_annuel numeric(12,2) := 0;
+BEGIN
+  v_body := '<h3>Récapitulatif achats ' || v_annee || '</h3>';
+
+  -- Year navigation
+  v_body := v_body || '<p>'
+    || format('<a href="%s">&laquo; %s</a>',
+       pgv.call_ref('get_recapitulatif', jsonb_build_object('p_annee', v_annee - 1)), v_annee - 1)
+    || ' | <strong>' || v_annee || '</strong> | '
+    || format('<a href="%s">%s &raquo;</a>',
+       pgv.call_ref('get_recapitulatif', jsonb_build_object('p_annee', v_annee + 1)), v_annee + 1)
+    || '</p>';
+
+  -- Build rows per supplier
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT cl.id AS fournisseur_id, cl.name AS fournisseur,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 1) AS m01,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 2) AS m02,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 3) AS m03,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 4) AS m04,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 5) AS m05,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 6) AS m06,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 7) AS m07,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 8) AS m08,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 9) AS m09,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 10) AS m10,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 11) AS m11,
+           (SELECT coalesce(sum(purchase._total_ht(c2.id)), 0) FROM purchase.commande c2
+             WHERE c2.fournisseur_id = cl.id AND extract(year FROM c2.created_at) = v_annee
+               AND extract(month FROM c2.created_at) = 12) AS m12
+      FROM crm.client cl
+     WHERE EXISTS (
+       SELECT 1 FROM purchase.commande c3
+        WHERE c3.fournisseur_id = cl.id
+          AND extract(year FROM c3.created_at) = v_annee
+     )
+     ORDER BY cl.name
+  LOOP
+    DECLARE
+      v_row_total numeric(12,2);
+      v_months numeric[] := ARRAY[r.m01, r.m02, r.m03, r.m04, r.m05, r.m06,
+                                   r.m07, r.m08, r.m09, r.m10, r.m11, r.m12];
+    BEGIN
+      v_row_total := r.m01 + r.m02 + r.m03 + r.m04 + r.m05 + r.m06
+                   + r.m07 + r.m08 + r.m09 + r.m10 + r.m11 + r.m12;
+      v_total_annuel := v_total_annuel + v_row_total;
+
+      v_rows := v_rows || format('<a href="/crm/client?p_id=%s">%s</a>',
+        r.fournisseur_id, pgv.esc(r.fournisseur));
+      FOR i IN 1..12 LOOP
+        v_rows := v_rows || CASE WHEN v_months[i] = 0 THEN '—'
+          ELSE to_char(v_months[i], 'FM999 990') END;
+      END LOOP;
+      v_rows := v_rows || ('<strong>' || to_char(v_row_total, 'FM999 990') || '</strong>');
+    END;
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NULL THEN
+    v_body := v_body || pgv.empty('Aucun achat pour ' || v_annee);
+  ELSE
+    v_body := v_body || pgv.stat('Total annuel HT', to_char(v_total_annuel, 'FM999 990.00') || ' EUR');
+    v_body := v_body || pgv.md_table(v_headers, v_rows);
+  END IF;
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION purchase.get_recapitulatif(integer) IS 'Recapitulatif achats annuel — tableau croise fournisseur x mois avec totaux HT';
+
 CREATE OR REPLACE FUNCTION purchase.nav_items()
  RETURNS jsonb
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  RETURN '[{"href":"/","label":"Dashboard","icon":"home"},{"href":"/commande","label":"Commandes","icon":"shopping-cart"},{"href":"/facture_fournisseur","label":"Factures","icon":"receipt"}]'::jsonb;
+  RETURN '[{"href":"/","label":"Dashboard","icon":"home"},{"href":"/commande","label":"Commandes","icon":"shopping-cart"},{"href":"/facture_fournisseur","label":"Factures","icon":"receipt"},{"href":"/recapitulatif","label":"Récap.","icon":"bar-chart"},{"href":"/article_prix","label":"Prix articles","icon":"tag"}]'::jsonb;
 END;
 $function$;
 COMMENT ON FUNCTION purchase.nav_items() IS 'Navigation items for purchase module';
@@ -807,13 +1033,15 @@ DECLARE
   v_objet text := p_data->>'p_objet';
   v_notes text := coalesce(p_data->>'p_notes', '');
   v_date_livraison date := (p_data->>'p_date_livraison')::date;
+  v_conditions text := coalesce(p_data->>'p_conditions_paiement', '');
 BEGIN
   IF v_id IS NOT NULL THEN
     UPDATE purchase.commande
        SET fournisseur_id = v_fournisseur_id,
            objet = v_objet,
            notes = v_notes,
-           date_livraison = v_date_livraison
+           date_livraison = v_date_livraison,
+           conditions_paiement = v_conditions
      WHERE id = v_id AND statut = 'brouillon';
 
     IF NOT FOUND THEN
@@ -823,8 +1051,8 @@ BEGIN
     RETURN format('<template data-toast="success">Commande mise à jour</template><template data-redirect="%s"></template>',
       pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
   ELSE
-    INSERT INTO purchase.commande (numero, fournisseur_id, objet, notes, date_livraison)
-    VALUES (purchase._next_numero('CMD'), v_fournisseur_id, v_objet, v_notes, v_date_livraison)
+    INSERT INTO purchase.commande (numero, fournisseur_id, objet, notes, date_livraison, conditions_paiement)
+    VALUES (purchase._next_numero('CMD'), v_fournisseur_id, v_objet, v_notes, v_date_livraison, v_conditions)
     RETURNING id INTO v_id;
 
     RETURN format('<template data-toast="success">Commande créée</template><template data-redirect="%s"></template>',
@@ -997,17 +1225,30 @@ BEGIN
   SELECT coalesce(max(sort_order), 0) + 1 INTO v_sort
     FROM purchase.ligne WHERE commande_id = v_commande_id;
 
-  INSERT INTO purchase.ligne (commande_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate, article_id)
-  VALUES (
-    v_commande_id,
-    v_sort,
-    p_data->>'p_description',
-    coalesce((p_data->>'p_quantite')::numeric, 1),
-    coalesce(p_data->>'p_unite', 'u'),
-    (p_data->>'p_prix_unitaire')::numeric,
-    coalesce((p_data->>'p_tva_rate')::numeric, 20.00),
-    (p_data->>'p_article_id')::int
-  );
+  -- Auto-fill price from catalog if article_id provided and no price given
+  DECLARE
+    v_article_id int := (p_data->>'p_article_id')::int;
+    v_prix numeric := (p_data->>'p_prix_unitaire')::numeric;
+  BEGIN
+    IF v_article_id IS NOT NULL AND v_prix IS NULL
+       AND EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = 'catalog' AND c.relname = 'article') THEN
+      EXECUTE format('SELECT prix_achat FROM catalog.article WHERE id = %L', v_article_id)
+        INTO v_prix;
+    END IF;
+
+    INSERT INTO purchase.ligne (commande_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate, article_id)
+    VALUES (
+      v_commande_id,
+      v_sort,
+      p_data->>'p_description',
+      coalesce((p_data->>'p_quantite')::numeric, 1),
+      coalesce(p_data->>'p_unite', 'u'),
+      coalesce(v_prix, (p_data->>'p_prix_unitaire')::numeric),
+      coalesce((p_data->>'p_tva_rate')::numeric, 20.00),
+      v_article_id
+    );
+  END;
 
   RETURN format('<template data-toast="success">Ligne ajoutée</template><template data-redirect="%s"></template>',
     pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
@@ -1472,6 +1713,15 @@ BEGIN
     RETURN NEXT ok(length(purchase.get_bon_commande(v_cid)) > 0, 'get_bon_commande() returns HTML');
     RETURN NEXT ok(purchase.get_bon_commande(v_cid) LIKE '%pgv-print%', 'get_bon_commande() has print class');
   END;
+
+  -- get_recapitulatif
+  RETURN NEXT ok(length(purchase.get_recapitulatif()) > 0, 'get_recapitulatif() returns HTML');
+  RETURN NEXT ok(purchase.get_recapitulatif() LIKE '%Récapitulatif achats%', 'get_recapitulatif() has title');
+
+  -- get_article_prix (with non-existent article -> empty state)
+  RETURN NEXT ok(length(purchase.get_article_prix(99999)) > 0, 'get_article_prix() returns HTML');
+  RETURN NEXT ok(purchase.get_article_prix(99999) LIKE '%Aucun achat%', 'get_article_prix() empty state');
+
   PERFORM purchase_qa.clean();
 END;
 $function$;

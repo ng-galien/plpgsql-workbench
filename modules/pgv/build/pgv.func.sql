@@ -1110,6 +1110,27 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION pgv.select_search(p_name text, p_label text, p_rpc text, p_placeholder text DEFAULT ''::text, p_value text DEFAULT NULL::text, p_display text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN '<label>' || pgv.esc(p_label)
+    || '<div class="pgv-ss" data-ss-rpc="' || pgv.esc(p_rpc) || '">'
+    || '<input type="text" class="pgv-ss-input"'
+    || ' placeholder="' || pgv.esc(coalesce(p_placeholder, '')) || '"'
+    || CASE WHEN p_display IS NOT NULL THEN ' value="' || pgv.esc(p_display) || '"' ELSE '' END
+    || ' autocomplete="off">'
+    || '<input type="hidden" name="' || pgv.esc(p_name) || '"'
+    || CASE WHEN p_value IS NOT NULL THEN ' value="' || pgv.esc(p_value) || '"' ELSE '' END
+    || '>'
+    || '<div class="pgv-ss-results"></div>'
+    || '</div></label>';
+END;
+$function$;
+COMMENT ON FUNCTION pgv.select_search(text,text,text,text,text,text) IS 'Search-select combo: text input + hidden value + async dropdown fetched from RPC. Uses pgv-ss-* classes.';
+
 CREATE OR REPLACE FUNCTION pgv.stat(p_label text, p_value text, p_detail text DEFAULT NULL::text)
  RETURNS text
  LANGUAGE sql
@@ -1877,6 +1898,40 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_search() IS 'Tests for pgv.search_item() and pgv.search() dispatcher';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_select_search()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  -- Basic rendering
+  v_html := pgv.select_search('p_article', 'Article', 'catalog.article_options', 'Rechercher...');
+  RETURN NEXT ok(v_html LIKE '%data-ss-rpc="catalog.article_options"%', 'data-ss-rpc attribute present');
+  RETURN NEXT ok(v_html LIKE '%class="pgv-ss"%', 'pgv-ss container class');
+  RETURN NEXT ok(v_html LIKE '%class="pgv-ss-input"%', 'pgv-ss-input class on text input');
+  RETURN NEXT ok(v_html LIKE '%name="p_article"%', 'hidden input has correct name');
+  RETURN NEXT ok(v_html LIKE '%placeholder="Rechercher..."%', 'placeholder set');
+  RETURN NEXT ok(v_html LIKE '%autocomplete="off"%', 'autocomplete off');
+
+  -- Pre-filled value
+  v_html := pgv.select_search('p_item', 'Item', 'ns.fn', '', '42', 'Widget XL');
+  RETURN NEXT ok(v_html LIKE '%value="42"%', 'hidden input pre-filled with value');
+  RETURN NEXT ok(v_html LIKE '%value="Widget XL"%', 'text input pre-filled with display');
+
+  -- XSS escaping
+  v_html := pgv.select_search('x', '<script>', 'a.b">', '<">');
+  RETURN NEXT ok(v_html NOT LIKE '%<script>%', 'label escaped');
+  RETURN NEXT ok(v_html NOT LIKE '%a.b">%', 'rpc escaped');
+
+  -- No value / no display
+  v_html := pgv.select_search('p_id', 'Choose', 'x.y');
+  RETURN NEXT ok(v_html NOT LIKE '%value="%', 'no value attributes when NULL');
+  RETURN NEXT ok(v_html LIKE '%placeholder=""%', 'empty placeholder default');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_select_search() IS 'Unit tests for pgv.select_search() primitive';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_stat()
  RETURNS SETOF text

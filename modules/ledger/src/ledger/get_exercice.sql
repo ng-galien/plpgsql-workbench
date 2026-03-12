@@ -74,8 +74,8 @@ BEGIN
   -- Clôture action
   IF NOT coalesce(v_exercice.closed, false) THEN
     v_body := v_body || pgv.action(
-      'Clôturer l''exercice ' || v_year,
       'post_cloture',
+      'Clôturer l''exercice ' || v_year,
       jsonb_build_object('year', v_year),
       'Clôturer définitivement l''exercice ' || v_year || ' ? Cette action est irréversible.'
     );

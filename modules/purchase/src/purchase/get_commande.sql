@@ -57,6 +57,9 @@ BEGIN
   IF v_cmd.objet <> '' THEN
     v_body := v_body || '<p><strong>Objet :</strong> ' || pgv.esc(v_cmd.objet) || '</p>';
   END IF;
+  IF v_cmd.conditions_paiement <> '' THEN
+    v_body := v_body || '<p><strong>Conditions paiement :</strong> ' || pgv.esc(v_cmd.conditions_paiement) || '</p>';
+  END IF;
   IF v_cmd.notes <> '' THEN
     v_body := v_body || '<p><strong>Notes :</strong> ' || pgv.esc(v_cmd.notes) || '</p>';
   END IF;
@@ -74,7 +77,8 @@ BEGIN
   LOOP
     v_rows := v_rows || ARRAY[
       pgv.esc(r.description) || CASE WHEN r.article_id IS NOT NULL
-        THEN ' ' || pgv.badge('art. #' || r.article_id, 'info')
+        THEN ' ' || format('<a href="%s">', pgv.call_ref('get_article_prix', jsonb_build_object('p_article_id', r.article_id)))
+          || pgv.badge('art. #' || r.article_id, 'info') || '</a>'
         ELSE '' END,
       r.quantite::text || ' ' || r.unite,
       to_char(r.prix_unitaire, 'FM999 990.00') || ' EUR',

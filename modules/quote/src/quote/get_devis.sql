@@ -142,11 +142,17 @@ BEGIN
     v_body := v_body
       || pgv.action('post_devis_facturer', 'Créer la facture', jsonb_build_object('id', p_id), 'Créer une facture depuis ce devis ?');
   END IF;
+  -- Dupliquer disponible sur tous les statuts
+  v_body := v_body
+    || pgv.action('post_devis_dupliquer', 'Dupliquer', jsonb_build_object('id', p_id), 'Dupliquer ce devis en brouillon ?');
   v_body := v_body || '</div>';
 
   IF d.notes <> '' THEN
     v_body := v_body || '<h4>Notes</h4><p>' || pgv.esc(d.notes) || '</p>';
   END IF;
+
+  -- Mentions légales
+  v_body := v_body || quote._mentions_html();
 
   RETURN v_body;
 END;

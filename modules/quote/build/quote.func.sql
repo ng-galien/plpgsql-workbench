@@ -20,6 +20,30 @@ END;
 $function$;
 COMMENT ON FUNCTION quote._client_options() IS 'Options HTML des clients actifs pour les selects de formulaire';
 
+CREATE OR REPLACE FUNCTION quote._mentions_html()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text := '';
+  r record;
+  v_has_any boolean := false;
+BEGIN
+  FOR r IN SELECT label, texte FROM quote.mention WHERE active = true ORDER BY id
+  LOOP
+    v_has_any := true;
+    v_html := v_html || '<dt>' || pgv.esc(r.label) || '</dt><dd>' || pgv.esc(r.texte) || '</dd>';
+  END LOOP;
+
+  IF NOT v_has_any THEN
+    RETURN '';
+  END IF;
+
+  RETURN '<details><summary>Mentions légales</summary><dl>' || v_html || '</dl></details>';
+END;
+$function$;
+COMMENT ON FUNCTION quote._mentions_html() IS 'Retourne le HTML des mentions légales actives';
+
 CREATE OR REPLACE FUNCTION quote._next_numero(p_prefix text)
  RETURNS text
  LANGUAGE plpgsql
@@ -282,11 +306,17 @@ BEGIN
     v_body := v_body
       || pgv.action('post_devis_facturer', 'Créer la facture', jsonb_build_object('id', p_id), 'Créer une facture depuis ce devis ?');
   END IF;
+  -- Dupliquer disponible sur tous les statuts
+  v_body := v_body
+    || pgv.action('post_devis_dupliquer', 'Dupliquer', jsonb_build_object('id', p_id), 'Dupliquer ce devis en brouillon ?');
   v_body := v_body || '</div>';
 
   IF d.notes <> '' THEN
     v_body := v_body || '<h4>Notes</h4><p>' || pgv.esc(d.notes) || '</p>';
   END IF;
+
+  -- Mentions légales
+  v_body := v_body || quote._mentions_html();
 
   RETURN v_body;
 END;
@@ -359,6 +389,7 @@ DECLARE
   v_ht numeric(12,2);
   v_tva numeric(12,2);
   v_ttc numeric(12,2);
+  v_days_since int;
   f record;
   r record;
 BEGIN
@@ -414,11 +445,18 @@ BEGIN
     f.numero
   ]);
 
+  -- Badge relance si envoyée > 30j
+  v_days_since := extract(day FROM now() - f.created_at)::int;
+
   v_body := v_body || pgv.dl(VARIADIC ARRAY[
     'Numéro', f.numero,
     'Client', format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || f.client_id), pgv.esc(f.client_name)),
     'Objet', pgv.esc(f.objet),
-    'Statut', quote._statut_badge(f.statut),
+    'Statut', quote._statut_badge(f.statut)
+      || CASE WHEN f.statut = 'envoyee' AND v_days_since > 30
+           THEN ' ' || pgv.badge('Relance', 'danger')
+           ELSE ''
+         END,
     'Devis', CASE WHEN f.devis_numero IS NOT NULL
       THEN format('<a href="%s">%s</a>', pgv.call_ref('get_devis', jsonb_build_object('p_id', f.devis_pk)), pgv.esc(f.devis_numero))
       ELSE 'Facture directe'
@@ -493,12 +531,19 @@ BEGIN
   ELSIF f.statut = 'envoyee' THEN
     v_body := v_body
       || pgv.action('post_facture_payer', 'Marquer payée', jsonb_build_object('id', p_id), 'Marquer cette facture comme payée ?');
+    IF v_days_since > 30 THEN
+      v_body := v_body
+        || pgv.action('post_facture_relancer', 'Relancer', jsonb_build_object('id', p_id), 'Marquer cette facture en relance ?', 'danger');
+    END IF;
   END IF;
   v_body := v_body || '</div>';
 
   IF f.notes <> '' THEN
     v_body := v_body || '<h4>Notes</h4><p>' || pgv.esc(f.notes) || '</p>';
   END IF;
+
+  -- Mentions légales
+  v_body := v_body || quote._mentions_html();
 
   RETURN v_body;
 END;
@@ -693,6 +738,36 @@ END;
 $function$;
 COMMENT ON FUNCTION quote.post_devis_accepter(jsonb) IS 'Marquer un devis envoyé comme accepté';
 
+CREATE OR REPLACE FUNCTION quote.post_devis_dupliquer(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_src_id int := (p_data->>'id')::int;
+  v_new_id int;
+  v_numero text;
+  d record;
+BEGIN
+  SELECT * INTO d FROM quote.devis WHERE id = v_src_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Devis introuvable'; END IF;
+
+  v_numero := quote._next_numero('DEV');
+
+  INSERT INTO quote.devis (numero, client_id, objet, validite_jours, notes)
+  VALUES (v_numero, d.client_id, d.objet, d.validite_jours, d.notes)
+  RETURNING id INTO v_new_id;
+
+  INSERT INTO quote.ligne (devis_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate)
+  SELECT v_new_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate
+    FROM quote.ligne WHERE devis_id = v_src_id
+   ORDER BY sort_order, id;
+
+  RETURN '<template data-toast="success">Devis dupliqué : ' || pgv.esc(v_numero) || '</template>'
+    || '<template data-redirect="' || pgv.call_ref('get_devis', jsonb_build_object('p_id', v_new_id)) || '"></template>';
+END;
+$function$;
+COMMENT ON FUNCTION quote.post_devis_dupliquer(jsonb) IS 'Dupliquer un devis existant (header + lignes) en brouillon avec nouveau numéro';
+
 CREATE OR REPLACE FUNCTION quote.post_devis_envoyer(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
@@ -862,6 +937,42 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION quote.post_facture_payer(jsonb) IS 'Marquer une facture envoyée comme payée';
+
+CREATE OR REPLACE FUNCTION quote.post_facture_relancer(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id int := (p_data->>'p_id')::int;
+  v_statut text;
+  v_days int;
+BEGIN
+  SELECT statut, extract(day FROM now() - created_at)::int
+    INTO v_statut, v_days
+    FROM quote.facture WHERE id = v_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Facture #% introuvable', v_id;
+  END IF;
+
+  IF v_statut <> 'envoyee' THEN
+    RAISE EXCEPTION 'Seule une facture envoyee peut etre relancee (statut actuel: %)', v_statut;
+  END IF;
+
+  IF v_days <= 30 THEN
+    RAISE EXCEPTION 'Relance possible uniquement apres 30 jours (actuellement: % jours)', v_days;
+  END IF;
+
+  UPDATE quote.facture
+     SET statut = 'relance',
+         notes = notes || E'\n[Relance ' || to_char(now(), 'DD/MM/YYYY') || ']'
+   WHERE id = v_id;
+
+  RETURN '<template data-toast="success">Relance enregistree pour la facture</template>'
+      || '<template data-redirect="/quote/facture?p_id=' || v_id || '"></template>';
+END;
+$function$;
+COMMENT ON FUNCTION quote.post_facture_relancer(jsonb) IS 'Mark an overdue invoice as relancee (payment reminder sent)';
 
 CREATE OR REPLACE FUNCTION quote.post_facture_save(p_data jsonb)
  RETURNS text
@@ -1375,6 +1486,67 @@ END;
 $function$;
 COMMENT ON FUNCTION quote_ut.test_next_numero() IS 'Test numérotation séquentielle DEV/FAC via API publique';
 
+CREATE OR REPLACE FUNCTION quote_ut.test_post_devis_dupliquer()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_client_id int;
+  v_devis_id int;
+  v_new_id int;
+  v_count int;
+BEGIN
+  -- cleanup
+  UPDATE project.chantier SET devis_id = NULL WHERE devis_id IS NOT NULL;
+  DELETE FROM quote.ligne;
+  DELETE FROM quote.facture;
+  DELETE FROM quote.devis;
+
+  -- use existing client
+  SELECT id INTO v_client_id FROM crm.client LIMIT 1;
+
+  INSERT INTO quote.devis (numero, client_id, objet, statut)
+    VALUES ('DEV-2099-001', v_client_id, 'Devis original', 'envoye')
+    RETURNING id INTO v_devis_id;
+  INSERT INTO quote.ligne (devis_id, description, quantite, prix_unitaire, tva_rate)
+    VALUES (v_devis_id, 'Ligne A', 2, 100.00, 20.00),
+           (v_devis_id, 'Ligne B', 1, 50.00, 5.50);
+
+  -- duplicate (function uses 'id' key)
+  PERFORM quote.post_devis_dupliquer(jsonb_build_object('id', v_devis_id));
+
+  -- new devis created
+  SELECT id INTO v_new_id FROM quote.devis WHERE id <> v_devis_id AND client_id = v_client_id;
+  RETURN NEXT ok(v_new_id IS NOT NULL, 'duplicate devis created');
+
+  -- statut = brouillon
+  RETURN NEXT is(
+    (SELECT statut FROM quote.devis WHERE id = v_new_id),
+    'brouillon', 'duplicate is brouillon');
+
+  -- lignes copied
+  SELECT count(*) INTO v_count FROM quote.ligne WHERE devis_id = v_new_id;
+  RETURN NEXT is(v_count, 2, 'lignes copied');
+
+  -- different numero
+  RETURN NEXT isnt(
+    (SELECT numero FROM quote.devis WHERE id = v_new_id),
+    'DEV-2099-001', 'different numero');
+
+  -- error on missing devis
+  RETURN NEXT throws_ok(
+    'SELECT quote.post_devis_dupliquer(''{"id": 999999}''::jsonb)',
+    'P0001', NULL, 'error on missing devis');
+
+  -- cleanup
+  UPDATE project.chantier SET devis_id = NULL WHERE devis_id IS NOT NULL;
+  DELETE FROM quote.ligne;
+  DELETE FROM quote.facture;
+  DELETE FROM quote.devis;
+END;
+$function$;
+COMMENT ON FUNCTION quote_ut.test_post_devis_dupliquer() IS 'Test devis duplication feature';
+
 CREATE OR REPLACE FUNCTION quote_ut.test_post_devis_facturer()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -1389,6 +1561,73 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION quote_ut.test_post_devis_facturer() IS 'Test conversion devis -> facture + branche devis introuvable';
+
+CREATE OR REPLACE FUNCTION quote_ut.test_post_facture_relancer()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_client_id int;
+  v_fac_id int;
+  v_result text;
+BEGIN
+  -- cleanup
+  UPDATE project.chantier SET devis_id = NULL WHERE devis_id IS NOT NULL;
+  DELETE FROM quote.ligne;
+  DELETE FROM quote.facture;
+  DELETE FROM quote.devis;
+
+  -- use existing client
+  SELECT id INTO v_client_id FROM crm.client LIMIT 1;
+
+  -- setup: facture envoyee created 45 days ago
+  INSERT INTO quote.facture (numero, client_id, objet, statut, created_at)
+    VALUES ('FAC-2099-001', v_client_id, 'Facture test', 'envoyee', now() - interval '45 days')
+    RETURNING id INTO v_fac_id;
+
+  -- relance succeeds
+  v_result := quote.post_facture_relancer(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'relance returns success toast');
+
+  -- statut changed to relance
+  RETURN NEXT is(
+    (SELECT statut FROM quote.facture WHERE id = v_fac_id),
+    'relance', 'statut changed to relance');
+
+  -- notes updated
+  RETURN NEXT ok(
+    (SELECT notes FROM quote.facture WHERE id = v_fac_id) LIKE '%[Relance%',
+    'notes contain relance entry');
+
+  -- error: already relancee (not envoyee anymore)
+  RETURN NEXT throws_ok(
+    format('SELECT quote.post_facture_relancer(''{"p_id": %s}''::jsonb)', v_fac_id),
+    'P0001', NULL, 'error on non-envoyee facture');
+
+  -- error: brouillon facture
+  UPDATE quote.facture SET statut = 'brouillon' WHERE id = v_fac_id;
+  RETURN NEXT throws_ok(
+    format('SELECT quote.post_facture_relancer(''{"p_id": %s}''::jsonb)', v_fac_id),
+    'P0001', NULL, 'error on brouillon facture');
+
+  -- error: facture too recent (< 30 days)
+  UPDATE quote.facture SET statut = 'envoyee', created_at = now() - interval '10 days' WHERE id = v_fac_id;
+  RETURN NEXT throws_ok(
+    format('SELECT quote.post_facture_relancer(''{"p_id": %s}''::jsonb)', v_fac_id),
+    'P0001', NULL, 'error on recent facture');
+
+  -- error: missing facture
+  RETURN NEXT throws_ok(
+    'SELECT quote.post_facture_relancer(''{"p_id": 999999}''::jsonb)',
+    'P0001', NULL, 'error on missing facture');
+
+  -- cleanup
+  DELETE FROM quote.ligne;
+  DELETE FROM quote.facture;
+  DELETE FROM quote.devis;
+END;
+$function$;
+COMMENT ON FUNCTION quote_ut.test_post_facture_relancer() IS 'Test facture relance (late payment reminder) feature';
 
 CREATE OR REPLACE FUNCTION quote_ut.test_post_ligne_ajouter()
  RETURNS SETOF text

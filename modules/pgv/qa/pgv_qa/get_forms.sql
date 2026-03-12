@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION pgv_qa.get_forms()
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 BEGIN
   RETURN
@@ -11,6 +12,12 @@ BEGIN
     || pgv.sel('p_role', 'Role', '["admin", "user", "viewer"]'::jsonb, 'user')
     || pgv.textarea('p_notes', 'Notes', 'Texte libre...')
     || '<button type="submit">Envoyer</button>'
+    || '</form></section>'
+    || '<section><h4>pgv.select_search</h4>'
+    || '<form data-rpc="form_echo">'
+    || pgv.select_search('p_name', 'Materiau', 'pgv_qa.demo_options', 'Rechercher un materiau...')
+    || pgv.select_search('p_role', 'Pre-rempli', 'pgv_qa.demo_options', '', '3', 'Bois chene massif')
+    || '<button type="submit">Valider</button>'
     || '</form></section>'
     || '<section><h4>Boutons data-rpc</h4>'
     || '<div class="grid">'

@@ -36,6 +36,9 @@ BEGIN
       || CASE WHEN v_cmd.date_livraison IS NOT NULL
          THEN '<br><strong>Livraison souhaitée :</strong> ' || to_char(v_cmd.date_livraison, 'DD/MM/YYYY')
          ELSE '' END
+      || CASE WHEN v_cmd.conditions_paiement <> ''
+         THEN '<br><strong>Paiement :</strong> ' || pgv.esc(v_cmd.conditions_paiement)
+         ELSE '' END
     )
   ]);
 

@@ -1,0 +1,28 @@
+{
+  "name": "catalog",
+  "version": "0.1.0",
+  "description": "Catalogue produits/services — tarifs, unités, catégories (alimente quote + stock)",
+  "schemas": {
+    "public": "catalog",
+    "test": "catalog_ut",
+    "qa": "catalog_qa"
+  },
+  "dependencies": [
+    "pgv"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/catalog.ddl.sql",
+    "build/catalog.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "catalog"
+    ]
+  }
+}
