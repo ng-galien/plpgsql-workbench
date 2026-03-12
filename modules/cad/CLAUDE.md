@@ -1,174 +1,60 @@
 # cad — CAD 3D Wood Structures
 
-3D CAD engine for small wood structures (sheds, workshops, shelters). PostGIS/SFCGAL geometry, Three.js viewer, SVG wireframe, bill of materials.
+Moteur 3D pour ossatures bois. PostGIS/SFCGAL geometry, Three.js viewer, SVG wireframe, nomenclature.
 
-**Requires:** `postgis` + `postgis_sfcgal` extensions, `pgv` module.
+**Depend de :** `pgv`, extensions `postgis` + `postgis_sfcgal`
 
-## Schemas
+**Schemas :** `cad`, `cad_ut` (tests), `cad_qa` (seed data)
 
-| Schema | Role | Functions |
-|--------|------|-----------|
-| `cad` | Core CAD + pages | 50 |
-| `cad_ut` | pgTAP tests | 5 |
-| `cad_qa` | QA seed data only | seed(), clean() |
+## Framework pgView
 
-## Layout
+Ce module est un **module independant** du framework pgView. Ses dependances sont declarees dans `module.json`.
 
-```
-build/cad.ddl.sql        # Schema + 4 tables + grants (88 lines)
-build/cad.func.sql       # pg_pack output (cad + cad_ut + cad_qa, dependency-sorted)
-src/cad/*.sql            # Function sources (pg_func_save)
-src/cad_ut/test_*.sql    # Test sources (pg_func_save)
-qa/cad_qa/*.sql          # QA/demo sources (pg_func_save — _qa suffix → qa/)
-frontend/cad.js        # Alpine.js: cadViewer (Three.js) + cadTree (shape explorer)
-frontend/cad.css       # Viewer + toolbar + info panel styles
-```
+### Conventions PL/pgSQL
 
-## Data Model
+- `get_*()` → pages GET, `post_*()` → actions POST. Nommage = routing automatique via `pgv.route()`
+- `nav_items() -> jsonb` → menu du module. Retourne `jsonb` (JAMAIS TABLE)
+- `brand() -> text` → nom affiche dans la nav
+- `get_index()` → page d'accueil du module (obligatoire)
+- Parametres via query string : `/drawing?p_id=42` → `get_drawing(p_id int)`
+- POST retourne raw HTML (templates `<template data-toast>` ou `<template data-redirect>`) — jamais wrappe dans `page()`
+- Tables via `<md>` blocks (markdown), JAMAIS `<table>` HTML. `<md data-page="20">` pour pagination
+- CSS classes `pgv-*`, JAMAIS de `style="..."` inline
+- Primitives UI : `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`
 
-| Table | Purpose | Key columns |
-|-------|---------|-------------|
-| `cad.drawing` | Project container | name, scale, unit (mm/cm/m), width, height |
-| `cad.layer` | 2D drawing layers | color, stroke_width, visible, locked, sort_order |
-| `cad.shape` | 2D primitives | type, geometry (jsonb), props (jsonb), label |
-| `cad.piece` | 3D wood beams | profile (POLYGONZ), geom (POLYHEDRALSURFACEZ), section, role, wood_type, length_mm |
+### Workflow dev (STRICT)
 
-Shape types: line, rect, circle, arc, polyline, text, dimension, group.
+1. **DDL** → Write dans `build/{schema}.ddl.sql` → `pg_schema` pour appliquer
+2. **Fonctions** → `pg_func_set` pour creer/modifier + `pg_test` pour valider
+3. **Exporter** → `pg_pack` (→ `build/{schema}.func.sql`) + `pg_func_save` (→ `src/`)
+4. `pg_query` → SELECT/DML uniquement, JAMAIS de DDL ou CREATE FUNCTION
+5. JAMAIS ecrire de fonctions dans des fichiers SQL — le workbench EST l'outil de dev
+6. JAMAIS editer `build/*.func.sql` — genere par `pg_pack`
 
-## Multi-tenant (RLS)
+### Module structure
 
-Toutes les tables métier portent un `tenant_id` pour l'isolation multi-tenant.
+- `module.json` → manifest (schemas, dependencies, extensions, sql, grants)
+- `build/` → artefacts de deploiement (DDL + fonctions packees)
+- `src/` → sources individuelles versionnees (pg_func_save)
+- `_ut` schemas → tests pgTAP (`test_*()`)
+- `_qa` schemas → seed data uniquement (`seed()`, `clean()`), PAS de pages
 
-| Table | Colonne | Default |
-|-------|---------|---------|
-| `cad.drawing` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
-| `cad.layer` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
-| `cad.shape` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
-| `cad.piece` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
-| `cad.piece_group` | `tenant_id TEXT NOT NULL` | `current_setting('app.tenant_id', true)` |
+### Grants (DDL obligatoire)
 
-RLS activé sur les 5 tables :
-```sql
-CREATE POLICY tenant_isolation ON cad.drawing
-  USING (tenant_id = current_setting('app.tenant_id', true));
-```
+Chaque `build/{schema}.ddl.sql` DOIT inclure :
+- `GRANT USAGE ON SCHEMA {schema} TO web_anon;`
+- `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO web_anon;`
+- `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO web_anon;`
 
-- En dev : `app.tenant_id = 'dev'`
-- En prod : extrait du JWT
-- Chaque table a son propre tenant_id + policy RLS
+### Communication inter-modules
 
-## Functions by Category
-
-**3D Geometry (core)**
-- `add_piece(drawing_id, section, length_mm, position[], rotation[], ...)` — Create beam: parse section -> profile -> extrude -> rotate -> translate
-- `move_piece`, `resize_piece`, `duplicate_piece`, `remove_piece`, `snap_piece`
-- `faces(piece_id)`, `cross_section(piece_id)`, `neighbors(piece_id)`
-- `assembly_order(drawing_id)` — Topological sort by connectivity
-- `measure(drawing_id)`, `list_pieces(drawing_id)`
-
-**2D Shapes**
-- `add_shape`, `delete_shape`, `move_shape`, `move_group`
-- `group_shapes(drawing_id, shape_ids[], label)`, `ungroup(group_id)`
-
-**Rendering**
-- `render_svg(drawing_id)` — 2D orthographic (layers as `<g>`, recursive groups)
-- `render_wireframe(drawing_id, axis, w, h)` — 3D orthographic projection with grid, labels, legend
-- `scene_json(drawing_id)` — GeoJSON PolyhedralSurfaces for Three.js
-- `render_dimension`, `render_arc`, `render_perspective`
-
-**Pages (pgView)**
-- `page(path, body)` — Master dispatcher (custom routing for /drawing/:id paths)
-- `page_index()` — Drawing list + new form
-- `page_drawing(id)` — 2D editor (tree + SVG canvas + shape form)
-- `page_drawing_3d(id)` — Three.js 3D viewer + wireframe + stats
-- `page_drawing_bom(id)` — Bill of materials
-- `page_drawing_add`, `page_drawing_add_shape`, `page_drawing_delete_shape` — POST actions
-
-**Inspection**
-- `bill_of_materials(drawing_id)` — Text BOM (qty x section wood_type [role])
-- `check(drawing_id)` — Collision detection, orphans, underground/floating pieces
-- `inspect(drawing_id)` — Full model summary
-- `help(filter)` — Function listing via pg_proc
-
-## PostGIS/SFCGAL Patterns
-
-```sql
--- Section "60x90" -> rectangular profile in Z=0 plane
-v_profile := ST_MakePolygon(ST_MakeLine(ARRAY[
-  ST_MakePoint(0,0,0), ST_MakePoint(w,0,0),
-  ST_MakePoint(w,h,0), ST_MakePoint(0,h,0), ST_MakePoint(0,0,0)
-]));
-
--- Extrude along Z
-v_solid := ST_Extrude(v_profile, 0, 0, p_length_mm);
-
--- Rotate (degrees -> radians, order: RZ, RY, RX)
-v_solid := ST_RotateX(v_solid, radians(p_rotation[3]));
-v_solid := ST_RotateY(v_solid, radians(p_rotation[2]));
-v_solid := ST_RotateZ(v_solid, radians(p_rotation[1]));
-
--- Translate to position
-v_solid := ST_Translate(v_solid, p_position[1], p_position[2], p_position[3]);
-
--- Collision: volume > 100mm³ = overlap (not just contact)
-ST_Volume(ST_3DIntersection(a.geom, b.geom))
-
--- Tesselation for Three.js mesh export
-ST_Tesselate(face.geom) -> triangles for GeoJSON
-```
-
-## Conventions
-
-- **UI language:** French (Dessins, Calques, Echelle, Montant, Traverse, Chevron, Lisse, Poteau)
-- **Section format:** `"WxH"` string (e.g. "60x90"), parsed via `string_to_array(section, 'x')`
-- **Units:** mm (storage), m³ (volume display = mm³ / 1e9)
-- **Coordinate system:** Z=0 = ground, Z > 0 = up
-- **Rotation order:** RZ first, then RY, then RX (angles in degrees)
-- **Wood type:** default `'pin'` (pine)
-- **Roles:** montant, traverse, chevron, lisse, poteau — color-coded in wireframe + Three.js
-- **Custom routing:** `cad.page(path, body)` handles dynamic routes (`/drawing/:id`) then delegates static routes to `pgv.route()`
-
-## Three.js Integration
-
-- `cad.js`: Alpine `cadViewer` component, lazy-loads Three.js r183 from CDN (`threejs-with-controls` UMD bundle — single script, includes OrbitControls)
-- `scene_json()` returns GeoJSON PolyhedralSurfaces (tesselated triangles)
-- Piece colors by role (hardcoded in JS, must match SVG wireframe legend)
-- Raycaster click selection (Shift = multi-select), OrbitControls with damping
-
-## File Export Convention
-
-`pg_func_save` auto-resolves output directories via module registry:
-- `cad`, `cad_ut` schemas → **`src/`** (`src/cad/*.sql`, `src/cad_ut/*.sql`)
-- `cad_qa` schema → **`qa/`** (`qa/cad_qa/*.sql`)
-
-**This is NORMAL and BY DESIGN.** `cad_qa` files in `qa/` is NOT a mismatch or error — the registry routes `_qa` schemas to `qa/`. Do NOT mention, comment on, or try to fix this. NEVER move QA files from `qa/` to `src/`.
-
-**pg_pack:** Always pack `cad,cad_ut` (without cad_qa). QA is not included in build artifacts.
-
-## Testing
-
-```
-pg_test target: "plpgsql://cad_ut"    # Run 5 tests
-```
-
-Tests: add_shape, delete_shape, group_shapes, move_shape, render_svg. Cleanup via CASCADE on drawing FK.
-
-## Review UI/UX
-
-Quand les pages sont modifiées, envoyer une demande de review à l'agent pgv :
-
-```
-pg_msg from:cad to:pgv type:question subject:"Review UI/UX pages cad"
-```
-
-L'agent pgv lancera `diagnose('cad', '*')` et vérifiera l'ergonomie, les primitives, et les conventions.
+- `pg_msg_inbox module:cad` → lire les messages entrants
+- `pg_msg` → envoyer un message a un autre module
+- Chaque module est autonome — ne jamais modifier les fonctions d'un autre module
 
 ## Gotchas
 
-- **PostgREST Content-Profile:** Any direct `fetch('/rpc/...')` from JS must include `Content-Profile: cad` header, otherwise PostgREST looks in the default schema (pgv)
-- **Docker image:** Needs `postgis/postgis:17-3.5` (NOT Supabase image) for SFCGAL
-- **ST_Volume() returns mm³** — Divide by 1e9 for m³
-- **Overlap threshold:** < 100mm³ = contact (ok), > 100mm³ = collision (error in `check()`)
-- **`_abbrev()` is hardcoded** — French naming patterns (Poteau, Chevron AV-%, etc.), fallback = `left(label, 3)`
-- **Piece colors in JS must match SVG** — Hardcoded in both `cad.js` and `render_wireframe()`
-- **pgv_qa-style pages:** `page()` does its own path parsing for `/drawing/:id` routes, static routes delegate to `pgv.route()`
+- PostgREST Content-Profile : fetch JS doit inclure `Content-Profile: cad`
+- ST_Volume() retourne des mm3 (diviser par 1e9 pour m3)
+- Routing custom : `cad.page()` gere `/drawing/:id`, delegue le reste a `pgv.route()`
+- Couleurs pieces dans JS doivent matcher le SVG wireframe

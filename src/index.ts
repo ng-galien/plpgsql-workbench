@@ -189,7 +189,7 @@ app.post("/hooks/:module", validateModuleName);
 app.post("/hooks/:module/session", validateModuleName);
 app.post("/hooks/:module/stop", validateModuleName);
 
-app.post("/hooks/:module", (req, res) => {
+app.post("/hooks/:module", async (req, res) => {
   const mod = req.params.module;
   const { tool_name, tool_input } = req.body ?? {};
   // Lead agent (orchestrator) bypasses all restrictions
@@ -198,6 +198,40 @@ app.post("/hooks/:module", (req, res) => {
     // Registry not loaded yet — allow (fail-open during startup)
     return allow(res, mod, tool_name, "startup");
   }
+
+  // Active delivery: inject high-priority messages into tool output
+  // This runs on every PreToolUse, so agents see urgent tasks immediately
+  try {
+    const pool: import("pg").Pool = container.resolve("pool");
+    const { rows } = await pool.query(`SELECT * FROM workbench.inbox_check($1)`, [mod]);
+    if (rows.length > 0) {
+      const msg = rows[0];
+      // Auto-acknowledge the message
+      await pool.query(
+        `UPDATE workbench.agent_message SET status = 'acknowledged', acknowledged_at = now() WHERE id = $1 AND status = 'new'`,
+        [msg.id],
+      );
+      const lines = [
+        `[URGENT MESSAGE #${msg.id}] from:${msg.from_module} [${msg.msg_type}]: ${msg.subject}`,
+        msg.priority === "high" ? `priority: HIGH` : null,
+        msg.body ? `body: ${msg.body}` : null,
+        msg.payload ? `payload: ${JSON.stringify(msg.payload)}` : null,
+        msg.reply_to ? `reply_to: #${msg.reply_to}` : null,
+        ``,
+        `→ pg_msg_inbox module:${mod} to see full details`,
+        `→ pg_msg_inbox module:${mod} resolve:${msg.id} resolution:"..." to resolve`,
+      ].filter(Boolean);
+      // Allow the tool but inject the message as additional context
+      logHook(mod, tool_name, "inbox_delivery", true, `delivered msg #${msg.id}`);
+      return res.json({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "allow",
+          additionalContext: lines.join("\n"),
+        },
+      });
+    }
+  } catch { /* inbox_check table may not exist yet */ }
   const mapping = moduleRegistry.resolveByName(mod) ?? moduleRegistry.resolve([mod]) ?? moduleRegistry.resolve([`${mod}_ut`]);
   const schemas = mapping?.schemas ?? [mod];
 
@@ -298,9 +332,10 @@ app.post("/hooks/:module/session", async (req, res) => {
       `SELECT * FROM workbench.inbox_pending($1)`, [mod],
     );
     if (rows.length > 0) {
-      const lines = rows.map((r: any) =>
-        `  #${r.id} [${r.msg_type}] from ${r.from_module}: ${r.subject}`
-      );
+      const lines = rows.map((r: any) => {
+        const pri = r.priority === "high" ? " ⚡HIGH" : "";
+        return `  #${r.id} [${r.msg_type}]${pri} from ${r.from_module}: ${r.subject}`;
+      });
       return res.json({
         hookSpecificOutput: {
           hookEventName: "SessionStart",
@@ -337,23 +372,30 @@ app.post("/hooks/:module/stop", async (req, res) => {
     // Auto-ack resolved messages silently (no agent action needed)
     await pool.query(`SELECT * FROM workbench.ack_resolved($1)`, [mod]).catch(() => {});
 
-    // Check for the last unread message — show only ID + subject
+    // Check for the last unread message — prioritize high-priority tasks
     const { rows } = await pool.query(
-      `SELECT id, from_module, msg_type, subject
+      `SELECT id, from_module, msg_type, subject, priority, payload
        FROM workbench.agent_message
        WHERE to_module = $1 AND status = 'new'
-       ORDER BY created_at DESC LIMIT 1`,
+       ORDER BY
+         CASE WHEN priority = 'high' THEN 0 ELSE 1 END,
+         created_at DESC
+       LIMIT 1`,
       [mod],
     );
 
     if (rows.length > 0) {
       const msg = rows[0];
+      const pri = msg.priority === "high" ? " [HIGH PRIORITY]" : "";
       stopBlockCount.set(mod, count + 1);
+      const lines = [
+        `[MESSAGE #${msg.id}]${pri} from:${msg.from_module} [${msg.msg_type}]: ${msg.subject}`,
+        msg.payload ? `payload: ${JSON.stringify(msg.payload)}` : null,
+        `→ pg_msg_inbox module:${mod} to read, then pg_msg_inbox module:${mod} resolve:${msg.id} resolution:"..."`,
+      ].filter(Boolean);
       return res.json({
         decision: "block",
-        reason:
-          `[MESSAGE #${msg.id}] from:${msg.from_module} [${msg.msg_type}]: ${msg.subject}\n` +
-          `→ pg_msg_inbox module:${mod} to read, then pg_msg_inbox module:${mod} resolve:${msg.id} resolution:"..."`,
+        reason: lines.join("\n"),
       });
     }
   } catch {
@@ -628,9 +670,11 @@ httpServer.on("upgrade", (req, socket, head) => {
   }
 
   // /ws/tmux/:session — read-only attach to tmux session
+  log.info({ url: req.url }, "WS upgrade request");
   const tmuxMatch = req.url?.match(/^\/ws\/tmux\/([a-zA-Z0-9_.-]+)$/);
   if (tmuxMatch) {
     const session = tmuxMatch[1];
+    log.info({ session, url: req.url }, "WS tmux attach — parsed session from URL");
     wss.handleUpgrade(req, socket, head, (ws) => {
       handleTmuxAttach(ws, session);
     });
@@ -653,9 +697,14 @@ wss.on("connection", async (ws: WebSocket, _req: http.IncomingMessage, mod: stri
   let term = terminals.get(mod);
 
   if (!term || term.proc.pid <= 0) {
-    // Spawn new terminal for this module
+    // Concurrency guard: reserve the slot synchronously before any await,
+    // so a second WS for the same module reuses the pending entry.
+    const placeholder = { proc: null as unknown as pty.IPty, clients: new Set<WebSocket>(), sessionId: null as number | null };
+    terminals.set(mod, placeholder);
+
     const modPath = resolveModulePath(mod);
     if (!fsSync.existsSync(modPath)) {
+      terminals.delete(mod);
       ws.send(`\r\n\x1b[31mModule directory not found: ${modPath}\x1b[0m\r\n`);
       ws.close();
       return;
@@ -663,16 +712,27 @@ wss.on("connection", async (ws: WebSocket, _req: http.IncomingMessage, mod: stri
 
     const sessionId = await createAgentSession(mod);
     const shell = process.env.SHELL ?? "/bin/zsh";
-    const proc = pty.spawn(shell, [], {
-      name: "xterm-256color",
-      cols: 120,
-      rows: 40,
-      cwd: modPath,
-      env: ptyEnv,
-    });
+    let proc: pty.IPty;
+    try {
+      proc = pty.spawn(shell, [], {
+        name: "xterm-256color",
+        cols: 120,
+        rows: 40,
+        cwd: modPath,
+        env: ptyEnv,
+      });
+    } catch (err) {
+      log.error({ err, mod }, "Failed to spawn agent terminal");
+      terminals.delete(mod);
+      void endAgentSession(sessionId, "error");
+      ws.send(`\r\n\x1b[31mFailed to spawn terminal for ${mod}\x1b[0m\r\n`);
+      ws.close();
+      return;
+    }
 
-    term = { proc, clients: new Set(), sessionId };
-    terminals.set(mod, term);
+    placeholder.proc = proc;
+    placeholder.sessionId = sessionId;
+    term = placeholder;
 
     proc.onData((data: string) => {
       batchBroadcast(`terminal:${mod}`, data, term!.clients);
@@ -681,6 +741,9 @@ wss.on("connection", async (ws: WebSocket, _req: http.IncomingMessage, mod: stri
     proc.onExit(({ exitCode }) => {
       log.info({ mod, exitCode }, "Agent terminal exited");
       void endAgentSession(term!.sessionId, exitCode === 0 ? "done" : "error");
+      // Cancel pending batch timer before deleting
+      const batch = outputBatches.get(`terminal:${mod}`);
+      if (batch?.timer) { clearTimeout(batch.timer); }
       for (const client of term!.clients) {
         client.send(`\r\n\x1b[33m[Terminal exited with code ${exitCode}]\x1b[0m\r\n`);
       }
@@ -792,7 +855,7 @@ app.get("/api/tmux", (_req, res) => {
         dead = info === "1";
       } catch {}
       return { name, created: parseInt(created) * 1000, activity: parseInt(activity) * 1000, cwd, dead };
-    }).filter(s => s.cwd.startsWith(wsRoot));
+    }).filter(s => s.cwd.startsWith(wsRoot) && !s.dead);
 
     res.json(sessions);
   } catch {
@@ -837,17 +900,18 @@ function handleTmuxAttach(ws: WebSocket, session: string) {
   // This prevents silent data drops that cause garbled rendering (especially
   // on the last terminal to connect, when all scrollbacks dump concurrently).
   let paused = false;
+  let drainInterval: ReturnType<typeof setInterval> | null = null;
   proc.onData((chunk: string) => {
     if (ws.readyState !== 1) return;
     if (ws.bufferedAmount >= WS_BACKPRESSURE_LIMIT) {
       if (!paused) {
         paused = true;
         proc.pause();
-        // Poll until buffer drains, then resume
-        const drain = setInterval(() => {
-          if (ws.readyState !== 1) { clearInterval(drain); return; }
+        drainInterval = setInterval(() => {
+          if (ws.readyState !== 1) { clearInterval(drainInterval!); drainInterval = null; return; }
           if (ws.bufferedAmount < WS_BACKPRESSURE_LIMIT / 2) {
-            clearInterval(drain);
+            clearInterval(drainInterval!);
+            drainInterval = null;
             paused = false;
             proc.resume();
           }
@@ -882,6 +946,7 @@ function handleTmuxAttach(ws: WebSocket, session: string) {
   });
 
   ws.on("close", () => {
+    if (drainInterval) { clearInterval(drainInterval); drainInterval = null; }
     // Kill pty (detaches from tmux, session continues running)
     try { proc.kill(); } catch {}
   });

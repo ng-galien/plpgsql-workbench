@@ -8,6 +8,17 @@ PL/pgSQL Workbench is a development platform built as an MCP (Model Context Prot
 
 The workbench is the foundation for building all applications with PostgreSQL as sole runtime (see `docs/PGAPP.md`). Each application is a set of PostgreSQL schemas + MCP tools, packaged via toolboxes for commercial distribution.
 
+## Role: Lead / Orchestrator
+
+Quand tu travailles depuis la racine du repo, ton role est celui d'un **lead** — tu diagnostiques, tu coordonnes, tu delegues. Tu ne modifies pas directement le code des modules.
+
+- **Diagnostiquer** — Utiliser les MCP tools (`pg_get`, `pg_search`, `pg_query`, `pg_test`) et le navigateur pour identifier les problemes
+- **Deleguer** — Envoyer les actions a faire aux agents modules via `pg_msg` (from: `lead` ou `workbench`, to: `<module>`)
+- **Verifier** — Apres que l'agent module a travaille, verifier que le fix est correct (tests, frontend)
+- **Ne pas toucher** — Ne pas modifier les fichiers dans `modules/*/` directement. Chaque module a son propre agent qui connait son contexte
+
+Les agents modules lisent leurs instructions via `pg_msg_inbox module:<name>`. Ils ont chacun leur propre CLAUDE.md avec le framework, les gotchas, et le workflow dev.
+
 ## Build & Run Commands
 
 ```bash
@@ -252,6 +263,7 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 ## SQL
 
 - **Dev DB** — `seed/` (repo root) — bootstrap extensions, roles, workbench schema. Auto-run by Docker init.
+- **Workbench functions** — `seed/003_workbench.sql` is the **canonical source** for all `workbench.*` functions (hooks, sessions, inbox, messaging API). Unlike modules, workbench has no `pg_pack`/`pg_func_save` — functions are maintained directly in the seed file. After modifying workbench functions via `pg_func_set`, **always update `seed/003_workbench.sql`** or they will be lost on reseed.
 - **pgv framework** — `modules/pgv/build/pgv.func.sql` — canonical `pgv.*` + `pgv_ut.*`. Distributed via `pgm install`.
 - **Apps** — `apps/*/sql/` — slot convention: 00=extensions, 01=roles, 02=pgv, 05+=modules, 03-04=app-specific.
 
@@ -267,6 +279,7 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 - **Tool naming** — `{domain}_{action}`: `pg_*` (PostgreSQL), `fs_*` (filesystem/docstore), `gmail_*` (Google)
 - **Zero inline SQL in app tools** — App tools (doc_*, etc.) MUST NOT contain raw SQL. Business logic lives in PL/pgSQL functions deployed in the app schema (e.g. `docman.import()`, `docman.classify()`). App MCP tools are thin orchestrators: they read config from DB, call platform primitives (fs_*, gmail_*), and call app PL/pgSQL functions via `withClient`. SQL in TypeScript = bug.
 - **Zero process.env for app config** — Only infra bootstrap uses env vars (PLPGSQL_CONNECTION, MCP_PORT, LOG_LEVEL, WORKBENCH_MODE). All app config lives in `workbench.config(app, key, value)` and is read from DB at request time. No defaults, no fallbacks.
+- **PostgREST grants** — Each `build/{schema}.ddl.sql` MUST include `GRANT USAGE ON SCHEMA {schema} TO web_anon`, `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO web_anon`, `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO web_anon` — otherwise 500 in frontend via PostgREST
 
 ## Documentation Map
 

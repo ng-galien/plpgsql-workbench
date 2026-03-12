@@ -75,6 +75,10 @@
   background: #1a1b26;
 }
 
+.ops-terminal--detail {
+  height: 50vh;
+}
+
 .ops-terminal > [x-ref="terminal"] {
   height: 100%;
 }

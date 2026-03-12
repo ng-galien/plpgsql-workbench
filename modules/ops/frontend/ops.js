@@ -10,25 +10,30 @@ const OUTPUT_FRAME_MAX   = 65536;    // 64KB per requestAnimationFrame flush
 const BACKPRESSURE_LIMIT = 131072;   // 128KB pending → drop + schedule refresh
 
 document.addEventListener('alpine:init', () => {
-  Alpine.data('opsTerminal', (module) => ({
+  Alpine.data('opsTerminal', () => ({
     term: null,
     ws: null,
     connected: false,
+    _module: null,
+    _wsUrl: null,
 
-    init() {
-      if (!module) return;
-      const container = this.$el;
+    connect(modArg) {
+      const mod = modArg || this.$el.getAttribute('data-module')
+        || this.$refs.terminal?.getAttribute('data-module');
+      if (!mod || this._module) return;
+      this._id = Math.random().toString(36).slice(2, 6);
+      this._module = mod;
       const el = this.$refs.terminal;
       if (!el) return;
-      this._wsUrl = `ws://${location.host}/ws/tmux/${module}`;
-
-      if (container.dataset.height) {
-        container.style.height = container.dataset.height;
-      }
+      const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+      this._wsUrl = `${wsProto}://${location.host}/ws/tmux/${mod}`;
 
       this._reconnectAttempt = 0;
       this._reconnectTimer = null;
       this._heartbeatTimer = null;
+      this._dropRecoveryTimer = null;
+      this._inputFlushTimer = null;
+      this._resizeTimer = null;
       this._pendingWrites = [];
       this._writeFrameScheduled = false;
       this._destroyed = false;
@@ -40,6 +45,10 @@ document.addEventListener('alpine:init', () => {
       this._destroyed = true;
       clearTimeout(this._reconnectTimer);
       clearTimeout(this._heartbeatTimer);
+      clearTimeout(this._dropRecoveryTimer);
+      clearTimeout(this._inputFlushTimer);
+      clearTimeout(this._resizeTimer);
+      this._resizeObserver?.disconnect();
       if (this.ws) { this.ws.onclose = null; this.ws.close(); }
       if (this.term) this.term.dispose();
     },
@@ -80,7 +89,7 @@ document.addEventListener('alpine:init', () => {
         if (window.WebglAddon) {
           try {
             const webgl = new WebglAddon.WebglAddon();
-            webgl.onContextLoss(() => { webgl.dispose(); });
+            webgl.onContextLoss(() => { try { webgl.dispose(); } catch { /* already disposed */ } });
             this.term.loadAddon(webgl);
           } catch { /* fallback to canvas renderer */ }
         }
@@ -91,11 +100,10 @@ document.addEventListener('alpine:init', () => {
         });
 
         // ResizeObserver — 250ms debounce (best practice from Codeman/VibeTunnel)
-        let resizeTimer;
         this._resizeObserver = new ResizeObserver(() => {
-          clearTimeout(resizeTimer);
-          resizeTimer = setTimeout(() => {
-            this.fitAddon.fit();
+          clearTimeout(this._resizeTimer);
+          this._resizeTimer = setTimeout(() => {
+            if (!this._destroyed) this.fitAddon.fit();
           }, RESIZE_DEBOUNCE);
         });
         this._resizeObserver.observe(el);
@@ -222,6 +230,9 @@ document.addEventListener('alpine:init', () => {
     },
 
     _reconnectNow() {
+      this.connected = false;
+      this._updateParent('_connected', false);
+      this._updateParent('_disconnected', true);
       if (this.ws) { this.ws.onclose = null; this.ws.close(); }
       this._connectWs();
     },
@@ -244,7 +255,7 @@ document.addEventListener('alpine:init', () => {
       try {
         const grid = Alpine.closestDataStack(this.$el).find(d => d.sessions);
         if (grid) {
-          const s = grid.sessions.find(s => s.name === module);
+          const s = grid.sessions.find(s => s.name === this._module);
           if (s) s[key] = value;
         }
       } catch {}
@@ -309,10 +320,19 @@ document.addEventListener('alpine:init', () => {
         if (!res.ok) { this.loading = false; return; }
         const data = await res.json();
         const list = Array.isArray(data) ? data : (data.sessions || []);
-        const newNames = list.map(s => s.name);
-        const oldNames = this.sessions.map(s => s.name);
-        if (JSON.stringify(newNames) !== JSON.stringify(oldNames)) {
-          this.sessions = list;
+        const newNames = new Set(list.map(s => s.name));
+        const oldMap = new Map(this.sessions.map(s => [s.name, s]));
+        // Update existing sessions' properties (e.g. dead status)
+        for (const s of list) {
+          const old = oldMap.get(s.name);
+          if (old) { old.dead = s.dead; old.activity = s.activity; }
+        }
+        // Add new sessions, remove gone ones
+        const oldNames = new Set(oldMap.keys());
+        const added = list.filter(s => !oldNames.has(s.name));
+        const kept = this.sessions.filter(s => newNames.has(s.name));
+        if (added.length || kept.length !== this.sessions.length) {
+          this.sessions = [...kept, ...added];
         }
       } catch { /* ignore */ }
       this.loading = false;

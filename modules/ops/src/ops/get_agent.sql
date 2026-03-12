@@ -25,11 +25,9 @@ BEGIN
   ]);
 
   -- Terminal container (xterm.js picks this up via Alpine)
-  -- data-height for responsive sizing (no inline style)
   v_body := v_body
-    || '<div x-data="opsTerminal" class="ops-terminal" data-height="50vh">'
-    || '<div x-ref="terminal" data-module="' || pgv.esc(p_module) || '"'
-    || ' data-ws="ws://localhost:3100/ws/terminal/' || pgv.esc(p_module) || '"></div>'
+    || '<div x-data="opsTerminal" data-module="' || pgv.esc(p_module) || '" class="ops-terminal ops-terminal--detail">'
+    || '<div x-ref="terminal"></div>'
     || '<div x-show="!connected" class="ops-terminal-status">Connexion...</div>'
     || '</div>';
 
@@ -78,8 +76,8 @@ BEGIN
      LIMIT 20
   LOOP
     v_hook_rows := v_hook_rows || ARRAY[
-      r.tool,
-      r.action,
+      pgv.esc(r.tool),
+      pgv.esc(r.action),
       CASE WHEN r.allowed THEN pgv.badge('✓', 'success') ELSE pgv.badge('✗', 'danger') END,
       r.dt
     ];

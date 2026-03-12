@@ -24,10 +24,10 @@ BEGIN
   LOOP
     v_rows := v_rows || ARRAY[
       pgv.badge(r.module, 'default'),
-      r.tool,
-      r.action,
+      pgv.esc(r.tool),
+      pgv.esc(r.action),
       CASE WHEN r.allowed THEN pgv.badge('✓', 'success') ELSE pgv.badge('✗', 'danger') END,
-      r.reason,
+      pgv.esc(r.reason),
       r.dt
     ];
   END LOOP;

@@ -1,8 +1,18 @@
 # plpgsql-workbench — Platform Makefile
 #
-# Dev stack:  make dev-up / make dev-down / make dev-clean
-# Apps:       make app-up APP=uxlab / make app-down APP=docman
-# MCP:        npm run dev          (all packs, dev DB)
+# Quick start:
+#   make dev-up        Start dev stack (postgres + postgrest + nginx)
+#   npm run dev        Start MCP server (port 3100, separate terminal)
+#   make dev-init      First time: load all modules into DB
+#
+# Daily:
+#   make dev-sync      Push frontend assets to nginx after JS/CSS changes
+#   make dev-down      Stop stack (data preserved)
+#   make dev-clean     Stop stack + clean frontend (data preserved)
+#
+# Apps:
+#   make app-up APP=uxlab    Start an app stack
+#   make app-down APP=uxlab  Stop an app stack
 
 PGV_IMAGE := pg-workbench
 
@@ -10,7 +20,7 @@ PGV_IMAGE := pg-workbench
 
 .PHONY: image
 
-image:
+image: ## Build pg-workbench Docker image (if not exists)
 	@docker image inspect $(PGV_IMAGE) > /dev/null 2>&1 || \
 		(echo "Building $(PGV_IMAGE)..." && docker build -t $(PGV_IMAGE) docker/)
 
@@ -18,15 +28,14 @@ image:
 
 .PHONY: dev-up dev-down dev-clean dev-init dev-sync
 
-dev-up: image dev-env
+dev-up: image dev-env ## Start dev stack: postgres:5433, postgrest:3000, nginx:8080
 	docker compose up -d
 	@echo ""
 	@echo "  postgres  → localhost:5433"
 	@echo "  postgrest → localhost:3000  (schemas: $$(cat .env 2>/dev/null | grep PGRST_DB_SCHEMAS | cut -d= -f2))"
 	@echo "  frontend  → http://localhost:8080"
 
-# Generate .env with PGRST_DB_SCHEMAS from modules/*/module.json (public + _ut only, NO _qa)
-dev-env:
+dev-env: # (internal) Generate .env with PGRST_DB_SCHEMAS from module.json files
 	@schemas=$$(python3 -c "import json,glob; \
 		s=[]; \
 		[s.extend([p, p+'_ut']) for f in sorted(glob.glob('modules/*/module.json')) \
@@ -35,16 +44,15 @@ dev-env:
 		print(','.join(s))" 2>/dev/null || echo "pgv"); \
 	echo "PGRST_DB_SCHEMAS=$$schemas" > .env
 
-dev-down:
+dev-down: ## Stop dev stack (data preserved in data/pgdata/)
 	docker compose down
 
-dev-clean:
+dev-clean: ## Stop stack + clean frontend assets (data preserved)
 	docker compose down
 	@rm -rf dev/frontend/*
 	@echo "Data preserved in data/pgdata/ — delete manually if needed"
 
-# Sync module frontend assets into dev/frontend/ for nginx
-dev-sync:
+dev-sync: ## Copy modules/*/frontend/* to dev/frontend/ for nginx
 	@echo "Syncing module assets → dev/frontend/"
 	@mkdir -p dev/frontend
 	@for mod in modules/*/; do \
@@ -76,8 +84,7 @@ dev-sync:
 	> dev/frontend/dev-index.html
 	@echo "Done"
 
-# Deploy all modules to dev DB (after fresh start)
-dev-init: dev-up dev-sync
+dev-init: dev-up dev-sync ## First start: load all build/*.sql into dev DB
 	@echo "Waiting for DB..."
 	@sleep 2
 	@for mod in modules/*/; do \
@@ -104,23 +111,23 @@ dev-init: dev-up dev-sync
 	done
 	@echo "All modules loaded into dev DB"
 
-# --- App management ---
+# --- App management (make app-up APP=name) ---
 
 .PHONY: app-up app-down app-clean app-logs
 
-app-up:
+app-up: ## Start app stack (APP=name required)
 	@test -n "$(APP)" || (echo "Usage: make app-up APP=uxlab" && exit 1)
 	$(MAKE) -C apps/$(APP) up
 
-app-down:
+app-down: ## Stop app stack
 	@test -n "$(APP)" || (echo "Usage: make app-down APP=uxlab" && exit 1)
 	$(MAKE) -C apps/$(APP) down
 
-app-clean:
+app-clean: ## Stop + clean app stack
 	@test -n "$(APP)" || (echo "Usage: make app-clean APP=uxlab" && exit 1)
 	$(MAKE) -C apps/$(APP) clean
 
-app-logs:
+app-logs: ## Tail app logs
 	@test -n "$(APP)" || (echo "Usage: make app-logs APP=uxlab" && exit 1)
 	$(MAKE) -C apps/$(APP) logs
 
@@ -128,7 +135,7 @@ app-logs:
 
 .PHONY: sync-modules
 
-sync-modules:
+sync-modules: ## Run pgm install in every app
 	@for app in apps/*/; do \
 		if [ -f "$$app/workbench.json" ]; then \
 			echo "Syncing modules → $$app"; \
@@ -136,17 +143,53 @@ sync-modules:
 		fi; \
 	done
 
+# --- Agents (one tmux session per module, running claude) ---
+
+STRIP_VARS := CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_SESSION_ID \
+	CLAUDE_CODE_CONVERSATION_ID CLAUDE_CODE_TASK_ID \
+	NON_INTERACTIVE MCP_TRANSPORT MCP_SESSION_ID
+
+.PHONY: agents agents-kill agents-restart
+
+agents: ## Spawn Claude agents (one tmux session per module)
+	@for mod in modules/*/; do \
+		name=$$(basename "$$mod"); \
+		if tmux has-session -t "$$name" 2>/dev/null; then \
+			echo "  OK    $$name (already running)"; \
+		else \
+			printf '#!/bin/sh\nunset $(STRIP_VARS)\nexec claude\n' > "/tmp/pgw-spawn-$$name.sh"; \
+			chmod 700 "/tmp/pgw-spawn-$$name.sh"; \
+			tmux new-session -d -s "$$name" -c "$$mod" "/tmp/pgw-spawn-$$name.sh"; \
+			tmux set-option -t "$$name" history-limit 50000 2>/dev/null || true; \
+			tmux set-option -t "$$name" remain-on-exit on 2>/dev/null || true; \
+			echo "  START $$name"; \
+		fi; \
+	done
+
+agents-kill: ## Kill all agent tmux sessions
+	@for mod in modules/*/; do \
+		name=$$(basename "$$mod"); \
+		if tmux has-session -t "$$name" 2>/dev/null; then \
+			tmux kill-session -t "$$name"; \
+			rm -f "/tmp/pgw-tmux-$$name.log" "/tmp/pgw-spawn-$$name.sh"; \
+			echo "  KILL  $$name"; \
+		fi; \
+	done
+
+agents-restart: agents-kill agents ## Kill then respawn all agents
+
 # --- Build ---
 
-.PHONY: build check
+.PHONY: build check help
 
-build:
+build: ## Compile TypeScript (tsc → dist/)
 	npm run build
 
-check:
+check: ## Type-check without emitting
 	npx tsc --noEmit
 
-# --- Scaffold ---
-# App:    pgm app init (from target directory)
-# Module: pgm module new <name> [--port <mcp_port>]
-# See:    docs/PGM.md
+# --- Help ---
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
+		awk -F ':.*## ' '{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
