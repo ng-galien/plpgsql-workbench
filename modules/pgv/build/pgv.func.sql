@@ -320,7 +320,6 @@ $function$;
 CREATE OR REPLACE FUNCTION pgv.href(p_url text)
  RETURNS text
  LANGUAGE plpgsql
- IMMUTABLE
 AS $function$
 BEGIN
   IF left(p_url, 8) = 'https://' THEN RETURN p_url; END IF;
@@ -329,10 +328,10 @@ BEGIN
   IF left(p_url, 7) = 'mailto:'  THEN RETURN p_url; END IF;
   IF left(p_url, 4) = 'tel:'     THEN RETURN p_url; END IF;
 
-  RAISE EXCEPTION 'pgv.href() is for external URLs only — use a raw href="/..." for internal links, or pgv.call_ref() for cross-module refs. Got: %', p_url;
+  RAISE EXCEPTION 'pgv.href() is for external URLs only — use pgv.call_ref() for internal links. Got: %', p_url;
 END;
 $function$;
-COMMENT ON FUNCTION pgv.href(text) IS 'External links only. RAISEs on internal paths — use raw href or pgv.call_ref() instead.';
+COMMENT ON FUNCTION pgv.href(text) IS 'External links only. RAISEs on internal paths — use pgv.call_ref() instead.';
 
 CREATE OR REPLACE FUNCTION pgv.input(p_name text, p_type text, p_label text, p_value text DEFAULT NULL::text, p_required boolean DEFAULT false)
  RETURNS text
@@ -1790,13 +1789,13 @@ BEGIN
   RETURN NEXT throws_ok(
     $$SELECT pgv.href('/atoms')$$,
     'P0001',
-    'pgv.href() is for external URLs only — use a raw href="/..." for internal links, or pgv.call_ref() for cross-module refs. Got: /atoms',
+    'pgv.href() is for external URLs only — use pgv.call_ref() for internal links. Got: /atoms',
     'href RAISEs on internal path /atoms'
   );
   RETURN NEXT throws_ok(
     $$SELECT pgv.href('/')$$,
     'P0001',
-    'pgv.href() is for external URLs only — use a raw href="/..." for internal links, or pgv.call_ref() for cross-module refs. Got: /',
+    'pgv.href() is for external URLs only — use pgv.call_ref() for internal links. Got: /',
     'href RAISEs on internal path /'
   );
 END;

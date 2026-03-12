@@ -2460,7 +2460,6 @@ COMMENT ON FUNCTION cad.render_wireframe(integer,text,integer,integer) IS 'Gener
 CREATE OR REPLACE FUNCTION cad.get_drawing_3d(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_drawing cad.drawing;
@@ -2479,8 +2478,8 @@ BEGIN
 
   -- Breadcrumb: Dessins > [nom] > Vue 3D
   v_body := pgv.breadcrumb(
-    'Dessins', pgv.href('get_index'),
-    pgv.esc(v_drawing.name), pgv.href('get_drawing?p_id=' || p_id),
+    'Dessins', '/cad/',
+    pgv.esc(v_drawing.name), '/cad/drawing?p_id=' || p_id,
     'Vue 3D'
   );
 
@@ -2496,9 +2495,9 @@ BEGIN
 
   -- View tabs: 2D | 3D | BOM
   v_body := v_body || '<p>'
-    || '<a href="' || pgv.href('get_drawing?p_id=' || p_id) || '">Vue 2D</a>'
+    || '<a href="/cad/drawing?p_id=' || p_id || '">Vue 2D</a>'
     || ' | <strong>Vue 3D</strong>'
-    || ' | <a href="' || pgv.href('get_drawing_bom?p_id=' || p_id) || '">Liste de débit</a>'
+    || ' | <a href="/cad/drawing_bom?p_id=' || p_id || '">Liste de débit</a>'
     || '</p>';
 
   -- Stats
