@@ -89,6 +89,9 @@ CREATE TABLE IF NOT EXISTS purchase.facture_fournisseur (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Conditions de paiement (ex: "30j fin de mois", "comptant")
+ALTER TABLE purchase.commande ADD COLUMN IF NOT EXISTS conditions_paiement text NOT NULL DEFAULT '';
+
 -- Flag anti-doublon comptabilisation
 ALTER TABLE purchase.facture_fournisseur ADD COLUMN IF NOT EXISTS comptabilisee boolean NOT NULL DEFAULT false;
 

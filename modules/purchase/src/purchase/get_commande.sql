@@ -24,7 +24,11 @@ BEGIN
         format('<a href="%s">%s</a>', pgv.call_ref('get_commande', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
         format('<a href="/crm/client?p_id=%s">%s</a>', r.fournisseur_id, pgv.esc(r.fournisseur)),
         pgv.esc(r.objet),
-        purchase._statut_badge(r.statut),
+        purchase._statut_badge(r.statut)
+          || CASE WHEN r.statut IN ('envoyee', 'partiellement_recue')
+                      AND r.created_at < now() - interval '14 days'
+             THEN ' ' || pgv.badge('retard', 'danger')
+             ELSE '' END,
         to_char(r.ttc, 'FM999 990.00') || ' EUR',
         to_char(r.created_at, 'DD/MM/YYYY')
       ];
@@ -139,6 +143,10 @@ BEGIN
     v_body := v_body || '<h4>Réceptions</h4>'
       || pgv.md_table(ARRAY['Numéro', 'Date', 'Lignes', 'Notes'], v_rows_r);
   END IF;
+
+  -- Bon de commande link
+  v_body := v_body || format('<p><a href="%s">Voir le bon de commande</a></p>',
+    pgv.call_ref('get_bon_commande', jsonb_build_object('p_id', p_id)));
 
   -- Actions
   v_body := v_body || '<p>';

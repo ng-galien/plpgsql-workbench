@@ -96,12 +96,29 @@ END;
 $function$;
 COMMENT ON FUNCTION crm.get_client_form(integer) IS 'Unified client form — creation (p_id NULL) or edition (p_id set)';
 
+CREATE OR REPLACE FUNCTION crm.get_import()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN pgv.breadcrumb(VARIADIC ARRAY['Clients', pgv.call_ref('get_index'), 'Import CSV'])
+    || '<p>Collez votre CSV ci-dessous. Colonnes attendues :</p>'
+    || '<p><code>nom ; email ; telephone ; adresse ; ville ; code_postal ; type</code></p>'
+    || '<p><small>Separateur : <code>;</code> ou <code>,</code> — la ligne d''en-tete est ignoree si elle contient "nom". Le type accepte <code>individual</code> ou <code>company</code> (defaut: individual).</small></p>'
+    || '<form data-rpc="post_import_csv">'
+    || pgv.textarea('csv', 'Contenu CSV', NULL)
+    || '<button type="submit">Importer</button>'
+    || '</form>';
+END;
+$function$;
+COMMENT ON FUNCTION crm.get_import() IS 'CSV import page — textarea for paste, format guide';
+
 CREATE OR REPLACE FUNCTION crm.nav_items()
  RETURNS jsonb
  LANGUAGE sql
  IMMUTABLE
 AS $function$
-  SELECT '[{"href":"/","label":"Clients","icon":"users"},{"href":"/interactions","label":"Interactions","icon":"message-circle"}]'::jsonb;
+  SELECT '[{"href":"/","label":"Clients","icon":"users"},{"href":"/interactions","label":"Interactions","icon":"message-circle"},{"href":"/import","label":"Import","icon":"upload"}]'::jsonb;
 $function$;
 COMMENT ON FUNCTION crm.nav_items() IS 'Navigation items for CRM module';
 
@@ -357,6 +374,7 @@ DECLARE
   v_interactions_week int;
   v_rows text[];
   v_body text;
+  v_city text;
   r record;
 BEGIN
   -- Extract filters
@@ -364,6 +382,7 @@ BEGIN
   v_type := NULLIF(trim(COALESCE(p_params->>'type', '')), '');
   v_tier := NULLIF(trim(COALESCE(p_params->>'tier', '')), '');
   v_active := NULLIF(trim(COALESCE(p_params->>'active', '')), '');
+  v_city := NULLIF(trim(COALESCE(p_params->>'city', '')), '');
 
   -- Stats (unfiltered)
   SELECT count(*)::int INTO v_total FROM crm.client;
@@ -384,6 +403,7 @@ BEGIN
     || pgv.sel('type', 'Type', '[{"label":"Tous","value":""},{"label":"Particulier","value":"individual"},{"label":"Entreprise","value":"company"}]'::jsonb, COALESCE(v_type, ''))
     || pgv.sel('tier', 'Tier', '[{"label":"Tous","value":""},{"label":"Standard","value":"standard"},{"label":"Premium","value":"premium"},{"label":"VIP","value":"vip"}]'::jsonb, COALESCE(v_tier, ''))
     || pgv.sel('active', 'Actif', '[{"label":"Tous","value":""},{"label":"Oui","value":"true"},{"label":"Non","value":"false"}]'::jsonb, COALESCE(v_active, ''))
+    || pgv.input('city', 'text', 'Ville', v_city)
     || '</div>'
     || '<button type="submit" class="secondary">Filtrer</button>'
     || '</form>';
@@ -399,6 +419,7 @@ BEGIN
        AND (v_type IS NULL OR c.type = v_type)
        AND (v_tier IS NULL OR c.tier = v_tier)
        AND (v_active IS NULL OR c.active = (v_active = 'true'))
+       AND (v_city IS NULL OR c.city ILIKE '%' || v_city || '%')
      ORDER BY c.updated_at DESC
   LOOP
     v_rows := v_rows || ARRAY[
@@ -423,7 +444,7 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouveau client</a></p>', pgv.call_ref('get_client_form'));
+  v_body := v_body || format('<p><a href="%s" role="button">Nouveau client</a> <a href="%s" role="button" class="secondary">Import CSV</a></p>', pgv.call_ref('get_client_form'), pgv.call_ref('get_import'));
 
   RETURN v_body;
 END;

@@ -4,6 +4,7 @@ CREATE OR REPLACE FUNCTION project_qa.clean()
 AS $function$
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
+  DELETE FROM project.affectation;
   DELETE FROM project.note_chantier;
   DELETE FROM project.pointage;
   DELETE FROM project.jalon;

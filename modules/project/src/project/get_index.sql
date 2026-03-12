@@ -52,7 +52,7 @@ BEGIN
       pgv.esc(r.client),
       pgv.esc(r.objet),
       r.statut_badge,
-      pgv.badge(r.jours_retard::text || ' j', 'warn')
+      pgv.badge(r.jours_retard::text || ' j', 'warning')
     ];
   END LOOP;
 

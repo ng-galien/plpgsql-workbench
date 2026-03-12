@@ -34,7 +34,7 @@ BEGIN
     END;
 
     v_rows := v_rows || ARRAY[
-      '<a href="' || pgv.href('/message?p_id=' || r.id::text) || '">#' || r.id::text || '</a>',
+      '<a href="' || pgv.call_ref('get_message', jsonb_build_object('p_id', r.id)) || '">#' || r.id::text || '</a>',
       pgv.badge(r.from_module, 'default'),
       pgv.badge(r.to_module, 'default'),
       pgv.badge(r.msg_type, v_type_variant),

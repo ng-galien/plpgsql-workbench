@@ -88,7 +88,7 @@ BEGIN
      ORDER BY m.created_at
   LOOP
     v_reply_rows := v_reply_rows || ARRAY[
-      '<a href="' || pgv.href('/message?p_id=' || v_reply.id::text) || '">#' || v_reply.id::text || '</a>',
+      '<a href="' || pgv.call_ref('get_message', jsonb_build_object('p_id', v_reply.id)) || '">#' || v_reply.id::text || '</a>',
       pgv.badge(v_reply.from_module, 'default'),
       pgv.esc(v_reply.subject),
       pgv.badge(v_reply.status, CASE v_reply.status WHEN 'resolved' THEN 'success' WHEN 'new' THEN 'danger' ELSE 'warning' END),
@@ -104,7 +104,7 @@ BEGIN
   -- Parent link
   IF v_msg.reply_to IS NOT NULL THEN
     v_body := v_body || '<p>En reponse a <a href="'
-      || pgv.href('/message?p_id=' || v_msg.reply_to::text)
+      || pgv.call_ref('get_message', jsonb_build_object('p_id', v_msg.reply_to))
       || '">#' || v_msg.reply_to::text || '</a></p>';
   END IF;
 

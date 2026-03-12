@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION ops.get_index()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_body text;
@@ -50,16 +49,19 @@ BEGIN
      ORDER BY s.started_at DESC LIMIT 1;
 
     v_cards := v_cards || pgv.card(
-      pgv.esc(v_mod) || ' ' || pgv.badge(
-        COALESCE(v_session_status, 'idle'),
-        CASE WHEN v_session_status = 'running' THEN 'success' ELSE 'default' END
-      ),
+      '<a href="/' || pgv.esc(v_mod) || '/">' || pgv.esc(v_mod) || '</a> '
+        || pgv.badge(
+          COALESCE(v_session_status, 'idle'),
+          CASE WHEN v_session_status = 'running' THEN 'success' ELSE 'default' END
+        ),
       pgv.grid(VARIADIC ARRAY[
         pgv.stat('Fonctions', v_stats.func_count::text),
+        pgv.stat('Tests', v_stats.test_count::text),
         pgv.stat('Messages', v_stats.msg_new::text, 'non lus'),
         pgv.stat('Hook deny', v_stats.hook_deny::text)
       ]),
-      '<a href="' || pgv.call_ref('get_agent', jsonb_build_object('p_module', v_mod)) || '">Ouvrir</a>'
+      '<a href="' || pgv.call_ref('get_agent', jsonb_build_object('p_module', v_mod)) || '">Agent</a>'
+        || ' · <a href="/' || pgv.esc(v_mod) || '/">Frontend</a>'
     );
   END LOOP;
 

@@ -11,6 +11,8 @@ DECLARE
   v_body text;
   v_rows_c text[];
   v_rows_f text[];
+  v_rows_s text[];
+  v_en_retard int;
   r record;
 BEGIN
   -- KPIs
@@ -34,12 +36,21 @@ BEGIN
   SELECT coalesce(sum(montant_ttc), 0) INTO v_total_a_payer
     FROM purchase.facture_fournisseur WHERE statut IN ('recue', 'validee');
 
+  SELECT count(*)::int INTO v_en_retard
+    FROM purchase.commande
+   WHERE statut IN ('envoyee', 'partiellement_recue')
+     AND created_at < now() - interval '14 days';
+
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat('Commandes en cours', v_cmd_en_cours::text),
     pgv.stat('A réceptionner', v_receptions_attente::text),
     pgv.stat('Factures impayées', v_factures_impayees::text),
     pgv.stat('Achats du mois', to_char(v_achats_mois, 'FM999 990.00') || ' EUR'),
-    pgv.stat('Total à payer', to_char(v_total_a_payer, 'FM999 990.00') || ' EUR')
+    pgv.stat('Total à payer', to_char(v_total_a_payer, 'FM999 990.00') || ' EUR'),
+    CASE WHEN v_en_retard > 0
+      THEN pgv.stat('En retard', v_en_retard::text || ' ' || pgv.badge('> 14j', 'danger'))
+      ELSE pgv.stat('En retard', '0')
+    END
   ]);
 
   -- Tab: Commandes récentes
@@ -55,7 +66,11 @@ BEGIN
       format('<a href="%s">%s</a>', pgv.call_ref('get_commande', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
       format('<a href="/crm/client?p_id=%s">%s</a>', r.fournisseur_id, pgv.esc(r.fournisseur)),
       pgv.esc(r.objet),
-      purchase._statut_badge(r.statut),
+      purchase._statut_badge(r.statut)
+        || CASE WHEN r.statut IN ('envoyee', 'partiellement_recue')
+                    AND r.created_at < now() - interval '14 days'
+           THEN ' ' || pgv.badge('retard', 'danger')
+           ELSE '' END,
       to_char(r.ttc, 'FM999 990.00') || ' EUR',
       to_char(r.created_at, 'DD/MM/YYYY')
     ];
@@ -80,6 +95,27 @@ BEGIN
     ];
   END LOOP;
 
+  -- Tab: Top fournisseurs
+  v_rows_s := ARRAY[]::text[];
+  FOR r IN
+    SELECT cl.id AS fournisseur_id, cl.name AS fournisseur,
+           count(c.id)::int AS nb_cmd,
+           coalesce(sum(purchase._total_ht(c.id)), 0) AS total_ht,
+           max(c.created_at) AS last_cmd
+      FROM purchase.commande c
+      JOIN crm.client cl ON cl.id = c.fournisseur_id
+     GROUP BY cl.id, cl.name
+     ORDER BY total_ht DESC
+     LIMIT 10
+  LOOP
+    v_rows_s := v_rows_s || ARRAY[
+      format('<a href="/crm/client?p_id=%s">%s</a>', r.fournisseur_id, pgv.esc(r.fournisseur)),
+      r.nb_cmd::text,
+      to_char(r.total_ht, 'FM999 990.00') || ' EUR',
+      to_char(r.last_cmd, 'DD/MM/YYYY')
+    ];
+  END LOOP;
+
   v_body := v_body || pgv.tabs(VARIADIC ARRAY[
     'Commandes récentes',
     CASE WHEN array_length(v_rows_c, 1) IS NULL
@@ -90,6 +126,11 @@ BEGIN
     CASE WHEN array_length(v_rows_f, 1) IS NULL
       THEN pgv.empty('Aucune facture fournisseur')
       ELSE pgv.md_table(ARRAY['N° fournisseur', 'Commande', 'Statut', 'Montant TTC', 'Date facture', 'Echéance'], v_rows_f)
+    END,
+    'Top fournisseurs',
+    CASE WHEN array_length(v_rows_s, 1) IS NULL
+      THEN pgv.empty('Aucune commande')
+      ELSE pgv.md_table(ARRAY['Fournisseur', 'Commandes', 'Total achats HT', 'Dernière commande'], v_rows_s)
     END
   ]);
 

@@ -18,6 +18,11 @@ BEGIN
   SELECT * INTO v_facture FROM quote.facture WHERE id = v_facture_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Facture % introuvable', v_facture_id; END IF;
 
+  -- Guard: doublon interdit
+  IF EXISTS (SELECT 1 FROM ledger.journal_entry WHERE facture_id = v_facture_id) THEN
+    RETURN '<template data-toast="error">Cette facture a déjà une écriture comptable</template>';
+  END IF;
+
   -- Totaux
   SELECT coalesce(sum(round(l.quantite * l.prix_unitaire, 2)), 0),
          coalesce(sum(round(l.quantite * l.prix_unitaire * l.tva_rate / 100, 2)), 0)
@@ -34,12 +39,13 @@ BEGIN
   SELECT id INTO v_account_4457 FROM ledger.account WHERE code = '4457';
   SELECT id INTO v_account_706 FROM ledger.account WHERE code = '706';
 
-  -- Create journal entry
-  INSERT INTO ledger.journal_entry (entry_date, reference, description)
+  -- Create journal entry with facture_id
+  INSERT INTO ledger.journal_entry (entry_date, reference, description, facture_id)
   VALUES (
     coalesce(v_facture.paid_at::date, CURRENT_DATE),
     'FAC-' || v_facture.numero,
-    'Facture ' || v_facture.numero || ' — ' || v_facture.objet
+    'Facture ' || v_facture.numero || ' — ' || v_facture.objet,
+    v_facture_id
   ) RETURNING id INTO v_entry_id;
 
   -- 411 Clients — débit TTC

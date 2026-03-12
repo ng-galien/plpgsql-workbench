@@ -61,6 +61,19 @@ CREATE TABLE IF NOT EXISTS project.pointage (
 CREATE INDEX IF NOT EXISTS idx_pointage_chantier_date ON project.pointage(chantier_id, date_pointage);
 CREATE INDEX IF NOT EXISTS idx_pointage_tenant        ON project.pointage(tenant_id);
 
+-- Affectation (qui travaille sur quel chantier)
+CREATE TABLE IF NOT EXISTS project.affectation (
+    id              SERIAL PRIMARY KEY,
+    chantier_id     INTEGER NOT NULL REFERENCES project.chantier(id) ON DELETE CASCADE,
+    nom_intervenant TEXT NOT NULL,
+    role            TEXT NOT NULL DEFAULT '',
+    heures_prevues  NUMERIC(7,2),
+    tenant_id       TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true)
+);
+
+CREATE INDEX IF NOT EXISTS idx_affectation_chantier ON project.affectation(chantier_id);
+CREATE INDEX IF NOT EXISTS idx_affectation_tenant   ON project.affectation(tenant_id);
+
 -- Note de chantier
 CREATE TABLE IF NOT EXISTS project.note_chantier (
     id              SERIAL PRIMARY KEY,
@@ -77,6 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_note_tenant   ON project.note_chantier(tenant_id)
 ALTER TABLE project.chantier      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project.jalon         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project.pointage      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project.affectation   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project.note_chantier ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
@@ -88,6 +102,9 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_pointage') THEN
     CREATE POLICY tenant_pointage ON project.pointage USING (tenant_id = current_setting('app.tenant_id', true));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_affectation') THEN
+    CREATE POLICY tenant_affectation ON project.affectation USING (tenant_id = current_setting('app.tenant_id', true));
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_note_chantier') THEN
     CREATE POLICY tenant_note_chantier ON project.note_chantier USING (tenant_id = current_setting('app.tenant_id', true));

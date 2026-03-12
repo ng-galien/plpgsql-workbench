@@ -17,6 +17,7 @@ BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
   -- Cleanup
+  DELETE FROM project.affectation;
   DELETE FROM project.note_chantier;
   DELETE FROM project.pointage;
   DELETE FROM project.jalon;
@@ -66,6 +67,11 @@ BEGIN
     (v_c1, 'Client demande changement coloris carrelage mural (gris -> blanc).', '2026-03-05 14:00:00+01'),
     (v_c1, 'Livraison robinetterie prévue semaine 12.', '2026-03-10 09:00:00+01');
 
+  INSERT INTO project.affectation (chantier_id, nom_intervenant, role, heures_prevues) VALUES
+    (v_c1, 'Marc Dupuis', 'Plombier', 40),
+    (v_c1, 'Karim Benali', 'Carreleur', 60),
+    (v_c1, 'Sophie Martin', 'Électricienne', 24);
+
   -- Chantier 2: en preparation
   INSERT INTO project.chantier (numero, client_id, objet, adresse, statut, date_debut, date_fin_prevue, notes)
   VALUES ('CHT-2026-002', v_client2, 'Extension garage',
@@ -80,6 +86,9 @@ BEGIN
     (v_c2, 3, 'Maçonnerie', '2026-05-10'),
     (v_c2, 4, 'Charpente / Toiture', '2026-05-25'),
     (v_c2, 5, 'Électricité / Finitions', '2026-06-20');
+
+  INSERT INTO project.affectation (chantier_id, nom_intervenant, role) VALUES
+    (v_c2, 'Jean-Pierre Roux', 'Chef de chantier');
 
   -- Chantier 3: en reception, 95%
   INSERT INTO project.chantier (numero, client_id, devis_id, objet, adresse, statut, date_debut, date_fin_prevue, notes)
@@ -109,6 +118,10 @@ BEGIN
     (v_c3, 'Réserve : prise réseau bureau 3 non fonctionnelle.', '2026-02-25 11:00:00+01'),
     (v_c3, 'Client satisfait de l''agencement global.', '2026-02-28 16:00:00+01');
 
+  INSERT INTO project.affectation (chantier_id, nom_intervenant, role, heures_prevues) VALUES
+    (v_c3, 'Lucas Perrin', 'Plaquiste', 35),
+    (v_c3, 'Sophie Martin', 'Électricienne', 16);
+
   -- Chantier 4: EN RETARD (execution, date_fin_prevue dépassée)
   INSERT INTO project.chantier (numero, client_id, objet, adresse, statut, date_debut, date_fin_prevue, notes)
   VALUES ('CHT-2026-004', v_client1, 'Ravalement façade immeuble',
@@ -133,6 +146,9 @@ BEGIN
     (v_c4, 'Arrêt chantier 3 semaines (gel, neige).', '2026-01-20 09:00:00+01'),
     (v_c4, 'Reprise prévue dès que météo favorable.', '2026-02-10 14:00:00+01');
 
+  INSERT INTO project.affectation (chantier_id, nom_intervenant, role, heures_prevues) VALUES
+    (v_c4, 'Ahmed Touré', 'Façadier', 80);
+
   -- Chantier 5: CLOS (terminé)
   INSERT INTO project.chantier (numero, client_id, objet, adresse, statut, date_debut, date_fin_prevue, date_fin_reelle, notes)
   VALUES ('CHT-2025-005', v_client2, 'Installation cuisine équipée',
@@ -156,6 +172,6 @@ BEGIN
     (v_c5, '2025-11-28', 7, 'Plan de travail granit'),
     (v_c5, '2025-12-10', 6, 'Finitions + ménage');
 
-  RETURN 'project_qa.seed: 5 chantiers (execution/preparation/reception/retard/clos) + jalons + pointages + notes';
+  RETURN 'project_qa.seed: 5 chantiers + affectations + jalons + pointages + notes';
 END;
 $function$;

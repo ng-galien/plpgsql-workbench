@@ -12,7 +12,7 @@ DECLARE
 BEGIN
   -- Formulaire de filtre
   v_body := format(
-    '<form method="get" action="%s" class="grid" style="grid-template-columns:auto auto 1fr auto;align-items:end;gap:.5rem">'
+    '<form method="get" action="%s" class="grid">'
     || '<label>Statut<select name="statut">'
     || '<option value="">Tous</option>'
     || '<option value="preparation"%s>Préparation</option>'
@@ -21,7 +21,6 @@ BEGIN
     || '<option value="clos"%s>Clos</option>'
     || '</select></label>'
     || '<label>Recherche<input type="search" name="q" value="%s" placeholder="Numéro, client, objet…"></label>'
-    || '<div></div>'
     || '<button type="submit">Filtrer</button>'
     || '</form>',
     pgv.call_ref('get_chantiers'),

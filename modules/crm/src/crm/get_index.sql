@@ -12,6 +12,7 @@ DECLARE
   v_interactions_week int;
   v_rows text[];
   v_body text;
+  v_city text;
   r record;
 BEGIN
   -- Extract filters
@@ -19,6 +20,7 @@ BEGIN
   v_type := NULLIF(trim(COALESCE(p_params->>'type', '')), '');
   v_tier := NULLIF(trim(COALESCE(p_params->>'tier', '')), '');
   v_active := NULLIF(trim(COALESCE(p_params->>'active', '')), '');
+  v_city := NULLIF(trim(COALESCE(p_params->>'city', '')), '');
 
   -- Stats (unfiltered)
   SELECT count(*)::int INTO v_total FROM crm.client;
@@ -39,6 +41,7 @@ BEGIN
     || pgv.sel('type', 'Type', '[{"label":"Tous","value":""},{"label":"Particulier","value":"individual"},{"label":"Entreprise","value":"company"}]'::jsonb, COALESCE(v_type, ''))
     || pgv.sel('tier', 'Tier', '[{"label":"Tous","value":""},{"label":"Standard","value":"standard"},{"label":"Premium","value":"premium"},{"label":"VIP","value":"vip"}]'::jsonb, COALESCE(v_tier, ''))
     || pgv.sel('active', 'Actif', '[{"label":"Tous","value":""},{"label":"Oui","value":"true"},{"label":"Non","value":"false"}]'::jsonb, COALESCE(v_active, ''))
+    || pgv.input('city', 'text', 'Ville', v_city)
     || '</div>'
     || '<button type="submit" class="secondary">Filtrer</button>'
     || '</form>';
@@ -54,6 +57,7 @@ BEGIN
        AND (v_type IS NULL OR c.type = v_type)
        AND (v_tier IS NULL OR c.tier = v_tier)
        AND (v_active IS NULL OR c.active = (v_active = 'true'))
+       AND (v_city IS NULL OR c.city ILIKE '%' || v_city || '%')
      ORDER BY c.updated_at DESC
   LOOP
     v_rows := v_rows || ARRAY[
@@ -78,7 +82,7 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouveau client</a></p>', pgv.call_ref('get_client_form'));
+  v_body := v_body || format('<p><a href="%s" role="button">Nouveau client</a> <a href="%s" role="button" class="secondary">Import CSV</a></p>', pgv.call_ref('get_client_form'), pgv.call_ref('get_import'));
 
   RETURN v_body;
 END;

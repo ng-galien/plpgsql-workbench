@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION project.get_chantier(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   c record;
@@ -12,6 +13,7 @@ DECLARE
   v_rows_j text[];
   v_rows_p text[];
   v_rows_n text[];
+  v_rows_a text[];
   r record;
 BEGIN
   SELECT * INTO c FROM project.chantier WHERE id = p_id;
@@ -72,7 +74,6 @@ BEGIN
   END IF;
   v_body := v_body || '</p>';
 
-  -- Tabs: Jalons | Pointages | Notes
   -- Jalons
   v_rows_j := ARRAY[]::text[];
   FOR r IN
@@ -126,6 +127,21 @@ BEGIN
     ];
   END LOOP;
 
+  -- Équipe (affectations)
+  v_rows_a := ARRAY[]::text[];
+  FOR r IN
+    SELECT * FROM project.affectation WHERE chantier_id = p_id ORDER BY id
+  LOOP
+    v_rows_a := v_rows_a || ARRAY[
+      pgv.esc(r.nom_intervenant),
+      CASE WHEN r.role = '' THEN '—' ELSE pgv.esc(r.role) END,
+      CASE WHEN r.heures_prevues IS NOT NULL THEN r.heures_prevues::text || ' h' ELSE '—' END,
+      CASE WHEN c.statut IN ('preparation','execution') THEN
+        pgv.action('post_affectation_supprimer', 'X', jsonb_build_object('p_id', r.id), 'Retirer cet intervenant ?', 'danger')
+      ELSE '' END
+    ];
+  END LOOP;
+
   v_body := v_body || pgv.tabs(VARIADIC ARRAY[
     'Jalons (' || COALESCE(array_length(v_rows_j, 1) / 6, 0) || ')',
     CASE WHEN array_length(v_rows_j, 1) IS NULL
@@ -136,6 +152,21 @@ BEGIN
       '<form data-rpc="post_jalon_ajouter" class="grid">'
       || '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
       || '<input type="text" name="p_label" placeholder="Nouveau jalon..." required>'
+      || '<button type="submit">Ajouter</button>'
+      || '</form>'
+    ELSE '' END,
+
+    'Équipe (' || COALESCE(array_length(v_rows_a, 1) / 4, 0) || ')',
+    CASE WHEN array_length(v_rows_a, 1) IS NULL
+      THEN pgv.empty('Aucun intervenant')
+      ELSE pgv.md_table(ARRAY['Intervenant', 'Rôle', 'Heures prévues', ''], v_rows_a)
+    END
+    || CASE WHEN c.statut IN ('preparation','execution') THEN
+      '<form data-rpc="post_affectation_ajouter" class="grid">'
+      || '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
+      || '<input type="text" name="p_nom_intervenant" placeholder="Nom intervenant" required>'
+      || '<input type="text" name="p_role" placeholder="Rôle">'
+      || '<input type="number" name="p_heures_prevues" placeholder="Heures" step="0.5" min="0">'
       || '<button type="submit">Ajouter</button>'
       || '</form>'
     ELSE '' END,
