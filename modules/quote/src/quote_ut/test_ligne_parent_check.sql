@@ -6,6 +6,7 @@ DECLARE
   v_devis_id int;
   v_client_id int;
 BEGIN
+  UPDATE project.chantier SET devis_id = NULL WHERE devis_id IS NOT NULL;
   DELETE FROM quote.ligne;
   DELETE FROM quote.facture;
   DELETE FROM quote.devis;
@@ -18,7 +19,7 @@ BEGIN
   -- Ligne sans parent -> erreur XOR
   RETURN NEXT throws_ok(
     'INSERT INTO quote.ligne (description, prix_unitaire) VALUES (''Orphan'', 10)',
-    23514,  -- check_violation
+    23514,
     'new row for relation "ligne" violates check constraint "ligne_parent_xor"'
   );
 
@@ -35,6 +36,7 @@ BEGIN
     'Lignes modifiables uniquement sur un brouillon'
   );
 
+  UPDATE project.chantier SET devis_id = NULL WHERE devis_id IS NOT NULL;
   DELETE FROM quote.ligne;
   DELETE FROM quote.devis;
 END;

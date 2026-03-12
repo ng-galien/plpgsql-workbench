@@ -15,7 +15,7 @@ BEGIN
   SELECT coalesce(max(sort_order), 0) + 1 INTO v_sort
     FROM purchase.ligne WHERE commande_id = v_commande_id;
 
-  INSERT INTO purchase.ligne (commande_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate)
+  INSERT INTO purchase.ligne (commande_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate, article_id)
   VALUES (
     v_commande_id,
     v_sort,
@@ -23,7 +23,8 @@ BEGIN
     coalesce((p_data->>'p_quantite')::numeric, 1),
     coalesce(p_data->>'p_unite', 'u'),
     (p_data->>'p_prix_unitaire')::numeric,
-    coalesce((p_data->>'p_tva_rate')::numeric, 20.00)
+    coalesce((p_data->>'p_tva_rate')::numeric, 20.00),
+    (p_data->>'p_article_id')::int
   );
 
   RETURN format('<template data-toast="success">Ligne ajoutée</template><template data-redirect="%s"></template>',

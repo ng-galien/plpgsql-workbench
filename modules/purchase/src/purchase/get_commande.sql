@@ -62,13 +62,16 @@ BEGIN
   FOR r IN
     SELECT l.id, l.description, l.quantite, l.unite, l.prix_unitaire, l.tva_rate,
            (l.quantite * l.prix_unitaire) AS total_ht,
-           purchase._quantite_restante(l.id) AS restante
+           purchase._quantite_restante(l.id) AS restante,
+           l.article_id
       FROM purchase.ligne l
      WHERE l.commande_id = p_id
      ORDER BY l.sort_order
   LOOP
     v_rows := v_rows || ARRAY[
-      pgv.esc(r.description),
+      pgv.esc(r.description) || CASE WHEN r.article_id IS NOT NULL
+        THEN ' ' || pgv.badge('art. #' || r.article_id, 'info')
+        ELSE '' END,
       r.quantite::text || ' ' || r.unite,
       to_char(r.prix_unitaire, 'FM999 990.00') || ' EUR',
       r.tva_rate::text || '%',
@@ -110,6 +113,7 @@ BEGIN
       || '<label>Prix unitaire<input type="number" name="p_prix_unitaire" step="0.01" min="0" required></label>'
       || '<label>TVA %<select name="p_tva_rate"><option value="20.00" selected>20%</option><option value="10.00">10%</option><option value="5.50">5.5%</option><option value="0.00">0%</option></select></label>'
       || '</div>'
+      || '<label>Article stock<select name="p_article_id">' || purchase._article_options() || '</select></label>'
       || '<button type="submit">Ajouter</button>'
       || '</form></details>';
   END IF;

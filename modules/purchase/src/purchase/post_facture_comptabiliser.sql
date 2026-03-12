@@ -20,6 +20,9 @@ BEGIN
   IF v_facture.montant_ttc = 0 THEN
     RETURN '<template data-toast="error">Facture sans montant</template>';
   END IF;
+  IF v_facture.comptabilisee THEN
+    RETURN '<template data-toast="error">Facture déjà comptabilisée</template>';
+  END IF;
 
   -- Check ledger schema exists
   SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'ledger') INTO v_ledger_exists;
@@ -64,6 +67,9 @@ BEGIN
     v_entry_id, v_facture.montant_ttc,
     'Fournisseur facture ' || v_facture.numero_fournisseur
   );
+
+  -- Flag anti-doublon
+  UPDATE purchase.facture_fournisseur SET comptabilisee = true WHERE id = v_id;
 
   RETURN '<template data-toast="success">Écriture comptable créée</template>'
     || format('<template data-redirect="%s"></template>',

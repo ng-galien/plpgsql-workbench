@@ -695,6 +695,90 @@ END;
 $function$;
 COMMENT ON FUNCTION stock.get_index() IS 'Dashboard stock: stats (articles, valeur totale, alertes, mouvements) + derniers mouvements';
 
+CREATE OR REPLACE FUNCTION stock.get_inventaire(p_depot_id integer DEFAULT NULL::integer)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_depot_nom text;
+  v_rows text[];
+  r record;
+  v_qty numeric;
+BEGIN
+  -- Si pas de dépôt sélectionné, afficher le choix
+  IF p_depot_id IS NULL THEN
+    v_rows := ARRAY[]::text[];
+    FOR r IN
+      SELECT d.id, d.nom, d.type FROM stock.depot d WHERE d.actif ORDER BY d.nom
+    LOOP
+      v_rows := v_rows || ARRAY[
+        format('<a href="%s">%s</a>',
+          pgv.call_ref('get_inventaire', jsonb_build_object('p_depot_id', r.id)),
+          pgv.esc(r.nom)),
+        pgv.badge(r.type, CASE r.type
+          WHEN 'entrepot' THEN 'info'
+          WHEN 'atelier' THEN 'success'
+          WHEN 'chantier' THEN 'warning'
+          WHEN 'vehicule' THEN 'secondary'
+        END)
+      ];
+    END LOOP;
+
+    IF array_length(v_rows, 1) IS NULL THEN
+      RETURN pgv.empty('Aucun dépôt', 'Créez un dépôt avant de faire un inventaire.');
+    END IF;
+
+    RETURN '<p>Sélectionnez le dépôt à inventorier :</p>' || pgv.md_table(
+      ARRAY['Dépôt', 'Type'],
+      v_rows
+    );
+  END IF;
+
+  SELECT nom INTO v_depot_nom FROM stock.depot WHERE id = p_depot_id AND actif;
+  IF v_depot_nom IS NULL THEN
+    RETURN pgv.empty('Dépôt introuvable', 'Ce dépôt n''existe pas ou est inactif.');
+  END IF;
+
+  v_body := format('<h3>Inventaire : %s</h3>', pgv.esc(v_depot_nom));
+  v_body := v_body || format('<form data-rpc="post_inventaire_valider"><input type="hidden" name="p_depot_id" value="%s">', p_depot_id);
+
+  -- Liste des articles avec stock théorique
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT a.id, a.reference, a.designation, a.unite
+    FROM stock.article a
+    WHERE a.active
+    ORDER BY a.designation
+  LOOP
+    v_qty := stock._stock_actuel(r.id, p_depot_id);
+    v_rows := v_rows || ARRAY[
+      pgv.esc(r.reference),
+      pgv.esc(r.designation),
+      r.unite,
+      v_qty::text,
+      format('<input type="number" name="qty_%s" value="%s" step="0.01" class="pgv-input-sm">', r.id, v_qty)
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NULL THEN
+    v_body := v_body || pgv.empty('Aucun article', 'Aucun article actif dans le catalogue.');
+    v_body := v_body || '</form>';
+    RETURN v_body;
+  END IF;
+
+  v_body := v_body || pgv.md_table(
+    ARRAY['Réf.', 'Désignation', 'Unité', 'Théorique', 'Réel'],
+    v_rows
+  );
+
+  v_body := v_body || '<p><button type="submit" class="pgv-btn-primary">Valider l''inventaire</button></p></form>';
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_inventaire(integer) IS 'Formulaire d inventaire physique pour un dépôt — saisie quantités réelles';
+
 CREATE OR REPLACE FUNCTION stock.get_mouvement_form(p_type text DEFAULT 'entree'::text)
  RETURNS text
  LANGUAGE plpgsql
@@ -804,16 +888,118 @@ END;
 $function$;
 COMMENT ON FUNCTION stock.get_mouvements() IS 'Historique des mouvements de stock';
 
+CREATE OR REPLACE FUNCTION stock.get_valorisation()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_valeur_totale numeric;
+  v_nb_articles int;
+  v_nb_alertes int;
+  v_rows text[];
+  r record;
+BEGIN
+  -- Stats globales
+  SELECT count(*)::int INTO v_nb_articles FROM stock.article WHERE active;
+
+  SELECT coalesce(sum(stock._stock_actuel(a.id) * a.pmp), 0)
+  INTO v_valeur_totale
+  FROM stock.article a WHERE a.active AND a.pmp > 0;
+
+  SELECT count(*)::int INTO v_nb_alertes
+  FROM stock.article a
+  WHERE a.active AND a.seuil_mini > 0
+    AND stock._stock_actuel(a.id) < a.seuil_mini;
+
+  v_body := pgv.grid(VARIADIC ARRAY[
+    pgv.stat('Valeur totale', to_char(v_valeur_totale, 'FM999G999G990D00') || ' EUR'),
+    pgv.stat('Articles en stock', v_nb_articles::text),
+    pgv.stat('En alerte', v_nb_alertes::text, CASE WHEN v_nb_alertes > 0 THEN 'danger' ELSE NULL END)
+  ]);
+
+  -- Valorisation par dépôt
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT d.nom AS depot_nom, d.type AS depot_type,
+           count(DISTINCT m.article_id)::int AS nb_articles,
+           coalesce(sum(m.quantite * a.pmp), 0) AS valeur
+    FROM stock.depot d
+    LEFT JOIN stock.mouvement m ON m.depot_id = d.id
+    LEFT JOIN stock.article a ON a.id = m.article_id AND a.active
+    WHERE d.actif
+    GROUP BY d.id, d.nom, d.type
+    ORDER BY valeur DESC
+  LOOP
+    v_rows := v_rows || ARRAY[
+      pgv.esc(r.depot_nom),
+      pgv.badge(r.depot_type, CASE r.depot_type
+        WHEN 'entrepot' THEN 'info'
+        WHEN 'atelier' THEN 'success'
+        WHEN 'chantier' THEN 'warning'
+        WHEN 'vehicule' THEN 'secondary'
+      END),
+      r.nb_articles::text,
+      to_char(r.valeur, 'FM999G999G990D00') || ' EUR'
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NOT NULL THEN
+    v_body := v_body || '<h3>Par dépôt</h3>' || pgv.md_table(
+      ARRAY['Dépôt', 'Type', 'Articles', 'Valeur'],
+      v_rows
+    );
+  END IF;
+
+  -- Valorisation par catégorie
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT a.categorie,
+           count(*)::int AS nb_articles,
+           coalesce(sum(stock._stock_actuel(a.id) * a.pmp), 0) AS valeur
+    FROM stock.article a
+    WHERE a.active AND a.pmp > 0
+    GROUP BY a.categorie
+    ORDER BY valeur DESC
+  LOOP
+    v_rows := v_rows || ARRAY[
+      pgv.badge(r.categorie, CASE r.categorie
+        WHEN 'bois' THEN 'success'
+        WHEN 'quincaillerie' THEN 'info'
+        WHEN 'panneau' THEN 'warning'
+        WHEN 'isolant' THEN 'secondary'
+        WHEN 'finition' THEN 'contrast'
+        ELSE NULL
+      END),
+      r.nb_articles::text,
+      to_char(r.valeur, 'FM999G999G990D00') || ' EUR'
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NOT NULL THEN
+    v_body := v_body || '<h3>Par catégorie</h3>' || pgv.md_table(
+      ARRAY['Catégorie', 'Articles', 'Valeur'],
+      v_rows
+    );
+  END IF;
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_valorisation() IS 'Valorisation du stock par dépôt et catégorie, avec totaux';
+
 CREATE OR REPLACE FUNCTION stock.nav_items()
  RETURNS jsonb
  LANGUAGE sql
  STABLE
 AS $function$
   SELECT jsonb_build_array(
-    jsonb_build_object('label', 'Articles',    'href', '/articles'),
-    jsonb_build_object('label', 'Dépôts',      'href', '/depots'),
-    jsonb_build_object('label', 'Mouvements',  'href', '/mouvements'),
-    jsonb_build_object('label', 'Alertes',     'href', '/alertes')
+    jsonb_build_object('label', 'Articles',      'href', '/articles'),
+    jsonb_build_object('label', 'Dépôts',        'href', '/depots'),
+    jsonb_build_object('label', 'Mouvements',    'href', '/mouvements'),
+    jsonb_build_object('label', 'Alertes',       'href', '/alertes'),
+    jsonb_build_object('label', 'Valorisation',  'href', '/valorisation'),
+    jsonb_build_object('label', 'Inventaire',    'href', '/inventaire')
   );
 $function$;
 COMMENT ON FUNCTION stock.nav_items() IS 'Menu de navigation du module stock';
@@ -903,6 +1089,56 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock.post_depot_save(jsonb) IS 'Créer ou modifier un dépôt';
+
+CREATE OR REPLACE FUNCTION stock.post_inventaire_valider(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_depot_id int := (p_data->>'p_depot_id')::int;
+  v_key text;
+  v_val text;
+  v_article_id int;
+  v_qty_reelle numeric;
+  v_qty_theorique numeric;
+  v_ecart numeric;
+  v_nb_ajustements int := 0;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM stock.depot WHERE id = v_depot_id AND actif) THEN
+    RETURN '<template data-toast="error">Dépôt introuvable</template>';
+  END IF;
+
+  -- Parcourir les champs qty_* du formulaire
+  FOR v_key, v_val IN SELECT key, value FROM jsonb_each_text(p_data) WHERE key LIKE 'qty_%'
+  LOOP
+    v_article_id := replace(v_key, 'qty_', '')::int;
+    v_qty_reelle := v_val::numeric;
+    v_qty_theorique := stock._stock_actuel(v_article_id, v_depot_id);
+    v_ecart := v_qty_reelle - v_qty_theorique;
+
+    IF v_ecart = 0 THEN
+      CONTINUE;
+    END IF;
+
+    -- Mouvement inventaire: positif = entrée, négatif = sortie (quantite signée)
+    INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, reference)
+    VALUES (v_article_id, v_depot_id, 'inventaire', v_ecart,
+            'INV-' || to_char(now(), 'YYYYMMDD'));
+
+    v_nb_ajustements := v_nb_ajustements + 1;
+  END LOOP;
+
+  IF v_nb_ajustements = 0 THEN
+    RETURN format('<template data-toast="success">Stock conforme — aucun ajustement</template><template data-redirect="%s"></template>',
+      pgv.call_ref('get_inventaire', jsonb_build_object('p_depot_id', v_depot_id)));
+  END IF;
+
+  RETURN format('<template data-toast="success">Inventaire validé — %s ajustement(s)</template><template data-redirect="%s"></template>',
+    v_nb_ajustements,
+    pgv.call_ref('get_depot', jsonb_build_object('p_id', v_depot_id)));
+END;
+$function$;
+COMMENT ON FUNCTION stock.post_inventaire_valider(jsonb) IS 'Valide un inventaire physique — génère mouvements d écart pour chaque article';
 
 CREATE OR REPLACE FUNCTION stock.post_mouvement_save(p_data jsonb)
  RETURNS text
@@ -1430,6 +1666,82 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock_ut.test_post_depot_save() IS 'Test post_depot_save: create + update';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_post_inventaire_valider()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_fournisseur_id int;
+  v_depot_id int;
+  v_art1_id int;
+  v_art2_id int;
+  v_result text;
+  v_stock numeric;
+BEGIN
+  -- Setup
+  INSERT INTO crm.client (type, name) VALUES ('company', 'UT Inv Fournisseur')
+  RETURNING id INTO v_fournisseur_id;
+
+  INSERT INTO stock.depot (nom, type) VALUES ('UT Inv Depot', 'entrepot')
+  RETURNING id INTO v_depot_id;
+
+  INSERT INTO stock.article (reference, designation, categorie, unite, fournisseur_id)
+  VALUES ('UT-INV-001', 'Planche chêne', 'bois', 'm', v_fournisseur_id)
+  RETURNING id INTO v_art1_id;
+
+  INSERT INTO stock.article (reference, designation, categorie, unite, fournisseur_id)
+  VALUES ('UT-INV-002', 'Colle PU', 'finition', 'l', v_fournisseur_id)
+  RETURNING id INTO v_art2_id;
+
+  -- Seed stock: art1=10, art2=5
+  INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, prix_unitaire, reference)
+  VALUES (v_art1_id, v_depot_id, 'entree', 10, 8.00, 'SEED'),
+         (v_art2_id, v_depot_id, 'entree', 5, 12.00, 'SEED');
+
+  -- Test 1: inventaire avec écarts (art1: 10->7, art2: 5->5 no change)
+  v_result := stock.post_inventaire_valider(jsonb_build_object(
+    'p_depot_id', v_depot_id,
+    'qty_' || v_art1_id, '7',
+    'qty_' || v_art2_id, '5'
+  ));
+  RETURN NEXT ok(v_result LIKE '%Inventaire validé%', 'inventaire success toast');
+  RETURN NEXT ok(v_result LIKE '%1 ajustement%', '1 adjustment (art2 unchanged)');
+
+  SELECT sum(quantite) INTO v_stock FROM stock.mouvement WHERE article_id = v_art1_id AND depot_id = v_depot_id;
+  RETURN NEXT is(v_stock, 7::numeric, 'art1 stock adjusted to 7');
+
+  SELECT sum(quantite) INTO v_stock FROM stock.mouvement WHERE article_id = v_art2_id AND depot_id = v_depot_id;
+  RETURN NEXT is(v_stock, 5::numeric, 'art2 stock unchanged');
+
+  -- Test 2: inventaire sans écart
+  v_result := stock.post_inventaire_valider(jsonb_build_object(
+    'p_depot_id', v_depot_id,
+    'qty_' || v_art1_id, '7',
+    'qty_' || v_art2_id, '5'
+  ));
+  RETURN NEXT ok(v_result LIKE '%Stock conforme%', 'no adjustment needed');
+
+  -- Test 3: inventaire avec augmentation
+  v_result := stock.post_inventaire_valider(jsonb_build_object(
+    'p_depot_id', v_depot_id,
+    'qty_' || v_art2_id, '8'
+  ));
+  SELECT sum(quantite) INTO v_stock FROM stock.mouvement WHERE article_id = v_art2_id AND depot_id = v_depot_id;
+  RETURN NEXT is(v_stock, 8::numeric, 'art2 stock increased to 8');
+
+  -- Test 4: dépôt invalide
+  v_result := stock.post_inventaire_valider('{"p_depot_id": 99999}'::jsonb);
+  RETURN NEXT ok(v_result LIKE '%Dépôt introuvable%', 'invalid depot blocked');
+
+  -- Cleanup
+  DELETE FROM stock.mouvement WHERE article_id IN (v_art1_id, v_art2_id);
+  DELETE FROM stock.article WHERE id IN (v_art1_id, v_art2_id);
+  DELETE FROM stock.depot WHERE id = v_depot_id;
+  DELETE FROM crm.client WHERE id = v_fournisseur_id;
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_post_inventaire_valider() IS 'Test post_inventaire_valider — batch inventory adjustments';
 
 GRANT USAGE ON SCHEMA stock_ut TO web_anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock_ut TO web_anon;

@@ -100,10 +100,13 @@ BEGIN
     v_body := v_body || pgv.action('post_facture_payer', 'Marquer payée',
       jsonb_build_object('p_id', p_id),
       'Marquer cette facture comme payée ?');
-  ELSIF v_fac.statut = 'payee' THEN
+  ELSIF v_fac.statut = 'payee' AND NOT v_fac.comptabilisee THEN
     v_body := v_body || pgv.action('post_facture_comptabiliser', 'Comptabiliser',
       jsonb_build_object('p_id', p_id),
       'Créer l''écriture comptable pour cette facture ?');
+  END IF;
+  IF v_fac.comptabilisee THEN
+    v_body := v_body || ' ' || pgv.badge('comptabilisée', 'success');
   END IF;
   v_body := v_body || '</p>';
 

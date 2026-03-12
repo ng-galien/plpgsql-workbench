@@ -6,6 +6,7 @@ DECLARE
   v_id int;
   v_client_id int;
 BEGIN
+  UPDATE project.chantier SET devis_id = NULL WHERE devis_id IS NOT NULL;
   DELETE FROM quote.ligne;
   DELETE FROM quote.facture;
   DELETE FROM quote.devis;
@@ -40,6 +41,7 @@ BEGIN
   PERFORM quote.post_devis_refuser(jsonb_build_object('id', v_id));
   RETURN NEXT is((SELECT statut FROM quote.devis WHERE id = v_id), 'refuse', 'Transition envoye -> refuse');
 
+  UPDATE project.chantier SET devis_id = NULL WHERE devis_id IS NOT NULL;
   DELETE FROM quote.ligne;
   DELETE FROM quote.facture;
   DELETE FROM quote.devis;

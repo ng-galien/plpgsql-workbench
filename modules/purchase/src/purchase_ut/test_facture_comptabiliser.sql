@@ -66,6 +66,16 @@ BEGIN
     '401 credited 1200 TTC'
   );
 
+  -- Verify comptabilisee flag set
+  RETURN NEXT ok(
+    (SELECT comptabilisee FROM purchase.facture_fournisseur WHERE id = v_fac_id),
+    'comptabilisee flag is true'
+  );
+
+  -- Cannot comptabilise twice
+  v_result := purchase.post_facture_comptabiliser(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%déjà comptabilisée%', 'cannot comptabilise twice');
+
   -- Cleanup
   DELETE FROM ledger.entry_line WHERE journal_entry_id = (SELECT max(id) FROM ledger.journal_entry);
   DELETE FROM ledger.journal_entry WHERE id = (SELECT max(id) FROM ledger.journal_entry);

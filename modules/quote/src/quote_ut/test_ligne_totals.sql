@@ -9,6 +9,7 @@ DECLARE
   v_tva numeric(12,2);
   v_ttc numeric(12,2);
 BEGIN
+  UPDATE project.chantier SET devis_id = NULL WHERE devis_id IS NOT NULL;
   DELETE FROM quote.ligne;
   DELETE FROM quote.facture;
   DELETE FROM quote.devis;
@@ -29,7 +30,7 @@ BEGIN
     'quantite', 2.5, 'unite', 'm2', 'prix_unitaire', 35, 'tva_rate', 20
   ));
 
-  -- Calculer via SQL direct (arrondi par ligne)
+  -- Calculer via SQL direct (arrondi par ligne) — pas d'appel cross-schema aux _helpers
   SELECT sum(round(quantite * prix_unitaire, 2)) INTO v_ht
     FROM quote.ligne WHERE devis_id = v_id;
   SELECT sum(round(quantite * prix_unitaire * tva_rate / 100, 2)) INTO v_tva
@@ -45,6 +46,7 @@ BEGIN
   -- TTC = HT + TVA
   RETURN NEXT is(v_ttc, 255.15::numeric(12,2), 'Total TTC = 255.15');
 
+  UPDATE project.chantier SET devis_id = NULL WHERE devis_id IS NOT NULL;
   DELETE FROM quote.ligne;
   DELETE FROM quote.devis;
 END;

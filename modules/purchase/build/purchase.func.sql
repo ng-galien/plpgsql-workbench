@@ -4,6 +4,28 @@
 -- Schema: purchase
 CREATE SCHEMA IF NOT EXISTS purchase;
 
+CREATE OR REPLACE FUNCTION purchase._article_options()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_stock_exists boolean;
+  v_html text := '<option value="">— aucun —</option>';
+  r record;
+BEGIN
+  SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'stock') INTO v_stock_exists;
+  IF NOT v_stock_exists THEN RETURN v_html; END IF;
+
+  FOR r IN EXECUTE 'SELECT id, reference, designation FROM stock.article WHERE active = true ORDER BY reference'
+  LOOP
+    v_html := v_html || format('<option value="%s">%s — %s</option>', r.id, pgv.esc(r.reference), pgv.esc(r.designation));
+  END LOOP;
+
+  RETURN v_html;
+END;
+$function$;
+COMMENT ON FUNCTION purchase._article_options() IS 'Generate HTML option list from stock.article (dynamic, no hard dep on stock schema)';
+
 CREATE OR REPLACE FUNCTION purchase._fournisseur_options()
  RETURNS text
  LANGUAGE plpgsql
@@ -205,13 +227,16 @@ BEGIN
   FOR r IN
     SELECT l.id, l.description, l.quantite, l.unite, l.prix_unitaire, l.tva_rate,
            (l.quantite * l.prix_unitaire) AS total_ht,
-           purchase._quantite_restante(l.id) AS restante
+           purchase._quantite_restante(l.id) AS restante,
+           l.article_id
       FROM purchase.ligne l
      WHERE l.commande_id = p_id
      ORDER BY l.sort_order
   LOOP
     v_rows := v_rows || ARRAY[
-      pgv.esc(r.description),
+      pgv.esc(r.description) || CASE WHEN r.article_id IS NOT NULL
+        THEN ' ' || pgv.badge('art. #' || r.article_id, 'info')
+        ELSE '' END,
       r.quantite::text || ' ' || r.unite,
       to_char(r.prix_unitaire, 'FM999 990.00') || ' EUR',
       r.tva_rate::text || '%',
@@ -253,6 +278,7 @@ BEGIN
       || '<label>Prix unitaire<input type="number" name="p_prix_unitaire" step="0.01" min="0" required></label>'
       || '<label>TVA %<select name="p_tva_rate"><option value="20.00" selected>20%</option><option value="10.00">10%</option><option value="5.50">5.5%</option><option value="0.00">0%</option></select></label>'
       || '</div>'
+      || '<label>Article stock<select name="p_article_id">' || purchase._article_options() || '</select></label>'
       || '<button type="submit">Ajouter</button>'
       || '</form></details>';
   END IF;
@@ -458,10 +484,13 @@ BEGIN
     v_body := v_body || pgv.action('post_facture_payer', 'Marquer payée',
       jsonb_build_object('p_id', p_id),
       'Marquer cette facture comme payée ?');
-  ELSIF v_fac.statut = 'payee' THEN
+  ELSIF v_fac.statut = 'payee' AND NOT v_fac.comptabilisee THEN
     v_body := v_body || pgv.action('post_facture_comptabiliser', 'Comptabiliser',
       jsonb_build_object('p_id', p_id),
       'Créer l''écriture comptable pour cette facture ?');
+  END IF;
+  IF v_fac.comptabilisee THEN
+    v_body := v_body || ' ' || pgv.badge('comptabilisée', 'success');
   END IF;
   v_body := v_body || '</p>';
 
@@ -690,6 +719,9 @@ BEGIN
   IF v_facture.montant_ttc = 0 THEN
     RETURN '<template data-toast="error">Facture sans montant</template>';
   END IF;
+  IF v_facture.comptabilisee THEN
+    RETURN '<template data-toast="error">Facture déjà comptabilisée</template>';
+  END IF;
 
   -- Check ledger schema exists
   SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'ledger') INTO v_ledger_exists;
@@ -734,6 +766,9 @@ BEGIN
     v_entry_id, v_facture.montant_ttc,
     'Fournisseur facture ' || v_facture.numero_fournisseur
   );
+
+  -- Flag anti-doublon
+  UPDATE purchase.facture_fournisseur SET comptabilisee = true WHERE id = v_id;
 
   RETURN '<template data-toast="success">Écriture comptable créée</template>'
     || format('<template data-redirect="%s"></template>',
@@ -825,7 +860,7 @@ BEGIN
   SELECT coalesce(max(sort_order), 0) + 1 INTO v_sort
     FROM purchase.ligne WHERE commande_id = v_commande_id;
 
-  INSERT INTO purchase.ligne (commande_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate)
+  INSERT INTO purchase.ligne (commande_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate, article_id)
   VALUES (
     v_commande_id,
     v_sort,
@@ -833,7 +868,8 @@ BEGIN
     coalesce((p_data->>'p_quantite')::numeric, 1),
     coalesce(p_data->>'p_unite', 'u'),
     (p_data->>'p_prix_unitaire')::numeric,
-    coalesce((p_data->>'p_tva_rate')::numeric, 20.00)
+    coalesce((p_data->>'p_tva_rate')::numeric, 20.00),
+    (p_data->>'p_article_id')::int
   );
 
   RETURN format('<template data-toast="success">Ligne ajoutée</template><template data-redirect="%s"></template>',
@@ -1117,6 +1153,16 @@ BEGIN
        AND a.code = '401' AND el.credit = 1200.00),
     '401 credited 1200 TTC'
   );
+
+  -- Verify comptabilisee flag set
+  RETURN NEXT ok(
+    (SELECT comptabilisee FROM purchase.facture_fournisseur WHERE id = v_fac_id),
+    'comptabilisee flag is true'
+  );
+
+  -- Cannot comptabilise twice
+  v_result := purchase.post_facture_comptabiliser(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%déjà comptabilisée%', 'cannot comptabilise twice');
 
   -- Cleanup
   DELETE FROM ledger.entry_line WHERE journal_entry_id = (SELECT max(id) FROM ledger.journal_entry);

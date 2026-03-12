@@ -38,6 +38,10 @@ CREATE TABLE IF NOT EXISTS purchase.ligne (
     CHECK (tva_rate IN (0.00, 5.50, 10.00, 20.00))
 );
 
+-- article_id: soft FK vers stock.article (pas de hard dependency)
+ALTER TABLE purchase.ligne ADD COLUMN IF NOT EXISTS article_id integer;
+CREATE INDEX IF NOT EXISTS idx_ligne_article ON purchase.ligne(article_id);
+
 CREATE INDEX IF NOT EXISTS idx_ligne_commande ON purchase.ligne(commande_id);
 CREATE INDEX IF NOT EXISTS idx_ligne_tenant ON purchase.ligne(tenant_id);
 
@@ -84,6 +88,9 @@ CREATE TABLE IF NOT EXISTS purchase.facture_fournisseur (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Flag anti-doublon comptabilisation
+ALTER TABLE purchase.facture_fournisseur ADD COLUMN IF NOT EXISTS comptabilisee boolean NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS idx_facture_fournisseur_commande ON purchase.facture_fournisseur(commande_id);
 CREATE INDEX IF NOT EXISTS idx_facture_fournisseur_statut ON purchase.facture_fournisseur(statut);

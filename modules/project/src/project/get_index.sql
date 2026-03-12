@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION project.get_index()
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_en_cours int;
@@ -9,6 +10,7 @@ DECLARE
   v_heures_semaine numeric;
   v_body text;
   v_rows text[];
+  v_alert_rows text[];
   r record;
 BEGIN
   SELECT count(*)::int INTO v_en_cours
@@ -32,6 +34,35 @@ BEGIN
     pgv.stat('Terminés ce mois', v_clos_mois::text),
     pgv.stat('Heures semaine', v_heures_semaine::text || ' h')
   ]);
+
+  -- Alertes retard
+  v_alert_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT c.id, c.numero, cl.name AS client, c.objet,
+           project._statut_badge(c.statut) AS statut_badge,
+           (CURRENT_DATE - c.date_fin_prevue) AS jours_retard
+      FROM project.chantier c
+      JOIN crm.client cl ON cl.id = c.client_id
+     WHERE c.date_fin_prevue < CURRENT_DATE
+       AND c.statut NOT IN ('clos', 'reception')
+     ORDER BY c.date_fin_prevue ASC
+  LOOP
+    v_alert_rows := v_alert_rows || ARRAY[
+      format('<a href="%s">%s</a>', pgv.call_ref('get_chantier', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
+      pgv.esc(r.client),
+      pgv.esc(r.objet),
+      r.statut_badge,
+      pgv.badge(r.jours_retard::text || ' j', 'warn')
+    ];
+  END LOOP;
+
+  IF array_length(v_alert_rows, 1) IS NOT NULL THEN
+    v_body := v_body || '<h3>Alertes retard</h3>'
+      || pgv.md_table(
+        ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Retard'],
+        v_alert_rows
+      );
+  END IF;
 
   -- Liste chantiers actifs
   v_rows := ARRAY[]::text[];
@@ -62,10 +93,11 @@ BEGIN
   IF array_length(v_rows, 1) IS NULL THEN
     v_body := v_body || pgv.empty('Aucun chantier actif', 'Créez votre premier chantier pour commencer.');
   ELSE
-    v_body := v_body || pgv.md_table(
-      ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Avancement', 'Devis', 'Début'],
-      v_rows, 10
-    );
+    v_body := v_body || '<h3>Chantiers actifs</h3>'
+      || pgv.md_table(
+        ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Avancement', 'Devis', 'Début'],
+        v_rows, 10
+      );
   END IF;
 
   v_body := v_body || '<p>'

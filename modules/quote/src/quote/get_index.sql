@@ -46,7 +46,7 @@ BEGIN
   -- Tab 1: Devis récents
   v_rows_d := ARRAY[]::text[];
   FOR r IN
-    SELECT d.id, d.numero, c.name AS client, d.objet, d.statut,
+    SELECT d.id, d.numero, d.client_id, c.name AS client, d.objet, d.statut,
            quote._total_ttc(d.id, NULL) AS ttc, d.created_at
       FROM quote.devis d
       JOIN crm.client c ON c.id = d.client_id
@@ -54,7 +54,7 @@ BEGIN
   LOOP
     v_rows_d := v_rows_d || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_devis', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-      pgv.esc(r.client),
+      format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || r.client_id), pgv.esc(r.client)),
       pgv.esc(r.objet),
       quote._statut_badge(r.statut),
       to_char(r.ttc, 'FM999 990.00') || ' EUR',
@@ -65,7 +65,7 @@ BEGIN
   -- Tab 2: Factures récentes
   v_rows_f := ARRAY[]::text[];
   FOR r IN
-    SELECT f.id, f.numero, c.name AS client, f.objet, f.statut,
+    SELECT f.id, f.numero, f.client_id, c.name AS client, f.objet, f.statut,
            quote._total_ttc(NULL, f.id) AS ttc, f.created_at
       FROM quote.facture f
       JOIN crm.client c ON c.id = f.client_id
@@ -73,7 +73,7 @@ BEGIN
   LOOP
     v_rows_f := v_rows_f || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_facture', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-      pgv.esc(r.client),
+      format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || r.client_id), pgv.esc(r.client)),
       pgv.esc(r.objet),
       quote._statut_badge(r.statut),
       to_char(r.ttc, 'FM999 990.00') || ' EUR',

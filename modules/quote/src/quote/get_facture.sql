@@ -15,7 +15,7 @@ BEGIN
   IF p_id IS NULL THEN
     v_rows := ARRAY[]::text[];
     FOR r IN
-      SELECT fa.id, fa.numero, c.name AS client, fa.objet, fa.statut,
+      SELECT fa.id, fa.numero, fa.client_id, c.name AS client, fa.objet, fa.statut,
              quote._total_ttc(NULL, fa.id) AS ttc, fa.created_at
         FROM quote.facture fa
         JOIN crm.client c ON c.id = fa.client_id
@@ -23,7 +23,7 @@ BEGIN
     LOOP
       v_rows := v_rows || ARRAY[
         format('<a href="%s">%s</a>', pgv.call_ref('get_facture', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-        pgv.esc(r.client),
+        format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || r.client_id), pgv.esc(r.client)),
         pgv.esc(r.objet),
         quote._statut_badge(r.statut),
         to_char(r.ttc, 'FM999 990.00') || ' EUR',
@@ -65,7 +65,7 @@ BEGIN
 
   v_body := v_body || pgv.dl(VARIADIC ARRAY[
     'Numéro', f.numero,
-    'Client', pgv.esc(f.client_name),
+    'Client', format('<a href="%s">%s</a>', pgv.href('/crm/client?p_id=' || f.client_id), pgv.esc(f.client_name)),
     'Objet', pgv.esc(f.objet),
     'Statut', quote._statut_badge(f.statut),
     'Devis', CASE WHEN f.devis_numero IS NOT NULL
