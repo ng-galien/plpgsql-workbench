@@ -1,0 +1,104 @@
+-- hr — DDL
+
+CREATE SCHEMA IF NOT EXISTS hr;
+CREATE SCHEMA IF NOT EXISTS hr_ut;
+CREATE SCHEMA IF NOT EXISTS hr_qa;
+GRANT USAGE ON SCHEMA hr TO web_anon;
+
+-- Salariés (registre du personnel)
+CREATE TABLE IF NOT EXISTS hr.employee (
+  id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  matricule text NOT NULL DEFAULT '',
+  nom text NOT NULL,
+  prenom text NOT NULL,
+  email text,
+  phone text,
+  date_naissance date,
+  poste text NOT NULL DEFAULT '',
+  departement text NOT NULL DEFAULT '',
+  type_contrat text NOT NULL DEFAULT 'cdi' CHECK (type_contrat IN ('cdi', 'cdd', 'alternance', 'stage', 'interim')),
+  date_embauche date NOT NULL DEFAULT CURRENT_DATE,
+  date_fin date,
+  salaire_brut numeric,
+  heures_hebdo numeric NOT NULL DEFAULT 35,
+  statut text NOT NULL DEFAULT 'actif' CHECK (statut IN ('actif', 'inactif')),
+  notes text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_employee_tenant ON hr.employee(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_employee_statut_nom ON hr.employee(statut, nom);
+
+-- Absences et congés
+CREATE TABLE IF NOT EXISTS hr.absence (
+  id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  employee_id int NOT NULL REFERENCES hr.employee(id) ON DELETE CASCADE,
+  type_absence text NOT NULL CHECK (type_absence IN ('conge_paye', 'rtt', 'maladie', 'sans_solde', 'formation', 'autre')),
+  date_debut date NOT NULL,
+  date_fin date NOT NULL,
+  nb_jours numeric NOT NULL DEFAULT 1,
+  motif text NOT NULL DEFAULT '',
+  statut text NOT NULL DEFAULT 'demande' CHECK (statut IN ('demande', 'validee', 'refusee', 'annulee')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT absence_dates_check CHECK (date_fin >= date_debut)
+);
+
+CREATE INDEX IF NOT EXISTS idx_absence_tenant ON hr.absence(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_absence_employee ON hr.absence(employee_id);
+CREATE INDEX IF NOT EXISTS idx_absence_dates ON hr.absence(date_debut, date_fin);
+
+-- Heures travaillées (timesheet)
+CREATE TABLE IF NOT EXISTS hr.timesheet (
+  id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  employee_id int NOT NULL REFERENCES hr.employee(id) ON DELETE CASCADE,
+  date_travail date NOT NULL,
+  heures numeric NOT NULL CHECK (heures >= 0 AND heures <= 24),
+  description text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT timesheet_unique UNIQUE (employee_id, date_travail)
+);
+
+CREATE INDEX IF NOT EXISTS idx_timesheet_tenant ON hr.timesheet(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_timesheet_employee_date ON hr.timesheet(employee_id, date_travail DESC);
+
+-- Trigger updated_at (fonction créée via pg_func_set)
+DROP TRIGGER IF EXISTS trg_employee_updated_at ON hr.employee;
+CREATE TRIGGER trg_employee_updated_at
+  BEFORE UPDATE ON hr.employee
+  FOR EACH ROW EXECUTE FUNCTION hr._set_updated_at();
+
+-- Row Level Security
+ALTER TABLE hr.employee ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hr.absence ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hr.timesheet ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tenant_isolation ON hr.employee;
+CREATE POLICY tenant_isolation ON hr.employee
+  USING (tenant_id = current_setting('app.tenant_id', true));
+DROP POLICY IF EXISTS tenant_isolation ON hr.absence;
+CREATE POLICY tenant_isolation ON hr.absence
+  USING (tenant_id = current_setting('app.tenant_id', true));
+DROP POLICY IF EXISTS tenant_isolation ON hr.timesheet;
+CREATE POLICY tenant_isolation ON hr.timesheet
+  USING (tenant_id = current_setting('app.tenant_id', true));
+
+-- Permissions
+GRANT SELECT, INSERT, UPDATE, DELETE ON hr.employee TO web_anon;
+GRANT USAGE ON SEQUENCE hr.employee_id_seq TO web_anon;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON hr.absence TO web_anon;
+GRANT USAGE ON SEQUENCE hr.absence_id_seq TO web_anon;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON hr.timesheet TO web_anon;
+GRANT USAGE ON SEQUENCE hr.timesheet_id_seq TO web_anon;
+
+GRANT USAGE ON SCHEMA hr_ut TO web_anon;
+GRANT USAGE ON SCHEMA hr_qa TO web_anon;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA hr GRANT EXECUTE ON FUNCTIONS TO web_anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA hr_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA hr_qa GRANT EXECUTE ON FUNCTIONS TO web_anon;

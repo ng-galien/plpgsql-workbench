@@ -338,6 +338,24 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv.href(text) IS 'External links only. RAISEs on internal paths — use pgv.call_ref() instead.';
 
+CREATE OR REPLACE FUNCTION pgv.i18n_seed()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  INSERT INTO pgv.i18n (lang, key, value) VALUES
+    ('fr', 'pgv.bug_reported', 'Bug reporté, merci !'),
+    ('fr', 'pgv.page_not_found', 'Page non trouvee'),
+    ('fr', 'pgv.path_not_found', 'Le chemin %s n''existe pas.'),
+    ('fr', 'pgv.error', 'Erreur'),
+    ('fr', 'pgv.invalid_param', 'Parametre invalide'),
+    ('fr', 'pgv.internal_error', 'Erreur interne'),
+    ('fr', 'pgv.unexpected_error', 'Une erreur inattendue est survenue.')
+  ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
+END;
+$function$;
+COMMENT ON FUNCTION pgv.i18n_seed() IS 'Seed French translations for pgv framework strings into pgv.i18n table.';
+
 CREATE OR REPLACE FUNCTION pgv.input(p_name text, p_type text, p_label text, p_value text DEFAULT NULL::text, p_required boolean DEFAULT false)
  RETURNS text
  LANGUAGE sql
@@ -552,6 +570,9 @@ DECLARE
   v_argtype text;
   v_argname text;
 BEGIN
+  -- Set i18n language for this request
+  PERFORM set_config('pgv.lang', coalesce(nullif(current_setting('pgv.lang', true), ''), 'fr'), true);
+
   -- Get nav items
   BEGIN
     EXECUTE format('SELECT %I.nav_items()', p_schema) INTO v_nav;
@@ -1242,6 +1263,32 @@ $JS$;
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION pgv.t(p_key text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_lang text;
+  v_value text;
+BEGIN
+  v_lang := coalesce(nullif(current_setting('pgv.lang', true), ''), 'fr');
+
+  SELECT value INTO v_value FROM pgv.i18n WHERE lang = v_lang AND key = p_key;
+  IF FOUND THEN RETURN v_value; END IF;
+
+  -- Fallback to French if different lang
+  IF v_lang <> 'fr' THEN
+    SELECT value INTO v_value FROM pgv.i18n WHERE lang = 'fr' AND key = p_key;
+    IF FOUND THEN RETURN v_value; END IF;
+  END IF;
+
+  -- Return key itself as last resort
+  RETURN p_key;
+END;
+$function$;
+COMMENT ON FUNCTION pgv.t(text) IS 'i18n translation lookup. Returns translated value or the key itself as fallback.';
+
 CREATE OR REPLACE FUNCTION pgv.tabs(VARIADIC p_items text[])
  RETURNS text
  LANGUAGE plpgsql
@@ -1806,6 +1853,36 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_href() IS 'Unit tests for pgv.href: whitelist protocols, RAISEs on internal paths';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_i18n()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  -- Seed translations
+  PERFORM pgv.i18n_seed();
+
+  -- Default lang (fr) resolves known key
+  PERFORM set_config('pgv.lang', 'fr', true);
+  RETURN NEXT ok(pgv.t('pgv.error') = 'Erreur', 't() returns French value for known key');
+
+  -- Missing key returns the key itself
+  RETURN NEXT ok(pgv.t('nonexistent.key') = 'nonexistent.key', 't() returns key when not found');
+
+  -- Unknown lang falls back to French
+  PERFORM set_config('pgv.lang', 'de', true);
+  RETURN NEXT ok(pgv.t('pgv.error') = 'Erreur', 't() falls back to fr for unknown lang');
+
+  -- Empty lang setting defaults to fr
+  PERFORM set_config('pgv.lang', '', true);
+  RETURN NEXT ok(pgv.t('pgv.error') = 'Erreur', 't() defaults to fr when lang is empty');
+
+  -- Unset lang defaults to fr
+  PERFORM set_config('pgv.lang', '', true);
+  RETURN NEXT ok(pgv.t('pgv.bug_reported') = 'Bug reporté, merci !', 't() resolves accented value');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_i18n() IS 'Unit tests for pgv.t() i18n lookup: default lang, fallback, missing key';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_lazy()
  RETURNS SETOF text

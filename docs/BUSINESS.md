@@ -3,9 +3,15 @@
 > Ce document décrit le premier produit commercial construit sur la plateforme PL/pgSQL Workbench.
 > Le workbench est la plateforme de développement de l'entreprise — chaque application est un ensemble de schemas PostgreSQL + tools MCP, packagé via des toolboxes pour distribution commerciale.
 
+## Vision produit
+
+**Le socle est un ERP généraliste pour TPE/PME**, pas uniquement dédié aux artisans du BTP. Les modules core (crm, quote, ledger, stock, purchase, project) sont métier-agnostiques et servent n'importe quel secteur d'activité. Le BTP/artisans est le **premier vertical de go-to-market**, mais la plateforme est conçue pour adresser tout type de TPE/PME (services, commerce, industrie, freelances, etc.).
+
+Les spécialisations métier (fumiste, menuisier, plombier, etc.) sont des **couches optionnelles** au-dessus du socle généraliste — via des modules dédiés, du paramétrage catalogue, ou des schemas métier additionnels.
+
 ## Executive Summary
 
-Application de gestion métier pour artisans (fumistes, menuisiers, plombiers, chauffagistes) construite entièrement en PostgreSQL. Le HTML est généré côté serveur par des fonctions PL/pgSQL (pgView), servi par PostgREST, affiché par un shell SPA de 50 lignes. Zéro framework JS, zéro serveur applicatif.
+Application de gestion métier pour TPE/PME construite entièrement en PostgreSQL. Le HTML est généré côté serveur par des fonctions PL/pgSQL (pgView), servi par PostgREST, affiché par un shell SPA de 50 lignes. Zéro framework JS, zéro serveur applicatif. Premier marché cible : artisans (fumistes, menuisiers, plombiers, chauffagistes).
 
 **Avantage concurrentiel** : coût de développement et de maintenance 10x inférieur à une app classique React/Node, avec les mêmes fonctionnalités.
 

@@ -16,7 +16,7 @@
 
   <!-- App bar (multi-module mode) -->
   <div class="pgv-app-bar" x-show="_modules.length > 0" x-cloak>
-    <a href="/" @click.prevent="go('/')" class="pgv-app-home" title="Accueil">
+    <a href="/" @click.prevent="go('/')" class="pgv-app-home" :title="t('home')">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
     </a>
     <div class="pgv-app-nav">
@@ -28,7 +28,7 @@
       </template>
     </div>
     <div class="pgv-app-end">
-      <button class="pgv-app-search-btn" @click="searchOpen()" title="Rechercher (⌘K)">
+      <button class="pgv-app-search-btn" @click="searchOpen()" :title="t('search')">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="15" y2="15"/></svg>
       </button>
       <button class="pgv-theme-toggle" data-toggle-theme @click="_themeToggle()">&#x263E;</button>
@@ -44,7 +44,7 @@
   </div>
 
   <!-- Bug Report Button -->
-  <button class="pgv-bug-btn" @click="bugOpen()" title="Signaler un bug">&#x1F41B;</button>
+  <button class="pgv-bug-btn" @click="bugOpen()" :title="t('bug.title')">&#x1F41B;</button>
 
   <!-- Bug Report Overlay -->
   <template x-if="bug.open">
@@ -52,20 +52,20 @@
       <div class="pgv-bug-backdrop" @click="bugClose()"></div>
       <div class="pgv-bug-panel" @keydown.escape.prevent="bugClose()">
         <header class="pgv-bug-header">
-          <strong>Signaler un bug</strong>
+          <strong x-text="t('bug.title')"></strong>
           <button class="pgv-bug-close" @click="bugClose()">&times;</button>
         </header>
         <div class="pgv-bug-body">
-          <label for="bug-desc">Description du problème</label>
-          <textarea id="bug-desc" x-model="bug.desc" rows="4" placeholder="Décrivez ce qui ne fonctionne pas..."></textarea>
+          <label for="bug-desc" x-text="t('bug.label')"></label>
+          <textarea id="bug-desc" x-model="bug.desc" rows="4" :placeholder="t('bug.placeholder')"></textarea>
           <details>
-            <summary>Contexte capturé automatiquement</summary>
+            <summary x-text="t('bug.context')"></summary>
             <pre x-text="JSON.stringify(bugContext(), null, 2)"></pre>
           </details>
         </div>
         <footer class="pgv-bug-footer">
-          <button class="secondary" @click="bugClose()">Annuler</button>
-          <button @click="bugSubmit()" :disabled="!bug.desc.trim()">Envoyer</button>
+          <button class="secondary" @click="bugClose()" x-text="t('cancel')"></button>
+          <button @click="bugSubmit()" :disabled="!bug.desc.trim()" x-text="t('send')"></button>
         </footer>
       </div>
     </div>
@@ -79,7 +79,7 @@
       <div x-show="toast.detail" style="color:var(--pgv-muted);font-size:0.8rem"
            x-text="toast.detail"></div>
       <a x-show="toast.level === 'error'" class="pgv-toast-report" href="#"
-         @click.prevent="bugFromError()">Signaler</a>
+         @click.prevent="bugFromError()" x-text="t('bug.report')"></a>
     </article>
   </div>
 
@@ -90,14 +90,14 @@
       <div class="pgv-search-palette" @keydown.escape.prevent="searchClose()" @keydown.arrow-down.prevent="searchNav(1)" @keydown.arrow-up.prevent="searchNav(-1)" @keydown.enter.prevent="searchSelect()">
         <div class="pgv-search-input-row">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="15" y2="15"/></svg>
-          <input class="pgv-search-input" type="text" placeholder="Rechercher..." x-ref="searchInput" x-model="search.query" @input.debounce.200ms="searchExec()" autofocus>
+          <input class="pgv-search-input" type="text" :placeholder="t('search.placeholder')" x-ref="searchInput" x-model="search.query" @input.debounce.200ms="searchExec()" autofocus>
           <span class="pgv-search-hint">ESC</span>
         </div>
         <div x-ref="searchResults" @click="var it=event.target.closest('.pgv-search-item');if(it){search.idx=[].indexOf.call($refs.searchResults.querySelectorAll('.pgv-search-item'),it);searchSelect();}"></div>
         <div class="pgv-search-footer">
-          <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> naviguer</span>
-          <span><kbd>Enter</kbd> ouvrir</span>
-          <span><kbd>Esc</kbd> fermer</span>
+          <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> <span x-text="t('search.nav')"></span></span>
+          <span><kbd>Enter</kbd> <span x-text="t('search.open')"></span></span>
+          <span><kbd>Esc</kbd> <span x-text="t('search.close')"></span></span>
         </div>
       </div>
     </div>
@@ -107,13 +107,13 @@
   <dialog x-ref="dialog">
     <article style="width:min(90vw,520px);margin:0">
       <header>
-        <button aria-label="Fermer" rel="prev" @click="$refs.dialog.close()"></button>
+        <button :aria-label="t('close')" rel="prev" @click="$refs.dialog.close()"></button>
         <strong x-text="dlg.title"></strong>
       </header>
       <div x-ref="dlgBody"></div>
       <footer style="display:flex;justify-content:flex-end;gap:.5rem">
-        <button class="secondary" @click="$refs.dialog.close()">Annuler</button>
-        <button @click="dlgSelect()">Sélectionner</button>
+        <button class="secondary" @click="$refs.dialog.close()" x-text="t('cancel')"></button>
+        <button @click="dlgSelect()" x-text="t('select')"></button>
       </footer>
     </article>
   </dialog>
@@ -122,12 +122,12 @@
   <dialog x-ref="confirmDialog" class="pgv-confirm-dialog">
     <article class="pgv-confirm-article">
       <header class="pgv-confirm-header">
-        <strong>Confirmation</strong>
+        <strong x-text="t('confirm.title')"></strong>
       </header>
       <div class="pgv-confirm-body" x-ref="confirmMsg"></div>
       <footer class="pgv-confirm-footer">
-        <button class="secondary" x-ref="confirmNo">Annuler</button>
-        <button x-ref="confirmYes">Confirmer</button>
+        <button class="secondary" x-ref="confirmNo" x-text="t('cancel')"></button>
+        <button x-ref="confirmYes" x-text="t('confirm')"></button>
       </footer>
     </article>
   </dialog>
@@ -145,10 +145,22 @@
       _fixedSchema: null,
       _errors: [],
       _actions: [],
+      _i18n: {},
+
+      /* ── i18n ───────────────────────────────────────── */
+      t: function(key) { return this._i18n[key] || key; },
 
       /* ── Bootstrap ─────────────────────────────────── */
       boot: function() {
         var self = this;
+        // Load i18n (non-blocking, fallback to keys)
+        var lang = document.documentElement.lang || 'fr';
+        fetch('/i18n/' + lang + '.json').then(function(r) {
+          return r.ok ? r.json() : {};
+        }).then(function(dict) {
+          self._i18n = dict;
+        }).catch(function() {});
+
         // Error tracking (circular buffer, max 20)
         window.addEventListener('error', function(e) {
           self._errors.push({ msg: e.message, src: e.filename, line: e.lineno, ts: Date.now() });
@@ -309,7 +321,7 @@
           });
         })
         .catch(function() {
-          self.showToast('Erreur réseau', 'error', 'Serveur injoignable.');
+          self.showToast(self.t('error.network'), 'error', self.t('error.unreachable'));
         });
       },
 
@@ -339,7 +351,7 @@
           return r.text().then(function(html) { self._render(html); });
         })
         .catch(function() {
-          self.showToast('Erreur réseau', 'error', 'Serveur injoignable.');
+          self.showToast(self.t('error.network'), 'error', self.t('error.unreachable'));
         });
       },
 
@@ -405,7 +417,7 @@
           var start = page * pageSize + 1;
           var end = Math.min(start + pageSize - 1, total);
 
-          var h = '<span class="pgv-pager-info">' + start + '-' + end + ' sur ' + total + '</span>';
+          var h = '<span class="pgv-pager-info">' + start + '-' + end + ' / ' + total + '</span>';
           h += '<span class="pgv-pager-btns">';
           h += '<button ' + (page === 0 ? 'disabled' : 'data-page="' + (page - 1) + '"') + '>&lsaquo;</button>';
           for (var i = 0; i < pages; i++) {
@@ -524,7 +536,7 @@
             })
             .then(function(r) { return r.json(); })
             .then(function(rows) {
-              if (!rows || !rows.length) { box.innerHTML = '<div class="pgv-ss-empty">Aucun resultat</div>'; return; }
+              if (!rows || !rows.length) { box.innerHTML = '<div class="pgv-ss-empty">' + self.t('search.no_results') + '</div>'; return; }
               idx = -1;
               box.innerHTML = '';
               rows.forEach(function(r, i) {
@@ -540,7 +552,7 @@
                 box.appendChild(d);
               });
             })
-            .catch(function() { box.innerHTML = '<div class="pgv-ss-empty">Erreur</div>'; });
+            .catch(function() { box.innerHTML = '<div class="pgv-ss-empty">' + self.t('search.error') + '</div>'; });
           }
 
           function pick(val, label) {
@@ -611,13 +623,13 @@
           self._enhance(container);
         })
         .catch(function() {
-          container.innerHTML = '<p>Erreur de chargement</p>';
+          container.innerHTML = '<p>' + self.t('error.load') + '</p>';
         });
       },
 
       /* ── Home page (module cards) ──────────────────── */
       _renderHome: function() {
-        var h = '<main class="container"><hgroup><h2>Applications</h2></hgroup>';
+        var h = '<main class="container"><hgroup><h2>' + this.t('apps') + '</h2></hgroup>';
         h += '<div class="pgv-app-grid">';
         for (var i = 0; i < this._modules.length; i++) {
           var m = this._modules[i];
@@ -631,7 +643,7 @@
             h += (it.label || '') + '</a></li>';
           }
           h += '</ul>';
-          h += '<footer><a href="/' + m.schema + '/">Ouvrir &rarr;</a></footer>';
+          h += '<footer><a href="/' + m.schema + '/">' + this.t('open_module') + ' &rarr;</a></footer>';
           h += '</article>';
         }
         h += '</div></main>';
@@ -667,14 +679,14 @@
         var status = r.status;
         return r.json().then(function(e) {
           if (e.message) {
-            var title = status + ' — ' + (e.code || 'Erreur');
+            var title = status + ' — ' + (e.code || self.t('error.prefix'));
             var detail = e.message + (e.hint ? ' (' + e.hint + ')' : '');
             self.showToast(title, 'error', detail);
           } else {
-            self.showToast('Erreur ' + status, 'error');
+            self.showToast(self.t('error.prefix') + ' ' + status, 'error');
           }
         }).catch(function() {
-          self.showToast('Erreur ' + status, 'error');
+          self.showToast(self.t('error.prefix') + ' ' + status, 'error');
         });
       },
 
@@ -713,7 +725,7 @@
           self._searchHighlight();
         })
         .catch(function() {
-          if (self.$refs.searchResults) self.$refs.searchResults.innerHTML = '<div class="pgv-empty"><h4>Erreur</h4></div>';
+          if (self.$refs.searchResults) self.$refs.searchResults.innerHTML = '<div class="pgv-empty"><h4>' + self.t('search.error') + '</h4></div>';
         });
       },
 
@@ -747,8 +759,8 @@
 
       /* ── Dialog ────────────────────────────────────── */
       openDialog: function(name, src, target) {
-        this.dlg = { title: name === 'folder-picker' ? 'Sélectionner un dossier' : name, target: target || '' };
-        this.$refs.dlgBody.innerHTML = '<p aria-busy="true">Chargement...</p>';
+        this.dlg = { title: name === 'folder-picker' ? this.t('dialog.folder') : name, target: target || '' };
+        this.$refs.dlgBody.innerHTML = '<p aria-busy="true">' + this.t('dialog.loading') + '</p>';
         this.$refs.dialog.showModal();
         this._browse(src);
       },
@@ -760,7 +772,7 @@
         var self = this;
         fetch(url).then(function(r) { return r.text(); })
           .then(function(html) { self.$refs.dlgBody.innerHTML = html; })
-          .catch(function() { self.$refs.dlgBody.innerHTML = '<p>Erreur de chargement.</p>'; });
+          .catch(function() { self.$refs.dlgBody.innerHTML = '<p>' + self.t('dialog.load_error') + '</p>'; });
       },
 
       dlgSelect: function() {
@@ -834,10 +846,10 @@
         })
         .then(function(r) {
           if (!r.ok) throw new Error(r.status);
-          self.showToast('Bug reporté, merci !', 'success');
+          self.showToast(self.t('bug.success'), 'success');
         })
         .catch(function() {
-          self.showToast('Erreur lors de l\'envoi', 'error');
+          self.showToast(self.t('bug.error'), 'error');
         });
       }
     }; });

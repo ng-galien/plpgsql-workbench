@@ -290,8 +290,9 @@ mod
   .command("new <name>")
   .description("Scaffold a new module")
   .option("-s, --schema <name>", "Public schema name (default: module name)")
+  .option("-d, --description <text>", "Module description")
   .option("-p, --port <port>", "MCP server port (default: 3100)", "3100")
-  .action(async (moduleName: string, opts: { schema?: string; port: string }) => {
+  .action(async (moduleName: string, opts: { schema?: string; description?: string; port: string }) => {
     const wsRoot = await findWorkspaceRoot(process.cwd());
     const modulesDir = path.join(wsRoot, "modules");
     const moduleDir = path.join(modulesDir, moduleName);
@@ -309,7 +310,7 @@ mod
 
     console.log(`Creating module ${moduleName}...\n`);
 
-    const created = await scaffoldModule(moduleDir, moduleName, schemaName, mcpPort);
+    const created = await scaffoldModule(moduleDir, moduleName, schemaName, mcpPort, opts.description);
     for (const f of created) {
       console.log(`  ${f}`);
     }

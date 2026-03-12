@@ -1,0 +1,28 @@
+{
+  "name": "planning",
+  "version": "0.1.0",
+  "description": "Agenda partagé, planification, affectation équipes par jour",
+  "schemas": {
+    "public": "planning",
+    "private": null,
+    "qa": "planning_qa"
+  },
+  "dependencies": [
+    "pgv"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/planning.ddl.sql",
+    "build/planning.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "planning"
+    ]
+  }
+}

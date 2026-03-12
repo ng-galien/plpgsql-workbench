@@ -1,6 +1,6 @@
 # catalog — Catalogue Produits/Services
 
-Module catalogue pour artisans : articles, prestations, tarifs, catégories, unités de mesure.
+Module catalogue : articles, prestations, tarifs, catégories, unités de mesure.
 
 **Dépend de :** pgv (framework UI)
 

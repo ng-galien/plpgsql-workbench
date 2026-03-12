@@ -1,0 +1,29 @@
+{
+  "name": "hr",
+  "version": "0.1.0",
+  "description": "Salariés, congés, absences, heures travaillées, registre du personnel",
+  "schemas": {
+    "public": "hr",
+    "test": "hr_ut",
+    "private": null,
+    "qa": "hr_qa"
+  },
+  "dependencies": [
+    "pgv"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/hr.ddl.sql",
+    "build/hr.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "hr"
+    ]
+  }
+}

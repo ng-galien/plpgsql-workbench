@@ -1,6 +1,6 @@
 # expense — Notes de Frais
 
-Module notes de frais pour artisans : déplacements, achats, repas, remboursements.
+Module notes de frais : déplacements, achats, repas, remboursements.
 
 **Dépend de :** pgv (framework UI)
 

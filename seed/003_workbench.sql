@@ -60,6 +60,8 @@ INSERT INTO workbench.tenant_module (tenant_id, module, sort_order) VALUES
   ('dev', 'stock',   50),
   ('dev', 'purchase',60),
   ('dev', 'project', 70),
+  ('dev', 'planning',75),
+  ('dev', 'hr',      80),
   ('dev', 'ops',     90)
 ON CONFLICT DO NOTHING;
 

@@ -17,4 +17,13 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+-- i18n translations
+CREATE TABLE IF NOT EXISTS pgv.i18n (
+  lang  text NOT NULL,
+  key   text NOT NULL,
+  value text NOT NULL,
+  PRIMARY KEY (lang, key)
+);
+
 GRANT USAGE ON SCHEMA pgv TO web_anon;
+GRANT SELECT ON pgv.i18n TO web_anon;

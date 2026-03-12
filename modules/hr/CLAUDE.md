@@ -1,10 +1,10 @@
-# project — Chantiers & Suivi Avancement
+# hr
 
-Projets, jalons, suivi avancement, facturation de situation.
+Salariés, congés, absences, heures travaillées, registre du personnel
 
-**Depend de :** `pgv`, `crm`, `quote`
+**Depend de :** `pgv`
 
-**Schemas :** `project`, `project_ut` (tests), `project_qa` (seed data)
+**Schemas :** `hr`, `hr_ut` (tests), `hr_qa` (seed data)
 
 ## Framework pgView
 
@@ -16,7 +16,7 @@ Ce module est un **module independant** du framework pgView. Ses dependances son
 - `nav_items() -> jsonb` → menu du module. Retourne `jsonb` (JAMAIS TABLE)
 - `brand() -> text` → nom affiche dans la nav
 - `get_index()` → page d'accueil du module (obligatoire)
-- Parametres via query string : `/chantier?p_id=42` → `get_chantier(p_id int)`
+- Parametres via query string : `/page?p_id=42` → `get_page(p_id int)`
 - POST retourne raw HTML (templates `<template data-toast>` ou `<template data-redirect>`) — jamais wrappe dans `page()`
 - Tables via `<md>` blocks (markdown), JAMAIS `<table>` HTML. `<md data-page="20">` pour pagination
 - CSS classes `pgv-*`, JAMAIS de `style="..."` inline
@@ -48,19 +48,15 @@ Chaque `build/{schema}.ddl.sql` DOIT inclure :
 
 ### Communication inter-modules
 
-- `pg_msg_inbox module:project` → lire les messages entrants
+- `pg_msg_inbox module:hr` → lire les messages entrants
 - `pg_msg` → envoyer un message a un autre module
 - Chaque module est autonome — ne jamais modifier les fonctions d'un autre module
 
 ## Gotchas
 
-- CRM + Quote doivent etre deployes avant
-- Avancement % par jalon — facturation de situation = % x montant marche
-- Un chantier peut avoir plusieurs devis (avenants)
-- Jalons ordonnes — validation sequentielle obligatoire
-- Arrondi par ligne : `SUM(ROUND(..., 2))`, jamais `ROUND(SUM(...), 2)`
+- (a completer au fil du developpement)
 
 ## Premier demarrage
 
-Lire `pg_msg_inbox module:project` pour les instructions d'implementation detaillees.
+Lire `pg_msg_inbox module:hr` pour les instructions d'implementation detaillees.
 Consulter crm, quote, ledger comme reference pour les patterns pgView.

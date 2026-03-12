@@ -16,6 +16,9 @@ DECLARE
   v_argtype text;
   v_argname text;
 BEGIN
+  -- Set i18n language for this request
+  PERFORM set_config('pgv.lang', coalesce(nullif(current_setting('pgv.lang', true), ''), 'fr'), true);
+
   -- Get nav items
   BEGIN
     EXECUTE format('SELECT %I.nav_items()', p_schema) INTO v_nav;
