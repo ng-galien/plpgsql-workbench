@@ -320,6 +320,10 @@ app.post("/hooks/:module/session", async (req, res) => {
 // --- Stop hook — block if pending messages, let pass otherwise ---
 app.post("/hooks/:module/stop", async (req, res) => {
   const mod = req.params.module;
+  // Prevent infinite loops: if already continuing from a previous stop hook block, allow stop
+  if (req.body?.stop_hook_active) {
+    return res.json({});
+  }
   try {
     const pool: import("pg").Pool = container.resolve("pool");
     const inbox = await pool.query(`SELECT * FROM workbench.inbox_new($1)`, [mod]);
@@ -328,10 +332,11 @@ app.post("/hooks/:module/stop", async (req, res) => {
     const parts: string[] = [];
 
     if (inbox.rows.length > 0) {
-      parts.push(`[INBOX] ${inbox.rows.length} new message(s). Use pg_msg_inbox module:${mod} to read and resolve.`);
+      parts.push(`[INBOX] ${inbox.rows.length} new message(s):`);
       for (const r of inbox.rows) {
         parts.push(`  #${r.id} [${r.msg_type}] from ${r.from_module}: ${r.subject}`);
       }
+      parts.push(`→ Use pg_msg_inbox module:${mod} to read, then resolve each message before stopping.`);
     }
 
     if (resolved.rows.length > 0) {
@@ -339,6 +344,7 @@ app.post("/hooks/:module/stop", async (req, res) => {
       for (const r of resolved.rows) {
         parts.push(`  #${r.id} -> ${r.to_module}: ${r.subject}${r.resolution ? ` — ${r.resolution}` : ""}`);
       }
+      parts.push(`→ Use pg_msg_inbox module:${mod} to acknowledge these resolutions before stopping.`);
     }
 
     if (parts.length > 0) {

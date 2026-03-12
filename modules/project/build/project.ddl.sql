@@ -1,0 +1,5 @@
+-- project — DDL
+
+CREATE SCHEMA IF NOT EXISTS project;
+CREATE SCHEMA IF NOT EXISTS project_ut;
+CREATE SCHEMA IF NOT EXISTS project_qa;

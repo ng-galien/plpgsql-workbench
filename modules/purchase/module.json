@@ -1,0 +1,31 @@
+{
+  "name": "purchase",
+  "version": "0.1.0",
+  "description": "Commandes fournisseurs, bons de commande, reception, rapprochement factures",
+  "schemas": {
+    "public": "purchase",
+    "private": null,
+    "test": "purchase_ut",
+    "qa": "purchase_qa"
+  },
+  "dependencies": [
+    "pgv",
+    "crm",
+    "stock"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/purchase.ddl.sql",
+    "build/purchase.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "purchase"
+    ]
+  }
+}

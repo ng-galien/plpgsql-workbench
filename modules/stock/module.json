@@ -1,0 +1,30 @@
+{
+  "name": "stock",
+  "version": "0.1.0",
+  "description": "Stocks materiaux/fournitures, entrees/sorties, inventaire, seuils alerte, multi-depots",
+  "schemas": {
+    "public": "stock",
+    "private": null,
+    "test": "stock_ut",
+    "qa": "stock_qa"
+  },
+  "dependencies": [
+    "pgv",
+    "crm"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/stock.ddl.sql",
+    "build/stock.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "stock"
+    ]
+  }
+}

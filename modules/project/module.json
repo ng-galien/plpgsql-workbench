@@ -1,0 +1,31 @@
+{
+  "name": "project",
+  "version": "0.1.0",
+  "description": "Chantiers/projets, suivi avancement, jalons, affectation ressources, facturation situation",
+  "schemas": {
+    "public": "project",
+    "private": null,
+    "test": "project_ut",
+    "qa": "project_qa"
+  },
+  "dependencies": [
+    "pgv",
+    "crm",
+    "quote"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/project.ddl.sql",
+    "build/project.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "project"
+    ]
+  }
+}

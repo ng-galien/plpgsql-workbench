@@ -1,0 +1,5 @@
+-- purchase — DDL
+
+CREATE SCHEMA IF NOT EXISTS purchase;
+CREATE SCHEMA IF NOT EXISTS purchase_ut;
+CREATE SCHEMA IF NOT EXISTS purchase_qa;
