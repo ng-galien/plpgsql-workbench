@@ -21,12 +21,13 @@
   margin: 0.5rem 0;
 }
 
-/* Agent card */
+/* Agent card — contain isolates repaints from terminal */
 .ops-agent-card {
   border: 1px solid var(--pico-muted-border-color);
   border-radius: var(--pico-border-radius);
   overflow: hidden;
   background: var(--pico-card-background-color);
+  contain: layout style paint;
 }
 
 .ops-agent-card-header {
@@ -39,6 +40,7 @@
   font-size: 0.8rem;
   cursor: pointer;
   user-select: none;
+  contain: layout style paint;
 }
 
 .ops-agent-status {
@@ -76,6 +78,7 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+  background: #555;
 }
 
 .ops-agent-dot.connected { background: #2ea043; }
@@ -100,21 +103,29 @@
   font-family: var(--pico-font-family-monospace, monospace);
 }
 
-/* Terminal container */
+/* Terminal container — single instance, CSS containment for perf */
 .ops-terminal {
   position: relative;
-  height: 200px;
+  height: clamp(150px, 25vh, 400px);
   background: #1a1b26;
+  contain: layout paint;
+  overflow: hidden;
+}
+
+[data-theme="light"] .ops-terminal {
+  background: #f8f8f2;
 }
 
 .ops-terminal--detail {
-  height: 50vh;
+  height: clamp(300px, 50vh, 70vh);
 }
 
-.ops-terminal > [x-ref="terminal"] {
+.ops-terminal > [x-ref="terminal"],
+.ops-terminal > .xterm {
   height: 100%;
 }
 
+/* Status overlay */
 .ops-terminal-status {
   position: absolute;
   top: 50%;
@@ -122,6 +133,21 @@
   transform: translate(-50%, -50%);
   color: #555;
   font-size: 0.8rem;
+  z-index: 5;
+  transition: opacity 0.5s;
+}
+
+.ops-terminal-status--connected {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ops-terminal-status--reconnecting {
+  color: #d29922;
+}
+
+.ops-terminal-status--backpressure {
+  color: #cf222e;
 }
 
 /* ── Loading state ── */

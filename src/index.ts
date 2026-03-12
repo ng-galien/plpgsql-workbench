@@ -11,7 +11,9 @@ import path from "path";
 import pino from "pino";
 import { WebSocketServer, WebSocket } from "ws";
 import pty from "node-pty";
-import { execFileSync } from "child_process";
+import { execFileSync, execFile } from "child_process";
+import { promisify } from "util";
+const execFileAsync = promisify(execFile);
 import { buildContainer, mountTools, type ToolPack } from "./container.js";
 import { plpgsqlPack } from "./packs/plpgsql.js";
 import { docstorePack } from "./packs/docstore.js";
@@ -832,42 +834,51 @@ ptyEnv.TERM = "xterm-256color";
 delete ptyEnv.TMUX;
 delete ptyEnv.TMUX_PANE;
 
-app.get("/api/tmux", (_req, res) => {
+app.get("/api/tmux", async (_req, res) => {
   if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
   try {
-    const raw = execFileSync(TMUX_BIN, [
+    // Batch: single list-sessions call
+    const rawSessions = execFileSync(TMUX_BIN, [
       "list-sessions", "-F",
       "#{session_name}\t#{session_created}\t#{session_activity}",
     ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
+    // Batch: single list-panes call for ALL sessions
+    const paneMap = new Map<string, { cwd: string; dead: boolean }>();
+    try {
+      const rawPanes = execFileSync(TMUX_BIN, [
+        "list-panes", "-a", "-F",
+        "#{session_name}\t#{pane_current_path}\t#{pane_dead}",
+      ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      for (const line of rawPanes.trim().split("\n").filter(Boolean)) {
+        const [sess, cwd, dead] = line.split("\t");
+        if (!paneMap.has(sess)) {
+          paneMap.set(sess, { cwd: cwd || "", dead: dead === "1" });
+        }
+      }
+    } catch {}
+
     const wsRoot = resolveWorkspaceRoot();
-    const sessions = raw.trim().split("\n").filter(Boolean).map(line => {
+    const activityRe = /(?:Brewing|Cascading|Crunching|Churning|Cooking|Embellishing|Manifesting|Sautéed|Thinking|Worked|Cooked|Crunched|thinking|pg_func_set|pg_pack|pg_schema|pg_test|pg_query|pg_msg|Write|Edit|Read)/;
+
+    const parsed = rawSessions.trim().split("\n").filter(Boolean).map(line => {
       const [name, created, activity] = line.split("\t");
-      let cwd = "";
-      let dead = false;
-      try {
-        cwd = execFileSync(TMUX_BIN, ["display-message", "-t", name, "-p", "#{pane_current_path}"], {
-          encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-        }).trim();
-        const info = execFileSync(TMUX_BIN, ["list-panes", "-t", name, "-F", "#{pane_dead}"], {
-          encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-        }).trim();
-        dead = info === "1";
-      } catch {}
-      // Extract current activity from pane content (same pattern as `make agents-status`)
-      let status = "idle";
-      try {
-        const pane = execFileSync(TMUX_BIN, ["capture-pane", "-t", name, "-p"], {
-          encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-        });
-        const activityRe = /(?:Brewing|Cascading|Crunching|Churning|Cooking|Embellishing|Manifesting|Sautéed|Thinking|Worked|Cooked|Crunched|thinking|pg_func_set|pg_pack|pg_schema|pg_test|pg_query|pg_msg|Write|Edit|Read)/;
-        const lines = pane.split("\n").filter(l => activityRe.test(l));
-        if (lines.length > 0) status = lines[lines.length - 1].trim();
-      } catch {}
-      return { name, created: parseInt(created) * 1000, activity: parseInt(activity) * 1000, cwd, dead, status };
+      const pane = paneMap.get(name) ?? { cwd: "", dead: false };
+      return { name, created: parseInt(created) * 1000, activity: parseInt(activity) * 1000, cwd: pane.cwd, dead: pane.dead, status: "idle" };
     }).filter(s => s.cwd.startsWith(wsRoot) && !s.dead);
 
-    res.json(sessions);
+    // Async parallel capture-pane for status detection (non-blocking)
+    await Promise.all(parsed.map(async (s) => {
+      try {
+        const { stdout } = await execFileAsync(TMUX_BIN, ["capture-pane", "-t", s.name, "-p"], {
+          encoding: "utf8",
+        });
+        const lines = stdout.split("\n").filter(l => activityRe.test(l));
+        if (lines.length > 0) s.status = lines[lines.length - 1].trim();
+      } catch {}
+    }));
+
+    res.json(parsed);
   } catch {
     res.json([]);
   }
@@ -887,8 +898,9 @@ function handleTmuxAttach(ws: WebSocket, session: string) {
 
   // Per-client node-pty attached to tmux — immediate creation at 80x24 (claude-command-center).
   // Client sends resize on connect → pty.resize() → tmux repaints at correct size.
-  // Direct send, no server-side batching.
+  // Scrollback is sent AFTER the first resize (so capture-pane uses the correct column width).
   let proc: pty.IPty;
+  let scrollbackSent = false;
   try {
     proc = pty.spawn(TMUX_BIN, ["attach-session", "-t", session], {
       name: "xterm-256color",
@@ -949,6 +961,19 @@ function handleTmuxAttach(ws: WebSocket, session: string) {
         const cols = Math.max(20, Math.floor(parsed.cols));
         const rows = Math.max(5, Math.floor(parsed.rows));
         proc.resize(cols, rows);
+
+        // Send scrollback on first resize — capture at the client's actual column width
+        if (!scrollbackSent) {
+          scrollbackSent = true;
+          try {
+            const scrollback = execFileSync(TMUX_BIN, [
+              "capture-pane", "-t", session, "-p", "-e", "-S", "-500",
+            ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+            if (scrollback.trim()) {
+              ws.send(scrollback);
+            }
+          } catch { /* session may have no scrollback */ }
+        }
         return;
       }
     } catch { /* not JSON, treat as input */ }
