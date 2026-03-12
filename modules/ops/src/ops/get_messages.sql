@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION ops.get_messages(p_module text DEFAULT NULL::text)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_rows text[];
@@ -18,26 +17,28 @@ BEGIN
       FROM workbench.agent_message m
      WHERE (p_module IS NULL OR m.from_module = p_module OR m.to_module = p_module)
      ORDER BY m.created_at DESC
+     LIMIT 100
   LOOP
     v_type_variant := CASE r.msg_type
       WHEN 'feature_request' THEN 'info'
       WHEN 'bug_report' THEN 'danger'
       WHEN 'question' THEN 'warning'
+      WHEN 'task' THEN 'success'
       ELSE 'default'
     END;
     v_status_variant := CASE r.status
-      WHEN 'new' THEN 'warning'
-      WHEN 'acknowledged' THEN 'info'
+      WHEN 'new' THEN 'danger'
+      WHEN 'acknowledged' THEN 'warning'
       WHEN 'resolved' THEN 'success'
       ELSE 'default'
     END;
 
     v_rows := v_rows || ARRAY[
-      '#' || r.id::text,
+      '<a href="' || pgv.href('/message?p_id=' || r.id::text) || '">#' || r.id::text || '</a>',
       pgv.badge(r.from_module, 'default'),
       pgv.badge(r.to_module, 'default'),
       pgv.badge(r.msg_type, v_type_variant),
-      pgv.esc(r.subject),
+      pgv.esc(left(r.subject, 60)),
       pgv.badge(r.status, v_status_variant),
       r.dt
     ];

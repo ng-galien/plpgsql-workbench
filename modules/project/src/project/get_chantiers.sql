@@ -1,33 +1,35 @@
-CREATE OR REPLACE FUNCTION project.get_chantiers(p_statut text DEFAULT NULL::text, p_q text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION project.get_chantiers(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
 AS $function$
 DECLARE
-  v_body  text;
-  v_rows  text[];
-  r       record;
+  v_statut text := p_params->>'statut';
+  v_q      text := p_params->>'q';
+  v_body   text;
+  v_rows   text[];
+  r        record;
 BEGIN
   -- Formulaire de filtre
   v_body := format(
     '<form method="get" action="%s" class="grid" style="grid-template-columns:auto auto 1fr auto;align-items:end;gap:.5rem">'
-    || '<label>Statut<select name="p_statut">'
+    || '<label>Statut<select name="statut">'
     || '<option value="">Tous</option>'
     || '<option value="preparation"%s>Préparation</option>'
     || '<option value="execution"%s>En cours</option>'
     || '<option value="reception"%s>Réception</option>'
     || '<option value="clos"%s>Clos</option>'
     || '</select></label>'
-    || '<label>Recherche<input type="search" name="p_q" value="%s" placeholder="Numéro, client, objet…"></label>'
+    || '<label>Recherche<input type="search" name="q" value="%s" placeholder="Numéro, client, objet…"></label>'
     || '<div></div>'
     || '<button type="submit">Filtrer</button>'
     || '</form>',
     pgv.call_ref('get_chantiers'),
-    CASE WHEN p_statut = 'preparation' THEN ' selected' ELSE '' END,
-    CASE WHEN p_statut = 'execution'   THEN ' selected' ELSE '' END,
-    CASE WHEN p_statut = 'reception'   THEN ' selected' ELSE '' END,
-    CASE WHEN p_statut = 'clos'        THEN ' selected' ELSE '' END,
-    pgv.esc(COALESCE(p_q, ''))
+    CASE WHEN v_statut = 'preparation' THEN ' selected' ELSE '' END,
+    CASE WHEN v_statut = 'execution'   THEN ' selected' ELSE '' END,
+    CASE WHEN v_statut = 'reception'   THEN ' selected' ELSE '' END,
+    CASE WHEN v_statut = 'clos'        THEN ' selected' ELSE '' END,
+    pgv.esc(COALESCE(v_q, ''))
   );
 
   -- Requête filtrée
@@ -39,11 +41,11 @@ BEGIN
       FROM project.chantier c
       JOIN crm.client cl ON cl.id = c.client_id
       LEFT JOIN quote.devis d ON d.id = c.devis_id
-     WHERE (p_statut IS NULL OR p_statut = '' OR c.statut = p_statut)
-       AND (p_q IS NULL OR p_q = ''
-            OR c.numero ILIKE '%' || p_q || '%'
-            OR cl.name  ILIKE '%' || p_q || '%'
-            OR c.objet  ILIKE '%' || p_q || '%')
+     WHERE (v_statut IS NULL OR v_statut = '' OR c.statut = v_statut)
+       AND (v_q IS NULL OR v_q = ''
+            OR c.numero ILIKE '%' || v_q || '%'
+            OR cl.name  ILIKE '%' || v_q || '%'
+            OR c.objet  ILIKE '%' || v_q || '%')
      ORDER BY c.updated_at DESC
   LOOP
     v_rows := v_rows || ARRAY[

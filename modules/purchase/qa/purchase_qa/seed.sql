@@ -94,6 +94,14 @@ BEGIN
   INSERT INTO purchase.facture_fournisseur (commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, statut)
   VALUES (v_cmd3_id, 'BM-2026-0412', 126.00, 151.20, now()::date - 3, 'recue');
 
-  RETURN 'purchase_qa.seed() OK — 4 commandes, 2 réceptions, 2 factures, 2 fournisseurs CRM';
+  -- Facture payée + comptabilisée (CMD4 complète)
+  INSERT INTO purchase.facture_fournisseur (commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, statut, comptabilisee)
+  VALUES (v_cmd4_id, 'FM-8843', 31.80, 38.16, now()::date - 15, 'payee', true);
+
+  -- Facture partielle sur CMD3 (acompte)
+  INSERT INTO purchase.facture_fournisseur (commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, date_echeance, statut, notes)
+  VALUES (v_cmd3_id, 'BM-2026-0413', 84.00, 100.80, now()::date - 1, now()::date + 30, 'validee', 'Acompte livraison partielle MDF');
+
+  RETURN 'purchase_qa.seed() OK — 4 commandes, 2 réceptions, 4 factures (1 comptabilisée), 2 fournisseurs CRM';
 END;
 $function$;

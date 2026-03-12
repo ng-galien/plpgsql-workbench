@@ -355,36 +355,38 @@ END;
 $function$;
 COMMENT ON FUNCTION project.get_chantier_form(integer) IS 'Formulaire creation/edition chantier';
 
-CREATE OR REPLACE FUNCTION project.get_chantiers(p_statut text DEFAULT NULL::text, p_q text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION project.get_chantiers(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
 AS $function$
 DECLARE
-  v_body  text;
-  v_rows  text[];
-  r       record;
+  v_statut text := p_params->>'statut';
+  v_q      text := p_params->>'q';
+  v_body   text;
+  v_rows   text[];
+  r        record;
 BEGIN
   -- Formulaire de filtre
   v_body := format(
     '<form method="get" action="%s" class="grid" style="grid-template-columns:auto auto 1fr auto;align-items:end;gap:.5rem">'
-    || '<label>Statut<select name="p_statut">'
+    || '<label>Statut<select name="statut">'
     || '<option value="">Tous</option>'
     || '<option value="preparation"%s>Préparation</option>'
     || '<option value="execution"%s>En cours</option>'
     || '<option value="reception"%s>Réception</option>'
     || '<option value="clos"%s>Clos</option>'
     || '</select></label>'
-    || '<label>Recherche<input type="search" name="p_q" value="%s" placeholder="Numéro, client, objet…"></label>'
+    || '<label>Recherche<input type="search" name="q" value="%s" placeholder="Numéro, client, objet…"></label>'
     || '<div></div>'
     || '<button type="submit">Filtrer</button>'
     || '</form>',
     pgv.call_ref('get_chantiers'),
-    CASE WHEN p_statut = 'preparation' THEN ' selected' ELSE '' END,
-    CASE WHEN p_statut = 'execution'   THEN ' selected' ELSE '' END,
-    CASE WHEN p_statut = 'reception'   THEN ' selected' ELSE '' END,
-    CASE WHEN p_statut = 'clos'        THEN ' selected' ELSE '' END,
-    pgv.esc(COALESCE(p_q, ''))
+    CASE WHEN v_statut = 'preparation' THEN ' selected' ELSE '' END,
+    CASE WHEN v_statut = 'execution'   THEN ' selected' ELSE '' END,
+    CASE WHEN v_statut = 'reception'   THEN ' selected' ELSE '' END,
+    CASE WHEN v_statut = 'clos'        THEN ' selected' ELSE '' END,
+    pgv.esc(COALESCE(v_q, ''))
   );
 
   -- Requête filtrée
@@ -396,11 +398,11 @@ BEGIN
       FROM project.chantier c
       JOIN crm.client cl ON cl.id = c.client_id
       LEFT JOIN quote.devis d ON d.id = c.devis_id
-     WHERE (p_statut IS NULL OR p_statut = '' OR c.statut = p_statut)
-       AND (p_q IS NULL OR p_q = ''
-            OR c.numero ILIKE '%' || p_q || '%'
-            OR cl.name  ILIKE '%' || p_q || '%'
-            OR c.objet  ILIKE '%' || p_q || '%')
+     WHERE (v_statut IS NULL OR v_statut = '' OR c.statut = v_statut)
+       AND (v_q IS NULL OR v_q = ''
+            OR c.numero ILIKE '%' || v_q || '%'
+            OR cl.name  ILIKE '%' || v_q || '%'
+            OR c.objet  ILIKE '%' || v_q || '%')
      ORDER BY c.updated_at DESC
   LOOP
     v_rows := v_rows || ARRAY[
@@ -432,7 +434,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION project.get_chantiers(text,text) IS 'Liste des chantiers avec filtres statut et recherche texte';
+COMMENT ON FUNCTION project.get_chantiers(jsonb) IS 'Liste des chantiers avec filtres statut et recherche texte';
 
 CREATE OR REPLACE FUNCTION project.get_index()
  RETURNS text
@@ -896,6 +898,176 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION project_ut.test_chantier_lifecycle() IS 'Test chantier creation, transitions, deletion';
+
+CREATE OR REPLACE FUNCTION project_ut.test_get_chantier()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+  v_cli_id int;
+  v_dev_id int;
+  v_ch_id  int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+  PERFORM set_config('pgv.route_prefix', '/project', true);
+
+  -- Seed
+  INSERT INTO crm.client(type, name, email, tenant_id) VALUES ('individual', 'CovCli', 'cov@test.com', 'dev') RETURNING id INTO v_cli_id;
+  INSERT INTO quote.devis(numero, client_id, objet, tenant_id) VALUES ('DEV-COV-001', v_cli_id, 'Devis cov', 'dev') RETURNING id INTO v_dev_id;
+  INSERT INTO project.chantier(numero, client_id, devis_id, objet, adresse, statut, date_debut, date_fin_prevue, tenant_id)
+    VALUES ('CHT-COV-001', v_cli_id, v_dev_id, 'Objet cov', '1 rue Test', 'preparation', CURRENT_DATE, CURRENT_DATE + 30, 'dev')
+    RETURNING id INTO v_ch_id;
+  INSERT INTO project.jalon(chantier_id, sort_order, label, tenant_id) VALUES (v_ch_id, 1, 'Jalon cov', 'dev');
+  INSERT INTO project.pointage(chantier_id, heures, description, tenant_id) VALUES (v_ch_id, 2.5, 'Pointage cov', 'dev');
+  INSERT INTO project.note_chantier(chantier_id, contenu, tenant_id) VALUES (v_ch_id, 'Note cov', 'dev');
+
+  -- Not found
+  v_html := project.get_chantier(-1);
+  RETURN NEXT ok(v_html LIKE '%introuvable%', 'not found renders empty');
+
+  -- Preparation statut: has demarrer, modifier, supprimer
+  v_html := project.get_chantier(v_ch_id);
+  RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 100, 'preparation renders');
+  RETURN NEXT ok(v_html LIKE '%post_chantier_demarrer%', 'preparation has demarrer action');
+  RETURN NEXT ok(v_html LIKE '%post_chantier_supprimer%', 'preparation has supprimer action');
+  RETURN NEXT ok(v_html LIKE '%Modifier%', 'preparation has modifier link');
+  RETURN NEXT ok(v_html LIKE '%/crm/client%', 'has crm link');
+  RETURN NEXT ok(v_html LIKE '%DEV-COV-001%', 'has devis link');
+  RETURN NEXT ok(v_html LIKE '%pgv-tabs%', 'has tabs');
+  RETURN NEXT ok(v_html LIKE '%Jalon cov%', 'shows jalon');
+  RETURN NEXT ok(v_html LIKE '%2.5%', 'shows pointage heures');
+  RETURN NEXT ok(v_html LIKE '%Note cov%', 'shows note');
+  RETURN NEXT ok(v_html LIKE '%post_jalon_ajouter%', 'has jalon form');
+  RETURN NEXT ok(v_html LIKE '%post_pointage_ajouter%', 'has pointage form');
+  RETURN NEXT ok(v_html LIKE '%post_note_ajouter%', 'has note form');
+
+  -- Execution statut: has reception, modifier, no supprimer
+  UPDATE project.chantier SET statut = 'execution' WHERE id = v_ch_id;
+  v_html := project.get_chantier(v_ch_id);
+  RETURN NEXT ok(v_html LIKE '%post_chantier_reception%', 'execution has reception action');
+  RETURN NEXT ok(v_html NOT LIKE '%post_chantier_supprimer%', 'execution no supprimer');
+
+  -- Reception statut: has clore only
+  UPDATE project.chantier SET statut = 'reception' WHERE id = v_ch_id;
+  v_html := project.get_chantier(v_ch_id);
+  RETURN NEXT ok(v_html LIKE '%post_chantier_clore%', 'reception has clore action');
+  RETURN NEXT ok(v_html NOT LIKE '%post_chantier_demarrer%', 'reception no demarrer');
+
+  -- Clos statut: no actions, no forms
+  UPDATE project.chantier SET statut = 'clos', date_fin_reelle = CURRENT_DATE WHERE id = v_ch_id;
+  v_html := project.get_chantier(v_ch_id);
+  RETURN NEXT ok(v_html NOT LIKE '%post_chantier_demarrer%', 'clos no demarrer');
+  RETURN NEXT ok(v_html NOT LIKE '%post_jalon_ajouter%', 'clos no jalon form');
+
+  -- No devis branch
+  UPDATE project.chantier SET devis_id = NULL WHERE id = v_ch_id;
+  v_html := project.get_chantier(v_ch_id);
+  RETURN NEXT ok(v_html NOT LIKE '%DEV-COV-001%', 'no devis shows dash');
+
+  -- No address branch
+  UPDATE project.chantier SET adresse = '' WHERE id = v_ch_id;
+  v_html := project.get_chantier(v_ch_id);
+  RETURN NEXT ok(v_html IS NOT NULL, 'empty address renders');
+
+  -- Cleanup
+  DELETE FROM project.note_chantier WHERE chantier_id = v_ch_id;
+  DELETE FROM project.pointage WHERE chantier_id = v_ch_id;
+  DELETE FROM project.jalon WHERE chantier_id = v_ch_id;
+  DELETE FROM project.chantier WHERE id = v_ch_id;
+  DELETE FROM quote.devis WHERE id = v_dev_id;
+  DELETE FROM crm.client WHERE id = v_cli_id;
+END;
+$function$;
+COMMENT ON FUNCTION project_ut.test_get_chantier() IS 'Coverage test for get_chantier: all statuts, tabs, cross-module links, not found';
+
+CREATE OR REPLACE FUNCTION project_ut.test_get_chantiers()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+  v_cid  int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+  PERFORM set_config('pgv.route_prefix', '/project', true);
+
+  -- Seed one chantier for testing
+  INSERT INTO crm.client(type, name, email, tenant_id) VALUES ('individual', 'TestFilterCli', 'tf@test.com', 'dev') RETURNING id INTO v_cid;
+  INSERT INTO project.chantier(numero, client_id, objet, statut, tenant_id)
+    VALUES ('CHT-TEST-F01', v_cid, 'Objet filtre test', 'execution', 'dev');
+
+  -- No filter => has rows
+  v_html := project.get_chantiers();
+  RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 50, 'get_chantiers no filter renders');
+  RETURN NEXT ok(v_html LIKE '%CHT-TEST-F01%', 'no filter shows test chantier');
+  RETURN NEXT ok(v_html LIKE '%Filtrer%', 'has filter button');
+
+  -- Statut filter
+  v_html := project.get_chantiers('{"statut":"execution"}'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%CHT-TEST-F01%', 'statut execution shows test chantier');
+  RETURN NEXT ok(v_html LIKE '%selected%', 'execution option selected');
+
+  v_html := project.get_chantiers('{"statut":"clos"}'::jsonb);
+  RETURN NEXT ok(v_html NOT LIKE '%CHT-TEST-F01%', 'statut clos hides test chantier');
+
+  -- Text search
+  v_html := project.get_chantiers('{"q":"TestFilterCli"}'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%CHT-TEST-F01%', 'search by client name works');
+
+  v_html := project.get_chantiers('{"q":"Objet filtre"}'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%CHT-TEST-F01%', 'search by objet works');
+
+  v_html := project.get_chantiers('{"q":"ZZZZNOTFOUND"}'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%Aucun chantier%', 'no results shows empty msg');
+
+  -- Combined filter
+  v_html := project.get_chantiers('{"statut":"execution","q":"TestFilterCli"}'::jsonb);
+  RETURN NEXT ok(v_html LIKE '%CHT-TEST-F01%', 'combined filter works');
+
+  -- Cleanup
+  DELETE FROM project.chantier WHERE numero = 'CHT-TEST-F01';
+  DELETE FROM crm.client WHERE id = v_cid;
+END;
+$function$;
+COMMENT ON FUNCTION project_ut.test_get_chantiers() IS 'Coverage test for get_chantiers: no filter, statut filter, text search, no results';
+
+CREATE OR REPLACE FUNCTION project_ut.test_get_index()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+  v_cli_id int;
+  v_ch_id  int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+  PERFORM set_config('pgv.route_prefix', '/project', true);
+
+  -- Renders with existing QA data
+  v_html := project.get_index();
+  RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 50, 'get_index renders');
+  RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'has stats grid');
+  RETURN NEXT ok(v_html LIKE '%Nouveau chantier%', 'has new chantier button');
+
+  -- Create a late chantier to trigger alerts
+  INSERT INTO crm.client(type, name, email, tenant_id) VALUES ('individual', 'RetardCli', 'retard@test.com', 'dev') RETURNING id INTO v_cli_id;
+  INSERT INTO project.chantier(numero, client_id, objet, statut, date_fin_prevue, tenant_id)
+    VALUES ('CHT-RETARD-01', v_cli_id, 'Chantier en retard', 'execution', CURRENT_DATE - 10, 'dev')
+    RETURNING id INTO v_ch_id;
+
+  v_html := project.get_index();
+  RETURN NEXT ok(v_html LIKE '%Alertes retard%', 'has alerts section');
+  RETURN NEXT ok(v_html LIKE '%CHT-RETARD-01%', 'shows late chantier');
+  RETURN NEXT ok(v_html LIKE '%pgv-badge-warn%', 'has warn badge');
+  RETURN NEXT ok(v_html LIKE '%Chantiers actifs%', 'has active chantiers section');
+
+  -- Cleanup
+  DELETE FROM project.chantier WHERE id = v_ch_id;
+  DELETE FROM crm.client WHERE id = v_cli_id;
+END;
+$function$;
+COMMENT ON FUNCTION project_ut.test_get_index() IS 'Coverage test for get_index: stats, alerts retard, active chantiers, empty state';
 
 CREATE OR REPLACE FUNCTION project_ut.test_jalon_validation_sequentielle()
  RETURNS SETOF text

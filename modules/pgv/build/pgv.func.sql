@@ -757,6 +757,8 @@ BEGIN
         v_ns := p_schema;
         v_fn := v_rec.rpc;
       END IF;
+      -- Shell routes POST via pgv.route(): post_ + rpc_without_post_
+      v_fn := 'post_' || regexp_replace(v_fn, '^post_', '');
 
       IF EXISTS (
         SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -831,7 +833,7 @@ BEGIN
     LOOP
       SELECT proargnames INTO v_params
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname = p_schema AND p.proname = v_rec.rpc
+      WHERE n.nspname = p_schema AND p.proname = 'post_' || regexp_replace(v_rec.rpc, '^post_', '')
       LIMIT 1;
 
       IF v_params IS NOT NULL THEN
@@ -920,7 +922,10 @@ BEGIN
     resolved AS (
       SELECT DISTINCT r.source, r.rpc,
              CASE WHEN r.rpc LIKE '%.%' THEN split_part(r.rpc, '.', 1) ELSE p_schema END AS target_schema,
-             CASE WHEN r.rpc LIKE '%.%' THEN split_part(r.rpc, '.', 2) ELSE r.rpc END AS target_fn
+             'post_' || regexp_replace(
+               CASE WHEN r.rpc LIKE '%.%' THEN split_part(r.rpc, '.', 2) ELSE r.rpc END,
+               '^post_', ''
+             ) AS target_fn
       FROM rpc_refs r
     )
     SELECT r.source, r.rpc, r.target_schema, r.target_fn,
@@ -948,6 +953,54 @@ BEGIN
       || '<md>' || chr(10)
       || '| Niveau | Source | Detail |' || chr(10)
       || '|--------|--------|--------|' || chr(10)
+      || v_rows
+      || '</md>' || chr(10);
+  END IF;
+
+  -- 10. Dead post_* functions (exist but never referenced by data-rpc or pgv.action)
+  v_rows := '';
+  v_warn := 0;
+  FOR v_rec IN
+    WITH rpc_refs AS (
+      SELECT (regexp_matches(pg_get_functiondef(p.oid), 'data-rpc="([^"]+)"', 'g'))[1] AS rpc
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = p_schema
+      UNION
+      SELECT (regexp_matches(pg_get_functiondef(p.oid), E'pgv\\.action\\(''([^'']+)''', 'g'))[1] AS rpc
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = p_schema
+    ),
+    referenced AS (
+      SELECT DISTINCT 'post_' || regexp_replace(
+        CASE WHEN rpc LIKE '%.%' THEN split_part(rpc, '.', 2) ELSE rpc END,
+        '^post_', ''
+      ) AS fn
+      FROM rpc_refs
+    ),
+    all_posts AS (
+      SELECT p.proname
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = p_schema AND p.proname LIKE 'post_%'
+    )
+    SELECT a.proname
+    FROM all_posts a
+    WHERE a.proname NOT IN (SELECT fn FROM referenced)
+    ORDER BY a.proname
+  LOOP
+    v_rows := v_rows || '| ' || pgv.badge('WARN', 'warning') || ' | ' || pgv.esc(v_rec.proname) || ' | aucun data-rpc ne reference cette fonction |' || chr(10);
+    v_warn := v_warn + 1;
+  END LOOP;
+
+  IF v_warn > 0 THEN
+    v_reports := v_reports || pgv.dl(
+      'Dead code POST', p_schema,
+      'Bilan', pgv.badge(v_warn || ' non-reference(s)', 'warning'))
+      || '<md>' || chr(10)
+      || '| Niveau | Fonction | Detail |' || chr(10)
+      || '|--------|----------|--------|' || chr(10)
       || v_rows
       || '</md>' || chr(10);
   END IF;

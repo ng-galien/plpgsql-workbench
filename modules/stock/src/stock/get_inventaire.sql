@@ -23,7 +23,7 @@ BEGIN
           WHEN 'entrepot' THEN 'info'
           WHEN 'atelier' THEN 'success'
           WHEN 'chantier' THEN 'warning'
-          WHEN 'vehicule' THEN 'secondary'
+          WHEN 'vehicule' THEN 'primary'
         END)
       ];
     END LOOP;

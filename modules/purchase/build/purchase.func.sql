@@ -1071,6 +1071,14 @@ BEGIN
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'send returns success');
   RETURN NEXT is((SELECT statut FROM purchase.commande WHERE id = v_id), 'envoyee', 'status is envoyee');
 
+  -- Cannot add line to non-brouillon
+  v_result := purchase.post_ligne_ajouter(jsonb_build_object(
+    'p_commande_id', v_id,
+    'p_description', 'Should fail',
+    'p_prix_unitaire', 1.00
+  ));
+  RETURN NEXT ok(v_result LIKE '%brouillon%', 'cannot add line to sent order');
+
   -- Receive
   v_result := purchase.post_reception_creer(jsonb_build_object('p_commande_id', v_id));
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'reception returns success');
@@ -1098,6 +1106,10 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
+  -- Edge: facture introuvable
+  v_result := purchase.post_facture_comptabiliser(jsonb_build_object('p_id', -1));
+  RETURN NEXT ok(v_result LIKE '%introuvable%', 'facture introuvable');
+
   -- Setup: create commande + facture + pay it
   INSERT INTO purchase.commande (numero, fournisseur_id, objet, statut)
   VALUES ('CMD-TEST-CPT', (SELECT id FROM crm.client LIMIT 1), 'Test compta', 'envoyee')
@@ -1107,6 +1119,12 @@ BEGIN
     (commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, statut)
   VALUES (v_cmd_id, 'FAF-CPT-001', 1000.00, 1200.00, CURRENT_DATE, 'payee')
   RETURNING id INTO v_fac_id;
+
+  -- Edge: montant_ttc = 0
+  UPDATE purchase.facture_fournisseur SET montant_ht = 0, montant_ttc = 0 WHERE id = v_fac_id;
+  v_result := purchase.post_facture_comptabiliser(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%sans montant%', 'facture sans montant');
+  UPDATE purchase.facture_fournisseur SET montant_ht = 1000.00, montant_ttc = 1200.00 WHERE id = v_fac_id;
 
   -- Cannot comptabiliser non-payee
   UPDATE purchase.facture_fournisseur SET statut = 'validee' WHERE id = v_fac_id;
@@ -1309,6 +1327,36 @@ END;
 $function$;
 COMMENT ON FUNCTION purchase_ut.test_pages_render() IS 'Test all pages render without error';
 
+CREATE OR REPLACE FUNCTION purchase_ut.test_post_facture_comptabiliser()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN QUERY SELECT * FROM purchase_ut.test_facture_comptabiliser();
+END;
+$function$;
+COMMENT ON FUNCTION purchase_ut.test_post_facture_comptabiliser() IS 'Coverage wrapper for post_facture_comptabiliser';
+
+CREATE OR REPLACE FUNCTION purchase_ut.test_post_ligne_ajouter()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN QUERY SELECT * FROM purchase_ut.test_commande_workflow();
+END;
+$function$;
+COMMENT ON FUNCTION purchase_ut.test_post_ligne_ajouter() IS 'Coverage wrapper for post_ligne_ajouter';
+
+CREATE OR REPLACE FUNCTION purchase_ut.test_post_reception_creer()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN QUERY SELECT * FROM purchase_ut.test_reception_partielle();
+END;
+$function$;
+COMMENT ON FUNCTION purchase_ut.test_post_reception_creer() IS 'Coverage wrapper for post_reception_creer';
+
 CREATE OR REPLACE FUNCTION purchase_ut.test_reception_partielle()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -1318,6 +1366,7 @@ DECLARE
   v_fournisseur_id int;
   v_result text;
   v_remaining numeric;
+  v_rec_id int;
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
@@ -1325,7 +1374,7 @@ BEGIN
   VALUES ('company', '_test_partial_', ARRAY['fournisseur'])
   RETURNING id INTO v_fournisseur_id;
 
-  -- Create and send order with 10 items
+  -- Create and send order with 2 lines
   v_result := purchase.post_commande_save(jsonb_build_object(
     'p_fournisseur_id', v_fournisseur_id,
     'p_objet', 'Test reception partielle'
@@ -1339,26 +1388,45 @@ BEGIN
     'p_prix_unitaire', 25.00
   ));
 
+  v_result := purchase.post_ligne_ajouter(jsonb_build_object(
+    'p_commande_id', v_cmd_id,
+    'p_description', 'Vis test',
+    'p_quantite', 5,
+    'p_prix_unitaire', 2.00
+  ));
+
   v_result := purchase.post_commande_envoyer(jsonb_build_object('p_id', v_cmd_id));
   RETURN NEXT is((SELECT statut FROM purchase.commande WHERE id = v_cmd_id), 'envoyee', 'order is envoyee');
 
-  -- Full reception via post_reception_creer (receives all remaining)
+  -- Partial reception: manually receive only first line
+  INSERT INTO purchase.reception (commande_id, numero) VALUES (v_cmd_id, 'REC-TEST-P1')
+  RETURNING id INTO v_rec_id;
+  INSERT INTO purchase.reception_ligne (reception_id, ligne_id, quantite_recue)
+  VALUES (v_rec_id, (SELECT id FROM purchase.ligne WHERE commande_id = v_cmd_id AND description = 'Planches test'), 10);
+  UPDATE purchase.commande SET statut = 'partiellement_recue' WHERE id = v_cmd_id;
+
+  -- Second reception via post_reception_creer (receives remaining line 2)
   v_result := purchase.post_reception_creer(jsonb_build_object('p_commande_id', v_cmd_id));
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'reception created');
   RETURN NEXT is((SELECT statut FROM purchase.commande WHERE id = v_cmd_id), 'recue', 'status becomes recue');
 
-  -- Check remaining via SQL
-  SELECT l.quantite - coalesce(sum(rl.quantite_recue), 0) INTO v_remaining
+  -- Check remaining = 0
+  SELECT coalesce(sum(l.quantite - coalesce(received.total, 0)), 0) INTO v_remaining
     FROM purchase.ligne l
-    LEFT JOIN purchase.reception_ligne rl ON rl.ligne_id = l.id
-   WHERE l.commande_id = v_cmd_id
-   GROUP BY l.id;
-
+    LEFT JOIN (SELECT ligne_id, sum(quantite_recue) AS total FROM purchase.reception_ligne GROUP BY ligne_id) received
+      ON received.ligne_id = l.id
+   WHERE l.commande_id = v_cmd_id;
   RETURN NEXT is(v_remaining, 0.00::numeric, 'no remaining quantity');
 
-  -- Second reception should fail (nothing left)
+  -- Try reception on fully received (force partiellement_recue to hit v_nb_lignes=0)
+  UPDATE purchase.commande SET statut = 'partiellement_recue' WHERE id = v_cmd_id;
   v_result := purchase.post_reception_creer(jsonb_build_object('p_commande_id', v_cmd_id));
-  RETURN NEXT ok(v_result LIKE '%Commande non réceptionnable%', 'cannot receive already received');
+  RETURN NEXT ok(v_result LIKE '%réceptionné%', 'nothing left to receive');
+
+  -- Status guard: recue blocks reception
+  UPDATE purchase.commande SET statut = 'recue' WHERE id = v_cmd_id;
+  v_result := purchase.post_reception_creer(jsonb_build_object('p_commande_id', v_cmd_id));
+  RETURN NEXT ok(v_result LIKE '%non réceptionnable%', 'cannot receive already received');
 
   -- Cleanup
   DELETE FROM purchase.reception_ligne WHERE reception_id IN (SELECT id FROM purchase.reception WHERE commande_id = v_cmd_id);
@@ -1368,7 +1436,7 @@ BEGIN
   DELETE FROM crm.client WHERE id = v_fournisseur_id;
 END;
 $function$;
-COMMENT ON FUNCTION purchase_ut.test_reception_partielle() IS 'Test reception workflow and remaining quantity tracking';
+COMMENT ON FUNCTION purchase_ut.test_reception_partielle() IS 'Test reception workflow: partial reception, full completion, nothing-left guard, status guard';
 
 CREATE OR REPLACE FUNCTION purchase_ut.test_totaux()
  RETURNS SETOF text
@@ -1535,7 +1603,15 @@ BEGIN
   INSERT INTO purchase.facture_fournisseur (commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, statut)
   VALUES (v_cmd3_id, 'BM-2026-0412', 126.00, 151.20, now()::date - 3, 'recue');
 
-  RETURN 'purchase_qa.seed() OK — 4 commandes, 2 réceptions, 2 factures, 2 fournisseurs CRM';
+  -- Facture payée + comptabilisée (CMD4 complète)
+  INSERT INTO purchase.facture_fournisseur (commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, statut, comptabilisee)
+  VALUES (v_cmd4_id, 'FM-8843', 31.80, 38.16, now()::date - 15, 'payee', true);
+
+  -- Facture partielle sur CMD3 (acompte)
+  INSERT INTO purchase.facture_fournisseur (commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, date_echeance, statut, notes)
+  VALUES (v_cmd3_id, 'BM-2026-0413', 84.00, 100.80, now()::date - 1, now()::date + 30, 'validee', 'Acompte livraison partielle MDF');
+
+  RETURN 'purchase_qa.seed() OK — 4 commandes, 2 réceptions, 4 factures (1 comptabilisée), 2 fournisseurs CRM';
 END;
 $function$;
 COMMENT ON FUNCTION purchase_qa.seed() IS 'Seed realistic demo data for purchase module';

@@ -10,6 +10,10 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
+  -- Edge: facture introuvable
+  v_result := purchase.post_facture_comptabiliser(jsonb_build_object('p_id', -1));
+  RETURN NEXT ok(v_result LIKE '%introuvable%', 'facture introuvable');
+
   -- Setup: create commande + facture + pay it
   INSERT INTO purchase.commande (numero, fournisseur_id, objet, statut)
   VALUES ('CMD-TEST-CPT', (SELECT id FROM crm.client LIMIT 1), 'Test compta', 'envoyee')
@@ -19,6 +23,12 @@ BEGIN
     (commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, statut)
   VALUES (v_cmd_id, 'FAF-CPT-001', 1000.00, 1200.00, CURRENT_DATE, 'payee')
   RETURNING id INTO v_fac_id;
+
+  -- Edge: montant_ttc = 0
+  UPDATE purchase.facture_fournisseur SET montant_ht = 0, montant_ttc = 0 WHERE id = v_fac_id;
+  v_result := purchase.post_facture_comptabiliser(jsonb_build_object('p_id', v_fac_id));
+  RETURN NEXT ok(v_result LIKE '%sans montant%', 'facture sans montant');
+  UPDATE purchase.facture_fournisseur SET montant_ht = 1000.00, montant_ttc = 1200.00 WHERE id = v_fac_id;
 
   -- Cannot comptabiliser non-payee
   UPDATE purchase.facture_fournisseur SET statut = 'validee' WHERE id = v_fac_id;

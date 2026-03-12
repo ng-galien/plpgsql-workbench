@@ -14,6 +14,7 @@ DECLARE
   r record;
   v_activity text;
   v_rows text;
+  v_timeline jsonb;
 BEGIN
   SELECT * INTO v_client FROM crm.client WHERE id = p_id;
   IF NOT FOUND THEN
@@ -115,17 +116,60 @@ BEGIN
     || format('<a href="%s" role="button">Modifier</a> ', pgv.call_ref('get_client_form', jsonb_build_object('p_id', p_id)))
     || pgv.action('post_client_delete', 'Supprimer', jsonb_build_object('id', p_id), 'Supprimer définitivement ce client et tout son historique ?', 'danger');
 
+  -- Timeline (CRM interactions + cross-module)
+  v_timeline := '[]'::jsonb;
+
+  FOR r IN SELECT type, subject, body, created_at FROM crm.interaction WHERE client_id = p_id LOOP
+    v_timeline := v_timeline || jsonb_build_object(
+      'dt', r.created_at, 'badge', crm.type_label(r.type),
+      'variant', CASE r.type WHEN 'call' THEN 'primary' WHEN 'visit' THEN 'success' ELSE 'default' END,
+      'title', r.subject, 'detail', r.body, 'link', '');
+  END LOOP;
+
+  BEGIN
+    FOR r IN EXECUTE 'SELECT numero, statut, created_at, id FROM quote.devis WHERE client_id = $1' USING p_id LOOP
+      v_timeline := v_timeline || jsonb_build_object(
+        'dt', r.created_at, 'badge', 'Devis', 'variant', 'warning',
+        'title', r.numero::text || E' \u2014 ' || r.statut::text, 'detail', '',
+        'link', '/quote/devis?p_id=' || r.id);
+    END LOOP;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  BEGIN
+    FOR r IN EXECUTE 'SELECT numero, statut, created_at, id FROM quote.facture WHERE client_id = $1' USING p_id LOOP
+      v_timeline := v_timeline || jsonb_build_object(
+        'dt', r.created_at, 'badge', 'Facture', 'variant', 'danger',
+        'title', r.numero::text || E' \u2014 ' || r.statut::text, 'detail', '',
+        'link', '/quote/facture?p_id=' || r.id);
+    END LOOP;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
+  BEGIN
+    FOR r IN EXECUTE 'SELECT numero, statut, created_at, id FROM project.chantier WHERE client_id = $1' USING p_id LOOP
+      v_timeline := v_timeline || jsonb_build_object(
+        'dt', r.created_at, 'badge', 'Chantier', 'variant', 'primary',
+        'title', r.numero::text || E' \u2014 ' || r.statut::text, 'detail', '',
+        'link', '/project/chantier?p_id=' || r.id);
+    END LOOP;
+  EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
+  END;
+
   v_interactions := '';
-  FOR r IN SELECT * FROM crm.interaction WHERE client_id = p_id ORDER BY created_at DESC LOOP
+  FOR r IN SELECT e FROM jsonb_array_elements(v_timeline) AS e ORDER BY (e->>'dt')::timestamptz DESC LOOP
     v_interactions := v_interactions || pgv.card(
-      pgv.badge(crm.type_label(r.type), 'default') || ' ' || pgv.esc(r.subject),
-      CASE WHEN r.body = '' THEN '<p><em>Pas de détail</em></p>' ELSE '<p>' || pgv.esc(r.body) || '</p>' END,
-      '<small>' || to_char(r.created_at, 'DD/MM/YYYY HH24:MI') || '</small>'
-    );
+      pgv.badge(r.e->>'badge', r.e->>'variant') || ' ' || pgv.esc(r.e->>'title'),
+      CASE
+        WHEN r.e->>'link' <> '' THEN '<p><a href="' || (r.e->>'link') || '">Voir</a></p>'
+        WHEN r.e->>'detail' <> '' THEN '<p>' || pgv.esc(r.e->>'detail') || '</p>'
+        ELSE '<p><em>Pas de detail</em></p>'
+      END,
+      '<small>' || to_char((r.e->>'dt')::timestamptz, 'DD/MM/YYYY HH24:MI') || '</small>');
   END LOOP;
 
   IF v_interactions = '' THEN
-    v_interactions := pgv.empty('Aucune interaction');
+    v_interactions := pgv.empty('Aucun evenement');
   END IF;
 
   v_interactions := v_interactions ||
@@ -134,14 +178,14 @@ BEGIN
     '<input type="hidden" name="client_id" value="' || p_id || '">'
     || pgv.sel('type', 'Type', '[{"label":"Appel","value":"call"},{"label":"Visite","value":"visit"},{"label":"Courriel","value":"email"},{"label":"Note","value":"note"}]'::jsonb, 'note')
     || pgv.input('subject', 'text', 'Sujet', NULL, true)
-    || pgv.textarea('body', 'Détails')
+    || pgv.textarea('body', 'Details')
     || '<button type="submit">Ajouter</button>'
     '</form></details>';
 
   v_tab_interactions := v_interactions;
 
   v_body := pgv.breadcrumb(VARIADIC ARRAY['Clients', pgv.call_ref('get_index'), v_client.name])
-    || pgv.tabs(VARIADIC ARRAY['Fiche', v_tab_fiche, 'Interactions', v_tab_interactions]);
+    || pgv.tabs(VARIADIC ARRAY['Fiche', v_tab_fiche, 'Timeline', v_tab_interactions]);
 
   RETURN v_body;
 END;

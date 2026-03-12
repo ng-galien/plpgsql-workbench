@@ -173,6 +173,20 @@ Auto-resolution examples:
 
 ### Module Layout
 
+**Active modules** (9):
+
+| Module | Schemas | Purpose |
+|--------|---------|---------|
+| pgv | `pgv`, `pgv_ut`, `pgv_qa` | Framework: SSR router, UI primitives, Alpine shell |
+| cad | `cad`, `cad_ut`, `cad_qa` | CAD 3D wood structures (PostGIS/SFCGAL, Three.js) |
+| crm | `crm`, `crm_ut`, `crm_qa` | CRM: contacts, entreprises |
+| quote | `quote`, `quote_ut`, `quote_qa` | Devis & factures (TVA, numérotation légale) |
+| stock | `stock`, `stock_ut`, `stock_qa` | Stock: articles, dépôts, mouvements |
+| purchase | `purchase`, `purchase_ut`, `purchase_qa` | Achats: commandes fournisseur, réception |
+| project | `project`, `project_ut`, `project_qa` | Projets: suivi chantier, phases |
+| ledger | `ledger`, `ledger_ut`, `ledger_qa` | Comptabilité: plan comptable, écritures |
+| ops | `ops`, `ops_ut` | Ops: dashboard infra, terminal tmux |
+
 Each module in `modules/` follows this structure:
 
 ```

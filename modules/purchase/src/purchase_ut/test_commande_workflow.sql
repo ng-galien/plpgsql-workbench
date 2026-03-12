@@ -38,6 +38,14 @@ BEGIN
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'send returns success');
   RETURN NEXT is((SELECT statut FROM purchase.commande WHERE id = v_id), 'envoyee', 'status is envoyee');
 
+  -- Cannot add line to non-brouillon
+  v_result := purchase.post_ligne_ajouter(jsonb_build_object(
+    'p_commande_id', v_id,
+    'p_description', 'Should fail',
+    'p_prix_unitaire', 1.00
+  ));
+  RETURN NEXT ok(v_result LIKE '%brouillon%', 'cannot add line to sent order');
+
   -- Receive
   v_result := purchase.post_reception_creer(jsonb_build_object('p_commande_id', v_id));
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'reception returns success');

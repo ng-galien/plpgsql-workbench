@@ -47,7 +47,7 @@ BEGIN
         WHEN 'entrepot' THEN 'info'
         WHEN 'atelier' THEN 'success'
         WHEN 'chantier' THEN 'warning'
-        WHEN 'vehicule' THEN 'secondary'
+        WHEN 'vehicule' THEN 'primary'
       END),
       r.nb_articles::text,
       to_char(r.valeur, 'FM999G999G990D00') || ' EUR'
@@ -77,8 +77,8 @@ BEGIN
         WHEN 'bois' THEN 'success'
         WHEN 'quincaillerie' THEN 'info'
         WHEN 'panneau' THEN 'warning'
-        WHEN 'isolant' THEN 'secondary'
-        WHEN 'finition' THEN 'contrast'
+        WHEN 'isolant' THEN 'primary'
+        WHEN 'finition' THEN 'default'
         ELSE NULL
       END),
       r.nb_articles::text,

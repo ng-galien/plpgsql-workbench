@@ -92,5 +92,13 @@ BEGIN
   -- Laine de bois: sortie pour mettre sous seuil (alerte)
   INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, prix_unitaire, reference, tenant_id) VALUES
     (v_laine, v_dep_atelier, 'sortie', -35, 8.50, 'CHANTIER-DUPONT', 'dev');
+
+  -- Inventaire: ajustement pointes (pertes constatées)
+  INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, reference, tenant_id) VALUES
+    (v_pointe, v_dep_atelier, 'inventaire', -2, 'INV-20260310', 'dev');
+
+  -- 2e entrée douglas à prix différent (PMP recalc demo)
+  INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, prix_unitaire, reference, tenant_id) VALUES
+    (v_douglas, v_dep_atelier, 'entree', 4, 450.00, 'BL-2026-006', 'dev');
 END;
 $function$;

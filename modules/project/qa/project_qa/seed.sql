@@ -7,9 +7,12 @@ DECLARE
   v_client2 int;
   v_client3 int;
   v_devis_id int;
+  v_devis2_id int;
   v_c1 int;
   v_c2 int;
   v_c3 int;
+  v_c4 int;
+  v_c5 int;
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
@@ -26,10 +29,12 @@ BEGIN
   IF v_client2 IS NULL THEN v_client2 := v_client1; END IF;
   IF v_client3 IS NULL THEN v_client3 := v_client1; END IF;
 
-  -- Recuperer un devis accepte si disponible
+  -- Recuperer devis acceptes si disponibles
   SELECT id INTO v_devis_id FROM quote.devis WHERE statut = 'accepte' LIMIT 1;
+  SELECT id INTO v_devis2_id FROM quote.devis WHERE statut = 'accepte' LIMIT 1 OFFSET 1;
+  IF v_devis2_id IS NULL THEN v_devis2_id := v_devis_id; END IF;
 
-  -- Chantier 1: en cours (execution), 60% avancement
+  -- Chantier 1: en cours (execution), 55% avancement, lié à devis
   INSERT INTO project.chantier (numero, client_id, devis_id, objet, adresse, statut, date_debut, date_fin_prevue, notes)
   VALUES ('CHT-2026-001', v_client1, v_devis_id, 'Rénovation salle de bain',
           '12 rue des Lilas, 69003 Lyon', 'execution',
@@ -77,8 +82,8 @@ BEGIN
     (v_c2, 5, 'Électricité / Finitions', '2026-06-20');
 
   -- Chantier 3: en reception, 95%
-  INSERT INTO project.chantier (numero, client_id, objet, adresse, statut, date_debut, date_fin_prevue, notes)
-  VALUES ('CHT-2026-003', v_client3, 'Aménagement bureau professionnel',
+  INSERT INTO project.chantier (numero, client_id, devis_id, objet, adresse, statut, date_debut, date_fin_prevue, notes)
+  VALUES ('CHT-2026-003', v_client3, v_devis2_id, 'Aménagement bureau professionnel',
           '8 place Bellecour, 69002 Lyon', 'reception',
           '2026-01-10', '2026-03-01',
           'Bureau open space + salle de réunion.')
@@ -104,6 +109,53 @@ BEGIN
     (v_c3, 'Réserve : prise réseau bureau 3 non fonctionnelle.', '2026-02-25 11:00:00+01'),
     (v_c3, 'Client satisfait de l''agencement global.', '2026-02-28 16:00:00+01');
 
-  RETURN 'project_qa.seed: 3 chantiers (execution/preparation/reception) + jalons + pointages + notes';
+  -- Chantier 4: EN RETARD (execution, date_fin_prevue dépassée)
+  INSERT INTO project.chantier (numero, client_id, objet, adresse, statut, date_debut, date_fin_prevue, notes)
+  VALUES ('CHT-2026-004', v_client1, 'Ravalement façade immeuble',
+          '22 rue Victor Hugo, 69002 Lyon', 'execution',
+          '2025-11-01', '2026-02-28',
+          'Retard dû aux intempéries janvier.')
+  RETURNING id INTO v_c4;
+
+  INSERT INTO project.jalon (chantier_id, sort_order, label, pct_avancement, statut, date_prevue, date_reelle) VALUES
+    (v_c4, 1, 'Échafaudage', 100, 'valide', '2025-11-10', '2025-11-12'),
+    (v_c4, 2, 'Nettoyage façade', 100, 'valide', '2025-12-01', '2025-12-05'),
+    (v_c4, 3, 'Réparation fissures', 50, 'en_cours', '2026-01-15', NULL),
+    (v_c4, 4, 'Enduit + peinture', 0, 'a_faire', '2026-02-15', NULL);
+
+  INSERT INTO project.pointage (chantier_id, date_pointage, heures, description) VALUES
+    (v_c4, '2025-11-01', 8, 'Montage échafaudage'),
+    (v_c4, '2025-11-12', 8, 'Nettoyage haute pression'),
+    (v_c4, '2025-12-05', 7, 'Diagnostic fissures'),
+    (v_c4, '2026-01-10', 8, 'Rebouchage fissures niveau 1');
+
+  INSERT INTO project.note_chantier (chantier_id, contenu, created_at) VALUES
+    (v_c4, 'Arrêt chantier 3 semaines (gel, neige).', '2026-01-20 09:00:00+01'),
+    (v_c4, 'Reprise prévue dès que météo favorable.', '2026-02-10 14:00:00+01');
+
+  -- Chantier 5: CLOS (terminé)
+  INSERT INTO project.chantier (numero, client_id, objet, adresse, statut, date_debut, date_fin_prevue, date_fin_reelle, notes)
+  VALUES ('CHT-2025-005', v_client2, 'Installation cuisine équipée',
+          '3 impasse des Cerisiers, 69008 Lyon', 'clos',
+          '2025-10-01', '2025-12-15', '2025-12-10',
+          'Livré en avance. Client très satisfait.')
+  RETURNING id INTO v_c5;
+
+  INSERT INTO project.jalon (chantier_id, sort_order, label, pct_avancement, statut, date_prevue, date_reelle) VALUES
+    (v_c5, 1, 'Démontage ancienne cuisine', 100, 'valide', '2025-10-05', '2025-10-04'),
+    (v_c5, 2, 'Plomberie / Électricité', 100, 'valide', '2025-10-20', '2025-10-18'),
+    (v_c5, 3, 'Pose meubles', 100, 'valide', '2025-11-15', '2025-11-12'),
+    (v_c5, 4, 'Plan de travail + crédence', 100, 'valide', '2025-12-01', '2025-11-28'),
+    (v_c5, 5, 'Électroménager + finitions', 100, 'valide', '2025-12-10', '2025-12-10');
+
+  INSERT INTO project.pointage (chantier_id, date_pointage, heures, description) VALUES
+    (v_c5, '2025-10-01', 8, 'Démontage ancien plan'),
+    (v_c5, '2025-10-04', 7, 'Évacuation + nettoyage'),
+    (v_c5, '2025-10-18', 8, 'Raccordements'),
+    (v_c5, '2025-11-12', 8, 'Pose caissons'),
+    (v_c5, '2025-11-28', 7, 'Plan de travail granit'),
+    (v_c5, '2025-12-10', 6, 'Finitions + ménage');
+
+  RETURN 'project_qa.seed: 5 chantiers (execution/preparation/reception/retard/clos) + jalons + pointages + notes';
 END;
 $function$;
