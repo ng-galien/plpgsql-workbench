@@ -469,6 +469,13 @@ BEGIN
     pgv.card('Livraison', coalesce(to_char(v_cmd.date_livraison, 'DD/MM/YYYY'), '—'))
   ]);
 
+  -- Workflow progression
+  IF v_cmd.statut <> 'annulee' THEN
+    v_body := v_body || pgv.workflow(
+      '[{"key":"brouillon","label":"Brouillon"},{"key":"envoyee","label":"Envoyée"},{"key":"partiellement_recue","label":"Partielle"},{"key":"recue","label":"Reçue"}]'::jsonb,
+      v_cmd.statut);
+  END IF;
+
   IF v_cmd.objet <> '' THEN
     v_body := v_body || '<p><strong>Objet :</strong> ' || pgv.esc(v_cmd.objet) || '</p>';
   END IF;
@@ -730,6 +737,11 @@ BEGIN
     pgv.card('Montant HT', to_char(v_fac.montant_ht, 'FM999 990.00') || ' EUR'),
     pgv.card('Montant TTC', to_char(v_fac.montant_ttc, 'FM999 990.00') || ' EUR')
   ]);
+
+  -- Workflow progression
+  v_body := v_body || pgv.workflow(
+    '[{"key":"recue","label":"Reçue"},{"key":"validee","label":"Validée"},{"key":"payee","label":"Payée"}]'::jsonb,
+    v_fac.statut);
 
   v_body := v_body || '<p>'
     || '<strong>Date facture :</strong> ' || to_char(v_fac.date_facture, 'DD/MM/YYYY')

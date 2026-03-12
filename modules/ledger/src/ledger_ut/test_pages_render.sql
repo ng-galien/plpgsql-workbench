@@ -40,7 +40,7 @@ BEGIN
   v_html := ledger.get_account(v_acc_id);
   RETURN NEXT ok(length(v_html) > 50, 'get_account(id) retourne du HTML');
 
-  v_html := ledger.get_grand_livre(v_acc_id);
+  v_html := ledger.get_grand_livre(jsonb_build_object('p_account_id', v_acc_id));
   RETURN NEXT ok(length(v_html) > 50, 'get_grand_livre(id) retourne du HTML');
 
   PERFORM ledger.post_entry_save(jsonb_build_object(

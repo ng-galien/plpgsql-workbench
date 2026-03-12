@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION ledger.get_tva(p_year integer DEFAULT NULL::integer, p_quarter integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION ledger.get_tva(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
@@ -14,8 +14,8 @@ DECLARE
   v_rows text[];
   r record;
 BEGIN
-  v_year := coalesce(p_year, extract(year FROM CURRENT_DATE)::integer);
-  v_quarter := coalesce(p_quarter, extract(quarter FROM CURRENT_DATE)::integer);
+  v_year := coalesce((p_params->>'p_year')::integer, extract(year FROM CURRENT_DATE)::integer);
+  v_quarter := coalesce((p_params->>'p_quarter')::integer, extract(quarter FROM CURRENT_DATE)::integer);
 
   v_start := make_date(v_year, (v_quarter - 1) * 3 + 1, 1);
   v_end := (v_start + interval '3 months' - interval '1 day')::date;

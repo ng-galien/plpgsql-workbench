@@ -26,6 +26,7 @@ CREATE TABLE ledger.journal_entry (
     posted      BOOLEAN NOT NULL DEFAULT false,
     posted_at   TIMESTAMPTZ,
     facture_id  INTEGER,
+    expense_note_id INTEGER,
     tenant_id   TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -63,6 +64,7 @@ CREATE INDEX idx_entry_date ON ledger.journal_entry(entry_date);
 CREATE INDEX idx_entry_posted ON ledger.journal_entry(posted);
 CREATE INDEX idx_entry_tenant ON ledger.journal_entry(tenant_id);
 CREATE UNIQUE INDEX idx_entry_facture ON ledger.journal_entry(facture_id) WHERE facture_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_entry_expense_note ON ledger.journal_entry(expense_note_id) WHERE expense_note_id IS NOT NULL;
 CREATE INDEX idx_entry_line_entry ON ledger.entry_line(journal_entry_id);
 CREATE INDEX idx_entry_line_account ON ledger.entry_line(account_id);
 CREATE INDEX idx_entry_line_tenant ON ledger.entry_line(tenant_id);
@@ -142,6 +144,7 @@ INSERT INTO ledger.account (code, label, type) VALUES
     ('530',  'Caisse',                       'asset'),
     -- Passifs
     ('401',  'Fournisseurs',                 'liability'),
+    ('421',  'Personnel — rémunérations dues', 'liability'),
     ('4457', 'TVA collectée',                'liability'),
     -- Charges (PCG classe 6)
     ('601',  'Achats matériaux',             'expense'),

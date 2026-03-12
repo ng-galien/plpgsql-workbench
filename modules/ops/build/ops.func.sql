@@ -735,6 +735,122 @@ END;
 $function$;
 COMMENT ON FUNCTION ops.get_modules() IS 'Liste tous les modules avec stats (fonctions, tests, messages, activité), badge nouveau pour modules récents';
 
+CREATE OR REPLACE FUNCTION ops.get_tests(p_schema text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_rows text[];
+  v_total_tests int := 0;
+  v_total_schemas int := 0;
+  v_last_passed int := 0;
+  v_last_failed int := 0;
+  r record;
+  v_run record;
+  v_history_rows text[];
+BEGIN
+  v_rows := ARRAY[]::text[];
+
+  -- List all _ut schemas with test counts
+  FOR r IN
+    SELECT n.nspname AS schema_ut,
+           count(*)::int AS test_count
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname LIKE '%\_ut' ESCAPE '\'
+       AND p.proname LIKE 'test\_%' ESCAPE '\'
+       AND (p_schema IS NULL OR n.nspname = p_schema || '_ut' OR n.nspname = p_schema)
+     GROUP BY n.nspname
+     ORDER BY n.nspname
+  LOOP
+    v_total_schemas := v_total_schemas + 1;
+    v_total_tests := v_total_tests + r.test_count;
+
+    -- Last run for this schema
+    SELECT * INTO v_run
+      FROM workbench.test_run
+     WHERE schema_ut = r.schema_ut
+     ORDER BY run_at DESC LIMIT 1;
+
+    v_rows := v_rows || ARRAY[
+      pgv.esc(r.schema_ut),
+      r.test_count::text,
+      CASE WHEN v_run.id IS NOT NULL
+        THEN pgv.badge(v_run.passed::text, 'success') || ' / '
+          || CASE WHEN v_run.failed > 0
+               THEN pgv.badge(v_run.failed::text, 'danger')
+               ELSE '0'
+             END
+        ELSE '-'
+      END,
+      CASE WHEN v_run.id IS NOT NULL
+        THEN v_run.duration_ms || ' ms'
+        ELSE '-'
+      END,
+      CASE WHEN v_run.id IS NOT NULL
+        THEN to_char(v_run.run_at, 'DD/MM HH24:MI')
+        ELSE '-'
+      END,
+      pgv.action('Lancer', 'post_test_run',
+        jsonb_build_object('p_schema', r.schema_ut),
+        'Lancer les tests ' || r.schema_ut || ' ?')
+    ];
+
+    IF v_run.id IS NOT NULL THEN
+      v_last_passed := v_last_passed + v_run.passed;
+      v_last_failed := v_last_failed + v_run.failed;
+    END IF;
+  END LOOP;
+
+  IF v_total_schemas = 0 THEN
+    RETURN pgv.empty('Aucun test', 'Aucun schema _ut trouve.');
+  END IF;
+
+  -- Summary stats
+  v_body := pgv.grid(VARIADIC ARRAY[
+    pgv.stat('Schemas', v_total_schemas::text),
+    pgv.stat('Tests', v_total_tests::text, 'fonctions test_*'),
+    pgv.stat('Derniers OK', v_last_passed::text, 'passed'),
+    pgv.stat('Derniers KO', v_last_failed::text, 'failed')
+  ]);
+
+  v_body := v_body || pgv.md_table(
+    ARRAY['Schema', 'Tests', 'Resultat', 'Duree', 'Dernier run', 'Action'],
+    v_rows
+  );
+
+  -- Recent run history (last 10)
+  v_history_rows := ARRAY[]::text[];
+  FOR v_run IN
+    SELECT * FROM workbench.test_run
+     ORDER BY run_at DESC LIMIT 10
+  LOOP
+    v_history_rows := v_history_rows || ARRAY[
+      pgv.esc(v_run.schema_ut),
+      pgv.badge(v_run.passed::text, 'success') || ' / '
+        || CASE WHEN v_run.failed > 0
+             THEN pgv.badge(v_run.failed::text, 'danger')
+             ELSE '0'
+           END,
+      v_run.duration_ms || ' ms',
+      to_char(v_run.run_at, 'DD/MM HH24:MI:SS')
+    ];
+  END LOOP;
+
+  IF array_length(v_history_rows, 1) IS NOT NULL THEN
+    v_body := v_body || '<h3>Historique</h3>'
+      || pgv.md_table(
+        ARRAY['Schema', 'Resultat', 'Duree', 'Date'],
+        v_history_rows
+      );
+  END IF;
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION ops.get_tests(text) IS 'Page historique tests pgTAP — liste schemas _ut avec stats, derniers runs, bouton lancer';
+
 CREATE OR REPLACE FUNCTION ops.nav_items()
  RETURNS jsonb
  LANGUAGE sql
@@ -742,6 +858,7 @@ AS $function$
 SELECT '[
     {"href":"/","label":"Dashboard","icon":"monitor"},
     {"href":"/modules","label":"Modules","icon":"package"},
+    {"href":"/tests","label":"Tests","icon":"check-circle"},
     {"href":"/dashboard","label":"Sante","icon":"activity"},
     {"href":"/agents","label":"Agents","icon":"terminal"},
     {"href":"/messages","label":"Messages","icon":"mail"},
@@ -749,6 +866,59 @@ SELECT '[
   ]'::jsonb;
 $function$;
 COMMENT ON FUNCTION ops.nav_items() IS 'Items de navigation pour le menu pgView.';
+
+CREATE OR REPLACE FUNCTION ops.post_test_run(p_schema text)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_start timestamptz;
+  v_duration_ms int;
+  v_passed int := 0;
+  v_failed int := 0;
+  v_total int := 0;
+  v_line text;
+BEGIN
+  IF p_schema IS NULL OR p_schema = '' THEN
+    RETURN '<template data-toast="error">Schema requis</template>';
+  END IF;
+
+  -- Verify schema exists
+  IF NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = p_schema) THEN
+    RETURN '<template data-toast="error">Schema ' || pgv.esc(p_schema) || ' introuvable</template>';
+  END IF;
+
+  v_start := clock_timestamp();
+
+  -- Run pgTAP tests
+  FOR v_line IN SELECT * FROM runtests(p_schema::name, ''::text)
+  LOOP
+    IF v_line LIKE 'ok %' THEN
+      v_passed := v_passed + 1;
+      v_total := v_total + 1;
+    ELSIF v_line LIKE 'not ok %' THEN
+      v_failed := v_failed + 1;
+      v_total := v_total + 1;
+    END IF;
+  END LOOP;
+
+  v_duration_ms := extract(millisecond FROM clock_timestamp() - v_start)::int
+                 + extract(second FROM clock_timestamp() - v_start)::int * 1000;
+
+  -- Record run
+  INSERT INTO workbench.test_run (schema_ut, total, passed, failed, duration_ms)
+  VALUES (p_schema, v_total, v_passed, v_failed, v_duration_ms);
+
+  IF v_failed > 0 THEN
+    RETURN '<template data-toast="error">' || pgv.esc(p_schema)
+      || ' : ' || v_passed || ' OK, ' || v_failed || ' KO (' || v_duration_ms || ' ms)</template>';
+  END IF;
+
+  RETURN '<template data-toast="success">' || pgv.esc(p_schema)
+    || ' : ' || v_passed || '/' || v_total || ' OK (' || v_duration_ms || ' ms)</template>';
+END;
+$function$;
+COMMENT ON FUNCTION ops.post_test_run(text) IS 'Lance les tests pgTAP pour un schema _ut, enregistre le résultat dans workbench.test_run';
 
 GRANT USAGE ON SCHEMA ops TO web_anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops TO web_anon;
@@ -877,6 +1047,31 @@ END;
 $function$;
 COMMENT ON FUNCTION ops_ut.test_get_modules() IS 'Test get_modules affiche la registry avec stats et badge nouveau';
 
+CREATE OR REPLACE FUNCTION ops_ut.test_get_tests()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_html text;
+BEGIN
+  -- Full page (all schemas)
+  v_html := ops.get_tests();
+  RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 0, 'get_tests renders HTML');
+  RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'get_tests contains stat widgets');
+  RETURN NEXT ok(v_html LIKE '%Schemas%', 'get_tests shows schema count');
+  RETURN NEXT ok(v_html LIKE '%cad_ut%', 'get_tests lists cad_ut');
+  RETURN NEXT ok(v_html LIKE '%ops_ut%', 'get_tests lists ops_ut');
+  RETURN NEXT ok(v_html LIKE '%Lancer%', 'get_tests has run buttons');
+  RETURN NEXT ok(v_html NOT LIKE '%style="%', 'get_tests has no inline styles');
+
+  -- Filtered by schema
+  v_html := ops.get_tests('ops');
+  RETURN NEXT ok(v_html LIKE '%ops_ut%', 'get_tests(ops) lists ops_ut');
+  RETURN NEXT ok(v_html NOT LIKE '%cad_ut%', 'get_tests(ops) does not list cad_ut');
+END;
+$function$;
+COMMENT ON FUNCTION ops_ut.test_get_tests() IS 'Test get_tests affiche les schemas _ut avec stats et boutons lancer';
+
 CREATE OR REPLACE FUNCTION ops_ut.test_module_list()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -917,6 +1112,7 @@ AS $function$
 BEGIN
   RETURN NEXT ok(length(ops.get_index()) > 0, 'get_index renders HTML');
   RETURN NEXT ok(length(ops.get_modules()) > 0, 'get_modules renders HTML');
+  RETURN NEXT ok(length(ops.get_tests()) > 0, 'get_tests renders HTML');
   RETURN NEXT ok(length(ops.get_messages()) > 0, 'get_messages renders HTML');
   RETURN NEXT ok(length(ops.get_hooks()) > 0, 'get_hooks renders HTML');
   RETURN NEXT ok(length(ops.get_agent('cad')) > 0, 'get_agent renders HTML');
@@ -930,6 +1126,10 @@ BEGIN
   RETURN NEXT ok(
     (ops.nav_items())::text LIKE '%Modules%',
     'nav_items contains Modules'
+  );
+  RETURN NEXT ok(
+    (ops.nav_items())::text LIKE '%Tests%',
+    'nav_items contains Tests'
   );
 END;
 $function$;

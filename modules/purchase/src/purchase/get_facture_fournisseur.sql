@@ -81,6 +81,11 @@ BEGIN
     pgv.card('Montant TTC', to_char(v_fac.montant_ttc, 'FM999 990.00') || ' EUR')
   ]);
 
+  -- Workflow progression
+  v_body := v_body || pgv.workflow(
+    '[{"key":"recue","label":"Reçue"},{"key":"validee","label":"Validée"},{"key":"payee","label":"Payée"}]'::jsonb,
+    v_fac.statut);
+
   v_body := v_body || '<p>'
     || '<strong>Date facture :</strong> ' || to_char(v_fac.date_facture, 'DD/MM/YYYY')
     || ' | <strong>Echéance :</strong> ' || coalesce(to_char(v_fac.date_echeance, 'DD/MM/YYYY'), '—')

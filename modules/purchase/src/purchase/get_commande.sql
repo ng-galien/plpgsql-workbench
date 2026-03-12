@@ -54,6 +54,13 @@ BEGIN
     pgv.card('Livraison', coalesce(to_char(v_cmd.date_livraison, 'DD/MM/YYYY'), '—'))
   ]);
 
+  -- Workflow progression
+  IF v_cmd.statut <> 'annulee' THEN
+    v_body := v_body || pgv.workflow(
+      '[{"key":"brouillon","label":"Brouillon"},{"key":"envoyee","label":"Envoyée"},{"key":"partiellement_recue","label":"Partielle"},{"key":"recue","label":"Reçue"}]'::jsonb,
+      v_cmd.statut);
+  END IF;
+
   IF v_cmd.objet <> '' THEN
     v_body := v_body || '<p><strong>Objet :</strong> ' || pgv.esc(v_cmd.objet) || '</p>';
   END IF;

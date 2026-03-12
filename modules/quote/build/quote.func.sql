@@ -152,6 +152,70 @@ END;
 $function$;
 COMMENT ON FUNCTION quote._total_ttc(integer,integer) IS 'Total TTC d''un devis ou facture (HT + TVA)';
 
+CREATE OR REPLACE FUNCTION quote.article_search(p_search text DEFAULT ''::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_result jsonb;
+BEGIN
+  -- Priority 1: catalog.article (with categorie join)
+  IF EXISTS (
+    SELECT 1 FROM pg_namespace n
+    JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = 'article'
+   WHERE n.nspname = 'catalog'
+  ) THEN
+    EXECUTE
+      'SELECT coalesce(jsonb_agg(j ORDER BY j->>''label''), ''[]''::jsonb)
+       FROM (
+         SELECT jsonb_build_object(
+           ''value'', a.id::text,
+           ''label'', coalesce(a.reference, ''#'' || a.id) || '' — '' || a.designation,
+           ''detail'', coalesce(cat.nom, '''')
+         ) AS j
+         FROM catalog.article a
+         LEFT JOIN catalog.categorie cat ON cat.id = a.categorie_id
+        WHERE a.actif
+          AND ($1 = '''' OR a.designation ILIKE ''%%'' || $1 || ''%%''
+               OR coalesce(a.reference, '''') ILIKE ''%%'' || $1 || ''%%'')
+        ORDER BY a.designation
+        LIMIT 20
+       ) sub'
+    INTO v_result USING p_search;
+    RETURN coalesce(v_result, '[]'::jsonb);
+  END IF;
+
+  -- Priority 2: stock.article fallback
+  IF EXISTS (
+    SELECT 1 FROM pg_namespace n
+    JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = 'article'
+   WHERE n.nspname = 'stock'
+  ) THEN
+    EXECUTE
+      'SELECT coalesce(jsonb_agg(j ORDER BY j->>''label''), ''[]''::jsonb)
+       FROM (
+         SELECT jsonb_build_object(
+           ''value'', a.id::text,
+           ''label'', a.reference || '' — '' || a.designation,
+           ''detail'', a.categorie
+         ) AS j
+         FROM stock.article a
+        WHERE a.active = true
+          AND ($1 = '''' OR a.designation ILIKE ''%%'' || $1 || ''%%''
+               OR a.reference ILIKE ''%%'' || $1 || ''%%'')
+        ORDER BY a.reference
+        LIMIT 20
+       ) sub'
+    INTO v_result USING p_search;
+    RETURN coalesce(v_result, '[]'::jsonb);
+  END IF;
+
+  RETURN '[]'::jsonb;
+END;
+$function$;
+COMMENT ON FUNCTION quote.article_search(text) IS 'Search articles for pgv.select_search() — catalog priority, stock fallback, jsonb format';
+
 CREATE OR REPLACE FUNCTION quote.brand()
  RETURNS text
  LANGUAGE plpgsql
@@ -165,6 +229,7 @@ COMMENT ON FUNCTION quote.brand() IS 'Brand label for Quote module';
 CREATE OR REPLACE FUNCTION quote.get_devis(p_id integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_rows text[];
@@ -272,7 +337,8 @@ BEGIN
     v_body := v_body || '<details><summary>Ajouter une ligne</summary>'
       || '<form data-rpc="post_ligne_ajouter">'
       || '<input type="hidden" name="devis_id" value="' || p_id || '">'
-      || '<label>Description <input type="text" name="description" required></label>'
+      || pgv.select_search('article_id', 'Article (catalogue)', 'quote.article_search', 'Chercher un article...')
+      || '<label>Description <input type="text" name="description" placeholder="Renseignée depuis l''article si sélectionné"></label>'
       || '<div class="grid">'
       || '<label>Quantité <input type="number" name="quantite" value="1" step="0.01" min="0.01" required></label>'
       || '<label>Unité <select name="unite">'
@@ -281,7 +347,7 @@ BEGIN
       || '<option value="m3">m³</option><option value="forfait">Forfait</option>'
       || '</select></label>'
       || '</div><div class="grid">'
-      || '<label>Prix unitaire HT <input type="number" name="prix_unitaire" step="0.01" min="0" required></label>'
+      || '<label>Prix unitaire HT <input type="number" name="prix_unitaire" step="0.01" min="0"></label>'
       || '<label>TVA <select name="tva_rate">'
       || '<option value="20.00">20 %</option><option value="10.00">10 %</option>'
       || '<option value="5.50">5,5 %</option><option value="0.00">0 %</option>'
@@ -382,6 +448,7 @@ COMMENT ON FUNCTION quote.get_devis_form(integer) IS 'Formulaire création/édit
 CREATE OR REPLACE FUNCTION quote.get_facture(p_id integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_rows text[];
@@ -502,7 +569,8 @@ BEGIN
     v_body := v_body || '<details><summary>Ajouter une ligne</summary>'
       || '<form data-rpc="post_ligne_ajouter">'
       || '<input type="hidden" name="facture_id" value="' || p_id || '">'
-      || '<label>Description <input type="text" name="description" required></label>'
+      || pgv.select_search('article_id', 'Article (catalogue)', 'quote.article_search', 'Chercher un article...')
+      || '<label>Description <input type="text" name="description" placeholder="Renseignée depuis l''article si sélectionné"></label>'
       || '<div class="grid">'
       || '<label>Quantité <input type="number" name="quantite" value="1" step="0.01" min="0.01" required></label>'
       || '<label>Unité <select name="unite">'
@@ -511,7 +579,7 @@ BEGIN
       || '<option value="m3">m³</option><option value="forfait">Forfait</option>'
       || '</select></label>'
       || '</div><div class="grid">'
-      || '<label>Prix unitaire HT <input type="number" name="prix_unitaire" step="0.01" min="0" required></label>'
+      || '<label>Prix unitaire HT <input type="number" name="prix_unitaire" step="0.01" min="0"></label>'
       || '<label>TVA <select name="tva_rate">'
       || '<option value="20.00">20 %</option><option value="10.00">10 %</option>'
       || '<option value="5.50">5,5 %</option><option value="0.00">0 %</option>'
@@ -1037,9 +1105,16 @@ DECLARE
   v_devis_id int;
   v_facture_id int;
   v_redirect text;
+  v_article_id int;
+  v_description text;
+  v_prix_unitaire numeric;
+  v_tva_rate numeric;
+  v_unite text;
+  v_art record;
 BEGIN
   v_devis_id := (p_data->>'devis_id')::int;
   v_facture_id := (p_data->>'facture_id')::int;
+  v_article_id := (p_data->>'article_id')::int;
 
   -- Vérifier que le parent est brouillon
   IF v_devis_id IS NOT NULL THEN
@@ -1056,15 +1131,59 @@ BEGIN
     RAISE EXCEPTION 'devis_id ou facture_id requis';
   END IF;
 
+  -- Lookup article si sélectionné (catalog > stock)
+  IF v_article_id IS NOT NULL THEN
+    -- Priority 1: catalog.article
+    IF EXISTS (
+      SELECT 1 FROM pg_namespace n
+      JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = 'article'
+     WHERE n.nspname = 'catalog'
+    ) THEN
+      EXECUTE
+        'SELECT designation, prix_vente AS prix_achat, unite, tva
+         FROM catalog.article WHERE id = $1 AND actif'
+      INTO v_art USING v_article_id;
+    END IF;
+    -- Priority 2: stock.article fallback
+    IF v_art.designation IS NULL AND EXISTS (
+      SELECT 1 FROM pg_namespace n
+      JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = 'article'
+     WHERE n.nspname = 'stock'
+    ) THEN
+      EXECUTE
+        'SELECT designation, prix_achat, unite, NULL::numeric AS tva
+         FROM stock.article WHERE id = $1 AND active = true'
+      INTO v_art USING v_article_id;
+    END IF;
+  END IF;
+
+  -- Resolve values: form > article > defaults
+  v_description := coalesce(
+    nullif(trim(p_data->>'description'), ''),
+    v_art.designation,
+    'Ligne sans description'
+  );
+  v_prix_unitaire := coalesce(
+    nullif((p_data->>'prix_unitaire')::numeric, 0),
+    v_art.prix_achat,
+    0
+  );
+  v_unite := coalesce(
+    nullif(p_data->>'unite', ''),
+    v_art.unite,
+    'u'
+  );
+  v_tva_rate := coalesce((p_data->>'tva_rate')::numeric, v_art.tva, 20.00);
+
   INSERT INTO quote.ligne (devis_id, facture_id, description, quantite, unite, prix_unitaire, tva_rate)
   VALUES (
     v_devis_id,
     v_facture_id,
-    p_data->>'description',
+    v_description,
     coalesce((p_data->>'quantite')::numeric, 1),
-    coalesce(p_data->>'unite', 'u'),
-    (p_data->>'prix_unitaire')::numeric,
-    coalesce((p_data->>'tva_rate')::numeric, 20.00)
+    v_unite,
+    v_prix_unitaire,
+    v_tva_rate
   );
 
   RETURN '<template data-toast="success">Ligne ajoutée</template>'
@@ -1127,6 +1246,42 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION quote_ut.test__next_numero() IS 'Test numérotation séquentielle + branche préfixe invalide';
+
+CREATE OR REPLACE FUNCTION quote_ut.test_article_search()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result jsonb;
+  v_item jsonb;
+BEGIN
+  -- Test: returns jsonb array (not null)
+  v_result := quote.article_search('');
+  RETURN NEXT ok(v_result IS NOT NULL, 'search returns non-null');
+  RETURN NEXT ok(jsonb_typeof(v_result) = 'array', 'search returns array');
+
+  -- Test: with search filter
+  v_result := quote.article_search('bois');
+  RETURN NEXT ok(jsonb_typeof(v_result) = 'array', 'filtered search returns array');
+
+  -- Test: items have required keys (value, label)
+  IF jsonb_array_length(v_result) > 0 THEN
+    v_item := v_result->0;
+    RETURN NEXT ok(v_item ? 'value', 'item has value key');
+    RETURN NEXT ok(v_item ? 'label', 'item has label key');
+    RETURN NEXT ok(v_item ? 'detail', 'item has detail key');
+  ELSE
+    RETURN NEXT skip('no articles in stock, skipping structure checks');
+    RETURN NEXT skip('no articles in stock');
+    RETURN NEXT skip('no articles in stock');
+  END IF;
+
+  -- Test: nonsense search returns empty array
+  v_result := quote.article_search('zzzzxyznonexistent');
+  RETURN NEXT is(jsonb_array_length(v_result), 0, 'nonsense search returns empty');
+END;
+$function$;
+COMMENT ON FUNCTION quote_ut.test_article_search() IS 'Test article_search returns valid jsonb for pgv.select_search()';
 
 CREATE OR REPLACE FUNCTION quote_ut.test_delete_constraints()
  RETURNS SETOF text

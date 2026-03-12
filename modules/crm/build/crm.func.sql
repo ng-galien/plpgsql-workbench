@@ -684,20 +684,20 @@ BEGIN
   EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
   END;
 
-  v_interactions := '';
-  FOR r IN SELECT e FROM jsonb_array_elements(v_timeline) AS e ORDER BY (e->>'dt')::timestamptz DESC LOOP
-    v_interactions := v_interactions || pgv.card(
-      pgv.badge(r.e->>'badge', r.e->>'variant') || ' ' || pgv.esc(r.e->>'title'),
-      CASE
-        WHEN r.e->>'link' <> '' THEN '<p><a href="' || (r.e->>'link') || '">Voir</a></p>'
-        WHEN r.e->>'detail' <> '' THEN '<p>' || pgv.esc(r.e->>'detail') || '</p>'
-        ELSE '<p><em>Pas de detail</em></p>'
-      END,
-      '<small>' || to_char((r.e->>'dt')::timestamptz, 'DD/MM/YYYY HH24:MI') || '</small>');
-  END LOOP;
-
-  IF v_interactions = '' THEN
+  IF jsonb_array_length(v_timeline) = 0 THEN
     v_interactions := pgv.empty('Aucun evenement');
+  ELSE
+    v_interactions := pgv.timeline((
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'date', to_char((e->>'dt')::timestamptz, 'DD/MM/YYYY HH24:MI'),
+          'label', (e->>'badge') || E' \u2014 ' || (e->>'title'),
+          'detail', nullif(e->>'detail', ''),
+          'badge', e->>'variant'
+        ) ORDER BY (e->>'dt')::timestamptz DESC
+      )
+      FROM jsonb_array_elements(v_timeline) AS e
+    ));
   END IF;
 
   v_interactions := v_interactions ||
@@ -729,7 +729,7 @@ DECLARE
   v_type text;
   v_period text;
   v_total int;
-  v_rows text[];
+  v_tl jsonb;
   v_body text;
   v_date_from timestamptz;
   r record;
@@ -764,9 +764,9 @@ BEGIN
     || '<button type="submit" class="secondary">Filtrer</button>'
     || '</form>';
 
-  v_rows := ARRAY[]::text[];
+  v_tl := '[]'::jsonb;
   FOR r IN
-    SELECT i.type, i.subject, i.created_at, c.id AS client_id, c.name AS client_name
+    SELECT i.type, i.subject, i.created_at, c.name AS client_name
       FROM crm.interaction i
       JOIN crm.client c ON c.id = i.client_id
      WHERE (v_q IS NULL OR i.subject ILIKE '%' || v_q || '%')
@@ -774,24 +774,20 @@ BEGIN
        AND (v_date_from IS NULL OR i.created_at >= v_date_from)
      ORDER BY i.created_at DESC
   LOOP
-    v_rows := v_rows || ARRAY[
-      to_char(r.created_at, 'DD/MM/YYYY HH24:MI'),
-      pgv.badge(crm.type_label(r.type), CASE r.type WHEN 'call' THEN 'primary' WHEN 'visit' THEN 'success' ELSE 'default' END),
-      pgv.esc(r.subject),
-      format('<a href="%s">%s</a>', pgv.call_ref('get_client', jsonb_build_object('p_id', r.client_id)), pgv.esc(r.client_name))
-    ];
+    v_tl := v_tl || jsonb_build_object(
+      'date', to_char(r.created_at, 'DD/MM/YYYY HH24:MI'),
+      'label', crm.type_label(r.type) || E' \u2014 ' || r.subject,
+      'detail', r.client_name,
+      'badge', CASE r.type WHEN 'call' THEN 'primary' WHEN 'visit' THEN 'success' ELSE 'info' END
+    );
   END LOOP;
 
-  IF cardinality(v_rows) = 0 AND v_total = 0 THEN
+  IF jsonb_array_length(v_tl) = 0 AND v_total = 0 THEN
     v_body := v_body || pgv.empty('Aucune interaction.');
-  ELSIF cardinality(v_rows) = 0 THEN
+  ELSIF jsonb_array_length(v_tl) = 0 THEN
     v_body := v_body || pgv.empty('Aucun résultat pour ces filtres.');
   ELSE
-    v_body := v_body || pgv.md_table(
-      ARRAY['Date', 'Type', 'Sujet', 'Client'],
-      v_rows,
-      20
-    );
+    v_body := v_body || pgv.timeline(v_tl);
   END IF;
 
   RETURN v_body;

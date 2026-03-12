@@ -1,8 +1,9 @@
-CREATE OR REPLACE FUNCTION ledger.get_grand_livre(p_account_id integer, p_year integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION ledger.get_grand_livre(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
+  v_account_id integer;
   v_account record;
   v_year integer;
   v_start date;
@@ -14,10 +15,13 @@ DECLARE
   v_total_credit numeric := 0;
   r record;
 BEGIN
-  SELECT * INTO v_account FROM ledger.account WHERE id = p_account_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Compte % introuvable', p_account_id; END IF;
+  v_account_id := (p_params->>'p_account_id')::integer;
+  IF v_account_id IS NULL THEN RAISE EXCEPTION 'p_account_id requis'; END IF;
 
-  v_year := coalesce(p_year, extract(year FROM CURRENT_DATE)::integer);
+  SELECT * INTO v_account FROM ledger.account WHERE id = v_account_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Compte % introuvable', v_account_id; END IF;
+
+  v_year := coalesce((p_params->>'p_year')::integer, extract(year FROM CURRENT_DATE)::integer);
   v_start := make_date(v_year, 1, 1);
   v_end := make_date(v_year, 12, 31);
 
@@ -28,9 +32,9 @@ BEGIN
 
   -- Year selector
   v_body := v_body || '<div class="grid">'
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', p_account_id, 'p_year', v_year - 1)), (v_year - 1)::text)
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', p_account_id, 'p_year', v_year)), v_year::text)
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', p_account_id, 'p_year', v_year + 1)), (v_year + 1)::text)
+    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year - 1)), (v_year - 1)::text)
+    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year)), v_year::text)
+    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year + 1)), (v_year + 1)::text)
     || '</div>';
 
   v_rows := ARRAY[]::text[];
@@ -39,7 +43,7 @@ BEGIN
            el.debit, el.credit
       FROM ledger.entry_line el
       JOIN ledger.journal_entry je ON je.id = el.journal_entry_id
-     WHERE el.account_id = p_account_id
+     WHERE el.account_id = v_account_id
        AND je.posted = true
        AND je.entry_date >= v_start AND je.entry_date <= v_end
      ORDER BY je.entry_date, je.id

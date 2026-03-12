@@ -77,10 +77,17 @@ BEGIN
     c.numero
   ]);
 
+  -- Workflow bar (statut)
+  v_body := v_body || pgv.workflow(
+    '[{"key":"preparation","label":"Préparation"},{"key":"execution","label":"Exécution"},{"key":"reception","label":"Réception"},{"key":"clos","label":"Clos"}]'::jsonb,
+    c.statut
+  );
+
+  -- Progress bar (avancement)
+  v_body := v_body || pgv.progress(v_pct, 100, 'Avancement');
+
   -- Header stats
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Statut', project._statut_badge(c.statut)),
-    pgv.stat('Avancement', v_pct::text || ' %'),
     pgv.stat('Heures totales', v_heures_total::text || ' h'),
     pgv.stat('Client', format('<a href="/crm/client?p_id=%s">%s</a>', c.client_id, pgv.esc(v_client_name)))
   ] || CASE WHEN v_has_expense AND v_total_frais > 0

@@ -95,6 +95,21 @@ CREATE INDEX IF NOT EXISTS idx_agent_message_inbox
 CREATE INDEX IF NOT EXISTS idx_agent_message_reply
   ON workbench.agent_message (reply_to) WHERE reply_to IS NOT NULL;
 
+-- Gotchas — recurring pitfalls agents must check before coding
+CREATE TABLE IF NOT EXISTS workbench.gotcha (
+  id          SERIAL PRIMARY KEY,
+  scope       TEXT NOT NULL DEFAULT '*',           -- module name, or * for all
+  trigger     TEXT,                                -- when to check: 'pg_func_set', 'get_*', 'post_*', etc.
+  rule        TEXT NOT NULL,                       -- the gotcha (one-liner)
+  detail      TEXT,                                -- explanation + example
+  severity    TEXT NOT NULL DEFAULT 'error' CHECK (severity IN ('error','warning','info')),
+  active      BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gotcha_scope
+  ON workbench.gotcha (scope) WHERE active;
+
 -- Hook event log
 CREATE TABLE IF NOT EXISTS workbench.hook_log (
   id          SERIAL PRIMARY KEY,
@@ -256,6 +271,24 @@ BEGIN
   PERFORM set_config('app.tenant_id', v_tenant, true);
 END;
 $$;
+
+-- Seed gotchas
+INSERT INTO workbench.gotcha (scope, trigger, rule, detail, severity) VALUES
+  ('*', 'pg_func_set:get_*', 'pgv.route() supporte max 1 argument par fonction GET/POST',
+   'pronargs <= 1 dans route() ligne 68. Fonctions avec 2+ params → 404. Fix: utiliser un seul param jsonb. Ex: get_chantiers(p_params jsonb DEFAULT ''{}''::jsonb) puis p_params->>''statut'', p_params->>''q''.', 'error'),
+  ('*', 'pg_func_set:post_*', 'POST retourne raw HTML — jamais wrappé dans page()',
+   'post_*() retourne text brut (templates data-toast ou data-redirect). Le shell gère le rendu. Si wrappé dans pgv.page(), double layout.', 'error'),
+  ('*', 'pg_func_set', 'PostgREST 406 si post_*() appelé directement au lieu de pgv.route()',
+   'pgv.route() retourne domain "text/html". Les post_*() retournent plain text. Le shell DOIT router via /rpc/route, pas /rpc/<fn>.', 'error'),
+  ('*', 'Write:*.sql', 'JAMAIS écrire CREATE FUNCTION dans un fichier SQL',
+   'Les fonctions sont gérées via pg_func_set (workbench). Les fichiers src/*.sql sont générés par pg_func_save. Les fichiers build/*.func.sql sont générés par pg_pack.', 'error'),
+  ('*', 'pg_func_set', 'Tables via <md> blocks, JAMAIS <table> HTML',
+   'Le shell marked.js convertit <md> en tables triables/paginées automatiquement. <md data-page="10"> pour la pagination.', 'warning'),
+  ('*', 'pg_func_set', 'CSS classes pgv-*, JAMAIS style="..." inline',
+   'Les hooks bloquent les inline styles. Utiliser les classes pgv-* et les tokens CSS --pgv-*.', 'error'),
+  ('*', 'pg_func_set', 'Cross-module: vérifier pg_proc/pg_class, pas juste pg_namespace',
+   'Un schema peut exister sans ses fonctions/tables (bootstrap en cours). Toujours vérifier que la fonction/table cible existe avant EXECUTE dynamique.', 'warning')
+ON CONFLICT DO NOTHING;
 
 -- Grants for PostgREST
 GRANT USAGE ON SCHEMA workbench TO web_anon;

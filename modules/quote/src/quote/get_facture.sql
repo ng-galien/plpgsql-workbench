@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION quote.get_facture(p_id integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_rows text[];
@@ -121,7 +122,8 @@ BEGIN
     v_body := v_body || '<details><summary>Ajouter une ligne</summary>'
       || '<form data-rpc="post_ligne_ajouter">'
       || '<input type="hidden" name="facture_id" value="' || p_id || '">'
-      || '<label>Description <input type="text" name="description" required></label>'
+      || pgv.select_search('article_id', 'Article (catalogue)', 'quote.article_search', 'Chercher un article...')
+      || '<label>Description <input type="text" name="description" placeholder="Renseignée depuis l''article si sélectionné"></label>'
       || '<div class="grid">'
       || '<label>Quantité <input type="number" name="quantite" value="1" step="0.01" min="0.01" required></label>'
       || '<label>Unité <select name="unite">'
@@ -130,7 +132,7 @@ BEGIN
       || '<option value="m3">m³</option><option value="forfait">Forfait</option>'
       || '</select></label>'
       || '</div><div class="grid">'
-      || '<label>Prix unitaire HT <input type="number" name="prix_unitaire" step="0.01" min="0" required></label>'
+      || '<label>Prix unitaire HT <input type="number" name="prix_unitaire" step="0.01" min="0"></label>'
       || '<label>TVA <select name="tva_rate">'
       || '<option value="20.00">20 %</option><option value="10.00">10 %</option>'
       || '<option value="5.50">5,5 %</option><option value="0.00">0 %</option>'

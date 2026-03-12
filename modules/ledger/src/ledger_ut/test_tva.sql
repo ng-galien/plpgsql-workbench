@@ -44,7 +44,7 @@ BEGIN
   ));
   PERFORM ledger.post_entry_post(jsonb_build_object('id', v_entry_id));
 
-  v_html := ledger.get_tva(extract(year FROM CURRENT_DATE)::integer, extract(quarter FROM CURRENT_DATE)::integer);
+  v_html := ledger.get_tva(jsonb_build_object('p_year', extract(year FROM CURRENT_DATE)::integer, 'p_quarter', extract(quarter FROM CURRENT_DATE)::integer));
   RETURN NEXT ok(v_html LIKE '%20.00%', 'TVA collectée = 20.00');
   RETURN NEXT ok(v_html LIKE '%10.00%', 'TVA déductible = 10.00');
   RETURN NEXT ok(v_html LIKE '%reverser%', 'TVA à reverser (solde positif)');

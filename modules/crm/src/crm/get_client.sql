@@ -191,20 +191,20 @@ BEGIN
   EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
   END;
 
-  v_interactions := '';
-  FOR r IN SELECT e FROM jsonb_array_elements(v_timeline) AS e ORDER BY (e->>'dt')::timestamptz DESC LOOP
-    v_interactions := v_interactions || pgv.card(
-      pgv.badge(r.e->>'badge', r.e->>'variant') || ' ' || pgv.esc(r.e->>'title'),
-      CASE
-        WHEN r.e->>'link' <> '' THEN '<p><a href="' || (r.e->>'link') || '">Voir</a></p>'
-        WHEN r.e->>'detail' <> '' THEN '<p>' || pgv.esc(r.e->>'detail') || '</p>'
-        ELSE '<p><em>Pas de detail</em></p>'
-      END,
-      '<small>' || to_char((r.e->>'dt')::timestamptz, 'DD/MM/YYYY HH24:MI') || '</small>');
-  END LOOP;
-
-  IF v_interactions = '' THEN
+  IF jsonb_array_length(v_timeline) = 0 THEN
     v_interactions := pgv.empty('Aucun evenement');
+  ELSE
+    v_interactions := pgv.timeline((
+      SELECT jsonb_agg(
+        jsonb_build_object(
+          'date', to_char((e->>'dt')::timestamptz, 'DD/MM/YYYY HH24:MI'),
+          'label', (e->>'badge') || E' \u2014 ' || (e->>'title'),
+          'detail', nullif(e->>'detail', ''),
+          'badge', e->>'variant'
+        ) ORDER BY (e->>'dt')::timestamptz DESC
+      )
+      FROM jsonb_array_elements(v_timeline) AS e
+    ));
   END IF;
 
   v_interactions := v_interactions ||

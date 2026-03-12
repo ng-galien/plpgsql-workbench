@@ -202,10 +202,17 @@ BEGIN
     c.numero
   ]);
 
+  -- Workflow bar (statut)
+  v_body := v_body || pgv.workflow(
+    '[{"key":"preparation","label":"Préparation"},{"key":"execution","label":"Exécution"},{"key":"reception","label":"Réception"},{"key":"clos","label":"Clos"}]'::jsonb,
+    c.statut
+  );
+
+  -- Progress bar (avancement)
+  v_body := v_body || pgv.progress(v_pct, 100, 'Avancement');
+
   -- Header stats
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Statut', project._statut_badge(c.statut)),
-    pgv.stat('Avancement', v_pct::text || ' %'),
     pgv.stat('Heures totales', v_heures_total::text || ' h'),
     pgv.stat('Client', format('<a href="/crm/client?p_id=%s">%s</a>', c.client_id, pgv.esc(v_client_name)))
   ] || CASE WHEN v_has_expense AND v_total_frais > 0
@@ -380,7 +387,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION project.get_chantier(integer) IS 'Detail chantier : infos, jalons, pointages, notes, equipe, notes de frais (si expense)';
+COMMENT ON FUNCTION project.get_chantier(integer) IS 'Detail chantier : workflow statut, progress avancement, infos, jalons, pointages, notes, equipe, frais';
 
 CREATE OR REPLACE FUNCTION project.get_chantier_form(p_id integer DEFAULT NULL::integer)
  RETURNS text
@@ -658,6 +665,7 @@ DECLARE
   v_body text;
   v_rows text[];
   r record;
+  v_tl_items jsonb;
 BEGIN
   v_body := '<h3>Planning des chantiers actifs</h3>';
 
@@ -667,28 +675,32 @@ BEGIN
            project._statut_badge(c.statut) AS statut_badge,
            project._avancement_global(c.id) AS pct,
            c.date_debut, c.date_fin_prevue,
-           (SELECT string_agg(
-              j.label || ' ' || pgv.badge(
-                CASE j.statut WHEN 'valide' THEN '✓' WHEN 'en_cours' THEN j.pct_avancement::text || '%' ELSE '—' END,
-                CASE j.statut WHEN 'valide' THEN 'success' WHEN 'en_cours' THEN 'info' ELSE 'default' END
-              ), ' '
-              ORDER BY j.sort_order
-            ) FROM project.jalon j WHERE j.chantier_id = c.id
-           ) AS jalons_resume,
            (SELECT count(*)::int FROM project.affectation a WHERE a.chantier_id = c.id) AS nb_intervenants
       FROM project.chantier c
       JOIN crm.client cl ON cl.id = c.client_id
      WHERE c.statut IN ('preparation', 'execution', 'reception')
      ORDER BY c.date_debut NULLS LAST, c.numero
   LOOP
+    -- Build timeline items for this chantier's jalons
+    SELECT COALESCE(jsonb_agg(
+      jsonb_build_object(
+        'date', COALESCE(to_char(j.date_prevue, 'DD/MM/YYYY'), '—'),
+        'label', j.label,
+        'detail', j.pct_avancement || ' %',
+        'badge', CASE j.statut WHEN 'valide' THEN 'success' WHEN 'en_cours' THEN 'info' ELSE 'default' END
+      ) ORDER BY j.sort_order
+    ), '[]'::jsonb)
+    INTO v_tl_items
+    FROM project.jalon j WHERE j.chantier_id = r.id;
+
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_chantier', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
       pgv.esc(r.client),
       r.statut_badge,
-      pgv.badge(r.pct::text || ' %'),
+      pgv.progress(r.pct, 100),
       COALESCE(to_char(r.date_debut, 'DD/MM'), '—') || ' → ' || COALESCE(to_char(r.date_fin_prevue, 'DD/MM'), '—'),
       r.nb_intervenants::text,
-      COALESCE(r.jalons_resume, '—')
+      CASE WHEN v_tl_items = '[]'::jsonb THEN '—' ELSE pgv.timeline(v_tl_items) END
     ];
   END LOOP;
 
@@ -704,7 +716,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION project.get_planning() IS 'Vue planning : chantiers actifs avec jalons et dates';
+COMMENT ON FUNCTION project.get_planning() IS 'Vue planning : chantiers actifs avec progress bar et timeline jalons';
 
 CREATE OR REPLACE FUNCTION project.nav_items()
  RETURNS jsonb
