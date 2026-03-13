@@ -1,5 +1,51 @@
--- asset — DDL
+-- asset — DDL (v2: re-grant after function creation)
 
 CREATE SCHEMA IF NOT EXISTS asset;
 CREATE SCHEMA IF NOT EXISTS asset_ut;
 CREATE SCHEMA IF NOT EXISTS asset_qa;
+
+CREATE TABLE IF NOT EXISTS asset.asset (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id     TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  path          TEXT NOT NULL,
+  filename      TEXT NOT NULL,
+  mime_type     TEXT NOT NULL DEFAULT 'image/jpeg',
+  status        TEXT NOT NULL DEFAULT 'to_classify'
+                CHECK (status IN ('to_classify', 'classified', 'archived')),
+  -- Dimensions
+  width         INTEGER,
+  height        INTEGER,
+  orientation   TEXT,
+  -- Métadonnées (remplies par Claude via classify)
+  title         TEXT,
+  description   TEXT,
+  tags          TEXT[] DEFAULT '{}',
+  credit        TEXT,
+  saison        TEXT,
+  usage_hint    TEXT,
+  colors        TEXT[] DEFAULT '{}',
+  -- Timestamps
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  classified_at TIMESTAMPTZ,
+  -- FTS (title + description, tags indexed separately via GIN)
+  search_vec    tsvector GENERATED ALWAYS AS (
+    setweight(to_tsvector('pgv_search', coalesce(title,'')), 'A') ||
+    setweight(to_tsvector('pgv_search', coalesce(description,'')), 'B')
+  ) STORED
+);
+
+CREATE INDEX IF NOT EXISTS idx_asset_search ON asset.asset USING GIN(search_vec);
+CREATE INDEX IF NOT EXISTS idx_asset_tenant ON asset.asset(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_asset_status ON asset.asset(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_asset_tags   ON asset.asset USING GIN(tags);
+
+-- Grants
+GRANT USAGE ON SCHEMA asset TO web_anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset TO web_anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA asset TO web_anon;
+
+GRANT USAGE ON SCHEMA asset_ut TO web_anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_ut TO web_anon;
+
+GRANT USAGE ON SCHEMA asset_qa TO web_anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_qa TO web_anon;

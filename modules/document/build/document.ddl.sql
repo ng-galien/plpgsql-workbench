@@ -1,0 +1,5 @@
+-- document — DDL
+
+CREATE SCHEMA IF NOT EXISTS document;
+CREATE SCHEMA IF NOT EXISTS document_ut;
+CREATE SCHEMA IF NOT EXISTS document_qa;

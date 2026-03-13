@@ -1,0 +1,29 @@
+{
+  "name": "document",
+  "version": "0.1.0",
+  "description": "Document engine — templates, generation, PDF storage. Powers all 48+ ERP documents (factures, devis, bons, registres, etc.) via structured data + illustrator templates.",
+  "schemas": {
+    "public": "document",
+    "test": "document_ut",
+    "qa": "document_qa"
+  },
+  "dependencies": [
+    "pgv",
+    "asset"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/document.ddl.sql",
+    "build/document.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "web_anon": [
+      "document"
+    ]
+  }
+}

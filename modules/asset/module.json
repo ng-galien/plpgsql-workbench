@@ -4,7 +4,7 @@
   "description": "Asset management — images, metadata, classification, FTS search. Transversal module used by illustrator, cad, and other modules.",
   "schemas": {
     "public": "asset",
-    "private": null,
+    "test": "asset_ut",
     "qa": "asset_qa"
   },
   "dependencies": [
