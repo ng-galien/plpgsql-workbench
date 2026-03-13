@@ -333,6 +333,28 @@ END;
 $function$;
 COMMENT ON FUNCTION workbench.get_messages(text) IS 'List all inter-module messages with filters and stats';
 
+CREATE OR REPLACE FUNCTION workbench.get_primitives()
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  -- Switch prefix so pgv_qa call_ref() resolves to pgv_qa schema
+  PERFORM set_config('pgv.route_prefix', '/pgv_qa', true);
+
+  RETURN pgv.tabs(
+    'Composants',   pgv_qa.get_atoms(),
+    'Tables',       pgv_qa.get_tables(),
+    'Formulaires',  pgv_qa.get_forms(),
+    'Dialogs',      pgv_qa.get_dialogs(),
+    'Toasts',       pgv_qa.get_toast(),
+    'SVG',          pgv_qa.get_svg(),
+    'Erreurs',      pgv_qa.get_errors()
+  );
+END;
+$function$;
+COMMENT ON FUNCTION workbench.get_primitives() IS 'UI primitives catalog — wraps pgv_qa showcase pages in tabs';
+
 CREATE OR REPLACE FUNCTION workbench.get_tool(p_name text)
  RETURNS text
  LANGUAGE plpgsql
@@ -607,7 +629,8 @@ AS $function$
   SELECT jsonb_build_array(
     jsonb_build_object('label', pgv.t('workbench.nav_messages'), 'href', pgv.call_ref('get_messages')),
     jsonb_build_object('label', pgv.t('workbench.nav_issues'),   'href', pgv.call_ref('get_issues')),
-    jsonb_build_object('label', pgv.t('workbench.nav_tools'),    'href', pgv.call_ref('get_tools'))
+    jsonb_build_object('label', pgv.t('workbench.nav_tools'),    'href', pgv.call_ref('get_tools')),
+    jsonb_build_object('label', 'Primitives',                    'href', pgv.call_ref('get_primitives'))
   );
 $function$;
 COMMENT ON FUNCTION workbench.nav_items() IS 'Navigation menu items for workbench module';
