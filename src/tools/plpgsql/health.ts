@@ -14,9 +14,9 @@ export function createHealthTool({ withClient, moduleRegistry }: {
     metadata: {
       name: "ws_health",
       description:
-        "Workspace health check — single call to assess overall state.\n" +
-        "Returns: pending tasks, SQL coherence (DB vs src/), git status per module.\n" +
-        "Use after delegating work to verify everything is clean.",
+        "Workspace health check — single call for the lead to assess overall state.\n" +
+        "Returns: lead dashboard (inbox, sent tracking, orphan issues), pending tasks, SQL coherence (DB vs src/), git status.\n" +
+        "Use during lead routine to monitor agents and workspace.",
       schema: z.object({
         module: z.string().optional().describe("Filter by module name (default: all)"),
       }),
@@ -36,7 +36,72 @@ export function createHealthTool({ withClient, moduleRegistry }: {
       return withClient(async (client) => {
         const parts: string[] = [];
 
-        // ── 1. Pending tasks ──
+        // ── 1. Lead dashboard ──
+        parts.push("== LEAD ==");
+
+        // Inbox: pending messages for lead
+        const { rows: inbox } = await client.query<{
+          id: number; from_module: string; msg_type: string;
+          subject: string; status: string; priority: string;
+          created_at: Date;
+        }>(
+          `SELECT id, from_module, msg_type, subject, status, priority, created_at
+             FROM workbench.agent_message
+            WHERE to_module = 'lead' AND status IN ('new', 'acknowledged')
+            ORDER BY CASE WHEN status = 'new' THEN 0 ELSE 1 END, created_at DESC`,
+        );
+        if (inbox.length > 0) {
+          parts.push(`  inbox: ${inbox.length} pending`);
+          for (const m of inbox) {
+            const pri = m.priority === "high" ? " HIGH" : "";
+            parts.push(`    #${m.id} [${m.status}${pri}] from:${m.from_module} ${m.subject}`);
+          }
+        } else {
+          parts.push("  inbox: empty");
+        }
+
+        // Sent: unresolved messages from lead with age
+        const { rows: sent } = await client.query<{
+          id: number; to_module: string; subject: string;
+          status: string; priority: string; created_at: Date;
+          age_min: number;
+        }>(
+          `SELECT id, to_module, subject, status, priority, created_at,
+                  EXTRACT(EPOCH FROM now() - created_at)::int / 60 AS age_min
+             FROM workbench.agent_message
+            WHERE from_module = 'lead' AND status IN ('new', 'acknowledged')
+            ORDER BY created_at ASC`,
+        );
+        if (sent.length > 0) {
+          parts.push(`  sent unresolved: ${sent.length}`);
+          for (const m of sent) {
+            const pri = m.priority === "high" ? " HIGH" : "";
+            const stale = m.age_min >= 15 ? " STALE" : "";
+            parts.push(`    #${m.id} [${m.status}${pri}${stale}] -> ${m.to_module}: ${m.subject} (${m.age_min}min)`);
+          }
+        } else {
+          parts.push("  sent: all resolved");
+        }
+
+        // Orphan issues: no message dispatched
+        const { rows: orphans } = await client.query<{
+          id: number; issue_type: string; module: string; description: string;
+        }>(
+          `SELECT id, issue_type, module, description
+             FROM workbench.issue_report
+            WHERE status = 'open' AND message_id IS NULL`,
+        );
+        if (orphans.length > 0) {
+          parts.push(`  orphan issues: ${orphans.length}`);
+          for (const o of orphans) {
+            parts.push(`    #${o.id} [${o.issue_type}] ${o.module}: ${o.description.slice(0, 80)}`);
+          }
+        } else {
+          parts.push("  orphan issues: none");
+        }
+
+        // ── 2. Pending tasks ──
+        parts.push("");
         const { rows: tasks } = await client.query<{
           id: number; from_module: string; to_module: string;
           msg_type: string; subject: string; status: string; priority: string;
@@ -73,7 +138,7 @@ export function createHealthTool({ withClient, moduleRegistry }: {
           }
         }
 
-        // ── 2. SQL coherence per module ──
+        // ── 3. SQL coherence per module ──
         parts.push("");
         parts.push("== COHERENCE (DB vs src/) ==");
 
@@ -146,7 +211,7 @@ export function createHealthTool({ withClient, moduleRegistry }: {
           }
         }
 
-        // ── 3. Git status per module ──
+        // ── 4. Git status per module ──
         parts.push("");
         parts.push("== GIT STATUS ==");
 

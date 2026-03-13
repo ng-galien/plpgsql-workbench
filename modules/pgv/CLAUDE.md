@@ -86,6 +86,7 @@ Le schema `pgv_qa` est le **design system showcase** — il contient des pages d
 
 ## Gotchas
 
+- **Tu es l'agent pgv, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:pgv` pour lire TES messages. Ne traiter que les messages adressés à `pgv`.
 - `call_ref()` ne fonctionne que dans le contexte `route()` (besoin de `pgv.route_prefix`)
 - `route()` auto-prefixe les hrefs nav avec `/{schema}` — ne pas doubler dans `nav_items()`
 - PicoCSS haute specificite — matcher leur pattern pour les `.pgv-*`

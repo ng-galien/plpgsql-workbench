@@ -3,19 +3,26 @@ CREATE OR REPLACE FUNCTION project._chantier_form_fields(p_id integer DEFAULT NU
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  c record;
   v_body text := '';
   v_objet text := '';
   v_adresse text := '';
   v_notes text := '';
+  v_date_debut text := '';
+  v_date_fin text := '';
+  v_client_id int;
+  v_devis_id int;
 BEGIN
   IF p_id IS NOT NULL THEN
-    SELECT * INTO c FROM project.chantier WHERE id = p_id;
+    SELECT objet, adresse, notes, date_debut::text, date_fin_prevue::text, client_id, devis_id
+      INTO v_objet, v_adresse, v_notes, v_date_debut, v_date_fin, v_client_id, v_devis_id
+      FROM project.chantier WHERE id = p_id;
     IF NOT FOUND THEN RETURN pgv.empty(pgv.t('project.empty_introuvable')); END IF;
     v_body := '<input type="hidden" name="id" value="' || p_id || '">';
-    v_objet := pgv.esc(c.objet);
-    v_adresse := pgv.esc(c.adresse);
-    v_notes := pgv.esc(c.notes);
+    v_objet := pgv.esc(v_objet);
+    v_adresse := pgv.esc(COALESCE(v_adresse, ''));
+    v_notes := pgv.esc(COALESCE(v_notes, ''));
+    v_date_debut := COALESCE(v_date_debut, '');
+    v_date_fin := COALESCE(v_date_fin, '');
   END IF;
 
   v_body := v_body
@@ -24,10 +31,10 @@ BEGIN
     || project._client_options()
     || '</select></label>';
 
-  IF p_id IS NOT NULL THEN
+  IF v_client_id IS NOT NULL THEN
     v_body := replace(v_body,
-      'value="' || c.client_id || '">',
-      'value="' || c.client_id || '" selected>');
+      'value="' || v_client_id || '">',
+      'value="' || v_client_id || '" selected>');
   END IF;
 
   v_body := v_body
@@ -36,20 +43,18 @@ BEGIN
     || project._devis_options()
     || '</select></label>';
 
-  IF p_id IS NOT NULL AND c.devis_id IS NOT NULL THEN
+  IF v_devis_id IS NOT NULL THEN
     v_body := replace(v_body,
-      'value="' || c.devis_id || '">',
-      'value="' || c.devis_id || '" selected>');
+      'value="' || v_devis_id || '">',
+      'value="' || v_devis_id || '" selected>');
   END IF;
 
   v_body := v_body
     || pgv.input('objet', 'text', pgv.t('project.field_objet'), v_objet, true)
     || pgv.input('adresse', 'text', pgv.t('project.field_adresse'), v_adresse)
     || '<div class="grid">'
-    || pgv.input('date_debut', 'date', pgv.t('project.field_date_debut'),
-         CASE WHEN p_id IS NOT NULL AND c.date_debut IS NOT NULL THEN c.date_debut::text END)
-    || pgv.input('date_fin_prevue', 'date', pgv.t('project.field_date_fin_prevue'),
-         CASE WHEN p_id IS NOT NULL AND c.date_fin_prevue IS NOT NULL THEN c.date_fin_prevue::text END)
+    || pgv.input('date_debut', 'date', pgv.t('project.field_date_debut'), NULLIF(v_date_debut, ''))
+    || pgv.input('date_fin_prevue', 'date', pgv.t('project.field_date_fin_prevue'), NULLIF(v_date_fin, ''))
     || '</div>'
     || pgv.textarea('notes', pgv.t('project.field_notes'), v_notes);
 

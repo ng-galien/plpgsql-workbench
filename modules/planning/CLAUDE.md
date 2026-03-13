@@ -82,6 +82,7 @@ Référence : `pg_get plpgsql://hr_qa/function/seed`
 
 ## Gotchas
 
+- **Tu es l'agent planning, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:planning` pour lire TES messages. Ne traiter que les messages adressés à `planning`.
 - pg_pack doit inclure les 3 schemas : planning,planning_ut,planning_qa
 - Ne pas tester via curl/fetch — utiliser pg_preview ou pg_test
 - Toujours lire l'inbox avant de commencer

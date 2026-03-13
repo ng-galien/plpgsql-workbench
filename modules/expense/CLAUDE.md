@@ -81,4 +81,5 @@ Le schema `expense_qa` contient uniquement `seed()` et `clean()` — PAS de page
 
 ## Gotchas
 
+- **Tu es l'agent expense, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:expense` pour lire TES messages. Ne traiter que les messages adressés à `expense`.
 - (a completer au fil du developpement)

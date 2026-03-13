@@ -80,6 +80,7 @@ Le schema `ops_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
 
 ## Gotchas
 
+- **Tu es l'agent ops, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:ops` pour lire TES messages. Ne traiter que les messages adressés à `ops`.
 - Ops ne possede aucune table — lit `workbench.agent_message`, `workbench.hook_log`, `workbench.agent_session`
 - WebSocket sur port MCP (3100), pas PostgREST
 - Terminal persistant — survit a la fermeture de l'onglet

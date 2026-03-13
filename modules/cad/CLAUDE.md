@@ -78,6 +78,7 @@ Le schema `cad_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
 
 ## Gotchas
 
+- **Tu es l'agent cad, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:cad` pour lire TES messages. Ne traiter que les messages adressés à `cad`.
 - PostgREST Content-Profile : fetch JS doit inclure `Content-Profile: cad`
 - ST_Volume() retourne des mm3 (diviser par 1e9 pour m3)
 - Routing custom : `cad.page()` gere `/drawing/:id`, delegue le reste a `pgv.route()`

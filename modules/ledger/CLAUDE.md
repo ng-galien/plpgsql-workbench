@@ -78,6 +78,7 @@ Le schema `ledger_qa` contient uniquement `seed()` et `clean()` — PAS de pages
 
 ## Gotchas
 
+- **Tu es l'agent ledger, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:ledger` pour lire TES messages. Ne traiter que les messages adressés à `ledger`.
 - Equilibre obligatoire : SUM(debit) = SUM(credit) par ecriture
 - Ecriture validee = immutable, correction par extourne uniquement
 - Sens des comptes : actif/charge = debiteur, passif/capitaux/produit = crediteur

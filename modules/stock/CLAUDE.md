@@ -78,6 +78,7 @@ Le schema `stock_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
 
 ## Gotchas
 
+- **Tu es l'agent stock, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:stock` pour lire TES messages. Ne traiter que les messages adressés à `stock`.
 - Mouvements INSERT only — jamais UPDATE/DELETE, correction par mouvement `inventaire`
 - CRM doit etre deploye avant (fournisseurs = `crm.client` type company)
 - Valorisation PMP : recalculee a chaque entree, figee a chaque sortie

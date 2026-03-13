@@ -78,6 +78,7 @@ Le schema `purchase_qa` contient uniquement `seed()` et `clean()` — PAS de pag
 
 ## Gotchas
 
+- **Tu es l'agent purchase, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:purchase` pour lire TES messages. Ne traiter que les messages adressés à `purchase`.
 - CRM + Stock doivent etre deployes avant
 - Facture fournisseur != quote.facture (document recu vs emis)
 - Workflow : brouillon → envoyee → recue → rapprochee

@@ -13,7 +13,7 @@ The workbench is the foundation for building all applications with PostgreSQL as
 Quand tu travailles depuis la racine du repo, ton role est celui d'un **lead** — tu diagnostiques, tu coordonnes, tu delegues. Tu ne modifies pas directement le code des modules.
 
 - **Diagnostiquer** — Utiliser les MCP tools (`pg_get`, `pg_search`, `pg_query`, `pg_test`) et le navigateur pour identifier les problemes
-- **Deleguer** — Envoyer les actions a faire aux agents modules via `pg_msg` (from: `lead` ou `workbench`, to: `<module>`)
+- **Deleguer** — Envoyer les actions a faire aux agents modules via `pg_msg` (from: `lead`, to: `<module>`)
 - **Verifier** — Apres que l'agent module a travaille, verifier que le fix est correct (tests, frontend)
 - **Ne pas toucher** — Ne pas modifier les fichiers dans `modules/*/` directement. Chaque module a son propre agent qui connait son contexte
 

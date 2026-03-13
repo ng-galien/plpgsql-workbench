@@ -18,6 +18,6 @@ BEGIN
     RETURN '';
   END IF;
 
-  RETURN '<details><summary>' || pgv.t('quote.title_mentions') || '</summary><dl>' || v_html || '</dl></details>';
+  RETURN pgv.accordion(VARIADIC ARRAY[pgv.t('quote.title_mentions'), '<dl>' || v_html || '</dl>']);
 END;
 $function$;

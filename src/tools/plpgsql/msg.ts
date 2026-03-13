@@ -122,7 +122,7 @@ export function createMsgInboxTool({ withClient }: {
         "With resolve: marks a message as resolved with optional note + result.\n" +
         "With sent: true, shows messages YOU sent and their resolution status.",
       schema: z.object({
-        module: z.string().describe("Your module name (comma-separated for aliases). Ex: cad, pgv, lead,workbench"),
+        module: z.string().describe("Your module name (comma-separated for aliases). Ex: cad, pgv, lead"),
         resolve: z.number().optional().describe("Message ID to mark as resolved"),
         resolution: z.string().optional().describe("Resolution note (when resolving)"),
         result: z.record(z.string(), z.unknown()).optional().describe("Structured task result (JSONB). Use when resolving a task."),

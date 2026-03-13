@@ -78,6 +78,7 @@ Le schema `quote_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
 
 ## Gotchas
 
+- **Tu es l'agent quote, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:quote` pour lire TES messages. Ne traiter que les messages adressés à `quote`.
 - Arrondi par ligne : `SUM(ROUND(..., 2))`, jamais `ROUND(SUM(...), 2)`
 - Facture envoyee = immutable (obligation legale)
 - Numerotation sans trou (obligation article L441-9)

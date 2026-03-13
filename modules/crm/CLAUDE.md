@@ -78,6 +78,7 @@ Le schema `crm_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
 
 ## Gotchas
 
+- **Tu es l'agent crm, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:crm` pour lire TES messages. Ne traiter que les messages adressés à `crm`.
 - `type` = `'individual'` ou `'company'` — determine les champs requis
 - Contacts lies via FK CASCADE — supprimer client supprime ses contacts + interactions
 - `interactions` = journal chronologique, pas de UPDATE/DELETE

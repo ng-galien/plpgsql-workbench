@@ -1,13 +1,15 @@
 /**
- * cad — Alpine.js components for CAD module
+ * cad — pgv.plugin components for CAD module
  *
- * Registers Alpine components that can be used in PL/pgSQL fragments:
- *   <div x-data="cadViewer" x-init="load(drawingId)">
- *   <div x-data="cadTree">
+ * Plugins (lifecycle-managed by pgv runtime):
+ *   cadViewer  — 3D Three.js viewer (deps: three.min.js)
+ *   cadPieceTree — 3D piece tree with selection/visibility
+ *
+ * Alpine.data (simple, no lifecycle):
+ *   cadTree — 2D shape tree explorer
  */
 
 (function() {
-  function register() {
 
   var COLORS = {
     poteau: 0xc8956c, traverse: 0xa07850, chevron: 0xd4a76a,
@@ -15,62 +17,91 @@
   };
   var HIGHLIGHT = 0x66aaff;
 
-  // --- 3D Viewer component ---
-  // Three.js objects stored outside Alpine reactivity to avoid Proxy conflicts.
-  // Alpine wraps this.* in Proxies; Three.js objects have non-configurable
-  // properties (modelViewMatrix, etc.) that break under Proxy.
-  Alpine.data('cadViewer', function() {
-    var _gl = { scene: null, camera: null, renderer: null, controls: null,
-      raycaster: null, mouse: null, lastMouse: { x: 0, y: 0 },
-      cameraSet: false, selections: [],
-      groupMap: {}, pieceMeshes: [], _animId: null, _ro: null }; // group_id -> [mesh, mesh, ...]
+  // ── 3D Viewer plugin ────────────────────────────────────────────
 
-    return {
-      drawingId: null,
-      wireframe: false,
-      selCount: 0,
-      hud: 'Chargement...',
-      info: null,
+  pgv.plugin('cadViewer', {
+
+    deps: [
+      { type: 'script', src: '/cad/three.min.js', test: function() { return typeof THREE !== 'undefined'; } }
+    ],
+
+    data: function() {
+      return {
+        drawingId: null,
+        wireframe: false,
+        selCount: 0,
+        hud: 'Chargement...',
+        info: null
+      };
+    },
+
+    priv: function() {
+      return {
+        scene: null, camera: null, renderer: null, controls: null,
+        raycaster: null, mouse: null, lastMouse: { x: 0, y: 0 },
+        cameraSet: false, selections: [],
+        groupMap: {}, pieceMeshes: [], animId: null, ro: null
+      };
+    },
+
+    mount: function(el) {
+      // THREE is guaranteed loaded (deps resolved before mount)
+      // x-init="load(id)" triggers actual initialization
+    },
+
+    unmount: function() {
+      var p = this._priv;
+      if (p.animId) cancelAnimationFrame(p.animId);
+      if (p.ro) p.ro.disconnect();
+      p.pieceMeshes.forEach(function(m) {
+        m.geometry.dispose();
+        m.material.dispose();
+      });
+      if (p.controls) p.controls.dispose();
+      if (p.renderer) {
+        p.renderer.dispose();
+        p.renderer.domElement.remove();
+      }
+      p.scene = null;
+      p.pieceMeshes = [];
+      p.selections = [];
+      p.groupMap = {};
+    },
+
+    methods: {
 
       load: function(id) {
         this.drawingId = id;
-        var self = this;
         var container = this.$refs.viewport;
         if (!container) return;
-
-        // Lazy-load Three.js + OrbitControls (UMD bundle r183)
-        if (typeof THREE === 'undefined') {
-          var s = document.createElement('script');
-          s.src = '/cad/three.min.js';
-          s.onload = function() { self._init3d(container); self._loadScene(); };
-          document.head.appendChild(s);
-        } else {
-          this._init3d(container);
-          this._loadScene();
-        }
+        // THREE is guaranteed loaded by deps — init directly
+        this._init3d(container);
+        this._loadScene();
       },
 
       _init3d: function(container) {
+        var p = this._priv;
+
         var scene = new THREE.Scene();
         scene.background = new THREE.Color(0x1a1a2e);
-        _gl.scene = scene;
+        p.scene = scene;
 
         var w = container.clientWidth;
         var h = container.clientHeight;
         var camera = new THREE.PerspectiveCamera(50, w / h, 1, 100000);
-        _gl.camera = camera;
+        p.camera = camera;
 
         var renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(w, h);
         renderer.setPixelRatio(window.devicePixelRatio);
         container.appendChild(renderer.domElement);
-        _gl.renderer = renderer;
+        p.renderer = renderer;
 
         // Controls
         var controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
-        _gl.controls = controls;
+        p.controls = controls;
 
         // Lights
         scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -86,43 +117,43 @@
         scene.add(new THREE.AxesHelper(500));
 
         // Raycaster
-        _gl.raycaster = new THREE.Raycaster();
-        _gl.mouse = new THREE.Vector2();
+        p.raycaster = new THREE.Raycaster();
+        p.mouse = new THREE.Vector2();
 
         // Events
         var self = this;
         var canvas = renderer.domElement;
 
         canvas.addEventListener('mousedown', function(e) {
-          _gl.lastMouse.x = e.clientX;
-          _gl.lastMouse.y = e.clientY;
+          p.lastMouse.x = e.clientX;
+          p.lastMouse.y = e.clientY;
         });
 
         canvas.addEventListener('mouseup', function(e) {
-          var dx = e.clientX - _gl.lastMouse.x;
-          var dy = e.clientY - _gl.lastMouse.y;
+          var dx = e.clientX - p.lastMouse.x;
+          var dy = e.clientY - p.lastMouse.y;
           if (dx * dx + dy * dy > 25) return; // drag, not click
 
           var rect = canvas.getBoundingClientRect();
-          _gl.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-          _gl.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-          _gl.raycaster.setFromCamera(_gl.mouse, camera);
+          p.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          p.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          p.raycaster.setFromCamera(p.mouse, camera);
 
-          var hits = _gl.raycaster.intersectObjects(_gl.pieceMeshes);
+          var hits = p.raycaster.intersectObjects(p.pieceMeshes);
 
           if (hits.length > 0) {
             var mesh = hits[0].object;
             if (e.shiftKey) {
               // Shift+click: toggle individual piece
-              var idx = _gl.selections.indexOf(mesh);
+              var idx = p.selections.indexOf(mesh);
               if (idx >= 0) { self._removeSelection(idx); }
               else { self._addSelection(mesh); }
             } else {
               self._clearSelections();
               // Click on grouped piece: select entire group
               var gid = mesh.userData.group_id;
-              if (gid && _gl.groupMap[gid]) {
-                _gl.groupMap[gid].forEach(function(m) { self._addSelection(m); });
+              if (gid && p.groupMap[gid]) {
+                p.groupMap[gid].forEach(function(m) { self._addSelection(m); });
               } else {
                 self._addSelection(mesh);
               }
@@ -136,11 +167,11 @@
         // Double-click: select individual piece (override group)
         canvas.addEventListener('dblclick', function(e) {
           var rect = canvas.getBoundingClientRect();
-          _gl.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-          _gl.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-          _gl.raycaster.setFromCamera(_gl.mouse, camera);
+          p.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+          p.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+          p.raycaster.setFromCamera(p.mouse, camera);
 
-          var hits = _gl.raycaster.intersectObjects(_gl.pieceMeshes);
+          var hits = p.raycaster.intersectObjects(p.pieceMeshes);
 
           if (hits.length > 0) {
             self._clearSelections();
@@ -157,24 +188,24 @@
           requestAnimationFrame(function() {
             _hoverPending = false;
             var rect = canvas.getBoundingClientRect();
-            _gl.mouse.x = ((ex - rect.left) / rect.width) * 2 - 1;
-            _gl.mouse.y = -((ey - rect.top) / rect.height) * 2 + 1;
-            _gl.raycaster.setFromCamera(_gl.mouse, camera);
-            var hits = _gl.raycaster.intersectObjects(_gl.pieceMeshes);
+            p.mouse.x = ((ex - rect.left) / rect.width) * 2 - 1;
+            p.mouse.y = -((ey - rect.top) / rect.height) * 2 + 1;
+            p.raycaster.setFromCamera(p.mouse, camera);
+            var hits = p.raycaster.intersectObjects(p.pieceMeshes);
             canvas.style.cursor = hits.length > 0 ? 'pointer' : 'default';
           });
         });
 
         // Animate
         function animate() {
-          _gl._animId = requestAnimationFrame(animate);
+          p.animId = requestAnimationFrame(animate);
           controls.update();
           renderer.render(scene, camera);
         }
         animate();
 
         // Resize observer
-        _gl._ro = new ResizeObserver(function() {
+        p.ro = new ResizeObserver(function() {
           var w2 = container.clientWidth;
           var h2 = container.clientHeight;
           if (w2 === 0 || h2 === 0) return;
@@ -182,7 +213,7 @@
           camera.updateProjectionMatrix();
           renderer.setSize(w2, h2);
         });
-        _gl._ro.observe(container);
+        p.ro.observe(container);
       },
 
       _loadScene: function() {
@@ -202,13 +233,14 @@
       },
 
       _buildMeshes: function(pieces) {
-        var scene = _gl.scene;
+        var p = this._priv;
+        var scene = p.scene;
         var allVerts = [];
 
-        pieces.forEach(function(p) {
+        pieces.forEach(function(pc) {
           var verts = [];
-          if (p.mesh && p.mesh.geometries) {
-            p.mesh.geometries.forEach(function(g) {
+          if (pc.mesh && pc.mesh.geometries) {
+            pc.mesh.geometries.forEach(function(g) {
               if (g.coordinates && g.coordinates[0]) {
                 var ring = g.coordinates[0];
                 if (ring.length >= 3) {
@@ -226,67 +258,71 @@
           geom.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
           geom.computeVertexNormals();
 
-          var color = COLORS[p.role] || COLORS.default;
+          var color = COLORS[pc.role] || COLORS.default;
           var mat = new THREE.MeshPhongMaterial({ color: color, flatShading: true, side: THREE.DoubleSide });
           var mesh = new THREE.Mesh(geom, mat);
-          mesh.userData = { piece: true, id: p.id, label: p.label, role: p.role,
-            section: p.section, length_mm: p.length_mm, wood_type: p.wood_type,
-            group_id: p.group_id || null, group_label: p.group_label || null };
+          mesh.userData = { piece: true, id: pc.id, label: pc.label, role: pc.role,
+            section: pc.section, length_mm: pc.length_mm, wood_type: pc.wood_type,
+            group_id: pc.group_id || null, group_label: pc.group_label || null };
           scene.add(mesh);
-          _gl.pieceMeshes.push(mesh);
+          p.pieceMeshes.push(mesh);
           allVerts.push.apply(allVerts, verts);
 
           // Build group map
-          if (p.group_id) {
-            if (!_gl.groupMap[p.group_id]) _gl.groupMap[p.group_id] = [];
-            _gl.groupMap[p.group_id].push(mesh);
+          if (pc.group_id) {
+            if (!p.groupMap[pc.group_id]) p.groupMap[pc.group_id] = [];
+            p.groupMap[pc.group_id].push(mesh);
           }
         });
 
         // Auto-center camera on first load
-        if (allVerts.length > 0 && !_gl.cameraSet) {
+        if (allVerts.length > 0 && !p.cameraSet) {
           this._centerCamera(allVerts);
         }
       },
 
       _centerCamera: function(allVerts) {
+        var p = this._priv;
         var box = new THREE.Box3();
         for (var i = 0; i < allVerts.length; i += 3) {
           box.expandByPoint(new THREE.Vector3(allVerts[i], allVerts[i+1], allVerts[i+2]));
         }
         var center = box.getCenter(new THREE.Vector3());
         var size = box.getSize(new THREE.Vector3()).length();
-        _gl.controls.target.copy(center);
-        _gl.camera.position.copy(center.clone().add(new THREE.Vector3(size * 0.8, size * 0.6, size * 0.8)));
-        _gl.camera.lookAt(center);
-        _gl.controls.update();
-        _gl.cameraSet = true;
+        p.controls.target.copy(center);
+        p.camera.position.copy(center.clone().add(new THREE.Vector3(size * 0.8, size * 0.6, size * 0.8)));
+        p.camera.lookAt(center);
+        p.controls.update();
+        p.cameraSet = true;
       },
 
       _addSelection: function(mesh) {
-        if (_gl.selections.indexOf(mesh) >= 0) return;
+        var p = this._priv;
+        if (p.selections.indexOf(mesh) >= 0) return;
         mesh._origColor = mesh.material.color.getHex();
         mesh.material.color.setHex(HIGHLIGHT);
         mesh.material.emissive = new THREE.Color(0x223344);
-        _gl.selections.push(mesh);
-        this.selCount = _gl.selections.length;
+        p.selections.push(mesh);
+        this.selCount = p.selections.length;
       },
 
       _removeSelection: function(idx) {
-        var m = _gl.selections[idx];
+        var p = this._priv;
+        var m = p.selections[idx];
         m.material.color.setHex(m._origColor);
         m.material.emissive = new THREE.Color(0x000000);
-        _gl.selections.splice(idx, 1);
-        this.selCount = _gl.selections.length;
+        p.selections.splice(idx, 1);
+        this.selCount = p.selections.length;
         this._updateInfo();
       },
 
       _clearSelections: function() {
-        _gl.selections.forEach(function(m) {
+        var p = this._priv;
+        p.selections.forEach(function(m) {
           m.material.color.setHex(m._origColor);
           m.material.emissive = new THREE.Color(0x000000);
         });
-        _gl.selections = [];
+        p.selections = [];
         this.selCount = 0;
         this.info = null;
       },
@@ -296,23 +332,24 @@
       },
 
       _updateInfo: function() {
-        if (_gl.selections.length === 0) {
+        var p = this._priv;
+        if (p.selections.length === 0) {
           this.info = null;
           this.$dispatch('cad-select', { pieces: [], group: null });
           return;
         }
 
         // Check if all selected pieces belong to the same group
-        var gid = _gl.selections[0].userData.group_id;
-        var allSameGroup = gid && _gl.selections.every(function(m) {
+        var gid = p.selections[0].userData.group_id;
+        var allSameGroup = gid && p.selections.every(function(m) {
           return m.userData.group_id === gid;
         });
 
         var items = [];
         var allItems = [];
-        var max = Math.min(_gl.selections.length, 4);
-        for (var i = 0; i < _gl.selections.length; i++) {
-          var d = _gl.selections[i].userData;
+        var max = Math.min(p.selections.length, 4);
+        for (var i = 0; i < p.selections.length; i++) {
+          var d = p.selections[i].userData;
           var item = {
             role: d.role || '',
             label: d.label || 'Sans nom',
@@ -326,23 +363,24 @@
         }
         this.info = {
           items: items,
-          extra: _gl.selections.length > max ? (_gl.selections.length - max) : 0,
-          group_label: allSameGroup ? _gl.selections[0].userData.group_label : null,
+          extra: p.selections.length > max ? (p.selections.length - max) : 0,
+          group_label: allSameGroup ? p.selections[0].userData.group_label : null,
           group_id: allSameGroup ? gid : null,
-          group_count: allSameGroup ? _gl.selections.length : 0
+          group_count: allSameGroup ? p.selections.length : 0
         };
 
         // Dispatch event for other Alpine components on the page
         this.$dispatch('cad-select', {
           pieces: allItems,
-          group: allSameGroup ? { id: gid, label: _gl.selections[0].userData.group_label } : null
+          group: allSameGroup ? { id: gid, label: p.selections[0].userData.group_label } : null
         });
       },
 
       resetCamera: function() {
-        _gl.cameraSet = false;
+        var p = this._priv;
+        p.cameraSet = false;
         var allVerts = [];
-        _gl.pieceMeshes.forEach(function(m) {
+        p.pieceMeshes.forEach(function(m) {
           var pos = m.geometry.getAttribute('position');
           if (pos) {
             for (var i = 0; i < pos.count; i++) {
@@ -358,13 +396,13 @@
       toggleWireframe: function() {
         this.wireframe = !this.wireframe;
         var wf = this.wireframe;
-        _gl.scene.traverse(function(obj) {
+        this._priv.scene.traverse(function(obj) {
           if (obj.isMesh && obj.material) obj.material.wireframe = wf;
         });
       },
 
       copyContext: function() {
-        var ctx = _gl.selections.map(function(s) {
+        var ctx = this._priv.selections.map(function(s) {
           var d = s.userData;
           return '#' + d.id + ' ' + (d.label || '?') + ' [' + d.role + '] ' + d.section + ' ' + Math.round(d.length_mm) + 'mm ' + d.wood_type;
         }).join('\n');
@@ -377,7 +415,7 @@
         var ids = detail.pieceIds || [];
         this._clearSelections();
         var self = this;
-        _gl.pieceMeshes.forEach(function(m) {
+        this._priv.pieceMeshes.forEach(function(m) {
           if (ids.indexOf(m.userData.id) >= 0) self._addSelection(m);
         });
         this._updateInfo();
@@ -386,62 +424,57 @@
       toggleById: function(detail) {
         var pieceId = detail.pieceId;
         var visible = detail.visible;
-        _gl.pieceMeshes.forEach(function(m) {
+        this._priv.pieceMeshes.forEach(function(m) {
           if (m.userData.id === pieceId) m.visible = visible;
         });
-      },
-
-      destroy: function() {
-        if (_gl._animId) cancelAnimationFrame(_gl._animId);
-        if (_gl._ro) _gl._ro.disconnect();
-        _gl.pieceMeshes.forEach(function(m) {
-          m.geometry.dispose();
-          m.material.dispose();
-        });
-        if (_gl.controls) _gl.controls.dispose();
-        if (_gl.renderer) {
-          _gl.renderer.dispose();
-          _gl.renderer.domElement.remove();
-        }
-        _gl.scene = null;
-        _gl.pieceMeshes = [];
-        _gl.selections = [];
-        _gl.groupMap = {};
       },
 
       toggleGroupById: function(detail) {
         var groupId = detail.groupId;
         var visible = detail.visible;
-        if (_gl.groupMap[groupId]) {
-          _gl.groupMap[groupId].forEach(function(m) { m.visible = visible; });
+        var p = this._priv;
+        if (p.groupMap[groupId]) {
+          p.groupMap[groupId].forEach(function(m) { m.visible = visible; });
         }
       }
-    };
+    },
+
+    events: {
+      emit: ['cad-select'],
+      listen: {}  // wired via Alpine @event.window attributes in HTML (no change)
+    }
   });
 
-  // --- 3D Piece Tree component ---
-  Alpine.data('cadPieceTree', function() {
-    return {
-      selectedIds: [],
-      hiddenPieces: {},
-      hiddenGroups: {},
+  // ── 3D Piece Tree plugin ──────────────────────────────────────
 
-      init: function() {
-        var self = this;
-        this.$el.querySelectorAll('.cad-tree-swatch[data-color]').forEach(function(el) {
-          el.style.setProperty('--cad-swatch-color', el.dataset.color);
-        });
-        // Group selection via summary click delegation
-        this.$el.addEventListener('click', function(e) {
-          var summary = e.target.closest('summary');
-          if (summary) {
-            var groupLi = summary.closest('[data-group]');
-            if (groupLi) {
-              self.selectGroup(parseInt(groupLi.dataset.group));
-            }
+  pgv.plugin('cadPieceTree', {
+
+    data: function() {
+      return {
+        selectedIds: [],
+        hiddenPieces: {},
+        hiddenGroups: {}
+      };
+    },
+
+    mount: function(el) {
+      var self = this;
+      el.querySelectorAll('.cad-tree-swatch[data-color]').forEach(function(swatch) {
+        swatch.style.setProperty('--cad-swatch-color', swatch.dataset.color);
+      });
+      // Group selection via summary click delegation
+      el.addEventListener('click', function(e) {
+        var summary = e.target.closest('summary');
+        if (summary) {
+          var groupLi = summary.closest('[data-group]');
+          if (groupLi) {
+            self.selectGroup(parseInt(groupLi.dataset.group));
           }
-        });
-      },
+        }
+      });
+    },
+
+    methods: {
 
       selectPiece: function(pieceId) {
         this._clearTreeHighlight();
@@ -453,7 +486,7 @@
       selectGroup: function(groupId) {
         this._clearTreeHighlight();
         var ids = [];
-        var container = this.$el.querySelector('[data-group="' + groupId + '"]');
+        var container = this._rootEl.querySelector('[data-group="' + groupId + '"]');
         if (container) {
           container.querySelectorAll('[data-piece-id]').forEach(function(el) {
             var id = parseInt(el.dataset.pieceId);
@@ -473,7 +506,7 @@
           this.hiddenPieces[pieceId] = true;
         }
         // Update eye icon
-        var btn = this.$el.querySelector('[data-piece-id="' + pieceId + '"] .cad-tree-eye');
+        var btn = this._rootEl.querySelector('[data-piece-id="' + pieceId + '"] .cad-tree-eye');
         if (btn) btn.textContent = wasHidden ? '\u25C9' : '\u25CB';
         this.$dispatch('cad-piece-toggle', { pieceId: pieceId, visible: wasHidden });
       },
@@ -487,7 +520,7 @@
         }
         // Update eye icons for all pieces in group
         var self = this;
-        var container = this.$el.querySelector('[data-group="' + groupId + '"]');
+        var container = this._rootEl.querySelector('[data-group="' + groupId + '"]');
         if (container) {
           container.querySelectorAll('.cad-tree-eye').forEach(function(btn) {
             btn.textContent = wasHidden ? '\u25C9' : '\u25CB';
@@ -509,15 +542,15 @@
         var pieces = detail.pieces || [];
         var self = this;
         var ids = [];
-        pieces.forEach(function(p) {
-          ids.push(p.id);
-          self._highlightNode(p.id);
+        pieces.forEach(function(pc) {
+          ids.push(pc.id);
+          self._highlightNode(pc.id);
         });
         this.selectedIds = ids;
       },
 
       _highlightNode: function(pieceId) {
-        var node = this.$el.querySelector('[data-piece-id="' + pieceId + '"]');
+        var node = this._rootEl.querySelector('[data-piece-id="' + pieceId + '"]');
         if (node) {
           node.classList.add('cad-tree-active');
           // Ensure parent details are open
@@ -527,64 +560,70 @@
       },
 
       _clearTreeHighlight: function() {
-        this.$el.querySelectorAll('.cad-tree-active').forEach(function(el) {
+        this._rootEl.querySelectorAll('.cad-tree-active').forEach(function(el) {
           el.classList.remove('cad-tree-active');
         });
       }
-    };
+    },
+
+    events: {
+      emit: ['cad-piece-select', 'cad-piece-toggle', 'cad-piece-toggle-group'],
+      listen: {}  // wired via Alpine @event.window attributes in HTML (no change)
+    }
   });
 
-  // --- Tree Explorer component (2D) ---
-  Alpine.data('cadTree', function() {
-    return {
-      selected: null,
+  // ── 2D Tree Explorer (simple Alpine component, no plugin needed) ──
 
-      init: function() {
-        this.$el.querySelectorAll('.cad-tree-swatch[data-color]').forEach(function(el) {
-          el.style.setProperty('--cad-swatch-color', el.dataset.color);
-        });
-      },
+  function registerCadTree() {
+    Alpine.data('cadTree', function() {
+      return {
+        selected: null,
 
-      select: function(shapeId) {
-        if (this.selected) {
-          var prev = document.querySelector('[data-shape-id="' + this.selected + '"]');
-          if (prev) prev.classList.remove('cad-highlight');
-          var prevNode = document.querySelector('.cad-tree-node[data-id="' + this.selected + '"]');
-          if (prevNode) prevNode.classList.remove('cad-tree-active');
-        }
-        this.selected = shapeId;
-        var el = document.querySelector('[data-shape-id="' + shapeId + '"]');
-        if (el) el.classList.add('cad-highlight');
-        var node = document.querySelector('.cad-tree-node[data-id="' + shapeId + '"]');
-        if (node) node.classList.add('cad-tree-active');
-      },
-
-      selectGroup: function(groupId) {
-        var g = document.querySelector('[data-group-id="' + groupId + '"]');
-        if (g) {
-          g.querySelectorAll('[data-shape-id]').forEach(function(el) {
-            el.classList.add('cad-highlight');
+        init: function() {
+          this.$el.querySelectorAll('.cad-tree-swatch[data-color]').forEach(function(el) {
+            el.style.setProperty('--cad-swatch-color', el.dataset.color);
           });
+        },
+
+        select: function(shapeId) {
+          if (this.selected) {
+            var prev = document.querySelector('[data-shape-id="' + this.selected + '"]');
+            if (prev) prev.classList.remove('cad-highlight');
+            var prevNode = document.querySelector('.cad-tree-node[data-id="' + this.selected + '"]');
+            if (prevNode) prevNode.classList.remove('cad-tree-active');
+          }
+          this.selected = shapeId;
+          var el = document.querySelector('[data-shape-id="' + shapeId + '"]');
+          if (el) el.classList.add('cad-highlight');
+          var node = document.querySelector('.cad-tree-node[data-id="' + shapeId + '"]');
+          if (node) node.classList.add('cad-tree-active');
+        },
+
+        selectGroup: function(groupId) {
+          var g = document.querySelector('[data-group-id="' + groupId + '"]');
+          if (g) {
+            g.querySelectorAll('[data-shape-id]').forEach(function(el) {
+              el.classList.add('cad-highlight');
+            });
+          }
+        },
+
+        toggleLayer: function(layerId) {
+          var g = document.getElementById('layer-' + layerId);
+          if (!g) return;
+          var hidden = g.style.display === 'none';
+          g.style.display = hidden ? '' : 'none';
+          var btn = document.querySelector('.cad-tree-eye[data-layer="' + layerId + '"]');
+          if (btn) btn.textContent = hidden ? '\u25C9' : '\u25CB';
         }
-      },
-
-      toggleLayer: function(layerId) {
-        var g = document.getElementById('layer-' + layerId);
-        if (!g) return;
-        var hidden = g.style.display === 'none';
-        g.style.display = hidden ? '' : 'none';
-        var btn = document.querySelector('.cad-tree-eye[data-layer="' + layerId + '"]');
-        if (btn) btn.textContent = hidden ? '\u25C9' : '\u25CB';
-      }
-    };
-  });
-
-  } // end register()
-
-  // Register now if Alpine is ready, otherwise wait for alpine:init
-  if (window.Alpine) {
-    register();
-  } else {
-    document.addEventListener('alpine:init', register);
+      };
+    });
   }
+
+  if (window.Alpine) {
+    registerCadTree();
+  } else {
+    document.addEventListener('alpine:init', registerCadTree);
+  }
+
 })();

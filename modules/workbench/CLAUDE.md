@@ -107,6 +107,7 @@ Le seed est le **bootstrap minimal** — il cree le schema + les tables de base 
 
 ## Gotchas
 
+- **Tu es l'agent workbench, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:workbench` pour lire TES messages. Ne traiter que les messages adressés à `workbench`.
 - workbench ne possede PAS de schema _ut ni _qa — les tests sont dans ops_ut
 - `get_primitives()` switch le `pgv.route_prefix` vers `/pgv_qa` pour que les `call_ref()` internes des fonctions pgv_qa resolvent correctement
 - `pgv.md_esc()` est obligatoire pour tout contenu texte libre dans les cellules markdown (subject, body, resolution, description) — sinon les pipes et newlines cassent le tableau
