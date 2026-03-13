@@ -65,10 +65,16 @@ Le framework utilise `pgv.t(key)` pour l'internationalisation. Chaque module doi
 
 ## QA Seed Data
 
-Le schema `pgv_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
-- `pgv_qa.seed()` — INSERT données démo réalistes
-- `pgv_qa.clean()` — DELETE dans l'ordre inverse des FK
-- `ON CONFLICT DO NOTHING`, penser multi-tenant (`current_setting('app.tenant_id', true)`)
+Le schema `pgv_qa` est le **design system showcase** — il contient des pages de démonstration de toutes les primitives pgv :
+- `get_atoms()` — badges, stats, cards, dl, money, alerts, progress, workflow, avatar, tabs, accordion, breadcrumb, timeline, tree
+- `get_tables()` — tables markdown simples, paginées, md_table()
+- `get_forms()` — formulaires data-rpc, select_search, inputs, boutons d'action
+- `get_dialogs()` — confirmations, modales, toasts
+- `get_svg()` — svg_canvas avec toolbar zoom/pan
+- `get_errors()` — gestion erreurs 404, RAISE, bad cast
+- `get_diagnostics()` — exécute pgv.diagnose() sur toutes les pages QA
+- `seed()` / `clean()` — données démo pour les tables QA
+- Ces pages sont accessibles via workbench (Primitives tab) qui wrape les fonctions pgv_qa
 
 ## Workflow agent
 

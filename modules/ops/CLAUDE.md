@@ -1,10 +1,12 @@
 # ops — Agent Dashboard
 
-Dashboard temps reel pour piloter les agents Claude Code. Terminaux xterm.js, messages pg_msg, hooks.
+Dashboard temps reel pour piloter les agents Claude Code. Terminaux xterm.js, modules, tests, hooks.
 
-**Depend de :** `pgv`
+**Depend de :** `pgv`, `workbench`
 
 **Schemas :** `ops`, `ops_ut` (tests)
+
+**Note :** Les pages messages et tools ont été migrées vers le module `workbench`. Ops se concentre sur le monitoring agents : dashboard, modules, tests, santé, agents/terminaux, hooks, docs.
 
 ## Framework pgView
 

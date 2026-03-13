@@ -181,19 +181,24 @@ Auto-resolution examples:
 
 ### Module Layout
 
-**Active modules** (9):
+**Active modules** (14):
 
 | Module | Schemas | Purpose |
 |--------|---------|---------|
 | pgv | `pgv`, `pgv_ut`, `pgv_qa` | Framework: SSR router, UI primitives, Alpine shell |
+| workbench | `workbench` | Platform infra: tenants, messaging, hooks, sessions, issues, UI dashboard |
 | cad | `cad`, `cad_ut`, `cad_qa` | CAD 3D wood structures (PostGIS/SFCGAL, Three.js) |
 | crm | `crm`, `crm_ut`, `crm_qa` | CRM: contacts, entreprises |
 | quote | `quote`, `quote_ut`, `quote_qa` | Devis & factures (TVA, numérotation légale) |
+| catalog | `catalog`, `catalog_ut` | Catalogue articles partagé (stock, purchase, quote) |
 | stock | `stock`, `stock_ut`, `stock_qa` | Stock: articles, dépôts, mouvements |
 | purchase | `purchase`, `purchase_ut`, `purchase_qa` | Achats: commandes fournisseur, réception |
 | project | `project`, `project_ut`, `project_qa` | Projets: suivi chantier, phases |
+| planning | `planning`, `planning_ut`, `planning_qa` | Planning: intervenants, événements |
 | ledger | `ledger`, `ledger_ut`, `ledger_qa` | Comptabilité: plan comptable, écritures |
-| ops | `ops`, `ops_ut` | Ops: dashboard infra, terminal tmux |
+| expense | `expense`, `expense_ut` | Notes de frais |
+| hr | `hr`, `hr_ut`, `hr_qa` | RH: salariés, absences, pointage |
+| ops | `ops`, `ops_ut` | Ops: agents dashboard, terminaux tmux, tests runner |
 
 Each module in `modules/` follows this structure:
 
@@ -261,7 +266,7 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 - **Alpine.js** shell (~150 lines) handles routing, events, toast, dialogs
 - **PicoCSS** classless styling, **marked.js** for Markdown tables in `<md>` blocks
 - `pgv.*` schema = reusable UI primitives styled via `pgview.css`
-- **pgv.href()** for route-aware links (auto-prefixes schema in dev/multi-module mode)
+- **pgv.href()** for **external links only** (https, mailto, tel) — RAISE on internal paths. Use `pgv.call_ref('function_name', params)` for internal navigation (verifies function exists in pg_proc)
 - **Query params** for dynamic pages: `/drawing?id=42` not `/drawing/42`
 
 ### pgView Conventions (ENFORCED)
@@ -303,7 +308,7 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 ## SQL
 
 - **Dev DB** — `seed/` (repo root) — bootstrap extensions, roles, workbench schema. Auto-run by Docker init.
-- **Workbench functions** — `seed/003_workbench.sql` is the **canonical source** for all `workbench.*` functions (hooks, sessions, inbox, messaging API). Unlike modules, workbench has no `pg_pack`/`pg_func_save` — functions are maintained directly in the seed file. After modifying workbench functions via `pg_func_set`, **always update `seed/003_workbench.sql`** or they will be lost on reseed.
+- **Workbench module** — `modules/workbench/` is a standard module managed via `pg_pack`/`pg_func_save` like all others. `seed/003_workbench.sql` is the **bootstrap seed** only (schema creation + tenant seed data). Functions live in `modules/workbench/build/workbench.func.sql` (pg_pack output) and `modules/workbench/src/workbench/` (pg_func_save output).
 - **pgv framework** — `modules/pgv/build/pgv.func.sql` — canonical `pgv.*` + `pgv_ut.*`. Distributed via `pgm install`.
 - **Apps** — `apps/*/sql/` — slot convention: 00=extensions, 01=roles, 02=pgv, 05+=modules, 03-04=app-specific.
 
