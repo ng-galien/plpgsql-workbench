@@ -12,7 +12,12 @@ BEGIN
     ('fr', 'pgv.internal_error', 'Erreur interne'),
     ('fr', 'pgv.unexpected_error', 'Une erreur inattendue est survenue.'),
     ('fr', 'pgv.filter', 'Filtrer'),
-    ('fr', 'pgv.filter_clear', 'Effacer')
+    ('fr', 'pgv.filter_clear', 'Effacer'),
+    ('fr', 'pgv.table_next', 'Suivant'),
+    ('fr', 'pgv.table_prev', 'Précédent'),
+    ('fr', 'pgv.table_empty', 'Aucun résultat'),
+    ('fr', 'pgv.table_loading', 'Chargement…'),
+    ('fr', 'pgv.table_search', 'Rechercher…')
   ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
 END;
 $function$;

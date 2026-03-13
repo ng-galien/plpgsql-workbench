@@ -6,7 +6,7 @@ topic: data-convention
 ## Overview
 
 `data_*` functions serve JSON datasets for the `pgv.table()` Alpine plugin.
-They handle filtering, search (FTS), and server-side pagination.
+They handle filtering, search (FTS), and cursor-based navigation (next/prev).
 
 Convention: `get_*` = HTML pages, `post_*` = actions, `data_*` = JSON datasets.
 
@@ -24,34 +24,33 @@ Three namespaces in the same object:
   -------  --------------------------------  -----------------------
   p_*      Business filters (exact match)    p_status, p_from, p_type
   q        Full-text search (FTS)            q
-  _*       Meta (pagination)                 _page, _size
+  _*       Meta (navigation)                 _offset, _size
 
 Example:
 
-  {"p_status": "new", "p_from": "lead", "q": "facture", "_page": 1, "_size": 20}
+  {"p_status": "new", "p_from": "lead", "q": "facture", "_offset": 0, "_size": 20}
 
 Rules:
 - p_* = WHERE exact match (NULL = no filter)
 - q = WHERE FTS via search_vec @@ plainto_tsquery
-- _page = 1-based, default 1
+- _offset = 0-based, default 0 (managed by the plugin, not the user)
 - _size = page size, default 20
 
 ## Output format
 
   {
-    "total": 142,
-    "page": 1,
-    "size": 20,
     "rows": [
       [1, "lead", "pgv", "new", "2026-03-13 14:30"],
       [2, "ops", "cad", "resolved", "2026-03-12 10:15"]
-    ]
+    ],
+    "has_more": true
   }
 
 - No `cols` in response — columns declared in pgv.table() config
 - rows = array of arrays, order matches cols in config
-- total = count before pagination (for page count)
-- rows empty = return "rows": []
+- has_more = true if there are more rows beyond current page (LIMIT size+1 trick)
+- No `total` — no COUNT(*) query, cursor-based navigation only
+- rows empty = return "rows": [], "has_more": false
 
 ## Full-Text Search (FTS)
 
@@ -110,20 +109,13 @@ Per-tenant language config via workbench.config or tenant.lang column.
     -- Search
     v_q      text := p_params->>'q';
     -- Meta
-    v_page   int  := coalesce((p_params->>'_page')::int, 1);
-    v_size   int  := coalesce((p_params->>'_size')::int, 20);
+    v_offset int := coalesce((p_params->>'_offset')::int, 0);
+    v_size   int := coalesce((p_params->>'_size')::int, 20);
     -- Result
-    v_total  int;
     v_rows   jsonb;
+    v_has_more bool;
   BEGIN
-    -- Count (same WHERE, no LIMIT)
-    SELECT count(*) INTO v_total
-    FROM {schema}.{table} t
-    WHERE (v_status IS NULL OR t.status = v_status)
-      AND (v_from IS NULL OR t.from_col = v_from)
-      AND (v_q IS NULL OR t.search_vec @@ plainto_tsquery('pgv_search', v_q));
-
-    -- Rows (paginated)
+    -- Fetch size+1 rows to detect has_more
     SELECT coalesce(jsonb_agg(row), '[]') INTO v_rows
     FROM (
       SELECT jsonb_build_array(t.id, t.col_a, t.col_b, t.status, t.created_at) AS row
@@ -132,14 +124,18 @@ Per-tenant language config via workbench.config or tenant.lang column.
         AND (v_from IS NULL OR t.from_col = v_from)
         AND (v_q IS NULL OR t.search_vec @@ plainto_tsquery('pgv_search', v_q))
       ORDER BY t.created_at DESC
-      LIMIT v_size OFFSET (v_page - 1) * v_size
+      LIMIT v_size + 1 OFFSET v_offset
     ) sub;
 
+    -- If we got size+1 rows, there's more — trim the extra row
+    v_has_more := jsonb_array_length(v_rows) > v_size;
+    IF v_has_more THEN
+      v_rows := v_rows - v_size;  -- remove last element
+    END IF;
+
     RETURN jsonb_build_object(
-      'total', v_total,
-      'page',  v_page,
-      'size',  v_size,
-      'rows',  v_rows
+      'rows',     v_rows,
+      'has_more', v_has_more
     );
   END;
   $$;
@@ -152,7 +148,7 @@ data_* functions are called directly, NOT through pgv.route():
   Content-Profile: {schema}
   Content-Type: application/json
   Accept: application/json
-  Body: {"p_params": {"p_status": "new", "q": "facture", "_page": 1}}
+  Body: {"p_params": {"p_status": "new", "q": "facture", "_offset": 0}}
 
 ## Grants
 
@@ -185,4 +181,18 @@ The page function (get_*) declares the table config:
   ))
 
 The Alpine plugin pgvTable handles: rendering, filtering, sorting (client),
-pagination (server), search (FTS via q), loading states.
+next/prev navigation (server), search (FTS via q), loading states.
+
+## i18n keys
+
+All UI labels in pgvTable use pgv.t() for internationalization:
+
+  Key                    Default (fr)       Usage
+  ---------------------  -----------------  ---------------------------
+  pgv.table_next         Suivant            Next button
+  pgv.table_prev         Précédent          Previous button
+  pgv.table_empty        Aucun résultat     Empty state message
+  pgv.table_loading      Chargement…        Loading state
+  pgv.table_search       Rechercher…        Search input placeholder
+
+These keys must be seeded in pgv.i18n_seed() and fr.json.

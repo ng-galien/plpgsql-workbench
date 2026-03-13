@@ -465,7 +465,12 @@ BEGIN
     ('fr', 'pgv.internal_error', 'Erreur interne'),
     ('fr', 'pgv.unexpected_error', 'Une erreur inattendue est survenue.'),
     ('fr', 'pgv.filter', 'Filtrer'),
-    ('fr', 'pgv.filter_clear', 'Effacer')
+    ('fr', 'pgv.filter_clear', 'Effacer'),
+    ('fr', 'pgv.table_next', 'Suivant'),
+    ('fr', 'pgv.table_prev', 'Précédent'),
+    ('fr', 'pgv.table_empty', 'Aucun résultat'),
+    ('fr', 'pgv.table_loading', 'Chargement…'),
+    ('fr', 'pgv.table_search', 'Rechercher…')
   ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
 END;
 $function$;
@@ -2325,36 +2330,39 @@ DECLARE
 BEGIN
   -- Stemming: "poutre" matches "poutres", "Poutre"
   v_result := pgv_qa.data_products('{"q":"poutre"}'::jsonb);
-  RETURN NEXT ok((v_result->>'total')::int > 0, 'poutre matches Poutre (case-insensitive)');
+  RETURN NEXT ok(jsonb_array_length(v_result->'rows') > 0, 'poutre matches Poutre (case-insensitive)');
   RETURN NEXT ok(v_result->'rows'->0->>1 LIKE '%outre%', 'poutre result contains poutre in name');
 
   -- Accent: "chene" matches "chêne"
   v_result := pgv_qa.data_products('{"q":"chene"}'::jsonb);
-  RETURN NEXT ok((v_result->>'total')::int >= 2, 'chene matches chêne (accent-insensitive)');
+  RETURN NEXT ok(jsonb_array_length(v_result->'rows') >= 2, 'chene matches chêne (accent-insensitive)');
 
   -- Multi-word: "coffrage beton" matches planche de coffrage
   v_result := pgv_qa.data_products('{"q":"coffrage beton"}'::jsonb);
-  RETURN NEXT ok((v_result->>'total')::int > 0, 'coffrage beton matches multi-word');
+  RETURN NEXT ok(jsonb_array_length(v_result->'rows') > 0, 'coffrage beton matches multi-word');
 
   -- No match
   v_result := pgv_qa.data_products('{"q":"xyz123"}'::jsonb);
-  RETURN NEXT is((v_result->>'total')::int, 0, 'xyz123 no match → total 0');
-  RETURN NEXT is(v_result->'rows', '[]'::jsonb, 'xyz123 no match → rows empty');
+  RETURN NEXT is(jsonb_array_length(v_result->'rows'), 0, 'xyz123 no match → rows empty');
+  RETURN NEXT is((v_result->>'has_more')::bool, false, 'xyz123 no match → has_more false');
 
-  -- Pagination: page 1, size 5 on 20 products
-  v_result := pgv_qa.data_products('{"_page":1,"_size":5}'::jsonb);
-  RETURN NEXT is((v_result->>'total')::int, 20, 'pagination total = 20');
-  RETURN NEXT is(jsonb_array_length(v_result->'rows'), 5, 'pagination page 1 returns 5 rows');
-  RETURN NEXT is((v_result->>'page')::int, 1, 'pagination page = 1');
-  RETURN NEXT is((v_result->>'size')::int, 5, 'pagination size = 5');
+  -- Cursor pagination: offset 0, size 5 on 20 products
+  v_result := pgv_qa.data_products('{"_offset":0,"_size":5}'::jsonb);
+  RETURN NEXT is(jsonb_array_length(v_result->'rows'), 5, 'cursor offset=0 returns 5 rows');
+  RETURN NEXT is((v_result->>'has_more')::bool, true, 'cursor offset=0 has_more = true (20 products)');
+
+  -- Cursor pagination: last page
+  v_result := pgv_qa.data_products('{"_offset":15,"_size":5}'::jsonb);
+  RETURN NEXT is(jsonb_array_length(v_result->'rows'), 5, 'cursor offset=15 returns 5 rows');
+  RETURN NEXT is((v_result->>'has_more')::bool, false, 'cursor offset=15 has_more = false (end)');
 
   -- Filter: category = bois
   v_result := pgv_qa.data_products('{"p_category":"bois"}'::jsonb);
-  RETURN NEXT ok((v_result->>'total')::int >= 5, 'category filter bois returns >= 5');
+  RETURN NEXT ok(jsonb_array_length(v_result->'rows') >= 5, 'category filter bois returns >= 5');
 
   -- Filter + FTS combined
   v_result := pgv_qa.data_products('{"p_category":"quincaillerie","q":"vis"}'::jsonb);
-  RETURN NEXT ok((v_result->>'total')::int >= 1, 'category + FTS combined works');
+  RETURN NEXT ok(jsonb_array_length(v_result->'rows') >= 1, 'category + FTS combined works');
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_fts() IS 'Tests FTS pgv_search: stemming, accents, multi-words, pagination, empty results';
@@ -3090,14 +3098,14 @@ CREATE OR REPLACE FUNCTION pgv_qa.data_demo(p_params jsonb DEFAULT '{}'::jsonb)
  STABLE
 AS $function$
 DECLARE
-  v_page int := coalesce((p_params->>'_page')::int, 1);
+  v_offset int := coalesce((p_params->>'_offset')::int, 0);
   v_size int := coalesce((p_params->>'_size')::int, 20);
   v_status text := p_params->>'p_status';
   v_q text := p_params->>'q';
   v_all jsonb;
   v_filtered jsonb;
-  v_total int;
   v_rows jsonb;
+  v_has_more bool;
 BEGIN
   -- Generate 50 demo rows
   SELECT jsonb_agg(row) INTO v_all FROM (
@@ -3117,23 +3125,22 @@ BEGIN
     AND (v_q IS NULL OR v_q = '' OR r->>2 ILIKE '%' || v_q || '%' OR r->>1 ILIKE '%' || v_q || '%');
 
   v_filtered := coalesce(v_filtered, '[]'::jsonb);
-  v_total := jsonb_array_length(v_filtered);
 
-  -- Paginate
-  SELECT jsonb_agg(r) INTO v_rows FROM (
+  -- Cursor pagination: fetch size+1
+  SELECT coalesce(jsonb_agg(r), '[]') INTO v_rows FROM (
     SELECT r FROM jsonb_array_elements(v_filtered) AS r
-    OFFSET (v_page - 1) * v_size LIMIT v_size
+    OFFSET v_offset LIMIT v_size + 1
   ) sub;
 
-  RETURN jsonb_build_object(
-    'total', v_total,
-    'page', v_page,
-    'size', v_size,
-    'rows', coalesce(v_rows, '[]'::jsonb)
-  );
+  v_has_more := jsonb_array_length(v_rows) > v_size;
+  IF v_has_more THEN
+    v_rows := v_rows - v_size;
+  END IF;
+
+  RETURN jsonb_build_object('rows', v_rows, 'has_more', v_has_more);
 END;
 $function$;
-COMMENT ON FUNCTION pgv_qa.data_demo(jsonb) IS 'Demo data provider for pgv.table() QA showcase — returns paginated JSON with filters';
+COMMENT ON FUNCTION pgv_qa.data_demo(jsonb) IS 'Demo data provider for pgv.table() QA showcase — cursor pagination with filters';
 
 CREATE OR REPLACE FUNCTION pgv_qa.data_products(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS jsonb
@@ -3141,26 +3148,14 @@ CREATE OR REPLACE FUNCTION pgv_qa.data_products(p_params jsonb DEFAULT '{}'::jso
  STABLE
 AS $function$
 DECLARE
-  -- Business filters
   v_status   text := p_params->>'p_status';
   v_category text := p_params->>'p_category';
-  -- Search
   v_q        text := p_params->>'q';
-  -- Meta
-  v_page     int  := coalesce((p_params->>'_page')::int, 1);
+  v_offset   int  := coalesce((p_params->>'_offset')::int, 0);
   v_size     int  := coalesce((p_params->>'_size')::int, 20);
-  -- Result
-  v_total    int;
   v_rows     jsonb;
+  v_has_more bool;
 BEGIN
-  -- Count
-  SELECT count(*) INTO v_total
-  FROM pgv_qa.product t
-  WHERE (v_status IS NULL OR t.status = v_status)
-    AND (v_category IS NULL OR t.category = v_category)
-    AND (v_q IS NULL OR t.search_vec @@ plainto_tsquery('pgv_search', v_q));
-
-  -- Rows (paginated)
   SELECT coalesce(jsonb_agg(row), '[]') INTO v_rows
   FROM (
     SELECT jsonb_build_array(t.id, t.name, t.category, t.price, t.status) AS row
@@ -3169,18 +3164,18 @@ BEGIN
       AND (v_category IS NULL OR t.category = v_category)
       AND (v_q IS NULL OR t.search_vec @@ plainto_tsquery('pgv_search', v_q))
     ORDER BY t.id
-    LIMIT v_size OFFSET (v_page - 1) * v_size
+    LIMIT v_size + 1 OFFSET v_offset
   ) sub;
 
-  RETURN jsonb_build_object(
-    'total', v_total,
-    'page',  v_page,
-    'size',  v_size,
-    'rows',  v_rows
-  );
+  v_has_more := jsonb_array_length(v_rows) > v_size;
+  IF v_has_more THEN
+    v_rows := v_rows - v_size;
+  END IF;
+
+  RETURN jsonb_build_object('rows', v_rows, 'has_more', v_has_more);
 END;
 $function$;
-COMMENT ON FUNCTION pgv_qa.data_products(jsonb) IS 'Data provider for pgv.table(): product catalog with FTS, filters, pagination';
+COMMENT ON FUNCTION pgv_qa.data_products(jsonb) IS 'Data provider for pgv.table(): product catalog with FTS, filters, cursor pagination';
 
 CREATE OR REPLACE FUNCTION pgv_qa.demo_options(p_search text DEFAULT ''::text)
  RETURNS jsonb

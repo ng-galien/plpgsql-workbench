@@ -1158,8 +1158,14 @@
     }
 
     Alpine.data('pgvTable', function() { return {
-      _cfg: null, _rows: [], _total: 0, _page: 1, _size: 20,
+      _cfg: null, _rows: [], _offset: 0, _size: 20, _hasMore: false,
       _sort: null, _sortDir: 'asc', _filters: {}, _loading: true, _rootEl: null,
+
+      _t: function(key) {
+        var app = document.querySelector('[x-data="pgview"]');
+        if (app) { var d = Alpine.$data(app); if (d && d.t) return d.t(key); }
+        return key;
+      },
 
       init: function() {
         this._rootEl = this.$el;
@@ -1183,7 +1189,7 @@
         Object.keys(this._filters).forEach(function(k) {
           if (self._filters[k]) p[k] = self._filters[k];
         });
-        p._page = this._page;
+        p._offset = this._offset;
         p._size = this._size;
         fetch('/rpc/' + this._cfg.rpc, {
           method: 'POST',
@@ -1192,9 +1198,8 @@
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          self._total = data.total || 0;
-          self._page = data.page || 1;
           self._rows = data.rows || [];
+          self._hasMore = data.has_more || false;
           self._sort = null;
           self._loading = false;
           self._paintData();
@@ -1204,7 +1209,10 @@
 
       _paintData: function() {
         var dz = this._rootEl.querySelector('[data-pgv-data]');
-        if (dz) dz.innerHTML = this._tableHtml() + this._pagerHtml();
+        if (dz) {
+          dz.innerHTML = this._tableHtml() + this._pagerHtml();
+          dz.style.minHeight = this._loading ? '' : '';
+        }
         this._paintChips();
         this._bindData();
       },
@@ -1212,6 +1220,7 @@
       _filtersHtml: function() {
         var cfg = this._cfg;
         if (!cfg.filters || !cfg.filters.length) return '';
+        var self = this;
         var inputs = cfg.filters.map(function(f) {
           if (f.type === 'select') {
             var opts = f.options.map(function(o) {
@@ -1219,7 +1228,8 @@
             }).join('');
             return '<select name="' + _esc(f.name) + '" data-label="' + _esc(f.label) + '">' + opts + '</select>';
           }
-          return '<input type="search" name="' + _esc(f.name) + '" placeholder="' + _esc(f.label) + '">';
+          var ph = f.label || self._t('table.search');
+          return '<input type="search" name="' + _esc(f.name) + '" placeholder="' + _esc(ph) + '">';
         }).join('');
         return '<div class="pgv-filter"><div class="pgv-filter-bar"><div class="pgv-filter-inputs">' + inputs + '</div></div></div>';
       },
@@ -1233,10 +1243,10 @@
           return '<th class="pgv-sortable" data-sort-col="' + i + '">' + _esc(c.label) + arrow + '</th>';
         }).join('') + '</tr>';
         if (this._loading) {
-          return '<div class="pgv-table"><table aria-busy="true"><thead>' + thead + '</thead><tbody><tr><td colspan="' + cols.length + '"></td></tr></tbody></table></div>';
+          return '<div class="pgv-table"><table aria-busy="true"><thead>' + thead + '</thead><tbody><tr><td colspan="' + cols.length + '">' + _esc(this._t('table.loading')) + '</td></tr></tbody></table></div>';
         }
         if (!rows.length) {
-          return '<div class="pgv-table"><table><thead>' + thead + '</thead></table></div><div class="pgv-empty">Aucun r&eacute;sultat</div>';
+          return '<div class="pgv-table"><table><thead>' + thead + '</thead></table></div><div class="pgv-empty">' + _esc(this._t('table.empty')) + '</div>';
         }
         var tbody = rows.map(function(row) {
           return '<tr>' + cols.map(function(c, i) {
@@ -1264,42 +1274,29 @@
       },
 
       _pagerHtml: function() {
-        if (this._loading) return '';
-        var tp = Math.ceil(this._total / this._size);
-        var start = (this._page - 1) * this._size + 1;
-        var end = Math.min(start + this._size - 1, this._total);
-        var label = this._total > 0 ? (start + '-' + end + ' / ' + this._total) : '0';
-        if (tp <= 1) return '<div class="pgv-pager"><span class="pgv-pager-info">' + label + '</span></div>';
-        var h = '<div class="pgv-pager"><span class="pgv-pager-info">' + label + '</span><span class="pgv-pager-btns">';
-        if (this._page > 1) h += '<button data-goto="' + (this._page - 1) + '">&lsaquo;</button>';
-        for (var i = 1; i <= tp; i++) {
-          if (tp > 7 && i > 2 && i < tp - 1 && Math.abs(i - this._page) > 1) {
-            if (i === 3 || i === tp - 2) h += '<span class="pgv-pager-dots">&hellip;</span>';
-            continue;
-          }
-          h += this._page === i
-            ? '<button class="active">' + i + '</button>'
-            : '<button data-goto="' + i + '">' + i + '</button>';
-        }
-        if (this._page < tp) h += '<button data-goto="' + (this._page + 1) + '">&rsaquo;</button>';
-        return h + '</span></div>';
+        if (this._loading || (!this._rows.length && this._offset === 0)) return '';
+        var hasPrev = this._offset > 0;
+        var hasNext = this._hasMore;
+        if (!hasPrev && !hasNext) return '';
+        return '<div class="pgv-pager"><span class="pgv-pager-btns">'
+          + '<button data-prev' + (hasPrev ? '' : ' disabled') + '>&lsaquo; ' + _esc(this._t('table.prev')) + '</button>'
+          + '<button data-next' + (hasNext ? '' : ' disabled') + '>' + _esc(this._t('table.next')) + ' &rsaquo;</button>'
+          + '</span></div>';
       },
 
       _bindFilters: function() {
         var self = this;
         var el = this._rootEl;
-        // Filter selects
         el.querySelectorAll('.pgv-filter-inputs select').forEach(function(sel) {
           sel.addEventListener('change', function() {
-            self._filters[sel.name] = sel.value; self._page = 1; self._doFetch();
+            self._filters[sel.name] = sel.value; self._offset = 0; self._doFetch();
           });
         });
-        // Search inputs with debounce
         var _t;
         el.querySelectorAll('.pgv-filter-inputs input[type="search"]').forEach(function(inp) {
           inp.addEventListener('input', function() {
             clearTimeout(_t);
-            _t = setTimeout(function() { self._filters[inp.name] = inp.value; self._page = 1; self._doFetch(); }, 300);
+            _t = setTimeout(function() { self._filters[inp.name] = inp.value; self._offset = 0; self._doFetch(); }, 300);
           });
         });
       },
@@ -1322,13 +1319,11 @@
           }
           chips += '<span class="pgv-filter-chip"><span>' + _esc(f.label) + ': <strong>' + _esc(dv) + '</strong></span><button type="button" data-clear="' + _esc(f.name) + '">&times;</button></span>';
         });
-        if (hasActive) chips += '<a href="#" class="pgv-filter-clear" data-clear-all>Effacer</a>';
+        if (hasActive) chips += '<a href="#" class="pgv-filter-clear" data-clear-all>' + _esc(self._t('filter.clear')) + '</a>';
         cz.innerHTML = chips;
-        // Bind chip clear
         cz.querySelectorAll('[data-clear]').forEach(function(btn) {
           btn.addEventListener('click', function(e) {
-            e.preventDefault(); self._filters[btn.dataset.clear] = ''; self._page = 1;
-            // Also reset the corresponding input/select
+            e.preventDefault(); self._filters[btn.dataset.clear] = ''; self._offset = 0;
             var inp = self._rootEl.querySelector('[name="' + btn.dataset.clear + '"]');
             if (inp) inp.value = '';
             self._doFetch();
@@ -1338,9 +1333,8 @@
         if (ca) ca.addEventListener('click', function(e) {
           e.preventDefault();
           Object.keys(self._filters).forEach(function(k) { self._filters[k] = ''; });
-          // Reset all inputs/selects
           self._rootEl.querySelectorAll('.pgv-filter-inputs input, .pgv-filter-inputs select').forEach(function(inp) { inp.value = ''; });
-          self._page = 1; self._doFetch();
+          self._offset = 0; self._doFetch();
         });
       },
 
@@ -1348,7 +1342,6 @@
         var self = this;
         var dz = this._rootEl.querySelector('[data-pgv-data]');
         if (!dz) return;
-        // Sort
         dz.querySelectorAll('[data-sort-col]').forEach(function(th) {
           th.addEventListener('click', function() {
             var idx = parseInt(th.dataset.sortCol);
@@ -1358,11 +1351,14 @@
             self._paintData();
           });
         });
-        // Pagination
-        dz.querySelectorAll('[data-goto]').forEach(function(btn) {
-          btn.addEventListener('click', function() { self._page = parseInt(btn.dataset.goto); self._doFetch(); });
+        var prevBtn = dz.querySelector('[data-prev]');
+        if (prevBtn) prevBtn.addEventListener('click', function() {
+          self._offset = Math.max(0, self._offset - self._size); self._doFetch();
         });
-        // Row click navigation
+        var nextBtn = dz.querySelector('[data-next]');
+        if (nextBtn) nextBtn.addEventListener('click', function() {
+          self._offset += self._size; self._doFetch();
+        });
         var app = document.querySelector('[x-data="pgview"]');
         var pgv = app ? Alpine.$data(app) : null;
         dz.querySelectorAll('tbody tr').forEach(function(tr) {

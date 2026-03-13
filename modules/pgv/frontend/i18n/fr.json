@@ -35,5 +35,10 @@
   "error.prefix": "Erreur",
   "dialog.folder": "Sélectionner un dossier",
   "dialog.loading": "Chargement...",
-  "dialog.load_error": "Erreur de chargement."
+  "dialog.load_error": "Erreur de chargement.",
+  "table.next": "Suivant",
+  "table.prev": "Précédent",
+  "table.empty": "Aucun résultat",
+  "table.loading": "Chargement…",
+  "table.search": "Rechercher…"
 }
