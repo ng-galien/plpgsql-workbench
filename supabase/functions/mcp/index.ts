@@ -13,6 +13,7 @@ import type { ToolPack } from "../_shared/core/container.js";
 import { buildContainer, mountTools } from "../_shared/core/container.js";
 import { createPostgresWithClient } from "../_shared/core/drivers/supabase.js";
 import { createQueryTool } from "../_shared/core/tools/plpgsql/query.js";
+import { illustratorPack } from "../_shared/core/packs/illustrator.js";
 import postgres from "postgres";
 
 // -- Database connection (singleton, with timeouts) --
@@ -27,7 +28,7 @@ const sql = postgres(dbUrl, {
 });
 const withClient = createPostgresWithClient(sql);
 
-// -- Edge pack: supabase driver + tools --
+// -- Edge pack: supabase driver + pg_query --
 const edgePack: ToolPack = (container, _config) => {
   container.register({
     withClient: asValue(withClient),
@@ -37,8 +38,8 @@ const edgePack: ToolPack = (container, _config) => {
 
 // -- Singleton: container + server built once at boot --
 const container = buildContainer(
-  { packs: { edge: {} } },
-  { edge: edgePack },
+  { packs: { edge: {}, illustrator: {} } },
+  { edge: edgePack, illustrator: illustratorPack },
 );
 
 const server = new McpServer({ name: "plpgsql-workbench-edge", version: "0.1.0" });
