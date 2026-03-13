@@ -23,6 +23,21 @@ END;
 $function$;
 COMMENT ON FUNCTION expense._next_numero() IS 'Génère le prochain numéro NDF-YYYY-NNN séquentiel';
 
+CREATE OR REPLACE FUNCTION expense._note_form_body()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN pgv.input('auteur', 'text', pgv.t('expense.field_auteur'), NULL, true)
+    || '<div class="pgv-grid">'
+    || pgv.input('date_debut', 'date', pgv.t('expense.field_date_debut'), to_char(date_trunc('month', now()), 'YYYY-MM-DD'), true)
+    || pgv.input('date_fin', 'date', pgv.t('expense.field_date_fin'), to_char(now()::date, 'YYYY-MM-DD'), true)
+    || '</div>'
+    || pgv.textarea('commentaire', pgv.t('expense.field_commentaire'));
+END;
+$function$;
+COMMENT ON FUNCTION expense._note_form_body() IS 'Build form body HTML for note creation dialog';
+
 CREATE OR REPLACE FUNCTION expense._statut_badge(p_statut text)
  RETURNS text
  LANGUAGE plpgsql
@@ -150,7 +165,7 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_note_form'), pgv.t('expense.btn_nouvelle_note'))
+    || pgv.form_dialog('dlg-new-note', pgv.t('expense.btn_nouvelle_note'), expense._note_form_body(), 'post_note_creer')
     || '</p>';
 
   RETURN v_body;
@@ -203,6 +218,8 @@ DECLARE
   v_total_ht numeric(12,2);
   v_total_tva numeric(12,2);
   v_total_ttc numeric(12,2);
+  v_cat_options jsonb;
+  v_ligne_body text;
   r record;
 BEGIN
   IF p_id IS NULL THEN
@@ -262,13 +279,28 @@ BEGIN
     ]);
   END IF;
 
+  -- Actions selon statut
   v_body := v_body || '<p>';
 
   IF v_note.statut = 'brouillon' THEN
+    -- Build ligne form body inline
+    SELECT jsonb_agg(jsonb_build_object('value', id::text, 'label', nom) ORDER BY nom)
+      INTO v_cat_options
+      FROM expense.categorie;
+    v_cat_options := coalesce(v_cat_options, '[]'::jsonb);
+
+    v_ligne_body := '<input type="hidden" name="note_id" value="' || p_id || '">'
+      || pgv.input('date_depense', 'date', pgv.t('expense.field_date_depense'), to_char(now()::date, 'YYYY-MM-DD'), true)
+      || pgv.sel('categorie_id', pgv.t('expense.field_categorie'), v_cat_options)
+      || pgv.input('description', 'text', pgv.t('expense.field_description'), NULL, true)
+      || '<div class="pgv-grid">'
+      || pgv.input('montant_ht', 'number', pgv.t('expense.field_montant_ht'), NULL, true)
+      || pgv.input('tva', 'number', pgv.t('expense.field_tva'), '0')
+      || pgv.input('km', 'number', pgv.t('expense.field_km'))
+      || '</div>';
+
     v_body := v_body
-      || pgv.action('post_ligne_ajouter', pgv.t('expense.btn_action_ajouter_ligne'),
-           jsonb_build_object('note_id', p_id),
-           NULL, 'primary')
+      || pgv.form_dialog('dlg-add-ligne', pgv.t('expense.btn_action_ajouter_ligne'), v_ligne_body, 'post_ligne_ajouter')
       || ' '
       || pgv.action('post_note_soumettre', pgv.t('expense.btn_soumettre'),
            jsonb_build_object('id', p_id),
@@ -392,7 +424,7 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_note_form'), pgv.t('expense.btn_nouvelle_note'))
+    || pgv.form_dialog('dlg-new-note', pgv.t('expense.btn_nouvelle_note'), expense._note_form_body(), 'post_note_creer')
     || '</p>';
 
   RETURN v_body;

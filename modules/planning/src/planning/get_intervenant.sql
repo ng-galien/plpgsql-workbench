@@ -19,7 +19,7 @@ BEGIN
     pgv.t('planning.field_telephone'), COALESCE(v.telephone, '—'),
     pgv.t('planning.field_couleur'), format('<span class="pgv-color-dot" style="background:%s"></span> %s', v.couleur, v.couleur),
     pgv.t('planning.col_statut'), CASE WHEN v.actif THEN pgv.badge(pgv.t('planning.statut_actif'), 'success') ELSE pgv.badge(pgv.t('planning.statut_inactif'), 'default') END,
-    'Ajouté le', to_char(v.created_at, 'DD/MM/YYYY')
+    pgv.t('planning.field_ajoute_le'), to_char(v.created_at, 'DD/MM/YYYY')
   );
 
   v_rows := ARRAY[]::text[];
@@ -33,7 +33,7 @@ BEGIN
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_evenement', jsonb_build_object('p_id', r.id)), pgv.esc(r.titre)),
       planning._type_badge(r.type),
-      to_char(r.date_debut, 'DD/MM') || ' → ' || to_char(r.date_fin, 'DD/MM'),
+      to_char(r.date_debut, 'DD/MM') || ' -> ' || to_char(r.date_fin, 'DD/MM'),
       COALESCE(NULLIF(r.lieu, ''), '—')
     ];
   END LOOP;
@@ -46,7 +46,8 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a> ', pgv.call_ref('get_intervenant_form', jsonb_build_object('p_id', p_id)), pgv.t('planning.btn_modifier'))
+    || pgv.form_dialog('dlg-edit-intervenant', pgv.t('planning.btn_modifier'), planning._intervenant_form_inputs(v.id, v.nom, v.role, v.telephone, v.couleur, v.actif), 'post_intervenant_save')
+    || ' '
     || pgv.action('post_intervenant_supprimer', pgv.t('planning.btn_supprimer'), jsonb_build_object('p_id', p_id), pgv.t('planning.confirm_delete_intervenant'), 'error')
     || '</p>';
 

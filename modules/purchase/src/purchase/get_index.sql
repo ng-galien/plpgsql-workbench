@@ -135,7 +135,9 @@ BEGIN
   ]);
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_commande_form'), pgv.t('purchase.btn_nouvelle_commande'))
+    || pgv.form_dialog('dlg-new-commande', pgv.t('purchase.title_nouvelle_commande'),
+         purchase._commande_form_body(),
+         'post_commande_save', pgv.t('purchase.btn_nouvelle_commande'))
     || '</p>';
 
   RETURN v_body;

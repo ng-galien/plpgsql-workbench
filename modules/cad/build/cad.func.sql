@@ -940,14 +940,15 @@ BEGIN
 
   v_body := COALESCE(v_drawings, '<p>' || pgv.t('cad.empty_no_drawing') || '</p>');
 
-  v_body := v_body || pgv.form('drawing_add',
+  v_body := v_body || pgv.form_dialog('dlg-new-drawing',
+    pgv.t('cad.btn_nouveau_dessin'),
     pgv.input('name', 'text', pgv.t('cad.field_name')),
-    pgv.t('cad.btn_nouveau_dessin'));
+    'drawing_add');
 
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION cad.get_index() IS 'Page index: liste des dessins + formulaire nouveau dessin';
+COMMENT ON FUNCTION cad.get_index() IS 'Page index: liste des dessins + formulaire nouveau dessin (dialog)';
 
 CREATE OR REPLACE FUNCTION cad.group_pieces(p_drawing_id integer, p_piece_ids integer[], p_label text)
  RETURNS integer
@@ -2295,7 +2296,7 @@ BEGIN
   INTO v_layers
   FROM cad.layer l WHERE l.drawing_id = p_id;
 
-  -- Build form body with nested accordion for geometry/props
+  -- Build form body
   v_form := format('<input type="hidden" name="drawing_id" value="%s">', p_id)
     || '<div class="grid">'
     || pgv.sel('layer_id', pgv.t('cad.col_calque'), COALESCE(v_layers, '[]'::jsonb))
@@ -2313,16 +2314,17 @@ BEGIN
          pgv.t('cad.title_props'), pgv.textarea('props', pgv.t('cad.field_props'), '{}')
        );
 
-  -- Wrap in collapsible accordion + form
-  v_body := v_body || pgv.accordion(
+  -- Form dialog (modal) instead of inline accordion+form
+  v_body := v_body || pgv.form_dialog('dlg-add-shape',
     pgv.t('cad.title_add_shape'),
-    pgv.form('shape_add', v_form, pgv.t('cad.btn_ajouter'))
-  );
+    v_form,
+    'shape_add',
+    pgv.t('cad.btn_ajouter'));
 
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION cad.get_drawing(integer) IS 'Page dessin 2D: navigation, tree + SVG canvas, stats, shapes table, formulaire ajout.';
+COMMENT ON FUNCTION cad.get_drawing(integer) IS 'Page dessin 2D: navigation, tree + SVG canvas, stats, shapes table, formulaire ajout (dialog).';
 
 CREATE OR REPLACE FUNCTION cad.render_wireframe(p_drawing_id integer, p_axis text DEFAULT 'front'::text, p_width integer DEFAULT 900, p_height integer DEFAULT 700)
  RETURNS text

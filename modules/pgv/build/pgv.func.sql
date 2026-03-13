@@ -493,6 +493,20 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION pgv.lazy(text,jsonb,text) IS 'Lazy container: defers content loading via IntersectionObserver + RPC';
 
+CREATE OR REPLACE FUNCTION pgv.link_button(p_href text, p_label text, p_variant text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+SELECT '<a href="' || pgv.esc(p_href) || '" role="button" class="pgv-link-button'
+    || CASE WHEN p_variant = 'outline' THEN ' outline'
+            WHEN p_variant = 'secondary' THEN ' secondary'
+            WHEN p_variant = 'contrast' THEN ' contrast'
+            ELSE '' END
+    || '">' || pgv.esc(p_label) || '</a>';
+$function$;
+COMMENT ON FUNCTION pgv.link_button(text,text,text) IS 'Navigation link styled as a button, visually aligned with pgv.action(). Variants: NULL (primary), outline, secondary, contrast.';
+
 CREATE OR REPLACE FUNCTION pgv.md_table(p_headers text[], p_rows text[], p_page_size integer DEFAULT 0)
  RETURNS text
  LANGUAGE plpgsql
@@ -1020,7 +1034,10 @@ BEGIN
         'pgv-tree','pgv-tree-icon','pgv-theme-toggle',
         'pgv-table','pgv-pager','pgv-pager-info','pgv-pager-btns','pgv-pager-dots',
         'pgv-sortable','pgv-canvas','pgv-canvas-vp','pgv-canvas-bar','pgv-canvas-btn','pgv-canvas-zoom','pgv-canvas-sep',
-        'pgv-search-results','pgv-search-item','pgv-search-icon','pgv-search-body','pgv-search-more'
+        'pgv-search-results','pgv-search-item','pgv-search-icon','pgv-search-body','pgv-search-more',
+        'pgv-link-button',
+        'pgv-form-dialog','pgv-form-dialog-article','pgv-form-dialog-header',
+        'pgv-form-dialog-close','pgv-form-dialog-body','pgv-form-dialog-footer'
       ) THEN
         v_rows := v_rows || '| ' || pgv.badge('WARN', 'warning') || ' | CSS | classe `' || pgv.esc(v_rec.cls) || '` inconnue |' || chr(10);
         v_warn := v_warn + 1;
@@ -1447,6 +1464,52 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv.form(text,text,text) IS 'Form wrapper with data-rpc dispatch. Wraps body in form tag with submit button.';
+
+CREATE OR REPLACE FUNCTION pgv.form_dialog(p_id text, p_title text, p_body text, p_rpc text, p_label text DEFAULT NULL::text, p_variant text DEFAULT NULL::text, p_src text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+DECLARE
+  v_trigger text;
+  v_dialog text;
+  v_btn_class text;
+BEGIN
+  -- Trigger button
+  v_btn_class := CASE
+    WHEN p_variant = 'outline' THEN ' class="outline"'
+    WHEN p_variant = 'secondary' THEN ' class="secondary"'
+    WHEN p_variant = 'contrast' THEN ' class="contrast"'
+    ELSE ''
+  END;
+
+  v_trigger := '<button data-form-dialog="' || pgv.esc(p_id) || '"'
+    || CASE WHEN p_src IS NOT NULL THEN ' data-src="' || pgv.esc(p_src) || '"' ELSE '' END
+    || v_btn_class
+    || '>' || pgv.esc(coalesce(p_label, p_title)) || '</button>';
+
+  -- Dialog element
+  v_dialog := '<dialog id="' || pgv.esc(p_id) || '" class="pgv-form-dialog">'
+    || '<article class="pgv-form-dialog-article">'
+    || '<header class="pgv-form-dialog-header">'
+    || '<strong>' || pgv.esc(p_title) || '</strong>'
+    || '<button class="pgv-form-dialog-close" onclick="this.closest(''dialog'').close()">&times;</button>'
+    || '</header>'
+    || '<form data-rpc="' || pgv.esc(p_rpc) || '" data-dialog-form>'
+    || '<div class="pgv-form-dialog-body">' || p_body || '</div>'
+    || '<footer class="pgv-form-dialog-footer">'
+    || '<button type="button" class="secondary" onclick="this.closest(''dialog'').close()">'
+    || pgv.t('cancel') || '</button>'
+    || '<button type="submit">' || pgv.t('send') || '</button>'
+    || '</footer>'
+    || '</form>'
+    || '</article>'
+    || '</dialog>';
+
+  RETURN v_trigger || v_dialog;
+END;
+$function$;
+COMMENT ON FUNCTION pgv.form_dialog(text,text,text,text,text,text,text) IS 'Render a button that opens a modal dialog containing a form. Supports create (inline body) and edit (lazy-load via data-src). On submit success: toast + close + reload.';
 
 CREATE OR REPLACE FUNCTION pgv.tabs(VARIADIC p_items text[])
  RETURNS text
@@ -2110,6 +2173,59 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_form() IS 'Tests for pgv.form() wrapper primitive';
 
+CREATE OR REPLACE FUNCTION pgv_ut.test_form_dialog()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v text;
+BEGIN
+  -- Basic output
+  v := pgv.form_dialog('dlg1', 'Titre', '<input name="x">', 'post_foo');
+  RETURN NEXT ok(v LIKE '%data-form-dialog="dlg1"%', 'trigger button has data-form-dialog');
+  RETURN NEXT ok(v LIKE '%<dialog id="dlg1"%', 'dialog has correct id');
+  RETURN NEXT ok(v LIKE '%class="pgv-form-dialog"%', 'dialog has pgv-form-dialog class');
+  RETURN NEXT ok(v LIKE '%data-rpc="post_foo"%', 'form has data-rpc');
+  RETURN NEXT ok(v LIKE '%data-dialog-form%', 'form has data-dialog-form marker');
+  RETURN NEXT ok(v LIKE '%pgv-form-dialog-article%', 'article class present');
+  RETURN NEXT ok(v LIKE '%pgv-form-dialog-header%', 'header class present');
+  RETURN NEXT ok(v LIKE '%pgv-form-dialog-close%', 'close button class present');
+  RETURN NEXT ok(v LIKE '%pgv-form-dialog-body%', 'body class present');
+  RETURN NEXT ok(v LIKE '%pgv-form-dialog-footer%', 'footer class present');
+  RETURN NEXT ok(v LIKE '%<input name="x">%', 'body content preserved');
+
+  -- Title escaping
+  v := pgv.form_dialog('d2', 'A&B', '', 'rpc');
+  RETURN NEXT ok(v LIKE '%A&amp;B%', 'title is escaped');
+
+  -- Custom label
+  v := pgv.form_dialog('d3', 'Title', '', 'rpc', 'Click me');
+  RETURN NEXT ok(v LIKE '%>Click me</button>%', 'custom label on trigger');
+
+  -- Variant outline
+  v := pgv.form_dialog('d4', 'T', '', 'rpc', NULL, 'outline');
+  RETURN NEXT ok(v LIKE '%class="outline"%', 'outline variant applied');
+
+  -- Variant secondary
+  v := pgv.form_dialog('d5', 'T', '', 'rpc', NULL, 'secondary');
+  RETURN NEXT ok(v LIKE '%class="secondary"%', 'secondary variant applied');
+
+  -- data-src for lazy load
+  v := pgv.form_dialog('d6', 'T', '', 'rpc', NULL, NULL, '/edit_form?id=1');
+  RETURN NEXT ok(v LIKE '%data-src="/edit_form?id=1"%', 'data-src attribute present');
+
+  -- No data-src when NULL
+  v := pgv.form_dialog('d7', 'T', '', 'rpc');
+  RETURN NEXT ok(v NOT LIKE '%data-src%', 'no data-src when p_src is NULL');
+
+  -- i18n: cancel and send buttons
+  v := pgv.form_dialog('d8', 'T', '', 'rpc');
+  RETURN NEXT ok(v LIKE '%' || pgv.t('cancel') || '%', 'cancel button uses i18n');
+  RETURN NEXT ok(v LIKE '%' || pgv.t('send') || '%', 'send button uses i18n');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_form_dialog() IS 'Unit tests for pgv.form_dialog() primitive';
+
 CREATE OR REPLACE FUNCTION pgv_ut.test_href()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -2231,6 +2347,45 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_lazy() IS 'Unit tests for pgv.lazy: data-lazy, params, XSS';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_link_button()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v text;
+BEGIN
+  -- 1. Basic link button (primary)
+  v := pgv.link_button('/clients', 'Clients');
+  RETURN NEXT ok(v LIKE '%<a href%', 'has anchor tag');
+  RETURN NEXT ok(v LIKE '%role="button"%', 'has role button');
+  RETURN NEXT ok(v LIKE '%pgv-link-button%', 'has pgv-link-button class');
+  RETURN NEXT ok(v LIKE '%>Clients</a>%', 'has label');
+
+  -- 2. Outline variant
+  v := pgv.link_button('/new', 'New', 'outline');
+  RETURN NEXT ok(v LIKE '%outline%', 'outline class present');
+
+  -- 3. Secondary variant
+  v := pgv.link_button('/back', 'Back', 'secondary');
+  RETURN NEXT ok(v LIKE '%secondary%', 'secondary class present');
+
+  -- 4. Contrast variant
+  v := pgv.link_button('/x', 'X', 'contrast');
+  RETURN NEXT ok(v LIKE '%contrast%', 'contrast class present');
+
+  -- 5. XSS safety
+  v := pgv.link_button('/x" onclick="alert(1)', 'Test');
+  RETURN NEXT ok(v LIKE '%&quot;%', 'href is escaped');
+
+  -- 6. Label escaping
+  v := pgv.link_button('/x', '<script>alert(1)</script>');
+  RETURN NEXT ok(v LIKE '%&lt;script&gt;%', 'label is escaped');
+
+  RETURN;
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_link_button() IS 'Test pgv.link_button() — navigation link styled as button';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_md_table()
  RETURNS SETOF text

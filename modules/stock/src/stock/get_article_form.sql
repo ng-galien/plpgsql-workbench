@@ -1,11 +1,9 @@
 CREATE OR REPLACE FUNCTION stock.get_article_form(p_id integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_art stock.article;
-  v_body text;
   v_cat_opts jsonb;
   v_unit_opts jsonb;
   v_fournisseur_opts jsonb;
@@ -17,7 +15,6 @@ BEGIN
     IF NOT FOUND THEN RETURN pgv.empty(pgv.t('stock.empty_article_not_found'), ''); END IF;
   END IF;
 
-  -- Options catégorie
   v_cat_opts := jsonb_build_array(
     jsonb_build_object('value', 'bois', 'label', pgv.t('stock.cat_bois')),
     jsonb_build_object('value', 'quincaillerie', 'label', pgv.t('stock.cat_quincaillerie')),
@@ -27,7 +24,6 @@ BEGIN
     jsonb_build_object('value', 'autre', 'label', pgv.t('stock.cat_autre'))
   );
 
-  -- Options unité
   v_unit_opts := jsonb_build_array(
     jsonb_build_object('value', 'u', 'label', pgv.t('stock.unit_u')),
     jsonb_build_object('value', 'm', 'label', pgv.t('stock.unit_m')),
@@ -37,12 +33,10 @@ BEGIN
     jsonb_build_object('value', 'l', 'label', pgv.t('stock.unit_l'))
   );
 
-  -- Options fournisseur (CRM companies)
   SELECT coalesce(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.name) ORDER BY c.name), '[]'::jsonb)
   INTO v_fournisseur_opts
   FROM crm.client c WHERE c.type = 'company' AND c.active;
 
-  -- Catalog article search (cross-module guard)
   v_catalog_search := '';
   IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'catalog') THEN
     v_catalog_display := NULL;
@@ -59,7 +53,7 @@ BEGIN
     );
   END IF;
 
-  v_body := '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
+  RETURN '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
     || pgv.input('reference', 'text', pgv.t('stock.field_reference'), coalesce(v_art.reference, ''), true)
     || pgv.input('designation', 'text', pgv.t('stock.field_designation'), coalesce(v_art.designation, ''), true)
     || pgv.sel('categorie', pgv.t('stock.field_categorie'), v_cat_opts, v_art.categorie)
@@ -69,8 +63,5 @@ BEGIN
     || pgv.sel('fournisseur_id', pgv.t('stock.field_fournisseur'), v_fournisseur_opts, v_art.fournisseur_id::text)
     || v_catalog_search
     || pgv.textarea('notes', pgv.t('stock.field_notes'), v_art.notes);
-
-  RETURN pgv.form('post_article_save', v_body,
-    CASE WHEN p_id IS NOT NULL THEN pgv.t('stock.btn_modifier') ELSE pgv.t('stock.btn_creer') END);
 END;
 $function$;

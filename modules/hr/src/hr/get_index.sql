@@ -79,7 +79,10 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouveau salarié</a></p>', pgv.call_ref('get_employee_form'));
+  v_body := v_body || pgv.form_dialog('dlg-new-employee',
+    'Nouveau salarié',
+    hr._employee_form_body(),
+    'post_employee_save');
 
   RETURN v_body;
 END;

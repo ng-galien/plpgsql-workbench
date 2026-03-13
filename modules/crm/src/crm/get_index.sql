@@ -95,9 +95,18 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a> <a href="%s" role="button" class="secondary">%s</a></p>',
-    pgv.call_ref('get_client_form'), pgv.t('crm.btn_new_client'),
-    pgv.call_ref('get_import'), pgv.t('crm.btn_import_csv'));
+  v_body := v_body || '<p>'
+    || pgv.form_dialog('dlg-new-client', pgv.t('crm.title_new_client'),
+         crm.client_form_fields(),
+         'post_client_save', pgv.t('crm.btn_new_client'))
+    || ' '
+    || pgv.form_dialog('dlg-import', pgv.t('crm.btn_import_csv'),
+         '<p>' || pgv.t('crm.import_intro') || '</p>'
+         || '<p><code>nom ; email ; telephone ; adresse ; ville ; code_postal ; type</code></p>'
+         || '<p><small>' || pgv.t('crm.import_help') || '</small></p>'
+         || pgv.textarea('csv', pgv.t('crm.field_csv'), NULL),
+         'post_import_csv', pgv.t('crm.btn_import_csv'), 'secondary')
+    || '</p>';
 
   RETURN v_body;
 END;

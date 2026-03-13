@@ -221,7 +221,10 @@ BEGIN
         'pgv-tree','pgv-tree-icon','pgv-theme-toggle',
         'pgv-table','pgv-pager','pgv-pager-info','pgv-pager-btns','pgv-pager-dots',
         'pgv-sortable','pgv-canvas','pgv-canvas-vp','pgv-canvas-bar','pgv-canvas-btn','pgv-canvas-zoom','pgv-canvas-sep',
-        'pgv-search-results','pgv-search-item','pgv-search-icon','pgv-search-body','pgv-search-more'
+        'pgv-search-results','pgv-search-item','pgv-search-icon','pgv-search-body','pgv-search-more',
+        'pgv-link-button',
+        'pgv-form-dialog','pgv-form-dialog-article','pgv-form-dialog-header',
+        'pgv-form-dialog-close','pgv-form-dialog-body','pgv-form-dialog-footer'
       ) THEN
         v_rows := v_rows || '| ' || pgv.badge('WARN', 'warning') || ' | CSS | classe `' || pgv.esc(v_rec.cls) || '` inconnue |' || chr(10);
         v_warn := v_warn + 1;

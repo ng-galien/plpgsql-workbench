@@ -24,7 +24,7 @@ BEGIN
   v_body := pgv.dl(
     pgv.t('planning.field_titre'), pgv.esc(v.titre),
     pgv.t('planning.field_type'), planning._type_badge(v.type),
-    pgv.t('planning.col_dates'), to_char(v.date_debut, 'DD/MM/YYYY') || ' → ' || to_char(v.date_fin, 'DD/MM/YYYY'),
+    pgv.t('planning.col_dates'), to_char(v.date_debut, 'DD/MM/YYYY') || ' -> ' || to_char(v.date_fin, 'DD/MM/YYYY'),
     pgv.t('planning.field_heure_debut') || ' – ' || pgv.t('planning.field_heure_fin'), to_char(v.heure_debut, 'HH24:MI') || ' – ' || to_char(v.heure_fin, 'HH24:MI'),
     pgv.t('planning.field_lieu'), COALESCE(NULLIF(v.lieu, ''), '—'),
     pgv.t('planning.col_chantier'), v_chantier_label,
@@ -62,16 +62,16 @@ BEGIN
      AND i.id NOT IN (SELECT a.intervenant_id FROM planning.affectation a WHERE a.evenement_id = p_id);
 
   IF v_intervenants_options IS NOT NULL THEN
-    v_body := v_body || format(
-      '<form data-rpc="post_affecter"><input type="hidden" name="p_evenement_id" value="%s">'
-      || '<div class="grid"><label>%s<select name="p_intervenant_id">%s</select></label>'
-      || '<button type="submit" class="secondary">%s</button></div></form>',
-      p_id, pgv.t('planning.btn_ajouter_intervenant'), v_intervenants_options, pgv.t('planning.btn_affecter')
-    );
+    v_body := v_body || pgv.form('post_affecter',
+      format('<input type="hidden" name="p_evenement_id" value="%s">', p_id)
+      || '<div class="grid"><label>' || pgv.t('planning.btn_ajouter_intervenant')
+      || '<select name="p_intervenant_id">' || v_intervenants_options || '</select></label></div>'
+    , pgv.t('planning.btn_affecter'));
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a> ', pgv.call_ref('get_evenement_form', jsonb_build_object('p_id', p_id)), pgv.t('planning.btn_modifier'))
+    || pgv.form_dialog('dlg-edit-evenement', pgv.t('planning.btn_modifier'), planning._evenement_form_inputs(v.id, v.titre, v.type, v.date_debut, v.date_fin, v.heure_debut, v.heure_fin, v.lieu, v.chantier_id, v.notes), 'post_evenement_save')
+    || ' '
     || pgv.action('post_evenement_supprimer', pgv.t('planning.btn_supprimer'), jsonb_build_object('p_id', p_id), pgv.t('planning.confirm_delete_evenement'), 'error')
     || '</p>';
 

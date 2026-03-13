@@ -8,7 +8,7 @@ DECLARE
 BEGIN
   v_nom := trim(COALESCE(p_data->>'nom', ''));
   IF v_nom = '' THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.err_nom_required') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.err_nom_required'), 'error');
   END IF;
 
   v_id := NULLIF(trim(COALESCE(p_data->>'id', '')), '')::int;
@@ -33,8 +33,7 @@ BEGIN
     RETURNING id INTO v_id;
   END IF;
 
-  RETURN format('<template data-toast="success">%s</template><template data-redirect="%s"></template>',
-    pgv.t('planning.toast_intervenant_saved'),
-    pgv.call_ref('get_intervenant', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('planning.toast_intervenant_saved'))
+      || pgv.redirect(pgv.call_ref('get_intervenant', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

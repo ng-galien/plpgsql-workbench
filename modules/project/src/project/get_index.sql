@@ -100,7 +100,8 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_chantier_form'), pgv.t('project.btn_nouveau'))
+    || pgv.form_dialog('dlg-new-projet', pgv.t('project.btn_nouveau'),
+         project._chantier_form_fields(), 'post_chantier_save')
     || '</p>';
 
   RETURN v_body;

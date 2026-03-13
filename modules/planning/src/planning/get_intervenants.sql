@@ -52,7 +52,7 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_intervenant_form'), pgv.t('planning.btn_nouvel_intervenant'));
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-intervenant', pgv.t('planning.btn_nouvel_intervenant'), planning._intervenant_form_inputs(), 'post_intervenant_save') || '</p>';
 
   RETURN v_body;
 END;

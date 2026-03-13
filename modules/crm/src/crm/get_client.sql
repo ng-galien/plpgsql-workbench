@@ -60,17 +60,14 @@ BEGIN
     v_contacts := pgv.empty(pgv.t('crm.empty_no_contacts'));
   END IF;
 
-  v_contacts := v_contacts || pgv.accordion(VARIADIC ARRAY[
-    pgv.t('crm.title_add_contact'),
-    pgv.form('post_contact_add',
-      '<input type="hidden" name="client_id" value="' || p_id || '">'
-      || pgv.input('name', 'text', pgv.t('crm.field_name'), NULL, true)
-      || pgv.input('role', 'text', pgv.t('crm.field_role'))
-      || pgv.input('email', 'email', pgv.t('crm.field_email'))
-      || pgv.input('phone', 'tel', pgv.t('crm.field_phone'))
-      || pgv.checkbox('is_primary', pgv.t('crm.label_primary_contact')),
-      pgv.t('crm.btn_add'))
-  ]);
+  v_contacts := v_contacts || pgv.form_dialog('dlg-add-contact', pgv.t('crm.title_add_contact'),
+    '<input type="hidden" name="client_id" value="' || p_id || '">'
+    || pgv.input('name', 'text', pgv.t('crm.field_name'), NULL, true)
+    || pgv.input('role', 'text', pgv.t('crm.field_role'))
+    || pgv.input('email', 'email', pgv.t('crm.field_email'))
+    || pgv.input('phone', 'tel', pgv.t('crm.field_phone'))
+    || pgv.checkbox('is_primary', pgv.t('crm.label_primary_contact')),
+    'post_contact_add', pgv.t('crm.btn_add'));
 
   v_tab_fiche := v_fiche || '<hr>' || '<h4>' || pgv.t('crm.title_contacts') || '</h4>' || v_contacts;
 
@@ -147,7 +144,9 @@ BEGIN
   END IF;
 
   v_tab_fiche := v_tab_fiche || '<hr><div class="grid">'
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_client_form', jsonb_build_object('p_id', p_id)), pgv.t('crm.btn_edit'))
+    || pgv.form_dialog('dlg-edit-' || p_id, pgv.t('crm.btn_edit') || ' ' || pgv.esc(v_client.name),
+         crm.client_form_fields(v_client),
+         'post_client_save', pgv.t('crm.btn_edit'), 'outline')
     || pgv.action('post_client_delete', pgv.t('crm.btn_delete'), jsonb_build_object('id', p_id), pgv.t('crm.confirm_delete_client'), 'danger')
     || '</div>';
 
@@ -207,20 +206,17 @@ BEGIN
     ));
   END IF;
 
-  v_interactions := v_interactions || pgv.accordion(VARIADIC ARRAY[
-    pgv.t('crm.title_add_interaction'),
-    pgv.form('post_interaction_add',
-      '<input type="hidden" name="client_id" value="' || p_id || '">'
-      || pgv.sel('type', pgv.t('crm.field_type'), jsonb_build_array(
-           jsonb_build_object('label', pgv.t('crm.type_call'), 'value', 'call'),
-           jsonb_build_object('label', pgv.t('crm.type_visit'), 'value', 'visit'),
-           jsonb_build_object('label', pgv.t('crm.type_email'), 'value', 'email'),
-           jsonb_build_object('label', pgv.t('crm.type_note'), 'value', 'note')
-         ), 'note')
-      || pgv.input('subject', 'text', pgv.t('crm.field_subject'), NULL, true)
-      || pgv.textarea('body', pgv.t('crm.field_details')),
-      pgv.t('crm.btn_add'))
-  ]);
+  v_interactions := v_interactions || pgv.form_dialog('dlg-add-interaction', pgv.t('crm.title_add_interaction'),
+    '<input type="hidden" name="client_id" value="' || p_id || '">'
+    || pgv.sel('type', pgv.t('crm.field_type'), jsonb_build_array(
+         jsonb_build_object('label', pgv.t('crm.type_call'), 'value', 'call'),
+         jsonb_build_object('label', pgv.t('crm.type_visit'), 'value', 'visit'),
+         jsonb_build_object('label', pgv.t('crm.type_email'), 'value', 'email'),
+         jsonb_build_object('label', pgv.t('crm.type_note'), 'value', 'note')
+       ), 'note')
+    || pgv.input('subject', 'text', pgv.t('crm.field_subject'), NULL, true)
+    || pgv.textarea('body', pgv.t('crm.field_details')),
+    'post_interaction_add', pgv.t('crm.btn_add'));
 
   v_tab_interactions := v_interactions;
 

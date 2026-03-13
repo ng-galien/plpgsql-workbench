@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION stock.get_depots()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_body text;
@@ -38,8 +37,10 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
-    pgv.call_ref('get_depot_form'), pgv.t('stock.btn_nouveau_depot'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-depot', pgv.t('stock.btn_nouveau_depot'), '', 'post_depot_save',
+    NULL, NULL, pgv.call_ref('get_depot_form')
+  ) || '</p>';
 
   RETURN v_body;
 END;

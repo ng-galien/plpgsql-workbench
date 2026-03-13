@@ -24,10 +24,10 @@ BEGIN
 
   -- Sélecteur période
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">T1</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 1))),
-    format('<a href="%s" role="button" class="outline">T2</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 2))),
-    format('<a href="%s" role="button" class="outline">T3</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 3))),
-    format('<a href="%s" role="button" class="outline">T4</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 4)))
+    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 1)), 'T1', 'outline'),
+    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 2)), 'T2', 'outline'),
+    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 3)), 'T3', 'outline'),
+    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 4)), 'T4', 'outline')
   ]);
 
   v_body := v_body || '<p>' || pgv.t('ledger.title_period') || ' : T' || v_quarter || ' ' || v_year

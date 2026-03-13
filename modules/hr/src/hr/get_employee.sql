@@ -36,7 +36,11 @@ BEGIN
   ]);
 
   v_fiche := v_fiche || '<hr>'
-    || format('<a href="%s" role="button">Modifier</a> ', pgv.call_ref('get_employee_form', jsonb_build_object('p_id', p_id)))
+    || pgv.form_dialog('dlg-edit-' || p_id,
+      'Modifier ' || pgv.esc(v_emp.prenom) || ' ' || pgv.esc(v_emp.nom),
+      hr._employee_form_body(v_emp),
+      'post_employee_save',
+      'Modifier', 'outline') || ' '
     || pgv.action('post_employee_delete', 'Supprimer', jsonb_build_object('id', p_id), 'Supprimer définitivement ce salarié et tout son historique ?', 'danger');
 
   -- Absences

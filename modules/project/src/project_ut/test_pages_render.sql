@@ -10,7 +10,7 @@ BEGIN
   PERFORM set_config('pgv.route_prefix', '/project', true);
 
   -- brand & nav
-  RETURN NEXT is(project.brand(), 'Chantiers', 'brand returns Chantiers');
+  RETURN NEXT is(project.brand(), 'Projets', 'brand returns Projets');
   RETURN NEXT ok(project.nav_items() IS NOT NULL, 'nav_items returns jsonb');
 
   -- get_index

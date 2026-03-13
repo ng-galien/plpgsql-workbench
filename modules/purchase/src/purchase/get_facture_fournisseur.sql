@@ -58,10 +58,9 @@ BEGIN
         || pgv.sel('p_commande_id', pgv.t('purchase.field_commande_liee'), v_cmd_options)
         || pgv.textarea('p_notes', pgv.t('purchase.field_notes'));
 
-      RETURN pgv.accordion(VARIADIC ARRAY[
-        pgv.t('purchase.title_saisir_facture'),
-        pgv.form('post_facture_saisir', v_form_body, pgv.t('purchase.btn_saisir'))
-      ])
+      RETURN pgv.form_dialog('dlg-saisir-facture', pgv.t('purchase.title_saisir_facture'),
+        v_form_body,
+        'post_facture_saisir', pgv.t('purchase.btn_saisir'))
       || pgv.md_table(ARRAY[pgv.t('purchase.col_no_fournisseur'), pgv.t('purchase.col_fournisseur'), pgv.t('purchase.col_commande'), pgv.t('purchase.col_statut'), pgv.t('purchase.col_montant_ttc'), pgv.t('purchase.col_date_facture'), pgv.t('purchase.col_echeance')], v_rows);
     END;
   END IF;

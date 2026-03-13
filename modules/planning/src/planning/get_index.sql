@@ -31,14 +31,11 @@ BEGIN
     pgv.stat(pgv.t('planning.stat_affectations_semaine'), v_total_affectations_semaine::text)
   ]);
 
-  v_body := v_body || format(
-    '<nav class="pgv-week-nav"><a href="%s" role="button" class="secondary outline">&larr;</a> <strong>%s %s au %s</strong> <a href="%s" role="button" class="secondary outline">&rarr;</a></nav>',
-    pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi - 7)::text)),
-    pgv.t('planning.title_semaine_du'),
-    to_char(v_lundi, 'DD/MM'),
-    to_char(v_lundi + 6, 'DD/MM/YYYY'),
-    pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi + 7)::text))
-  );
+  v_body := v_body || '<nav class="pgv-week-nav">'
+    || pgv.link_button(pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi - 7)::text)), '&larr;', 'outline')
+    || ' <strong>' || pgv.t('planning.title_semaine_du') || ' ' || to_char(v_lundi, 'DD/MM') || ' au ' || to_char(v_lundi + 6, 'DD/MM/YYYY') || '</strong> '
+    || pgv.link_button(pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi + 7)::text)), '&rarr;', 'outline')
+    || '</nav>';
 
   v_rows := ARRAY[]::text[];
   FOR r IN
@@ -85,13 +82,11 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format(
-    '<p><a href="%s" role="button">%s</a> <a href="%s" role="button" class="secondary">%s</a></p>',
-    pgv.call_ref('get_evenement_form'),
-    pgv.t('planning.btn_nouvel_evenement'),
-    pgv.call_ref('get_intervenants'),
-    pgv.t('planning.btn_gerer_equipe')
-  );
+  v_body := v_body || '<p>'
+    || pgv.form_dialog('dlg-new-evenement', pgv.t('planning.btn_nouvel_evenement'), planning._evenement_form_inputs(), 'post_evenement_save')
+    || ' '
+    || pgv.link_button(pgv.call_ref('get_intervenants'), pgv.t('planning.btn_gerer_equipe'), 'secondary')
+    || '</p>';
 
   RETURN v_body;
 END;

@@ -8,7 +8,7 @@
  */
 
 import { Pool } from "pg";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { toJSONSchema } from "zod";
 import { buildContainer, type ToolPack, type ToolHandler } from "./container.js";
 import { plpgsqlPack } from "./packs/plpgsql.js";
 import { docstorePack } from "./packs/docstore.js";
@@ -55,7 +55,7 @@ try {
     for (const [name, handler] of registry) {
       const desc = handler.metadata?.description ?? null;
       const schema = handler.metadata?.schema
-        ? JSON.stringify(zodToJsonSchema(handler.metadata.schema as any))
+        ? JSON.stringify(toJSONSchema(handler.metadata.schema))
         : null;
       await client.query(
         `INSERT INTO workbench.toolbox_tool (toolbox_name, tool_name, description, input_schema)

@@ -10,13 +10,13 @@ DECLARE
 BEGIN
   v_titre := trim(COALESCE(p_data->>'titre', ''));
   IF v_titre = '' THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.err_titre_required') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.err_titre_required'), 'error');
   END IF;
 
   v_date_debut := (p_data->>'date_debut')::date;
   v_date_fin := (p_data->>'date_fin')::date;
   IF v_date_fin < v_date_debut THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.err_date_order') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.err_date_order'), 'error');
   END IF;
 
   v_id := NULLIF(trim(COALESCE(p_data->>'id', '')), '')::int;
@@ -49,8 +49,7 @@ BEGIN
     RETURNING id INTO v_id;
   END IF;
 
-  RETURN format('<template data-toast="success">%s</template><template data-redirect="%s"></template>',
-    pgv.t('planning.toast_evenement_saved'),
-    pgv.call_ref('get_evenement', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('planning.toast_evenement_saved'))
+      || pgv.redirect(pgv.call_ref('get_evenement', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

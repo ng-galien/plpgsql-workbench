@@ -22,9 +22,9 @@ BEGIN
 
   -- Year selector
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text),
-    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)), v_year::text),
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
+    pgv.link_button(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
+    pgv.link_button(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)), v_year::text),
+    pgv.link_button(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text, 'outline')
   ]);
 
   -- Exercice status
@@ -67,8 +67,8 @@ BEGIN
 
   -- Links
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_balance_check')),
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_bilan_pl'))
+    pgv.link_button(pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_balance_check'), 'outline'),
+    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_bilan_pl'), 'outline')
   ]);
 
   -- Clôture action

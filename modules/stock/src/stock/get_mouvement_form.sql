@@ -5,7 +5,6 @@ AS $function$
 DECLARE
   v_depot_opts jsonb;
   v_type_opts jsonb;
-  v_body text;
   v_article_search text;
 BEGIN
   -- Article via select_search
@@ -31,7 +30,7 @@ BEGIN
     jsonb_build_object('value', 'inventaire', 'label', pgv.t('stock.type_inventaire'))
   );
 
-  v_body := pgv.sel('type', pgv.t('stock.field_type'), v_type_opts, p_type)
+  RETURN pgv.sel('type', pgv.t('stock.field_type'), v_type_opts, p_type)
     || v_article_search
     || pgv.sel('depot_id', pgv.t('stock.col_depot'), v_depot_opts, '')
     || pgv.input('quantite', 'number', pgv.t('stock.field_quantite'), '', true)
@@ -39,7 +38,5 @@ BEGIN
     || pgv.sel('depot_destination_id', pgv.t('stock.field_depot_dest'), v_depot_opts, '')
     || pgv.input('reference', 'text', pgv.t('stock.field_ref_doc'), '')
     || pgv.textarea('notes', pgv.t('stock.field_notes'), '');
-
-  RETURN pgv.form('post_mouvement_save', v_body, pgv.t('stock.btn_enregistrer'));
 END;
 $function$;

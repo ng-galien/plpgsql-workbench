@@ -67,7 +67,7 @@ BEGIN
   INTO v_layers
   FROM cad.layer l WHERE l.drawing_id = p_id;
 
-  -- Build form body with nested accordion for geometry/props
+  -- Build form body
   v_form := format('<input type="hidden" name="drawing_id" value="%s">', p_id)
     || '<div class="grid">'
     || pgv.sel('layer_id', pgv.t('cad.col_calque'), COALESCE(v_layers, '[]'::jsonb))
@@ -85,11 +85,12 @@ BEGIN
          pgv.t('cad.title_props'), pgv.textarea('props', pgv.t('cad.field_props'), '{}')
        );
 
-  -- Wrap in collapsible accordion + form
-  v_body := v_body || pgv.accordion(
+  -- Form dialog (modal) instead of inline accordion+form
+  v_body := v_body || pgv.form_dialog('dlg-add-shape',
     pgv.t('cad.title_add_shape'),
-    pgv.form('shape_add', v_form, pgv.t('cad.btn_ajouter'))
-  );
+    v_form,
+    'shape_add',
+    pgv.t('cad.btn_ajouter'));
 
   RETURN v_body;
 END;

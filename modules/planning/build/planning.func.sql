@@ -4,6 +4,52 @@
 -- Schema: planning
 CREATE SCHEMA IF NOT EXISTS planning;
 
+CREATE OR REPLACE FUNCTION planning._evenement_form_inputs(p_id integer DEFAULT NULL::integer, p_titre text DEFAULT NULL::text, p_type text DEFAULT NULL::text, p_date_debut date DEFAULT NULL::date, p_date_fin date DEFAULT NULL::date, p_heure_debut time without time zone DEFAULT NULL::time without time zone, p_heure_fin time without time zone DEFAULT NULL::time without time zone, p_lieu text DEFAULT NULL::text, p_chantier_id integer DEFAULT NULL::integer, p_notes text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN format('<input type="hidden" name="id" value="%s">', COALESCE(p_id::text, ''))
+    || pgv.input('titre', 'text', pgv.t('planning.field_titre') || ' *', p_titre, true)
+    || pgv.sel('type', pgv.t('planning.field_type'), jsonb_build_array(
+         jsonb_build_object('label', pgv.t('planning.type_chantier'), 'value', 'chantier'),
+         jsonb_build_object('label', pgv.t('planning.type_livraison'), 'value', 'livraison'),
+         jsonb_build_object('label', pgv.t('planning.type_reunion'), 'value', 'reunion'),
+         jsonb_build_object('label', pgv.t('planning.type_conge'), 'value', 'conge'),
+         jsonb_build_object('label', pgv.t('planning.type_autre'), 'value', 'autre')
+       ), COALESCE(p_type, 'chantier'))
+    || '<div class="grid">'
+    || pgv.input('date_debut', 'date', pgv.t('planning.field_date_debut') || ' *', COALESCE(p_date_debut::text, current_date::text), true)
+    || pgv.input('date_fin', 'date', pgv.t('planning.field_date_fin') || ' *', COALESCE(p_date_fin::text, current_date::text), true)
+    || '</div>'
+    || '<div class="grid">'
+    || pgv.input('heure_debut', 'time', pgv.t('planning.field_heure_debut'), COALESCE(p_heure_debut::text, '08:00'))
+    || pgv.input('heure_fin', 'time', pgv.t('planning.field_heure_fin'), COALESCE(p_heure_fin::text, '17:00'))
+    || '</div>'
+    || pgv.input('lieu', 'text', pgv.t('planning.field_lieu'), p_lieu)
+    || pgv.select_search('chantier_id', pgv.t('planning.field_chantier'), 'chantier_options', 'Rechercher un chantier...', p_chantier_id::text)
+    || pgv.textarea('notes', pgv.t('planning.field_notes'), p_notes);
+END;
+$function$;
+COMMENT ON FUNCTION planning._evenement_form_inputs(integer,text,text,date,date,time without time zone,time without time zone,text,integer,text) IS 'Form inputs for evenement create/edit';
+
+CREATE OR REPLACE FUNCTION planning._intervenant_form_inputs(p_id integer DEFAULT NULL::integer, p_nom text DEFAULT NULL::text, p_role text DEFAULT NULL::text, p_telephone text DEFAULT NULL::text, p_couleur text DEFAULT NULL::text, p_actif boolean DEFAULT true)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN format('<input type="hidden" name="id" value="%s">', COALESCE(p_id::text, ''))
+    || pgv.input('nom', 'text', pgv.t('planning.field_nom') || ' *', p_nom, true)
+    || pgv.input('role', 'text', pgv.t('planning.field_role') || ' (' || pgv.t('planning.field_role_hint') || ')', p_role)
+    || pgv.input('telephone', 'tel', pgv.t('planning.field_telephone'), p_telephone)
+    || pgv.input('couleur', 'color', pgv.t('planning.field_couleur'), COALESCE(p_couleur, '#3b82f6'))
+    || pgv.toggle('actif', pgv.t('planning.field_actif'), COALESCE(p_actif, true));
+END;
+$function$;
+COMMENT ON FUNCTION planning._intervenant_form_inputs(integer,text,text,text,text,boolean) IS 'Form inputs for intervenant create/edit';
+
 CREATE OR REPLACE FUNCTION planning._type_badge(p_type text)
  RETURNS text
  LANGUAGE sql
@@ -63,7 +109,7 @@ BEGIN
   v_body := pgv.dl(
     pgv.t('planning.field_titre'), pgv.esc(v.titre),
     pgv.t('planning.field_type'), planning._type_badge(v.type),
-    pgv.t('planning.col_dates'), to_char(v.date_debut, 'DD/MM/YYYY') || ' → ' || to_char(v.date_fin, 'DD/MM/YYYY'),
+    pgv.t('planning.col_dates'), to_char(v.date_debut, 'DD/MM/YYYY') || ' -> ' || to_char(v.date_fin, 'DD/MM/YYYY'),
     pgv.t('planning.field_heure_debut') || ' – ' || pgv.t('planning.field_heure_fin'), to_char(v.heure_debut, 'HH24:MI') || ' – ' || to_char(v.heure_fin, 'HH24:MI'),
     pgv.t('planning.field_lieu'), COALESCE(NULLIF(v.lieu, ''), '—'),
     pgv.t('planning.col_chantier'), v_chantier_label,
@@ -101,16 +147,16 @@ BEGIN
      AND i.id NOT IN (SELECT a.intervenant_id FROM planning.affectation a WHERE a.evenement_id = p_id);
 
   IF v_intervenants_options IS NOT NULL THEN
-    v_body := v_body || format(
-      '<form data-rpc="post_affecter"><input type="hidden" name="p_evenement_id" value="%s">'
-      || '<div class="grid"><label>%s<select name="p_intervenant_id">%s</select></label>'
-      || '<button type="submit" class="secondary">%s</button></div></form>',
-      p_id, pgv.t('planning.btn_ajouter_intervenant'), v_intervenants_options, pgv.t('planning.btn_affecter')
-    );
+    v_body := v_body || pgv.form('post_affecter',
+      format('<input type="hidden" name="p_evenement_id" value="%s">', p_id)
+      || '<div class="grid"><label>' || pgv.t('planning.btn_ajouter_intervenant')
+      || '<select name="p_intervenant_id">' || v_intervenants_options || '</select></label></div>'
+    , pgv.t('planning.btn_affecter'));
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a> ', pgv.call_ref('get_evenement_form', jsonb_build_object('p_id', p_id)), pgv.t('planning.btn_modifier'))
+    || pgv.form_dialog('dlg-edit-evenement', pgv.t('planning.btn_modifier'), planning._evenement_form_inputs(v.id, v.titre, v.type, v.date_debut, v.date_fin, v.heure_debut, v.heure_fin, v.lieu, v.chantier_id, v.notes), 'post_evenement_save')
+    || ' '
     || pgv.action('post_evenement_supprimer', pgv.t('planning.btn_supprimer'), jsonb_build_object('p_id', p_id), pgv.t('planning.confirm_delete_evenement'), 'error')
     || '</p>';
 
@@ -134,28 +180,9 @@ BEGIN
     END IF;
   END IF;
 
-  v_body := format('<form data-rpc="post_evenement_save"><input type="hidden" name="id" value="%s">', COALESCE(p_id::text, ''))
-    || pgv.input('titre', 'text', pgv.t('planning.field_titre') || ' *', v.titre, true)
-    || pgv.sel('type', pgv.t('planning.field_type'), jsonb_build_array(
-         jsonb_build_object('label', pgv.t('planning.type_chantier'), 'value', 'chantier'),
-         jsonb_build_object('label', pgv.t('planning.type_livraison'), 'value', 'livraison'),
-         jsonb_build_object('label', pgv.t('planning.type_reunion'), 'value', 'reunion'),
-         jsonb_build_object('label', pgv.t('planning.type_conge'), 'value', 'conge'),
-         jsonb_build_object('label', pgv.t('planning.type_autre'), 'value', 'autre')
-       ), COALESCE(v.type, 'chantier'))
-    || '<div class="grid">'
-    || pgv.input('date_debut', 'date', pgv.t('planning.field_date_debut') || ' *', COALESCE(v.date_debut::text, current_date::text), true)
-    || pgv.input('date_fin', 'date', pgv.t('planning.field_date_fin') || ' *', COALESCE(v.date_fin::text, current_date::text), true)
-    || '</div>'
-    || '<div class="grid">'
-    || pgv.input('heure_debut', 'time', pgv.t('planning.field_heure_debut'), COALESCE(v.heure_debut::text, '08:00'))
-    || pgv.input('heure_fin', 'time', pgv.t('planning.field_heure_fin'), COALESCE(v.heure_fin::text, '17:00'))
-    || '</div>'
-    || pgv.input('lieu', 'text', pgv.t('planning.field_lieu'), v.lieu)
-    || pgv.select_search('chantier_id', pgv.t('planning.field_chantier'), 'chantier_options', 'Rechercher un chantier...', v.chantier_id::text)
-    || pgv.textarea('notes', pgv.t('planning.field_notes'), v.notes)
-    || '<button type="submit">' || pgv.t('planning.btn_enregistrer') || '</button>'
-    || '</form>';
+  v_body := pgv.form('post_evenement_save',
+    planning._evenement_form_inputs(p_id, v.titre, v.type, v.date_debut, v.date_fin, v.heure_debut, v.heure_fin, v.lieu, v.chantier_id, v.notes)
+  , pgv.t('planning.btn_enregistrer'));
 
   RETURN v_body;
 END;
@@ -208,7 +235,7 @@ BEGIN
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_evenement', jsonb_build_object('p_id', r.id)), pgv.esc(r.titre)),
       planning._type_badge(r.type),
-      to_char(r.date_debut, 'DD/MM') || ' → ' || to_char(r.date_fin, 'DD/MM'),
+      to_char(r.date_debut, 'DD/MM') || ' -> ' || to_char(r.date_fin, 'DD/MM'),
       COALESCE(NULLIF(r.lieu, ''), '—'),
       COALESCE(r.intervenants, '—'),
       COALESCE(r.chantier_numero, '—')
@@ -224,7 +251,7 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_evenement_form'), pgv.t('planning.btn_nouvel_evenement'));
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-evenement', pgv.t('planning.btn_nouvel_evenement'), planning._evenement_form_inputs(), 'post_evenement_save') || '</p>';
 
   RETURN v_body;
 END;
@@ -264,14 +291,11 @@ BEGIN
     pgv.stat(pgv.t('planning.stat_affectations_semaine'), v_total_affectations_semaine::text)
   ]);
 
-  v_body := v_body || format(
-    '<nav class="pgv-week-nav"><a href="%s" role="button" class="secondary outline">&larr;</a> <strong>%s %s au %s</strong> <a href="%s" role="button" class="secondary outline">&rarr;</a></nav>',
-    pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi - 7)::text)),
-    pgv.t('planning.title_semaine_du'),
-    to_char(v_lundi, 'DD/MM'),
-    to_char(v_lundi + 6, 'DD/MM/YYYY'),
-    pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi + 7)::text))
-  );
+  v_body := v_body || '<nav class="pgv-week-nav">'
+    || pgv.link_button(pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi - 7)::text)), '&larr;', 'outline')
+    || ' <strong>' || pgv.t('planning.title_semaine_du') || ' ' || to_char(v_lundi, 'DD/MM') || ' au ' || to_char(v_lundi + 6, 'DD/MM/YYYY') || '</strong> '
+    || pgv.link_button(pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi + 7)::text)), '&rarr;', 'outline')
+    || '</nav>';
 
   v_rows := ARRAY[]::text[];
   FOR r IN
@@ -318,13 +342,11 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format(
-    '<p><a href="%s" role="button">%s</a> <a href="%s" role="button" class="secondary">%s</a></p>',
-    pgv.call_ref('get_evenement_form'),
-    pgv.t('planning.btn_nouvel_evenement'),
-    pgv.call_ref('get_intervenants'),
-    pgv.t('planning.btn_gerer_equipe')
-  );
+  v_body := v_body || '<p>'
+    || pgv.form_dialog('dlg-new-evenement', pgv.t('planning.btn_nouvel_evenement'), planning._evenement_form_inputs(), 'post_evenement_save')
+    || ' '
+    || pgv.link_button(pgv.call_ref('get_intervenants'), pgv.t('planning.btn_gerer_equipe'), 'secondary')
+    || '</p>';
 
   RETURN v_body;
 END;
@@ -352,7 +374,7 @@ BEGIN
     pgv.t('planning.field_telephone'), COALESCE(v.telephone, '—'),
     pgv.t('planning.field_couleur'), format('<span class="pgv-color-dot" style="background:%s"></span> %s', v.couleur, v.couleur),
     pgv.t('planning.col_statut'), CASE WHEN v.actif THEN pgv.badge(pgv.t('planning.statut_actif'), 'success') ELSE pgv.badge(pgv.t('planning.statut_inactif'), 'default') END,
-    'Ajouté le', to_char(v.created_at, 'DD/MM/YYYY')
+    pgv.t('planning.field_ajoute_le'), to_char(v.created_at, 'DD/MM/YYYY')
   );
 
   v_rows := ARRAY[]::text[];
@@ -366,7 +388,7 @@ BEGIN
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_evenement', jsonb_build_object('p_id', r.id)), pgv.esc(r.titre)),
       planning._type_badge(r.type),
-      to_char(r.date_debut, 'DD/MM') || ' → ' || to_char(r.date_fin, 'DD/MM'),
+      to_char(r.date_debut, 'DD/MM') || ' -> ' || to_char(r.date_fin, 'DD/MM'),
       COALESCE(NULLIF(r.lieu, ''), '—')
     ];
   END LOOP;
@@ -379,7 +401,8 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a> ', pgv.call_ref('get_intervenant_form', jsonb_build_object('p_id', p_id)), pgv.t('planning.btn_modifier'))
+    || pgv.form_dialog('dlg-edit-intervenant', pgv.t('planning.btn_modifier'), planning._intervenant_form_inputs(v.id, v.nom, v.role, v.telephone, v.couleur, v.actif), 'post_intervenant_save')
+    || ' '
     || pgv.action('post_intervenant_supprimer', pgv.t('planning.btn_supprimer'), jsonb_build_object('p_id', p_id), pgv.t('planning.confirm_delete_intervenant'), 'error')
     || '</p>';
 
@@ -403,14 +426,9 @@ BEGIN
     END IF;
   END IF;
 
-  v_body := format('<form data-rpc="post_intervenant_save"><input type="hidden" name="id" value="%s">', COALESCE(p_id::text, ''))
-    || pgv.input('nom', 'text', pgv.t('planning.field_nom') || ' *', v.nom, true)
-    || pgv.input('role', 'text', pgv.t('planning.field_role') || ' (' || pgv.t('planning.field_role_hint') || ')', v.role)
-    || pgv.input('telephone', 'tel', pgv.t('planning.field_telephone'), v.telephone)
-    || pgv.input('couleur', 'color', pgv.t('planning.field_couleur'), COALESCE(v.couleur, '#3b82f6'))
-    || pgv.toggle('actif', pgv.t('planning.field_actif'), COALESCE(v.actif, true))
-    || '<button type="submit">' || pgv.t('planning.btn_enregistrer') || '</button>'
-    || '</form>';
+  v_body := pgv.form('post_intervenant_save',
+    planning._intervenant_form_inputs(p_id, v.nom, v.role, v.telephone, v.couleur, v.actif)
+  , pgv.t('planning.btn_enregistrer'));
 
   RETURN v_body;
 END;
@@ -471,7 +489,7 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_intervenant_form'), pgv.t('planning.btn_nouvel_intervenant'));
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-intervenant', pgv.t('planning.btn_nouvel_intervenant'), planning._intervenant_form_inputs(), 'post_intervenant_save') || '</p>';
 
   RETURN v_body;
 END;
@@ -517,6 +535,7 @@ BEGIN
     ('fr', 'planning.field_chantier', 'Chantier (optionnel)'),
     ('fr', 'planning.field_notes', 'Notes'),
     ('fr', 'planning.field_role_hint', 'ex: charpentier, électricien'),
+    ('fr', 'planning.field_ajoute_le', 'Ajouté le'),
 
     -- Stats
     ('fr', 'planning.stat_intervenants', 'Intervenants actifs'),
@@ -610,37 +629,41 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION planning.nav_items() IS 'Nav items via i18n';
 
-CREATE OR REPLACE FUNCTION planning.post_affecter(p_evenement_id integer, p_intervenant_id integer)
+CREATE OR REPLACE FUNCTION planning.post_affecter(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
+DECLARE
+  v_evenement_id int := (p_data->>'p_evenement_id')::int;
+  v_intervenant_id int := (p_data->>'p_intervenant_id')::int;
 BEGIN
   INSERT INTO planning.affectation (evenement_id, intervenant_id)
-  VALUES (p_evenement_id, p_intervenant_id)
+  VALUES (v_evenement_id, v_intervenant_id)
   ON CONFLICT (evenement_id, intervenant_id) DO NOTHING;
 
-  RETURN format('<template data-toast="success">%s</template><template data-redirect="%s"></template>',
-    pgv.t('planning.toast_affecte'),
-    pgv.call_ref('get_evenement', jsonb_build_object('p_id', p_evenement_id)));
+  RETURN pgv.toast(pgv.t('planning.toast_affecte'))
+      || pgv.redirect(pgv.call_ref('get_evenement', jsonb_build_object('p_id', v_evenement_id)));
 END;
 $function$;
-COMMENT ON FUNCTION planning.post_affecter(integer,integer) IS 'Affecter avec i18n';
+COMMENT ON FUNCTION planning.post_affecter(jsonb) IS 'Affecter un intervenant a un evenement';
 
-CREATE OR REPLACE FUNCTION planning.post_desaffecter(p_id integer, p_evenement_id integer)
+CREATE OR REPLACE FUNCTION planning.post_desaffecter(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
+DECLARE
+  v_id int := (p_data->>'p_id')::int;
+  v_evenement_id int := (p_data->>'p_evenement_id')::int;
 BEGIN
-  DELETE FROM planning.affectation WHERE id = p_id;
+  DELETE FROM planning.affectation WHERE id = v_id;
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.toast_affectation_not_found') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.toast_affectation_not_found'), 'error');
   END IF;
-  RETURN format('<template data-toast="success">%s</template><template data-redirect="%s"></template>',
-    pgv.t('planning.toast_desaffecte'),
-    pgv.call_ref('get_evenement', jsonb_build_object('p_id', p_evenement_id)));
+  RETURN pgv.toast(pgv.t('planning.toast_desaffecte'))
+      || pgv.redirect(pgv.call_ref('get_evenement', jsonb_build_object('p_id', v_evenement_id)));
 END;
 $function$;
-COMMENT ON FUNCTION planning.post_desaffecter(integer,integer) IS 'Désaffecter avec i18n';
+COMMENT ON FUNCTION planning.post_desaffecter(jsonb) IS 'Retirer un intervenant d''un evenement';
 
 CREATE OR REPLACE FUNCTION planning.post_evenement_save(p_data jsonb)
  RETURNS text
@@ -654,13 +677,13 @@ DECLARE
 BEGIN
   v_titre := trim(COALESCE(p_data->>'titre', ''));
   IF v_titre = '' THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.err_titre_required') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.err_titre_required'), 'error');
   END IF;
 
   v_date_debut := (p_data->>'date_debut')::date;
   v_date_fin := (p_data->>'date_fin')::date;
   IF v_date_fin < v_date_debut THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.err_date_order') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.err_date_order'), 'error');
   END IF;
 
   v_id := NULLIF(trim(COALESCE(p_data->>'id', '')), '')::int;
@@ -693,9 +716,8 @@ BEGIN
     RETURNING id INTO v_id;
   END IF;
 
-  RETURN format('<template data-toast="success">%s</template><template data-redirect="%s"></template>',
-    pgv.t('planning.toast_evenement_saved'),
-    pgv.call_ref('get_evenement', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('planning.toast_evenement_saved'))
+      || pgv.redirect(pgv.call_ref('get_evenement', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
 COMMENT ON FUNCTION planning.post_evenement_save(jsonb) IS 'Save événement avec i18n';
@@ -707,11 +729,10 @@ AS $function$
 BEGIN
   DELETE FROM planning.evenement WHERE id = p_id;
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.err_evenement_not_found') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.err_evenement_not_found'), 'error');
   END IF;
-  RETURN format('<template data-toast="success">%s</template><template data-redirect="%s"></template>',
-    pgv.t('planning.toast_evenement_deleted'),
-    pgv.call_ref('get_evenements'));
+  RETURN pgv.toast(pgv.t('planning.toast_evenement_deleted'))
+      || pgv.redirect(pgv.call_ref('get_evenements'));
 END;
 $function$;
 COMMENT ON FUNCTION planning.post_evenement_supprimer(integer) IS 'Delete événement avec i18n';
@@ -726,7 +747,7 @@ DECLARE
 BEGIN
   v_nom := trim(COALESCE(p_data->>'nom', ''));
   IF v_nom = '' THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.err_nom_required') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.err_nom_required'), 'error');
   END IF;
 
   v_id := NULLIF(trim(COALESCE(p_data->>'id', '')), '')::int;
@@ -751,9 +772,8 @@ BEGIN
     RETURNING id INTO v_id;
   END IF;
 
-  RETURN format('<template data-toast="success">%s</template><template data-redirect="%s"></template>',
-    pgv.t('planning.toast_intervenant_saved'),
-    pgv.call_ref('get_intervenant', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('planning.toast_intervenant_saved'))
+      || pgv.redirect(pgv.call_ref('get_intervenant', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
 COMMENT ON FUNCTION planning.post_intervenant_save(jsonb) IS 'Save intervenant avec i18n';
@@ -765,11 +785,10 @@ AS $function$
 BEGIN
   DELETE FROM planning.intervenant WHERE id = p_id;
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.err_intervenant_not_found') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.err_intervenant_not_found'), 'error');
   END IF;
-  RETURN format('<template data-toast="success">%s</template><template data-redirect="%s"></template>',
-    pgv.t('planning.toast_intervenant_deleted'),
-    pgv.call_ref('get_intervenants'));
+  RETURN pgv.toast(pgv.t('planning.toast_intervenant_deleted'))
+      || pgv.redirect(pgv.call_ref('get_intervenants'));
 END;
 $function$;
 COMMENT ON FUNCTION planning.post_intervenant_supprimer(integer) IS 'Delete intervenant avec i18n';

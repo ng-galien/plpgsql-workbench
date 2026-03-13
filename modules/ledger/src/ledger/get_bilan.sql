@@ -22,9 +22,9 @@ BEGIN
 
   -- Sélecteur année
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text),
-    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), v_year::text),
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
+    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
+    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), v_year::text),
+    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text, 'outline')
   ]);
 
   -- Produits (revenue = classe 7)

@@ -5,10 +5,9 @@ AS $function$
 BEGIN
   DELETE FROM planning.intervenant WHERE id = p_id;
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">' || pgv.t('planning.err_intervenant_not_found') || '</template>';
+    RETURN pgv.toast(pgv.t('planning.err_intervenant_not_found'), 'error');
   END IF;
-  RETURN format('<template data-toast="success">%s</template><template data-redirect="%s"></template>',
-    pgv.t('planning.toast_intervenant_deleted'),
-    pgv.call_ref('get_intervenants'));
+  RETURN pgv.toast(pgv.t('planning.toast_intervenant_deleted'))
+      || pgv.redirect(pgv.call_ref('get_intervenants'));
 END;
 $function$;

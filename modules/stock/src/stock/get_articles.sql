@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION stock.get_articles()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_body text;
@@ -51,8 +50,10 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
-    pgv.call_ref('get_article_form'), pgv.t('stock.btn_nouvel_article'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-article', pgv.t('stock.btn_nouvel_article'), '', 'post_article_save',
+    NULL, NULL, pgv.call_ref('get_article_form')
+  ) || '</p>';
 
   RETURN v_body;
 END;

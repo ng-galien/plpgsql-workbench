@@ -19,9 +19,10 @@ BEGIN
 
   v_body := COALESCE(v_drawings, '<p>' || pgv.t('cad.empty_no_drawing') || '</p>');
 
-  v_body := v_body || pgv.form('drawing_add',
+  v_body := v_body || pgv.form_dialog('dlg-new-drawing',
+    pgv.t('cad.btn_nouveau_dessin'),
     pgv.input('name', 'text', pgv.t('cad.field_name')),
-    pgv.t('cad.btn_nouveau_dessin'));
+    'drawing_add');
 
   RETURN v_body;
 END;

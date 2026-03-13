@@ -254,6 +254,13 @@
             e.preventDefault();
             return self.openDialog(dlg.dataset.dialog, dlg.dataset.src, dlg.dataset.target);
           }
+
+          // data-form-dialog buttons (open modal form)
+          var fd = e.target.closest('[data-form-dialog]');
+          if (fd) {
+            e.preventDefault();
+            return self.openFormDialog(fd.dataset.formDialog, fd.dataset.src);
+          }
         });
 
         app.addEventListener('submit', function(e) {
@@ -262,7 +269,11 @@
           e.preventDefault();
           var data = {};
           new FormData(form).forEach(function(v, k) { data[k] = v; });
-          self.post(form.dataset.rpc, data);
+          if (form.hasAttribute('data-dialog-form')) {
+            self.submitFormDialog(form, data);
+          } else {
+            self.post(form.dataset.rpc, data);
+          }
         });
 
         // Dialog folder navigation
@@ -806,6 +817,59 @@
           self.$refs.confirmYes.addEventListener('click', onYes);
           self.$refs.confirmNo.addEventListener('click', onNo);
           dlg.addEventListener('cancel', onNo);
+        });
+      },
+
+      /* ── Form Dialog ──────────────────────────────────── */
+      openFormDialog: function(id, src) {
+        var dlg = document.getElementById(id);
+        if (!dlg) return;
+        if (src) {
+          var body = dlg.querySelector('.pgv-form-dialog-body');
+          var self = this;
+          body.innerHTML = '<p aria-busy="true">' + this.t('loading') + '</p>';
+          dlg.showModal();
+          var schema = this._currentSchema;
+          var path = src.charAt(0) === '/' ? src : '/' + src;
+          fetch('/rpc/route', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'text/html' },
+            body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'GET', p_params: {} })
+          })
+          .then(function(r) { return r.ok ? r.text() : Promise.reject(r); })
+          .then(function(html) {
+            body.innerHTML = html;
+            self._enhance(body);
+          })
+          .catch(function() { body.innerHTML = '<p>' + self.t('error.load') + '</p>'; });
+        } else {
+          dlg.showModal();
+        }
+      },
+
+      submitFormDialog: function(form, data) {
+        var self = this;
+        var dlg = form.closest('dialog');
+        var rpc = form.dataset.rpc;
+        var schema = this._currentSchema;
+        var path = '/' + rpc.replace(/^post_/, '');
+        fetch('/rpc/route', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'POST', p_params: data })
+        })
+        .then(function(r) {
+          if (!r.ok) return self._err(r);
+          return r.text().then(function(html) {
+            var tm = html.match(/<template data-toast="([^"]*)">([\s\S]*?)<\/template>/);
+            if (tm) self.showToast(tm[2].trim(), tm[1]);
+            if (dlg) dlg.close();
+            // Reload current page
+            self.go(location.pathname + location.search, false);
+          });
+        })
+        .catch(function() {
+          self.showToast(self.t('error.network'), 'error');
         });
       },
 

@@ -55,6 +55,66 @@ END;
 $function$;
 COMMENT ON FUNCTION project._devis_options(integer) IS 'Options HTML des devis acceptes d''un client';
 
+CREATE OR REPLACE FUNCTION project._chantier_form_fields(p_id integer DEFAULT NULL::integer)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  c record;
+  v_body text := '';
+  v_objet text := '';
+  v_adresse text := '';
+  v_notes text := '';
+BEGIN
+  IF p_id IS NOT NULL THEN
+    SELECT * INTO c FROM project.chantier WHERE id = p_id;
+    IF NOT FOUND THEN RETURN pgv.empty(pgv.t('project.empty_introuvable')); END IF;
+    v_body := '<input type="hidden" name="id" value="' || p_id || '">';
+    v_objet := pgv.esc(c.objet);
+    v_adresse := pgv.esc(c.adresse);
+    v_notes := pgv.esc(c.notes);
+  END IF;
+
+  v_body := v_body
+    || '<label>' || pgv.t('project.field_client') || ' <select name="client_id" required>'
+    || '<option value="">' || pgv.t('project.field_choisir') || '</option>'
+    || project._client_options()
+    || '</select></label>';
+
+  IF p_id IS NOT NULL THEN
+    v_body := replace(v_body,
+      'value="' || c.client_id || '">',
+      'value="' || c.client_id || '" selected>');
+  END IF;
+
+  v_body := v_body
+    || '<label>' || pgv.t('project.field_devis') || ' <select name="devis_id">'
+    || '<option value="">' || pgv.t('project.field_aucun') || '</option>'
+    || project._devis_options()
+    || '</select></label>';
+
+  IF p_id IS NOT NULL AND c.devis_id IS NOT NULL THEN
+    v_body := replace(v_body,
+      'value="' || c.devis_id || '">',
+      'value="' || c.devis_id || '" selected>');
+  END IF;
+
+  v_body := v_body
+    || pgv.input('objet', 'text', pgv.t('project.field_objet'), v_objet, true)
+    || pgv.input('adresse', 'text', pgv.t('project.field_adresse'), v_adresse)
+    || '<div class="grid">'
+    || pgv.input('date_debut', 'date', pgv.t('project.field_date_debut'),
+         CASE WHEN p_id IS NOT NULL AND c.date_debut IS NOT NULL THEN c.date_debut::text END)
+    || pgv.input('date_fin_prevue', 'date', pgv.t('project.field_date_fin_prevue'),
+         CASE WHEN p_id IS NOT NULL AND c.date_fin_prevue IS NOT NULL THEN c.date_fin_prevue::text END)
+    || '</div>'
+    || pgv.textarea('notes', pgv.t('project.field_notes'), v_notes);
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION project._chantier_form_fields(integer) IS 'Returns form fields HTML for chantier create/edit (used by form_dialog). No form wrapper.';
+
 CREATE OR REPLACE FUNCTION project._next_numero()
  RETURNS text
  LANGUAGE sql
@@ -242,14 +302,18 @@ BEGIN
     v_body := v_body
       || pgv.action('post_chantier_demarrer', pgv.t('project.btn_demarrer'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_demarrer'))
       || ' '
-      || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_chantier_form', jsonb_build_object('p_id', p_id)), pgv.t('project.btn_modifier'))
+      || pgv.form_dialog('dlg-edit-' || p_id, pgv.t('project.btn_modifier'),
+           project._chantier_form_fields(p_id), 'post_chantier_save',
+           pgv.t('project.btn_modifier'), 'outline')
       || ' '
       || pgv.action('post_chantier_supprimer', pgv.t('project.btn_supprimer'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_supprimer'), 'danger');
   ELSIF c.statut = 'execution' THEN
     v_body := v_body
       || pgv.action('post_chantier_reception', pgv.t('project.btn_reception'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_reception'))
       || ' '
-      || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_chantier_form', jsonb_build_object('p_id', p_id)), pgv.t('project.btn_modifier'));
+      || pgv.form_dialog('dlg-edit-' || p_id, pgv.t('project.btn_modifier'),
+           project._chantier_form_fields(p_id), 'post_chantier_save',
+           pgv.t('project.btn_modifier'), 'outline');
   ELSIF c.statut = 'reception' THEN
     v_body := v_body
       || pgv.action('post_chantier_clore', pgv.t('project.btn_clore'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_clore'));
@@ -395,20 +459,11 @@ CREATE OR REPLACE FUNCTION project.get_chantier_form(p_id integer DEFAULT NULL::
 AS $function$
 DECLARE
   v_body text;
-  c record;
-  v_objet text := '';
-  v_adresse text := '';
-  v_notes text := '';
 BEGIN
   IF p_id IS NOT NULL THEN
-    SELECT * INTO c FROM project.chantier WHERE id = p_id;
-    IF NOT FOUND THEN RETURN pgv.empty(pgv.t('project.empty_introuvable')); END IF;
-    IF c.statut NOT IN ('preparation', 'execution') THEN
+    IF NOT EXISTS (SELECT 1 FROM project.chantier WHERE id = p_id AND statut IN ('preparation','execution')) THEN
       RETURN pgv.empty(pgv.t('project.err_modification_impossible'), pgv.t('project.err_seuls_modifiables'));
     END IF;
-    v_objet := pgv.esc(c.objet);
-    v_adresse := pgv.esc(c.adresse);
-    v_notes := pgv.esc(c.notes);
   END IF;
 
   v_body := pgv.breadcrumb(VARIADIC ARRAY[
@@ -416,51 +471,9 @@ BEGIN
     CASE WHEN p_id IS NOT NULL THEN pgv.t('project.bc_modifier') ELSE pgv.t('project.bc_nouveau') END
   ]);
 
-  -- Build form body
-  DECLARE v_form text := '';
-  BEGIN
-    IF p_id IS NOT NULL THEN
-      v_form := '<input type="hidden" name="id" value="' || p_id || '">';
-    END IF;
-
-    v_form := v_form
-      || '<label>' || pgv.t('project.field_client') || ' <select name="client_id" required>'
-      || '<option value="">' || pgv.t('project.field_choisir') || '</option>'
-      || project._client_options()
-      || '</select></label>';
-
-    IF p_id IS NOT NULL THEN
-      v_form := replace(v_form,
-        'value="' || c.client_id || '">',
-        'value="' || c.client_id || '" selected>');
-    END IF;
-
-    v_form := v_form
-      || '<label>' || pgv.t('project.field_devis') || ' <select name="devis_id">'
-      || '<option value="">' || pgv.t('project.field_aucun') || '</option>'
-      || project._devis_options()
-      || '</select></label>';
-
-    IF p_id IS NOT NULL AND c.devis_id IS NOT NULL THEN
-      v_form := replace(v_form,
-        'value="' || c.devis_id || '">',
-        'value="' || c.devis_id || '" selected>');
-    END IF;
-
-    v_form := v_form
-      || pgv.input('objet', 'text', pgv.t('project.field_objet'), v_objet, true)
-      || pgv.input('adresse', 'text', pgv.t('project.field_adresse'), v_adresse)
-      || '<div class="grid">'
-      || pgv.input('date_debut', 'date', pgv.t('project.field_date_debut'),
-           CASE WHEN p_id IS NOT NULL AND c.date_debut IS NOT NULL THEN c.date_debut::text END)
-      || pgv.input('date_fin_prevue', 'date', pgv.t('project.field_date_fin_prevue'),
-           CASE WHEN p_id IS NOT NULL AND c.date_fin_prevue IS NOT NULL THEN c.date_fin_prevue::text END)
-      || '</div>'
-      || pgv.textarea('notes', pgv.t('project.field_notes'), v_notes);
-
-    v_body := v_body || pgv.form('post_chantier_save', v_form,
-      CASE WHEN p_id IS NOT NULL THEN pgv.t('project.btn_mettre_a_jour') ELSE pgv.t('project.btn_creer') END);
-  END;
+  v_body := v_body || pgv.form('post_chantier_save',
+    project._chantier_form_fields(p_id),
+    CASE WHEN p_id IS NOT NULL THEN pgv.t('project.btn_mettre_a_jour') ELSE pgv.t('project.btn_creer') END);
 
   RETURN v_body;
 END;
@@ -538,7 +551,8 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_chantier_form'), pgv.t('project.btn_nouveau'))
+    || pgv.form_dialog('dlg-new-projet', pgv.t('project.btn_nouveau'),
+         project._chantier_form_fields(), 'post_chantier_save')
     || '</p>';
 
   RETURN v_body;
@@ -648,7 +662,8 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_chantier_form'), pgv.t('project.btn_nouveau'))
+    || pgv.form_dialog('dlg-new-projet', pgv.t('project.btn_nouveau'),
+         project._chantier_form_fields(), 'post_chantier_save')
     || '</p>';
 
   RETURN v_body;
@@ -1541,7 +1556,7 @@ BEGIN
   PERFORM set_config('pgv.route_prefix', '/project', true);
 
   -- brand & nav
-  RETURN NEXT is(project.brand(), 'Chantiers', 'brand returns Chantiers');
+  RETURN NEXT is(project.brand(), 'Projets', 'brand returns Projets');
   RETURN NEXT ok(project.nav_items() IS NOT NULL, 'nav_items returns jsonb');
 
   -- get_index

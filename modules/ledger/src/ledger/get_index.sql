@@ -59,7 +59,15 @@ BEGIN
     END
   ]);
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_entry_form'), pgv.t('ledger.btn_new_entry'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-entry',
+    pgv.t('ledger.title_new_entry'),
+    pgv.input('entry_date', 'date', pgv.t('ledger.field_date'), to_char(CURRENT_DATE, 'YYYY-MM-DD'), true)
+    || pgv.input('reference', 'text', pgv.t('ledger.field_reference'), '', true)
+    || pgv.input('description', 'text', pgv.t('ledger.field_description'), '', true),
+    'post_entry_save',
+    pgv.t('ledger.btn_new_entry')
+  ) || '</p>';
 
   RETURN v_body;
 END;

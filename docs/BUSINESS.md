@@ -15,7 +15,7 @@ Application de gestion métier pour TPE/PME construite entièrement en PostgreSQ
 
 **Avantage concurrentiel** : coût de développement et de maintenance 10x inférieur à une app classique React/Node, avec les mêmes fonctionnalités.
 
-**Développé en 4 heures** (MCP workbench + pgView + demo app + tests + spec).
+**13 modules, 355+ fonctions PL/pgSQL, développés par orchestration multi-agents** (MCP workbench + pgView + Claude Code agents).
 
 ---
 
@@ -45,41 +45,31 @@ Un logiciel **simple, pas cher, spécifique au métier** qui fait devis → comm
 
 ### Modules
 
-#### Existants
+#### Modules deployes (13 modules, 355+ fonctions)
 
-| Module | Schema | Statut | Description |
-|--------|--------|--------|-------------|
-| **pgv** | pgv | Fait | Framework SSR — primitives UI, router, shell Alpine.js |
-| **cad** | cad | Fait | CAD 3D bois — PostGIS/SFCGAL, Three.js, wireframe, BOM |
-| **crm** | crm | En cours | Clients (particuliers + entreprises), contacts, interactions |
-| **quote** | quote | En cours | Devis, factures, lignes, TVA, numerotation |
-| **ledger** | ledger | En cours | Compta double entree, PCG simplifie, journaux |
-| **ops** | ops | En cours | Dashboard agents, hooks, messages, terminals xterm.js |
+| Module | Schema | Fonctions | Description |
+|--------|--------|-----------|-------------|
+| **pgv** | pgv | 49 | Framework SSR — primitives UI, router, shell Alpine.js |
+| **crm** | crm | 19 | Clients (particuliers + entreprises), contacts, interactions |
+| **quote** | quote | 31 | Devis, factures, lignes, TVA, numerotation legale |
+| **ledger** | ledger | 29 | Compta double entree, PCG simplifie, journaux |
+| **stock** | stock | 25 | Stocks materiaux/fournitures, entrees/sorties, inventaire, multi-depots |
+| **purchase** | purchase | 31 | Commandes fournisseurs, bons de commande, reception, rapprochement |
+| **project** | project | 29 | Chantiers/projets, suivi avancement, jalons, affectation ressources |
+| **planning** | planning | 17 | Agenda/calendrier partage, planification chantiers, affectation equipes |
+| **hr** | hr | 17 | Salaries, conges, absences, heures travaillees, registre du personnel |
+| **expense** | expense | 17 | Notes de frais, deplacements, remboursements (lie a ledger) |
+| **catalog** | catalog | 12 | Catalogue produits/services avec tarifs, unites, categories |
+| **ops** | ops | 19 | Dashboard agents, hooks, messages, terminals xterm.js |
+| **cad** | cad | 60 | CAD 3D bois — PostGIS/SFCGAL, Three.js, wireframe, BOM |
 
-#### Phase 1 — Core ERP (ferme la boucle devis → compta)
+Boucle complete operationnelle : devis (quote) -> commande fournisseur (purchase) -> stock (stock) -> chantier (project) -> facture (quote) -> compta (ledger)
 
-| Module | Schema | Description |
-|--------|--------|-------------|
-| **stock** | stock | Stocks materiaux/fournitures, entrees/sorties, inventaire, seuils alerte, multi-depots |
-| **purchase** | purchase | Commandes fournisseurs, bons de commande, reception, rapprochement factures fournisseurs |
-| **project** | project | Chantiers/projets, suivi avancement, jalons, affectation ressources, facturation de situation |
-
-Boucle complete : devis (quote) → commande fournisseur (purchase) → stock (stock) → chantier (project) → facture (quote) → compta (ledger)
-
-#### Phase 2 — Productivite
-
-| Module | Schema | Description |
-|--------|--------|-------------|
-| **planning** | planning | Agenda/calendrier partage, planification chantiers, affectation equipes par jour |
-| **hr** | hr | Salaries, conges, absences, heures travaillees, registre du personnel |
-| **expense** | expense | Notes de frais, deplacements, remboursements (lie a ledger) |
-
-#### Phase 3 — Specialisation BTP / artisans
+#### Modules a venir
 
 | Module | Schema | Description |
 |--------|--------|-------------|
 | **situation** | situation | Factures de situation (avancement %) — tres courant BTP, lie a project + quote |
-| **catalog** | catalog | Catalogue produits/services avec tarifs, unites, categories (alimente quote + stock) |
 | **doc** | doc | GED — stockage documents (contrats, plans, photos chantier, attestations), lie aux clients/projets |
 | **subcontract** | subcontract | Sous-traitance — contrats, attestations, suivi paiements |
 | **compliance** | compliance | Decennale, qualifications (RGE, Qualibat), KBIS, attestations a jour |
@@ -97,12 +87,15 @@ Gere par `workbench.tenant_module` — activation/desactivation par tenant, sans
 ### Roadmap
 
 ```
-V1 (Semaine 1-4)      crm, quote, ledger — devis + factures + compta
-V2 (Mois 2-3)         stock, purchase, catalog — achats + inventaire
-V3 (Mois 3-4)         project, situation — chantiers + facturation avancement
-V4 (Mois 4-6)         planning, hr, expense — equipes + agenda
-V5 (Mois 6+)          doc, subcontract, compliance — GED + conformite
-                       PWA mobile, facture electronique 2027, Stripe
+FAIT    Core ERP         crm, quote, ledger, stock, purchase, catalog
+FAIT    Productivite     project, planning, hr, expense
+FAIT    Ops/DevX         ops (agents, hooks, messages, terminals)
+FAIT    CAD 3D           cad (PostGIS/SFCGAL, Three.js)
+---
+NEXT    Specialisation   situation (factures avancement BTP)
+NEXT    GED              doc (documents, contrats, photos chantier)
+NEXT    Conformite       subcontract, compliance (sous-traitance, attestations)
+NEXT    Production       PWA mobile, facture electronique 2027, Stripe, deploy Supabase
 ```
 
 ### Stack technique
@@ -378,9 +371,9 @@ Code (tool definitions)           ← source des tools (TypeScript/Awilix)
 **Modèle de données :**
 
 ```sql
-workbench.toolbox          (name, description)           -- ex: solo, pro, equipe, admin
-workbench.toolbox_tool     (toolbox_name, tool_name)     -- N:N, quels tools dans chaque toolbox
-workbench.tenant           (id, name, toolbox_name)      -- chaque tenant → 1 toolbox
+workbench.toolbox          (name, description)                          -- ex: solo, pro, equipe, admin
+workbench.toolbox_tool     (toolbox_name, tool_name, description, input_schema)  -- N:N + metadata MCP
+workbench.tenant           (id, name, toolbox_name)                     -- chaque tenant -> 1 toolbox
 ```
 
 **Double packaging : modules UI + tools MCP**
@@ -436,18 +429,19 @@ L'offre combine deux axes d'activation :
 
 ```
 Investissement :     ~85€ cash + 4 semaines de dev
+Etat actuel :        13 modules, 355+ fonctions, boucle ERP complete
 Break-even :         1 client (jour 1)
 ARR Année 1 :        ~23 000€
 ARR Année 2 :        ~50 000€
 Marge :              96-97%
-Moat :               Coût marginal quasi nul + vitesse de dev 10x
+Moat :               Cout marginal quasi nul + vitesse de dev 10x + orchestration multi-agents
 Stack :              PostgreSQL + PostgREST + pgView + Supabase
 Risque financier :   Quasi inexistant
 ```
 
-**La question n'est pas "est-ce que ça peut marcher", c'est "pourquoi personne ne l'a fait avant".**
+**La question n'est pas "est-ce que ca peut marcher", c'est "pourquoi personne ne l'a fait avant".**
 
-La réponse : parce que personne n'avait un MCP workbench pour développer du PL/pgSQL à la vitesse de la pensée.
+La reponse : parce que personne n'avait un MCP workbench + une flotte d'agents AI pour developper du PL/pgSQL a la vitesse de la pensee.
 
 ---
 

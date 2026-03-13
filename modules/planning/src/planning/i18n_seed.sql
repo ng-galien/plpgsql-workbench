@@ -37,6 +37,7 @@ BEGIN
     ('fr', 'planning.field_chantier', 'Chantier (optionnel)'),
     ('fr', 'planning.field_notes', 'Notes'),
     ('fr', 'planning.field_role_hint', 'ex: charpentier, électricien'),
+    ('fr', 'planning.field_ajoute_le', 'Ajouté le'),
 
     -- Stats
     ('fr', 'planning.stat_intervenants', 'Intervenants actifs'),

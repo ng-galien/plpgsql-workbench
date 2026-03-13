@@ -85,9 +85,11 @@ BEGIN
       v_accounts_json := v_accounts_json || jsonb_build_array(jsonb_build_object('value', r.id::text, 'label', r.code || E' \u2014 ' || r.label));
     END LOOP;
 
-    v_body := v_body || pgv.accordion(VARIADIC ARRAY[
-      pgv.t('ledger.title_add_line'),
-      pgv.form('post_line_add',
+    -- Actions brouillon
+    v_body := v_body || pgv.grid(VARIADIC ARRAY[
+      pgv.form_dialog(
+        'dlg-add-line',
+        pgv.t('ledger.title_add_line'),
         '<input type="hidden" name="entry_id" value="' || p_id || '">'
         || pgv.sel('account_id', pgv.t('ledger.field_account'), v_accounts_json)
         || pgv.grid(VARIADIC ARRAY[
@@ -95,12 +97,18 @@ BEGIN
           pgv.input('credit', 'number', pgv.t('ledger.field_credit'), '0')
         ])
         || pgv.input('label', 'text', pgv.t('ledger.field_label'), ''),
-        pgv.t('ledger.btn_add'))
-    ]);
-
-    -- Actions brouillon
-    v_body := v_body || pgv.grid(VARIADIC ARRAY[
-      format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_entry_form', jsonb_build_object('p_id', p_id)), pgv.t('ledger.btn_edit')),
+        'post_line_add',
+        pgv.t('ledger.btn_add')),
+      pgv.form_dialog(
+        'dlg-edit-' || p_id,
+        pgv.t('ledger.btn_edit') || ' ' || pgv.esc(v_entry.reference),
+        '<input type="hidden" name="id" value="' || p_id || '">'
+        || pgv.input('entry_date', 'date', pgv.t('ledger.field_date'), to_char(v_entry.entry_date, 'YYYY-MM-DD'), true)
+        || pgv.input('reference', 'text', pgv.t('ledger.field_reference'), pgv.esc(v_entry.reference), true)
+        || pgv.input('description', 'text', pgv.t('ledger.field_description'), pgv.esc(v_entry.description), true),
+        'post_entry_save',
+        pgv.t('ledger.btn_edit'),
+        'outline'),
       pgv.action('post_entry_post', pgv.t('ledger.btn_post'), jsonb_build_object('id', p_id), pgv.t('ledger.confirm_post_entry')),
       pgv.action('post_entry_delete', pgv.t('ledger.btn_delete'), jsonb_build_object('id', p_id), pgv.t('ledger.confirm_delete_draft'), 'danger')
     ]);

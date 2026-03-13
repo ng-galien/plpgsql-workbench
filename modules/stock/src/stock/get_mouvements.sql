@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION stock.get_mouvements()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_body text;
@@ -44,8 +43,10 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
-    pgv.call_ref('get_mouvement_form'), pgv.t('stock.btn_nouveau_mvt'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-mvt', pgv.t('stock.btn_nouveau_mvt'), '', 'post_mouvement_save',
+    NULL, NULL, pgv.call_ref('get_mouvement_form')
+  ) || '</p>';
 
   RETURN v_body;
 END;

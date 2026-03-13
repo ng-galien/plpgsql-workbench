@@ -13,14 +13,9 @@ BEGIN
     END IF;
   END IF;
 
-  v_body := format('<form data-rpc="post_intervenant_save"><input type="hidden" name="id" value="%s">', COALESCE(p_id::text, ''))
-    || pgv.input('nom', 'text', pgv.t('planning.field_nom') || ' *', v.nom, true)
-    || pgv.input('role', 'text', pgv.t('planning.field_role') || ' (' || pgv.t('planning.field_role_hint') || ')', v.role)
-    || pgv.input('telephone', 'tel', pgv.t('planning.field_telephone'), v.telephone)
-    || pgv.input('couleur', 'color', pgv.t('planning.field_couleur'), COALESCE(v.couleur, '#3b82f6'))
-    || pgv.toggle('actif', pgv.t('planning.field_actif'), COALESCE(v.actif, true))
-    || '<button type="submit">' || pgv.t('planning.btn_enregistrer') || '</button>'
-    || '</form>';
+  v_body := pgv.form('post_intervenant_save',
+    planning._intervenant_form_inputs(p_id, v.nom, v.role, v.telephone, v.couleur, v.actif)
+  , pgv.t('planning.btn_enregistrer'));
 
   RETURN v_body;
 END;

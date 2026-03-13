@@ -322,18 +322,19 @@ app.post("/hooks/:module", async (req, res) => {
     }
   }
 
-  // Rule: pg_msg feature_request/bug_report must go through issue_report, not direct module-to-module
+  // Rule: pg_msg inter-module — only 'info' allowed between modules, everything else goes through lead or issue_report
   if (tool_name === "mcp__plpgsql-workbench__pg_msg") {
     const msgType = (tool_input?.type ?? "") as string;
     const to = (tool_input?.to ?? "") as string;
-    if ((msgType === "feature_request" || msgType === "bug_report") && to !== "lead") {
-      log.warn({ mod, to, msgType }, "hook: blocked direct inter-module feature_request/bug_report");
+    if (msgType !== "info" && to !== "lead" && to !== "*") {
+      log.warn({ mod, to, msgType }, "hook: blocked direct inter-module message (not info, not to lead)");
       return deny(
         res,
-        `Les ${msgType} ne doivent pas être envoyés directement à un autre module.\n` +
-        `Crée une issue à la place :\n` +
-        `pg_query sql: "INSERT INTO workbench.issue_report(issue_type, module, description, context) VALUES ('${msgType === "bug_report" ? "bug" : "enhancement"}', '${to}', '<description>', '{}')"\n` +
-        `Le lead sera notifié automatiquement et décidera du dispatch.`,
+        `Les messages de type '${msgType}' ne peuvent pas être envoyés directement à un autre module.\n` +
+        `Deux options :\n` +
+        `1. Envoyer au lead : pg_msg from:${mod} to:lead type:${msgType} subject:...\n` +
+        `2. Créer une issue : pg_query sql: "INSERT INTO workbench.issue_report(issue_type, module, description, context) VALUES ('${msgType === "bug_report" ? "bug" : "enhancement"}', '${to}', '<description>', '{}')"\n` +
+        `Seuls les messages de type 'info' peuvent être envoyés directement entre modules.`,
         mod,
         tool_name,
         `${msgType}->${to}`,
@@ -1114,3 +1115,13 @@ httpServer.listen(PORT, async () => {
     log.warn({ err, connStr }, "Could not connect to database");
   }
 });
+
+// Graceful shutdown — close server so nodemon can restart cleanly
+function shutdown(signal: string) {
+  log.info({ signal }, "Shutting down");
+  httpServer.close(() => process.exit(0));
+  // Force exit after 3s if server.close() hangs
+  setTimeout(() => process.exit(1), 3000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

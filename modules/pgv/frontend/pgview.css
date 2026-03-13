@@ -1230,6 +1230,15 @@ dialog article {
   border-top: 1px solid var(--pgv-border);
 }
 
+/* ── Link Button (aligned with <button> from pgv.action) ───── */
+.pgv-link-button {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 /* ── Confirm Dialog ──────────────────────────────────────────── */
 .pgv-confirm-dialog {
   border: 1px solid var(--pgv-border);
@@ -1259,6 +1268,52 @@ dialog article {
   color: var(--pgv-text);
 }
 .pgv-confirm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-top: 1px solid var(--pgv-border);
+}
+
+/* ── Form Dialog (pgv.form_dialog) ───────────────────────────── */
+.pgv-form-dialog {
+  border: 1px solid var(--pgv-border);
+  border-radius: 0.5rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.15);
+  padding: 0;
+  max-width: min(90vw, 520px);
+  width: 100%;
+}
+.pgv-form-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+  animation: pgv-fade-in 0.12s ease-out;
+}
+.pgv-form-dialog-article {
+  border: none;
+  box-shadow: none;
+  margin: 0;
+}
+.pgv-form-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--pgv-border);
+  font-size: 0.875rem;
+}
+.pgv-form-dialog-close {
+  all: unset;
+  cursor: pointer;
+  font-size: 1.1rem;
+  color: var(--pgv-muted);
+  padding: 0 0.2rem;
+  line-height: 1;
+}
+.pgv-form-dialog-close:hover { color: var(--pgv-text); }
+.pgv-form-dialog-body {
+  padding: 0.75rem 0.85rem;
+}
+.pgv-form-dialog-footer {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;

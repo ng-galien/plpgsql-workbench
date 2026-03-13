@@ -216,7 +216,6 @@ COMMENT ON FUNCTION stock.get_alertes() IS 'Articles sous seuil minimum d''alert
 CREATE OR REPLACE FUNCTION stock.get_article(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_art stock.article;
@@ -234,14 +233,12 @@ BEGIN
   SELECT name INTO v_fournisseur FROM crm.client WHERE id = v_art.fournisseur_id;
   v_stock_total := stock._stock_actuel(p_id);
 
-  -- Fournisseur avec lien CRM
   IF v_fournisseur IS NOT NULL THEN
     v_fournisseur_link := format('<a href="/crm/client?p_id=%s">%s</a>', v_art.fournisseur_id, pgv.esc(v_fournisseur));
   ELSE
     v_fournisseur_link := '—';
   END IF;
 
-  -- Lien catalog (cross-module, guard pg_proc)
   v_catalog_link := '—';
   IF v_art.catalog_article_id IS NOT NULL
     AND EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'catalog')
@@ -252,7 +249,6 @@ BEGIN
     v_catalog_link := format('#%s (%s)', v_art.catalog_article_id, pgv.t('stock.cross_catalog_unavailable'));
   END IF;
 
-  -- Header stats
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat(pgv.t('stock.stat_stock_total'), v_stock_total::text || ' ' || v_art.unite),
     pgv.stat(pgv.t('stock.stat_pmp'), CASE WHEN v_art.pmp > 0 THEN to_char(v_art.pmp, 'FM999G990D00') || ' EUR' ELSE '—' END),
@@ -260,14 +256,12 @@ BEGIN
     pgv.stat(pgv.t('stock.stat_fournisseur'), v_fournisseur_link)
   ]);
 
-  -- Info
   v_body := v_body || format('<p><strong>%s</strong> %s | <strong>%s</strong> %s | <strong>%s</strong> %s</p>',
     pgv.t('stock.label_ref'), pgv.esc(v_art.reference),
     pgv.t('stock.label_categorie'), pgv.badge(v_art.categorie, NULL),
     pgv.t('stock.label_actif'), CASE WHEN v_art.active THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END
   );
 
-  -- Catalog link
   IF v_catalog_link <> '—' THEN
     v_body := v_body || format('<p><strong>%s</strong> %s</p>', pgv.t('stock.label_catalog'), v_catalog_link);
   END IF;
@@ -327,8 +321,11 @@ BEGIN
   END IF;
 
   -- Actions
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a> ',
-    pgv.call_ref('get_article_form', jsonb_build_object('p_id', p_id)), pgv.t('stock.btn_modifier'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-edit-art-' || p_id, pgv.t('stock.btn_modifier'), '', 'post_article_save',
+    pgv.t('stock.btn_modifier'), 'outline',
+    pgv.call_ref('get_article_form', jsonb_build_object('p_id', p_id))
+  ) || ' ';
   v_body := v_body || pgv.action('post_article_delete', pgv.t('stock.btn_desactiver'),
     jsonb_build_object('id', p_id), pgv.t('stock.confirm_desactiver')) || '</p>';
 
@@ -340,11 +337,9 @@ COMMENT ON FUNCTION stock.get_article(integer) IS 'Fiche article: infos, stock p
 CREATE OR REPLACE FUNCTION stock.get_article_form(p_id integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_art stock.article;
-  v_body text;
   v_cat_opts jsonb;
   v_unit_opts jsonb;
   v_fournisseur_opts jsonb;
@@ -356,7 +351,6 @@ BEGIN
     IF NOT FOUND THEN RETURN pgv.empty(pgv.t('stock.empty_article_not_found'), ''); END IF;
   END IF;
 
-  -- Options catégorie
   v_cat_opts := jsonb_build_array(
     jsonb_build_object('value', 'bois', 'label', pgv.t('stock.cat_bois')),
     jsonb_build_object('value', 'quincaillerie', 'label', pgv.t('stock.cat_quincaillerie')),
@@ -366,7 +360,6 @@ BEGIN
     jsonb_build_object('value', 'autre', 'label', pgv.t('stock.cat_autre'))
   );
 
-  -- Options unité
   v_unit_opts := jsonb_build_array(
     jsonb_build_object('value', 'u', 'label', pgv.t('stock.unit_u')),
     jsonb_build_object('value', 'm', 'label', pgv.t('stock.unit_m')),
@@ -376,12 +369,10 @@ BEGIN
     jsonb_build_object('value', 'l', 'label', pgv.t('stock.unit_l'))
   );
 
-  -- Options fournisseur (CRM companies)
   SELECT coalesce(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.name) ORDER BY c.name), '[]'::jsonb)
   INTO v_fournisseur_opts
   FROM crm.client c WHERE c.type = 'company' AND c.active;
 
-  -- Catalog article search (cross-module guard)
   v_catalog_search := '';
   IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'catalog') THEN
     v_catalog_display := NULL;
@@ -398,7 +389,7 @@ BEGIN
     );
   END IF;
 
-  v_body := '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
+  RETURN '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
     || pgv.input('reference', 'text', pgv.t('stock.field_reference'), coalesce(v_art.reference, ''), true)
     || pgv.input('designation', 'text', pgv.t('stock.field_designation'), coalesce(v_art.designation, ''), true)
     || pgv.sel('categorie', pgv.t('stock.field_categorie'), v_cat_opts, v_art.categorie)
@@ -408,17 +399,13 @@ BEGIN
     || pgv.sel('fournisseur_id', pgv.t('stock.field_fournisseur'), v_fournisseur_opts, v_art.fournisseur_id::text)
     || v_catalog_search
     || pgv.textarea('notes', pgv.t('stock.field_notes'), v_art.notes);
-
-  RETURN pgv.form('post_article_save', v_body,
-    CASE WHEN p_id IS NOT NULL THEN pgv.t('stock.btn_modifier') ELSE pgv.t('stock.btn_creer') END);
 END;
 $function$;
-COMMENT ON FUNCTION stock.get_article_form(integer) IS 'Formulaire création/édition article avec select fournisseur CRM et lien catalog (i18n, primitives)';
+COMMENT ON FUNCTION stock.get_article_form(integer) IS 'Corps formulaire création/édition article — retourne inputs sans wrapper form (pour form_dialog)';
 
 CREATE OR REPLACE FUNCTION stock.get_articles()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_body text;
@@ -468,8 +455,10 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
-    pgv.call_ref('get_article_form'), pgv.t('stock.btn_nouvel_article'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-article', pgv.t('stock.btn_nouvel_article'), '', 'post_article_save',
+    NULL, NULL, pgv.call_ref('get_article_form')
+  ) || '</p>';
 
   RETURN v_body;
 END;
@@ -479,7 +468,6 @@ COMMENT ON FUNCTION stock.get_articles() IS 'Liste des articles avec stock actue
 CREATE OR REPLACE FUNCTION stock.get_depot(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_dep stock.depot;
@@ -555,8 +543,11 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
-    pgv.call_ref('get_depot_form', jsonb_build_object('p_id', p_id)), pgv.t('stock.btn_modifier'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-edit-dep-' || p_id, pgv.t('stock.btn_modifier'), '', 'post_depot_save',
+    pgv.t('stock.btn_modifier'), 'outline',
+    pgv.call_ref('get_depot_form', jsonb_build_object('p_id', p_id))
+  ) || '</p>';
 
   RETURN v_body;
 END;
@@ -570,7 +561,6 @@ AS $function$
 DECLARE
   v_dep stock.depot;
   v_type_opts jsonb;
-  v_body text;
 BEGIN
   IF p_id IS NOT NULL THEN
     SELECT * INTO v_dep FROM stock.depot WHERE id = p_id;
@@ -585,21 +575,17 @@ BEGIN
     jsonb_build_object('value', 'entrepot', 'label', pgv.t('stock.depot_entrepot'))
   );
 
-  v_body := '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
+  RETURN '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
     || pgv.input('nom', 'text', pgv.t('stock.field_nom'), coalesce(pgv.esc(v_dep.nom), ''), true)
     || pgv.sel('type', pgv.t('stock.field_type'), v_type_opts, coalesce(v_dep.type, ''))
     || pgv.input('adresse', 'text', pgv.t('stock.field_adresse'), coalesce(pgv.esc(v_dep.adresse), ''));
-
-  RETURN pgv.form('post_depot_save', v_body,
-    CASE WHEN p_id IS NOT NULL THEN pgv.t('stock.btn_modifier') ELSE pgv.t('stock.btn_creer') END);
 END;
 $function$;
-COMMENT ON FUNCTION stock.get_depot_form(integer) IS 'Formulaire création/édition dépôt (i18n + pgv primitives)';
+COMMENT ON FUNCTION stock.get_depot_form(integer) IS 'Corps formulaire création/édition dépôt — retourne inputs sans wrapper form (pour form_dialog)';
 
 CREATE OR REPLACE FUNCTION stock.get_depots()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_body text;
@@ -636,8 +622,10 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
-    pgv.call_ref('get_depot_form'), pgv.t('stock.btn_nouveau_depot'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-depot', pgv.t('stock.btn_nouveau_depot'), '', 'post_depot_save',
+    NULL, NULL, pgv.call_ref('get_depot_form')
+  ) || '</p>';
 
   RETURN v_body;
 END;
@@ -647,7 +635,6 @@ COMMENT ON FUNCTION stock.get_depots() IS 'Liste des dépôts avec nombre d''art
 CREATE OR REPLACE FUNCTION stock.get_index()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_nb_articles int;
@@ -662,13 +649,11 @@ DECLARE
 BEGIN
   SELECT count(*)::int INTO v_nb_articles FROM stock.article WHERE active;
 
-  -- Articles sous seuil
   SELECT count(*)::int INTO v_nb_alertes
   FROM stock.article a
   WHERE a.active AND a.seuil_mini > 0
     AND stock._stock_actuel(a.id) < a.seuil_mini;
 
-  -- Tendance semaine
   SELECT count(*)::int INTO v_mvt_semaine
   FROM stock.mouvement
   WHERE created_at >= date_trunc('week', now());
@@ -688,7 +673,6 @@ BEGIN
     v_variation := NULL;
   END IF;
 
-  -- Valeur totale du stock (quantité * PMP par article)
   SELECT coalesce(sum(stock._stock_actuel(a.id) * a.pmp), 0)
   INTO v_valeur_totale
   FROM stock.article a
@@ -701,7 +685,6 @@ BEGIN
     pgv.stat(pgv.t('stock.stat_mvt_semaine'), v_mvt_semaine::text || coalesce(' (' || v_variation || ')', ''))
   ]);
 
-  -- Alertes stock bas
   IF v_nb_alertes > 0 THEN
     v_rows := ARRAY[]::text[];
     FOR r IN
@@ -727,7 +710,6 @@ BEGIN
     );
   END IF;
 
-  -- Top 5 articles ce mois
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT a.id, a.designation, count(*) AS nb_mvt, sum(m.quantite) AS total_qty
@@ -754,7 +736,6 @@ BEGIN
     );
   END IF;
 
-  -- Derniers mouvements
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT m.created_at, a.designation, d.nom AS depot_nom, m.type, m.quantite, m.reference
@@ -788,8 +769,10 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
-    pgv.call_ref('get_mouvement_form'), pgv.t('stock.btn_nouveau_mvt'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-mvt', pgv.t('stock.btn_nouveau_mvt'), '', 'post_mouvement_save',
+    NULL, NULL, pgv.call_ref('get_mouvement_form')
+  ) || '</p>';
 
   RETURN v_body;
 END;
@@ -889,7 +872,6 @@ AS $function$
 DECLARE
   v_depot_opts jsonb;
   v_type_opts jsonb;
-  v_body text;
   v_article_search text;
 BEGIN
   -- Article via select_search
@@ -915,7 +897,7 @@ BEGIN
     jsonb_build_object('value', 'inventaire', 'label', pgv.t('stock.type_inventaire'))
   );
 
-  v_body := pgv.sel('type', pgv.t('stock.field_type'), v_type_opts, p_type)
+  RETURN pgv.sel('type', pgv.t('stock.field_type'), v_type_opts, p_type)
     || v_article_search
     || pgv.sel('depot_id', pgv.t('stock.col_depot'), v_depot_opts, '')
     || pgv.input('quantite', 'number', pgv.t('stock.field_quantite'), '', true)
@@ -923,16 +905,13 @@ BEGIN
     || pgv.sel('depot_destination_id', pgv.t('stock.field_depot_dest'), v_depot_opts, '')
     || pgv.input('reference', 'text', pgv.t('stock.field_ref_doc'), '')
     || pgv.textarea('notes', pgv.t('stock.field_notes'), '');
-
-  RETURN pgv.form('post_mouvement_save', v_body, pgv.t('stock.btn_enregistrer'));
 END;
 $function$;
-COMMENT ON FUNCTION stock.get_mouvement_form(text) IS 'Formulaire de saisie mouvement avec select_search article (i18n + pgv primitives)';
+COMMENT ON FUNCTION stock.get_mouvement_form(text) IS 'Corps formulaire saisie mouvement — retourne inputs sans wrapper form (pour form_dialog)';
 
 CREATE OR REPLACE FUNCTION stock.get_mouvements()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_body text;
@@ -975,8 +954,10 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
-    pgv.call_ref('get_mouvement_form'), pgv.t('stock.btn_nouveau_mvt'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-mvt', pgv.t('stock.btn_nouveau_mvt'), '', 'post_mouvement_save',
+    NULL, NULL, pgv.call_ref('get_mouvement_form')
+  ) || '</p>';
 
   RETURN v_body;
 END;

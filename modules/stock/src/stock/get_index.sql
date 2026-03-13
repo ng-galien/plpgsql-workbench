@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION stock.get_index()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_nb_articles int;
@@ -16,13 +15,11 @@ DECLARE
 BEGIN
   SELECT count(*)::int INTO v_nb_articles FROM stock.article WHERE active;
 
-  -- Articles sous seuil
   SELECT count(*)::int INTO v_nb_alertes
   FROM stock.article a
   WHERE a.active AND a.seuil_mini > 0
     AND stock._stock_actuel(a.id) < a.seuil_mini;
 
-  -- Tendance semaine
   SELECT count(*)::int INTO v_mvt_semaine
   FROM stock.mouvement
   WHERE created_at >= date_trunc('week', now());
@@ -42,7 +39,6 @@ BEGIN
     v_variation := NULL;
   END IF;
 
-  -- Valeur totale du stock (quantité * PMP par article)
   SELECT coalesce(sum(stock._stock_actuel(a.id) * a.pmp), 0)
   INTO v_valeur_totale
   FROM stock.article a
@@ -55,7 +51,6 @@ BEGIN
     pgv.stat(pgv.t('stock.stat_mvt_semaine'), v_mvt_semaine::text || coalesce(' (' || v_variation || ')', ''))
   ]);
 
-  -- Alertes stock bas
   IF v_nb_alertes > 0 THEN
     v_rows := ARRAY[]::text[];
     FOR r IN
@@ -81,7 +76,6 @@ BEGIN
     );
   END IF;
 
-  -- Top 5 articles ce mois
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT a.id, a.designation, count(*) AS nb_mvt, sum(m.quantite) AS total_qty
@@ -108,7 +102,6 @@ BEGIN
     );
   END IF;
 
-  -- Derniers mouvements
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT m.created_at, a.designation, d.nom AS depot_nom, m.type, m.quantite, m.reference
@@ -142,8 +135,10 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
-    pgv.call_ref('get_mouvement_form'), pgv.t('stock.btn_nouveau_mvt'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-mvt', pgv.t('stock.btn_nouveau_mvt'), '', 'post_mouvement_save',
+    NULL, NULL, pgv.call_ref('get_mouvement_form')
+  ) || '</p>';
 
   RETURN v_body;
 END;

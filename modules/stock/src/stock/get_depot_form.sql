@@ -5,7 +5,6 @@ AS $function$
 DECLARE
   v_dep stock.depot;
   v_type_opts jsonb;
-  v_body text;
 BEGIN
   IF p_id IS NOT NULL THEN
     SELECT * INTO v_dep FROM stock.depot WHERE id = p_id;
@@ -20,12 +19,9 @@ BEGIN
     jsonb_build_object('value', 'entrepot', 'label', pgv.t('stock.depot_entrepot'))
   );
 
-  v_body := '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
+  RETURN '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
     || pgv.input('nom', 'text', pgv.t('stock.field_nom'), coalesce(pgv.esc(v_dep.nom), ''), true)
     || pgv.sel('type', pgv.t('stock.field_type'), v_type_opts, coalesce(v_dep.type, ''))
     || pgv.input('adresse', 'text', pgv.t('stock.field_adresse'), coalesce(pgv.esc(v_dep.adresse), ''));
-
-  RETURN pgv.form('post_depot_save', v_body,
-    CASE WHEN p_id IS NOT NULL THEN pgv.t('stock.btn_modifier') ELSE pgv.t('stock.btn_creer') END);
 END;
 $function$;

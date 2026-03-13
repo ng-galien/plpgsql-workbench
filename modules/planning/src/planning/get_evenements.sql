@@ -44,7 +44,7 @@ BEGIN
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_evenement', jsonb_build_object('p_id', r.id)), pgv.esc(r.titre)),
       planning._type_badge(r.type),
-      to_char(r.date_debut, 'DD/MM') || ' → ' || to_char(r.date_fin, 'DD/MM'),
+      to_char(r.date_debut, 'DD/MM') || ' -> ' || to_char(r.date_fin, 'DD/MM'),
       COALESCE(NULLIF(r.lieu, ''), '—'),
       COALESCE(r.intervenants, '—'),
       COALESCE(r.chantier_numero, '—')
@@ -60,7 +60,7 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_evenement_form'), pgv.t('planning.btn_nouvel_evenement'));
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-evenement', pgv.t('planning.btn_nouvel_evenement'), planning._evenement_form_inputs(), 'post_evenement_save') || '</p>';
 
   RETURN v_body;
 END;

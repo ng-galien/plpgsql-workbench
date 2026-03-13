@@ -64,7 +64,7 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_note_form'), pgv.t('expense.btn_nouvelle_note'))
+    || pgv.form_dialog('dlg-new-note', pgv.t('expense.btn_nouvelle_note'), expense._note_form_body(), 'post_note_creer')
     || '</p>';
 
   RETURN v_body;

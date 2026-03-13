@@ -117,14 +117,18 @@ BEGIN
     v_body := v_body
       || pgv.action('post_chantier_demarrer', pgv.t('project.btn_demarrer'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_demarrer'))
       || ' '
-      || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_chantier_form', jsonb_build_object('p_id', p_id)), pgv.t('project.btn_modifier'))
+      || pgv.form_dialog('dlg-edit-' || p_id, pgv.t('project.btn_modifier'),
+           project._chantier_form_fields(p_id), 'post_chantier_save',
+           pgv.t('project.btn_modifier'), 'outline')
       || ' '
       || pgv.action('post_chantier_supprimer', pgv.t('project.btn_supprimer'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_supprimer'), 'danger');
   ELSIF c.statut = 'execution' THEN
     v_body := v_body
       || pgv.action('post_chantier_reception', pgv.t('project.btn_reception'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_reception'))
       || ' '
-      || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_chantier_form', jsonb_build_object('p_id', p_id)), pgv.t('project.btn_modifier'));
+      || pgv.form_dialog('dlg-edit-' || p_id, pgv.t('project.btn_modifier'),
+           project._chantier_form_fields(p_id), 'post_chantier_save',
+           pgv.t('project.btn_modifier'), 'outline');
   ELSIF c.statut = 'reception' THEN
     v_body := v_body
       || pgv.action('post_chantier_clore', pgv.t('project.btn_clore'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_clore'));

@@ -23,6 +23,39 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION crm.brand() IS 'Brand name for CRM module (i18n)';
 
+CREATE OR REPLACE FUNCTION crm.client_form_fields(p_client crm.client DEFAULT NULL::crm.client)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_tags_str text;
+BEGIN
+  v_tags_str := CASE WHEN p_client.id IS NOT NULL THEN array_to_string(p_client.tags, ', ') ELSE '' END;
+
+  RETURN CASE WHEN p_client.id IS NOT NULL THEN '<input type="hidden" name="id" value="' || p_client.id || '">' ELSE '' END
+    || pgv.sel('type', pgv.t('crm.field_type'), jsonb_build_array(
+         jsonb_build_object('label', pgv.t('crm.type_individual'), 'value', 'individual'),
+         jsonb_build_object('label', pgv.t('crm.type_company'), 'value', 'company')
+       ), CASE WHEN p_client.id IS NOT NULL THEN p_client.type ELSE 'individual' END)
+    || pgv.input('name', 'text', pgv.t('crm.field_name'), p_client.name, true)
+    || pgv.input('email', 'email', pgv.t('crm.field_email'), p_client.email)
+    || pgv.input('phone', 'tel', pgv.t('crm.field_phone'), p_client.phone)
+    || pgv.input('address', 'text', pgv.t('crm.field_address'), p_client.address)
+    || '<div class="grid">'
+    || pgv.input('city', 'text', pgv.t('crm.field_city'), p_client.city)
+    || pgv.input('postal_code', 'text', pgv.t('crm.field_postal_code'), p_client.postal_code)
+    || '</div>'
+    || pgv.sel('tier', pgv.t('crm.field_tier'), '["standard","premium","vip"]'::jsonb,
+        CASE WHEN p_client.id IS NOT NULL THEN p_client.tier ELSE 'standard' END)
+    || pgv.input('tags', 'text', pgv.t('crm.field_tags'), v_tags_str)
+    || pgv.textarea('notes', pgv.t('crm.field_notes'), CASE WHEN p_client.id IS NOT NULL AND p_client.notes <> '' THEN p_client.notes ELSE NULL END)
+    || CASE WHEN p_client.id IS NOT NULL THEN
+        pgv.checkbox('active', pgv.t('crm.field_active'), p_client.active)
+       ELSE '' END;
+END;
+$function$;
+COMMENT ON FUNCTION crm.client_form_fields(crm.client) IS 'Helper: returns HTML form fields for client creation/edition (no form wrapper)';
+
 CREATE OR REPLACE FUNCTION crm.client_options(p_search text DEFAULT NULL::text)
  RETURNS TABLE(value text, label text, detail text)
  LANGUAGE sql
@@ -614,9 +647,18 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a> <a href="%s" role="button" class="secondary">%s</a></p>',
-    pgv.call_ref('get_client_form'), pgv.t('crm.btn_new_client'),
-    pgv.call_ref('get_import'), pgv.t('crm.btn_import_csv'));
+  v_body := v_body || '<p>'
+    || pgv.form_dialog('dlg-new-client', pgv.t('crm.title_new_client'),
+         crm.client_form_fields(),
+         'post_client_save', pgv.t('crm.btn_new_client'))
+    || ' '
+    || pgv.form_dialog('dlg-import', pgv.t('crm.btn_import_csv'),
+         '<p>' || pgv.t('crm.import_intro') || '</p>'
+         || '<p><code>nom ; email ; telephone ; adresse ; ville ; code_postal ; type</code></p>'
+         || '<p><small>' || pgv.t('crm.import_help') || '</small></p>'
+         || pgv.textarea('csv', pgv.t('crm.field_csv'), NULL),
+         'post_import_csv', pgv.t('crm.btn_import_csv'), 'secondary')
+    || '</p>';
 
   RETURN v_body;
 END;
@@ -702,17 +744,14 @@ BEGIN
     v_contacts := pgv.empty(pgv.t('crm.empty_no_contacts'));
   END IF;
 
-  v_contacts := v_contacts || pgv.accordion(VARIADIC ARRAY[
-    pgv.t('crm.title_add_contact'),
-    pgv.form('post_contact_add',
-      '<input type="hidden" name="client_id" value="' || p_id || '">'
-      || pgv.input('name', 'text', pgv.t('crm.field_name'), NULL, true)
-      || pgv.input('role', 'text', pgv.t('crm.field_role'))
-      || pgv.input('email', 'email', pgv.t('crm.field_email'))
-      || pgv.input('phone', 'tel', pgv.t('crm.field_phone'))
-      || pgv.checkbox('is_primary', pgv.t('crm.label_primary_contact')),
-      pgv.t('crm.btn_add'))
-  ]);
+  v_contacts := v_contacts || pgv.form_dialog('dlg-add-contact', pgv.t('crm.title_add_contact'),
+    '<input type="hidden" name="client_id" value="' || p_id || '">'
+    || pgv.input('name', 'text', pgv.t('crm.field_name'), NULL, true)
+    || pgv.input('role', 'text', pgv.t('crm.field_role'))
+    || pgv.input('email', 'email', pgv.t('crm.field_email'))
+    || pgv.input('phone', 'tel', pgv.t('crm.field_phone'))
+    || pgv.checkbox('is_primary', pgv.t('crm.label_primary_contact')),
+    'post_contact_add', pgv.t('crm.btn_add'));
 
   v_tab_fiche := v_fiche || '<hr>' || '<h4>' || pgv.t('crm.title_contacts') || '</h4>' || v_contacts;
 
@@ -789,7 +828,9 @@ BEGIN
   END IF;
 
   v_tab_fiche := v_tab_fiche || '<hr><div class="grid">'
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_client_form', jsonb_build_object('p_id', p_id)), pgv.t('crm.btn_edit'))
+    || pgv.form_dialog('dlg-edit-' || p_id, pgv.t('crm.btn_edit') || ' ' || pgv.esc(v_client.name),
+         crm.client_form_fields(v_client),
+         'post_client_save', pgv.t('crm.btn_edit'), 'outline')
     || pgv.action('post_client_delete', pgv.t('crm.btn_delete'), jsonb_build_object('id', p_id), pgv.t('crm.confirm_delete_client'), 'danger')
     || '</div>';
 
@@ -849,20 +890,17 @@ BEGIN
     ));
   END IF;
 
-  v_interactions := v_interactions || pgv.accordion(VARIADIC ARRAY[
-    pgv.t('crm.title_add_interaction'),
-    pgv.form('post_interaction_add',
-      '<input type="hidden" name="client_id" value="' || p_id || '">'
-      || pgv.sel('type', pgv.t('crm.field_type'), jsonb_build_array(
-           jsonb_build_object('label', pgv.t('crm.type_call'), 'value', 'call'),
-           jsonb_build_object('label', pgv.t('crm.type_visit'), 'value', 'visit'),
-           jsonb_build_object('label', pgv.t('crm.type_email'), 'value', 'email'),
-           jsonb_build_object('label', pgv.t('crm.type_note'), 'value', 'note')
-         ), 'note')
-      || pgv.input('subject', 'text', pgv.t('crm.field_subject'), NULL, true)
-      || pgv.textarea('body', pgv.t('crm.field_details')),
-      pgv.t('crm.btn_add'))
-  ]);
+  v_interactions := v_interactions || pgv.form_dialog('dlg-add-interaction', pgv.t('crm.title_add_interaction'),
+    '<input type="hidden" name="client_id" value="' || p_id || '">'
+    || pgv.sel('type', pgv.t('crm.field_type'), jsonb_build_array(
+         jsonb_build_object('label', pgv.t('crm.type_call'), 'value', 'call'),
+         jsonb_build_object('label', pgv.t('crm.type_visit'), 'value', 'visit'),
+         jsonb_build_object('label', pgv.t('crm.type_email'), 'value', 'email'),
+         jsonb_build_object('label', pgv.t('crm.type_note'), 'value', 'note')
+       ), 'note')
+    || pgv.input('subject', 'text', pgv.t('crm.field_subject'), NULL, true)
+    || pgv.textarea('body', pgv.t('crm.field_details')),
+    'post_interaction_add', pgv.t('crm.btn_add'));
 
   v_tab_interactions := v_interactions;
 

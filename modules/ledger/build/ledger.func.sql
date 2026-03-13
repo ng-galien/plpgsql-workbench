@@ -293,9 +293,9 @@ BEGIN
 
   -- Year selector
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text),
-    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), v_year::text),
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
+    pgv.link_button(pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
+    pgv.link_button(pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), v_year::text),
+    pgv.link_button(pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text, 'outline')
   ]);
 
   v_rows := ARRAY[]::text[];
@@ -370,9 +370,9 @@ BEGIN
 
   -- Sélecteur année
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text),
-    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), v_year::text),
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
+    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
+    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), v_year::text),
+    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text, 'outline')
   ]);
 
   -- Produits (revenue = classe 7)
@@ -488,7 +488,15 @@ BEGIN
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_entry_form'), pgv.t('ledger.btn_new_entry'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-entry',
+    pgv.t('ledger.title_new_entry'),
+    pgv.input('entry_date', 'date', pgv.t('ledger.field_date'), to_char(CURRENT_DATE, 'YYYY-MM-DD'), true)
+    || pgv.input('reference', 'text', pgv.t('ledger.field_reference'), '', true)
+    || pgv.input('description', 'text', pgv.t('ledger.field_description'), '', true),
+    'post_entry_save',
+    pgv.t('ledger.btn_new_entry')
+  ) || '</p>';
 
   RETURN pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_entries')]) || v_body;
 END;
@@ -582,9 +590,11 @@ BEGIN
       v_accounts_json := v_accounts_json || jsonb_build_array(jsonb_build_object('value', r.id::text, 'label', r.code || E' \u2014 ' || r.label));
     END LOOP;
 
-    v_body := v_body || pgv.accordion(VARIADIC ARRAY[
-      pgv.t('ledger.title_add_line'),
-      pgv.form('post_line_add',
+    -- Actions brouillon
+    v_body := v_body || pgv.grid(VARIADIC ARRAY[
+      pgv.form_dialog(
+        'dlg-add-line',
+        pgv.t('ledger.title_add_line'),
         '<input type="hidden" name="entry_id" value="' || p_id || '">'
         || pgv.sel('account_id', pgv.t('ledger.field_account'), v_accounts_json)
         || pgv.grid(VARIADIC ARRAY[
@@ -592,12 +602,18 @@ BEGIN
           pgv.input('credit', 'number', pgv.t('ledger.field_credit'), '0')
         ])
         || pgv.input('label', 'text', pgv.t('ledger.field_label'), ''),
-        pgv.t('ledger.btn_add'))
-    ]);
-
-    -- Actions brouillon
-    v_body := v_body || pgv.grid(VARIADIC ARRAY[
-      format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_entry_form', jsonb_build_object('p_id', p_id)), pgv.t('ledger.btn_edit')),
+        'post_line_add',
+        pgv.t('ledger.btn_add')),
+      pgv.form_dialog(
+        'dlg-edit-' || p_id,
+        pgv.t('ledger.btn_edit') || ' ' || pgv.esc(v_entry.reference),
+        '<input type="hidden" name="id" value="' || p_id || '">'
+        || pgv.input('entry_date', 'date', pgv.t('ledger.field_date'), to_char(v_entry.entry_date, 'YYYY-MM-DD'), true)
+        || pgv.input('reference', 'text', pgv.t('ledger.field_reference'), pgv.esc(v_entry.reference), true)
+        || pgv.input('description', 'text', pgv.t('ledger.field_description'), pgv.esc(v_entry.description), true),
+        'post_entry_save',
+        pgv.t('ledger.btn_edit'),
+        'outline'),
       pgv.action('post_entry_post', pgv.t('ledger.btn_post'), jsonb_build_object('id', p_id), pgv.t('ledger.confirm_post_entry')),
       pgv.action('post_entry_delete', pgv.t('ledger.btn_delete'), jsonb_build_object('id', p_id), pgv.t('ledger.confirm_delete_draft'), 'danger')
     ]);
@@ -676,9 +692,9 @@ BEGIN
 
   -- Year selector
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text),
-    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)), v_year::text),
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
+    pgv.link_button(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
+    pgv.link_button(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)), v_year::text),
+    pgv.link_button(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text, 'outline')
   ]);
 
   -- Exercice status
@@ -721,8 +737,8 @@ BEGIN
 
   -- Links
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_balance_check')),
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_bilan_pl'))
+    pgv.link_button(pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_balance_check'), 'outline'),
+    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_bilan_pl'), 'outline')
   ]);
 
   -- Clôture action
@@ -778,9 +794,9 @@ BEGIN
 
   -- Year selector
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year - 1)), (v_year - 1)::text),
-    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year)), v_year::text),
-    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year + 1)), (v_year + 1)::text)
+    pgv.link_button(pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
+    pgv.link_button(pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year)), v_year::text),
+    pgv.link_button(pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year + 1)), (v_year + 1)::text, 'outline')
   ]);
 
   v_rows := ARRAY[]::text[];
@@ -889,7 +905,15 @@ BEGIN
     END
   ]);
 
-  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_entry_form'), pgv.t('ledger.btn_new_entry'));
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-entry',
+    pgv.t('ledger.title_new_entry'),
+    pgv.input('entry_date', 'date', pgv.t('ledger.field_date'), to_char(CURRENT_DATE, 'YYYY-MM-DD'), true)
+    || pgv.input('reference', 'text', pgv.t('ledger.field_reference'), '', true)
+    || pgv.input('description', 'text', pgv.t('ledger.field_description'), '', true),
+    'post_entry_save',
+    pgv.t('ledger.btn_new_entry')
+  ) || '</p>';
 
   RETURN v_body;
 END;
@@ -922,10 +946,10 @@ BEGIN
 
   -- Sélecteur période
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    format('<a href="%s" role="button" class="outline">T1</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 1))),
-    format('<a href="%s" role="button" class="outline">T2</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 2))),
-    format('<a href="%s" role="button" class="outline">T3</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 3))),
-    format('<a href="%s" role="button" class="outline">T4</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 4)))
+    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 1)), 'T1', 'outline'),
+    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 2)), 'T2', 'outline'),
+    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 3)), 'T3', 'outline'),
+    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 4)), 'T4', 'outline')
   ]);
 
   v_body := v_body || '<p>' || pgv.t('ledger.title_period') || ' : T' || v_quarter || ' ' || v_year

@@ -36,10 +36,14 @@ BEGIN
 
     IF array_length(v_rows, 1) IS NULL THEN
       RETURN pgv.empty(pgv.t('purchase.empty_no_commande'), pgv.t('purchase.empty_first_commande'))
-        || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_commande_form'), pgv.t('purchase.btn_nouvelle_commande'));
+        || '<p>' || pgv.form_dialog('dlg-new-commande', pgv.t('purchase.title_nouvelle_commande'),
+             purchase._commande_form_body(),
+             'post_commande_save', pgv.t('purchase.btn_nouvelle_commande')) || '</p>';
     END IF;
 
-    RETURN '<p>' || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_commande_form'), pgv.t('purchase.btn_nouvelle_commande')) || '</p>'
+    RETURN '<p>' || pgv.form_dialog('dlg-new-commande', pgv.t('purchase.title_nouvelle_commande'),
+         purchase._commande_form_body(),
+         'post_commande_save', pgv.t('purchase.btn_nouvelle_commande')) || '</p>'
       || pgv.md_table(ARRAY[pgv.t('purchase.col_numero'), pgv.t('purchase.col_fournisseur'), pgv.t('purchase.col_objet'), pgv.t('purchase.col_statut'), pgv.t('purchase.col_total_ttc'), pgv.t('purchase.col_date')], v_rows);
   END IF;
 
@@ -136,10 +140,9 @@ BEGIN
              '[{"value":"20.00","label":"20%"},{"value":"10.00","label":"10%"},{"value":"5.50","label":"5.5%"},{"value":"0.00","label":"0%"}]'::jsonb, '20.00')
         || '</div>'
         || pgv.select_search('p_article_id', pgv.t('purchase.field_article_stock'), 'article_options', pgv.t('purchase.field_search_article'));
-      v_body := v_body || pgv.accordion(VARIADIC ARRAY[
-        pgv.t('purchase.btn_ajouter_ligne'),
-        pgv.form('post_ligne_ajouter', v_add_body, pgv.t('purchase.btn_ajouter'))
-      ]);
+      v_body := v_body || pgv.form_dialog('dlg-add-ligne', pgv.t('purchase.btn_ajouter_ligne'),
+        v_add_body,
+        'post_ligne_ajouter', pgv.t('purchase.btn_ajouter'));
     END;
   END IF;
 
@@ -173,7 +176,9 @@ BEGIN
   v_body := v_body || '<p>';
   IF v_cmd.statut = 'brouillon' THEN
     v_body := v_body
-      || format('<a href="%s" role="button">%s</a> ', pgv.call_ref('get_commande_form', jsonb_build_object('p_id', p_id)), pgv.t('purchase.btn_modifier'))
+      || pgv.form_dialog('dlg-edit-commande', pgv.t('purchase.title_modifier_commande') || ' ' || v_cmd.numero,
+           purchase._commande_form_body(p_id),
+           'post_commande_save', pgv.t('purchase.btn_modifier'), 'outline') || ' '
       || pgv.action('post_commande_envoyer', pgv.t('purchase.btn_envoyer'),
            jsonb_build_object('p_id', p_id),
            pgv.t('purchase.confirm_envoyer')) || ' '
