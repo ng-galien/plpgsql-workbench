@@ -1,16 +1,12 @@
+-- Bootstrap workbench schema — tables and functions are managed by modules/workbench/
+-- This seed only creates the schema and inserts initial data needed before module deploy.
+
 CREATE SCHEMA IF NOT EXISTS workbench;
 
+-- Minimal tables needed for dev seed (full DDL in modules/workbench/build/workbench.ddl.sql)
 CREATE TABLE IF NOT EXISTS workbench.toolbox (
   name TEXT PRIMARY KEY,
   description TEXT
-);
-
-CREATE TABLE IF NOT EXISTS workbench.toolbox_tool (
-  toolbox_name TEXT NOT NULL REFERENCES workbench.toolbox(name) ON DELETE CASCADE,
-  tool_name TEXT NOT NULL,
-  description TEXT,
-  input_schema JSONB,
-  PRIMARY KEY (toolbox_name, tool_name)
 );
 
 CREATE TABLE IF NOT EXISTS workbench.tenant (
@@ -23,7 +19,6 @@ CREATE TABLE IF NOT EXISTS workbench.tenant (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Module activation per tenant
 CREATE TABLE IF NOT EXISTS workbench.tenant_module (
   tenant_id   TEXT NOT NULL REFERENCES workbench.tenant(id) ON DELETE CASCADE,
   module      TEXT NOT NULL,
@@ -33,28 +28,14 @@ CREATE TABLE IF NOT EXISTS workbench.tenant_module (
   PRIMARY KEY (tenant_id, module)
 );
 
-CREATE INDEX IF NOT EXISTS idx_tenant_module_active
-  ON workbench.tenant_module (tenant_id) WHERE active;
-
--- RLS
-ALTER TABLE workbench.tenant ENABLE ROW LEVEL SECURITY;
-ALTER TABLE workbench.tenant_module ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS tenant_isolation ON workbench.tenant;
-CREATE POLICY tenant_isolation ON workbench.tenant
-  USING (id = coalesce(current_setting('app.tenant_id', true), id));
-
-DROP POLICY IF EXISTS tenant_module_isolation ON workbench.tenant_module;
-CREATE POLICY tenant_module_isolation ON workbench.tenant_module
-  USING (tenant_id = coalesce(current_setting('app.tenant_id', true), tenant_id));
-
--- Dev seed
+-- Dev seed data
 INSERT INTO workbench.tenant (id, name, slug, plan)
 VALUES ('dev', 'Dev Workbench', 'dev', 'equipe')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO workbench.tenant_module (tenant_id, module, sort_order) VALUES
   ('dev', 'pgv',      0),
+  ('dev', 'workbench', 5),
   ('dev', 'crm',     10),
   ('dev', 'quote',   20),
   ('dev', 'cad',     30),
@@ -66,286 +47,3 @@ INSERT INTO workbench.tenant_module (tenant_id, module, sort_order) VALUES
   ('dev', 'hr',      80),
   ('dev', 'ops',     90)
 ON CONFLICT DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS workbench.config (
-  app TEXT NOT NULL,
-  key TEXT NOT NULL,
-  value TEXT NOT NULL,
-  PRIMARY KEY (app, key)
-);
-
--- Inter-agent messaging (with task delegation support)
-CREATE TABLE IF NOT EXISTS workbench.agent_message (
-  id              SERIAL PRIMARY KEY,
-  from_module     TEXT NOT NULL,
-  to_module       TEXT NOT NULL,
-  msg_type        TEXT NOT NULL CHECK (msg_type IN (
-                    'feature_request','bug_report','issue_report','breaking_change','question','info','task')),
-  subject         TEXT NOT NULL,
-  body            TEXT,
-  status          TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','acknowledged','resolved')),
-  resolution      TEXT,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  acknowledged_at TIMESTAMPTZ,
-  resolved_at     TIMESTAMPTZ,
-  reply_to        INTEGER REFERENCES workbench.agent_message(id),
-  payload         JSONB,
-  result          JSONB,
-  priority        TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal','high'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_agent_message_inbox
-  ON workbench.agent_message (to_module, status) WHERE status != 'resolved';
-CREATE INDEX IF NOT EXISTS idx_agent_message_reply
-  ON workbench.agent_message (reply_to) WHERE reply_to IS NOT NULL;
-
--- Gotchas — recurring pitfalls agents must check before coding
-CREATE TABLE IF NOT EXISTS workbench.gotcha (
-  id          SERIAL PRIMARY KEY,
-  scope       TEXT NOT NULL DEFAULT '*',           -- module name, or * for all
-  trigger     TEXT,                                -- when to check: 'pg_func_set', 'get_*', 'post_*', etc.
-  rule        TEXT NOT NULL,                       -- the gotcha (one-liner)
-  detail      TEXT,                                -- explanation + example
-  severity    TEXT NOT NULL DEFAULT 'error' CHECK (severity IN ('error','warning','info')),
-  active      BOOLEAN NOT NULL DEFAULT true,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_gotcha_scope
-  ON workbench.gotcha (scope) WHERE active;
-
--- Issue reports (from shell UI — bugs, enhancements, questions)
-CREATE TABLE IF NOT EXISTS workbench.issue_report (
-  id          SERIAL PRIMARY KEY,
-  issue_type  TEXT NOT NULL DEFAULT 'bug' CHECK (issue_type IN ('bug','enhancement','question')),
-  module      TEXT,
-  description TEXT NOT NULL,
-  context     JSONB NOT NULL DEFAULT '{}',
-  status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','acknowledged','resolved','closed')),
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  message_id  INTEGER REFERENCES workbench.agent_message(id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_issue_report_status
-  ON workbench.issue_report (status) WHERE status != 'closed';
-CREATE INDEX IF NOT EXISTS idx_issue_report_module
-  ON workbench.issue_report (module) WHERE module IS NOT NULL;
-
--- Auto-notify lead on new issue (BEFORE INSERT: sets message_id + status)
-CREATE OR REPLACE FUNCTION workbench.on_issue_report_insert() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE
-  v_msg_id integer;
-BEGIN
-  INSERT INTO workbench.agent_message(from_module, to_module, msg_type, subject, body, priority, payload)
-  VALUES (
-    'shell',
-    'lead',
-    'issue_report',
-    format('Issue #%s à traiter (%s)', NEW.id, NEW.issue_type),
-    format('SELECT * FROM workbench.issue_report WHERE id = %s', NEW.id),
-    CASE WHEN NEW.issue_type = 'bug' THEN 'high' ELSE 'normal' END,
-    jsonb_build_object('issue_id', NEW.id)
-  )
-  RETURNING id INTO v_msg_id;
-
-  NEW.message_id := v_msg_id;
-  NEW.status := 'acknowledged';
-
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_issue_report_notify ON workbench.issue_report;
-CREATE TRIGGER trg_issue_report_notify
-  BEFORE INSERT ON workbench.issue_report
-  FOR EACH ROW
-  EXECUTE FUNCTION workbench.on_issue_report_insert();
-
--- Hook event log
-CREATE TABLE IF NOT EXISTS workbench.hook_log (
-  id          SERIAL PRIMARY KEY,
-  module      TEXT NOT NULL,
-  tool        TEXT NOT NULL,
-  action      TEXT NOT NULL DEFAULT '',
-  allowed     BOOLEAN NOT NULL,
-  reason      TEXT,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_hook_log_module
-  ON workbench.hook_log (module, created_at DESC);
-
--- Agent sessions
-CREATE TABLE IF NOT EXISTS workbench.agent_session (
-  id             SERIAL PRIMARY KEY,
-  module         TEXT NOT NULL,
-  status         TEXT NOT NULL DEFAULT 'running'
-                   CHECK (status IN ('running','waiting','stuck','done','error')),
-  pid            INTEGER,
-  started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  ended_at       TIMESTAMPTZ,
-  last_activity  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_agent_session_module
-  ON workbench.agent_session (module, started_at DESC);
-
--- ── Functions ──
-
--- Hook logging (fire-and-forget)
-CREATE OR REPLACE FUNCTION workbench.log_hook(
-  p_module text, p_tool text, p_action text, p_allowed boolean, p_reason text DEFAULT NULL
-) RETURNS void LANGUAGE sql AS $$
-  INSERT INTO workbench.hook_log (module, tool, action, allowed, reason)
-    VALUES (p_module, p_tool, p_action, p_allowed, p_reason);
-$$;
-
--- Agent session lifecycle
-CREATE OR REPLACE FUNCTION workbench.session_create(p_module text, p_pid integer)
-RETURNS integer LANGUAGE sql AS $$
-  INSERT INTO workbench.agent_session (module, status, pid, started_at)
-    VALUES (p_module, 'running', p_pid, now())
-    RETURNING id;
-$$;
-
-CREATE OR REPLACE FUNCTION workbench.session_end(p_id integer, p_status text)
-RETURNS void LANGUAGE sql AS $$
-  UPDATE workbench.agent_session
-    SET status = p_status, ended_at = now()
-    WHERE id = p_id;
-$$;
-
--- Inbox: pending messages for SessionStart hook (priority-sorted)
-CREATE OR REPLACE FUNCTION workbench.inbox_pending(p_module text)
-RETURNS TABLE(id integer, from_module text, msg_type text, subject text, priority text)
-LANGUAGE sql STABLE AS $$
-  SELECT m.id, m.from_module, m.msg_type, m.subject, m.priority
-    FROM workbench.agent_message m
-   WHERE m.to_module = p_module
-     AND m.status IN ('new', 'acknowledged')
-   ORDER BY
-     CASE WHEN m.priority = 'high' THEN 0 ELSE 1 END,
-     m.created_at DESC
-   LIMIT 10;
-$$;
-
--- Inbox: new unread messages for Stop hook
-CREATE OR REPLACE FUNCTION workbench.inbox_new(p_module text)
-RETURNS TABLE(id integer, from_module text, msg_type text, subject text)
-LANGUAGE sql STABLE AS $$
-  SELECT m.id, m.from_module, m.msg_type, m.subject
-    FROM workbench.agent_message m
-   WHERE m.to_module = p_module
-     AND m.status = 'new'
-   ORDER BY m.created_at
-   LIMIT 10;
-$$;
-
--- Inbox: high-priority check for PreToolUse hook (active delivery)
-CREATE OR REPLACE FUNCTION workbench.inbox_check(p_module text)
-RETURNS TABLE(id integer, from_module text, msg_type text, subject text,
-              body text, payload jsonb, reply_to integer, priority text)
-LANGUAGE sql STABLE AS $$
-  SELECT m.id, m.from_module, m.msg_type, m.subject,
-         m.body, m.payload, m.reply_to, m.priority
-    FROM workbench.agent_message m
-   WHERE m.to_module = p_module
-     AND m.status = 'new'
-     AND m.priority = 'high'
-   ORDER BY m.created_at DESC
-   LIMIT 1;
-$$;
-
--- Auto-acknowledge resolved sent messages (Stop hook)
-CREATE OR REPLACE FUNCTION workbench.ack_resolved(p_module text)
-RETURNS TABLE(id integer, to_module text, msg_type text, subject text, resolution text)
-LANGUAGE sql AS $$
-  UPDATE workbench.agent_message
-    SET acknowledged_at = resolved_at
-    WHERE from_module = p_module
-      AND status = 'resolved'
-      AND (acknowledged_at IS NULL OR resolved_at > acknowledged_at)
-    RETURNING agent_message.id, agent_message.to_module, agent_message.msg_type,
-              agent_message.subject, agent_message.resolution;
-$$;
-
--- REST API: sessions
-CREATE OR REPLACE FUNCTION workbench.api_sessions()
-RETURNS TABLE(module text, status text, pid integer, started_at timestamptz,
-              ended_at timestamptz, last_activity timestamptz)
-LANGUAGE sql STABLE AS $$
-  SELECT s.module, s.status, s.pid, s.started_at, s.ended_at, s.last_activity
-    FROM workbench.agent_session s
-   ORDER BY s.started_at DESC
-   LIMIT 50;
-$$;
-
--- REST API: hook events
-CREATE OR REPLACE FUNCTION workbench.api_hooks(p_module text DEFAULT NULL)
-RETURNS TABLE(id integer, module text, tool text, action text, allowed boolean,
-              reason text, created_at timestamptz)
-LANGUAGE sql STABLE AS $$
-  SELECT h.id, h.module, h.tool, h.action, h.allowed, h.reason, h.created_at
-    FROM workbench.hook_log h
-   WHERE p_module IS NULL OR h.module = p_module
-   ORDER BY h.created_at DESC
-   LIMIT 100;
-$$;
-
--- REST API: messages (with task delegation columns)
-CREATE OR REPLACE FUNCTION workbench.api_messages(p_module text DEFAULT NULL)
-RETURNS TABLE(id integer, from_module text, to_module text, msg_type text,
-              subject text, body text, status text, resolution text,
-              priority text, reply_to integer, payload jsonb, result jsonb,
-              created_at timestamptz, resolved_at timestamptz)
-LANGUAGE sql STABLE AS $$
-  SELECT m.id, m.from_module, m.to_module, m.msg_type, m.subject, m.body,
-         m.status, m.resolution, m.priority, m.reply_to,
-         m.payload, m.result, m.created_at, m.resolved_at
-    FROM workbench.agent_message m
-   WHERE (p_module IS NULL OR m.from_module = p_module OR m.to_module = p_module)
-   ORDER BY m.created_at DESC
-   LIMIT 100;
-$$;
-
--- PostgREST pre-request hook: set tenant context
-CREATE OR REPLACE FUNCTION workbench.postgrest_pre_request()
-RETURNS void LANGUAGE plpgsql AS $$
-DECLARE
-  v_tenant text;
-BEGIN
-  -- Try JWT claim first (production), fallback to 'dev' (development)
-  v_tenant := coalesce(
-    current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id',
-    'dev'
-  );
-  PERFORM set_config('app.tenant_id', v_tenant, true);
-END;
-$$;
-
--- Seed gotchas
-INSERT INTO workbench.gotcha (scope, trigger, rule, detail, severity) VALUES
-  ('*', 'pg_func_set:get_*', 'pgv.route() supporte max 1 argument par fonction GET/POST',
-   'pronargs <= 1 dans route() ligne 68. Fonctions avec 2+ params → 404. Fix: utiliser un seul param jsonb. Ex: get_chantiers(p_params jsonb DEFAULT ''{}''::jsonb) puis p_params->>''statut'', p_params->>''q''.', 'error'),
-  ('*', 'pg_func_set:post_*', 'POST retourne raw HTML — jamais wrappé dans page()',
-   'post_*() retourne text brut (templates data-toast ou data-redirect). Le shell gère le rendu. Si wrappé dans pgv.page(), double layout.', 'error'),
-  ('*', 'pg_func_set', 'PostgREST 406 si post_*() appelé directement au lieu de pgv.route()',
-   'pgv.route() retourne domain "text/html". Les post_*() retournent plain text. Le shell DOIT router via /rpc/route, pas /rpc/<fn>.', 'error'),
-  ('*', 'Write:*.sql', 'JAMAIS écrire CREATE FUNCTION dans un fichier SQL',
-   'Les fonctions sont gérées via pg_func_set (workbench). Les fichiers src/*.sql sont générés par pg_func_save. Les fichiers build/*.func.sql sont générés par pg_pack.', 'error'),
-  ('*', 'pg_func_set', 'Tables via <md> blocks, JAMAIS <table> HTML',
-   'Le shell marked.js convertit <md> en tables triables/paginées automatiquement. <md data-page="10"> pour la pagination.', 'warning'),
-  ('*', 'pg_func_set', 'CSS classes pgv-*, JAMAIS style="..." inline',
-   'Les hooks bloquent les inline styles. Utiliser les classes pgv-* et les tokens CSS --pgv-*.', 'error'),
-  ('*', 'pg_func_set', 'Cross-module: vérifier pg_proc/pg_class, pas juste pg_namespace',
-   'Un schema peut exister sans ses fonctions/tables (bootstrap en cours). Toujours vérifier que la fonction/table cible existe avant EXECUTE dynamique.', 'warning')
-ON CONFLICT DO NOTHING;
-
--- Grants for PostgREST
-GRANT USAGE ON SCHEMA workbench TO web_anon;
-GRANT SELECT, INSERT, UPDATE ON workbench.config TO web_anon;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA workbench TO web_anon;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA workbench TO web_anon;
-GRANT EXECUTE ON FUNCTION workbench.postgrest_pre_request() TO web_anon;
-GRANT SELECT, INSERT, UPDATE ON workbench.issue_report TO web_anon;
-GRANT USAGE, SELECT ON SEQUENCE workbench.issue_report_id_seq TO web_anon;

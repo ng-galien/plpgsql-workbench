@@ -9,7 +9,8 @@
     "qa": "ops_qa"
   },
   "dependencies": [
-    "pgv"
+    "pgv",
+    "workbench"
   ],
   "extensions": [],
   "sql": [

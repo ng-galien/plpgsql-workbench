@@ -1,0 +1,23 @@
+{
+  "name": "workbench",
+  "version": "0.1.0",
+  "description": "Platform infrastructure — toolbox, tenants, messaging, hooks, sessions, issues",
+  "schemas": {
+    "public": "workbench",
+    "private": null,
+    "test": null,
+    "qa": null
+  },
+  "dependencies": ["pgv"],
+  "extensions": [],
+  "sql": [
+    "build/workbench.ddl.sql",
+    "build/workbench.func.sql"
+  ],
+  "assets": {},
+  "grants": {
+    "web_anon": [
+      "workbench"
+    ]
+  }
+}
