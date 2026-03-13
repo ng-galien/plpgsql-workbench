@@ -34,16 +34,16 @@ VALUES ('dev', 'Dev Workbench', 'dev', 'equipe')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO workbench.tenant_module (tenant_id, module, sort_order) VALUES
-  ('dev', 'pgv',      0),
+  ('dev', 'pgv',       0),
   ('dev', 'workbench', 5),
-  ('dev', 'crm',     10),
-  ('dev', 'quote',   20),
-  ('dev', 'cad',     30),
-  ('dev', 'ledger',  40),
-  ('dev', 'stock',   50),
-  ('dev', 'purchase',60),
-  ('dev', 'project', 70),
-  ('dev', 'planning',75),
-  ('dev', 'hr',      80),
-  ('dev', 'ops',     90)
+  ('dev', 'ops',       8),
+  ('dev', 'crm',      10),
+  ('dev', 'quote',    15),
+  ('dev', 'project',  20),
+  ('dev', 'planning', 25),
+  ('dev', 'cad',      30),
+  ('dev', 'purchase', 40),
+  ('dev', 'stock',    50),
+  ('dev', 'ledger',   60),
+  ('dev', 'hr',       80)
 ON CONFLICT DO NOTHING;
