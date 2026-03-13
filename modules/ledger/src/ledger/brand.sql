@@ -1,9 +1,8 @@
 CREATE OR REPLACE FUNCTION ledger.brand()
  RETURNS text
  LANGUAGE plpgsql
- IMMUTABLE
 AS $function$
 BEGIN
-  RETURN 'Comptabilité';
+  RETURN pgv.t('ledger.brand');
 END;
 $function$;

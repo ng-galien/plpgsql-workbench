@@ -5,20 +5,18 @@ AS $function$
 DECLARE
   v_cmd purchase.commande;
   v_title text;
-  v_body text;
+  v_form_body text;
 BEGIN
   IF p_id IS NOT NULL THEN
     SELECT * INTO v_cmd FROM purchase.commande WHERE id = p_id;
-    v_title := 'Modifier commande ' || v_cmd.numero;
+    v_title := pgv.t('purchase.title_modifier_commande') || ' ' || v_cmd.numero;
   ELSE
-    v_title := 'Nouvelle commande';
+    v_title := pgv.t('purchase.title_nouvelle_commande');
   END IF;
 
-  v_body := '<h3>' || pgv.esc(v_title) || '</h3>'
-    || '<form data-rpc="post_commande_save">';
-
+  v_form_body := '';
   IF p_id IS NOT NULL THEN
-    v_body := v_body || format('<input type="hidden" name="p_id" value="%s">', p_id);
+    v_form_body := format('<input type="hidden" name="p_id" value="%s">', p_id);
   END IF;
 
   -- Fournisseur select_search (pre-filled on edit)
@@ -28,25 +26,20 @@ BEGIN
     IF p_id IS NOT NULL THEN
       SELECT name INTO v_fournisseur_name FROM crm.client WHERE id = v_cmd.fournisseur_id;
     END IF;
-    v_body := v_body
-      || pgv.select_search('p_fournisseur_id', 'Fournisseur',
-           'fournisseur_options', 'Rechercher un fournisseur...',
+    v_form_body := v_form_body
+      || pgv.select_search('p_fournisseur_id', pgv.t('purchase.field_fournisseur'),
+           'fournisseur_options', pgv.t('purchase.field_search_fournisseur'),
            CASE WHEN p_id IS NOT NULL THEN v_cmd.fournisseur_id::text END,
            v_fournisseur_name);
   END;
 
-  v_body := v_body
-    || format('<label>Objet<input type="text" name="p_objet" value="%s" required></label>',
-       coalesce(pgv.esc(v_cmd.objet), ''))
-    || format('<label>Date livraison prévue<input type="date" name="p_date_livraison" value="%s"></label>',
-       coalesce(v_cmd.date_livraison::text, ''))
-    || format('<label>Conditions paiement<input type="text" name="p_conditions_paiement" value="%s" placeholder="ex: 30j fin de mois"></label>',
-       coalesce(pgv.esc(v_cmd.conditions_paiement), ''))
-    || format('<label>Notes<textarea name="p_notes">%s</textarea></label>',
-       coalesce(pgv.esc(v_cmd.notes), ''))
-    || '<button type="submit">Enregistrer</button>'
-    || '</form>';
+  v_form_body := v_form_body
+    || pgv.input('p_objet', 'text', pgv.t('purchase.field_objet'), v_cmd.objet, true)
+    || pgv.input('p_date_livraison', 'date', pgv.t('purchase.field_date_livraison'), v_cmd.date_livraison::text)
+    || pgv.input('p_conditions_paiement', 'text', pgv.t('purchase.field_conditions'), v_cmd.conditions_paiement)
+    || pgv.textarea('p_notes', pgv.t('purchase.field_notes'), v_cmd.notes);
 
-  RETURN v_body;
+  RETURN '<h3>' || pgv.esc(v_title) || '</h3>'
+    || pgv.form('post_commande_save', v_form_body, pgv.t('purchase.btn_enregistrer'));
 END;
 $function$;

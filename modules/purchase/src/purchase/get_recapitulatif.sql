@@ -1,17 +1,25 @@
 CREATE OR REPLACE FUNCTION purchase.get_recapitulatif(p_annee integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
- SECURITY DEFINER
 AS $function$
 DECLARE
   v_annee int := coalesce(p_annee, extract(year FROM now())::int);
   v_body text;
-  v_headers text[] := ARRAY['Fournisseur','Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc','Total'];
+  v_headers text[];
   v_rows text[];
   r record;
   v_total_annuel numeric(12,2) := 0;
 BEGIN
-  v_body := '<h3>Récapitulatif achats ' || v_annee || '</h3>';
+  v_headers := ARRAY[
+    pgv.t('purchase.col_fournisseur'),
+    pgv.t('purchase.month_jan'), pgv.t('purchase.month_feb'), pgv.t('purchase.month_mar'),
+    pgv.t('purchase.month_apr'), pgv.t('purchase.month_may'), pgv.t('purchase.month_jun'),
+    pgv.t('purchase.month_jul'), pgv.t('purchase.month_aug'), pgv.t('purchase.month_sep'),
+    pgv.t('purchase.month_oct'), pgv.t('purchase.month_nov'), pgv.t('purchase.month_dec'),
+    pgv.t('purchase.col_total')
+  ];
+
+  v_body := '<h3>' || pgv.t('purchase.title_recap') || ' ' || v_annee || '</h3>';
 
   -- Year navigation
   v_body := v_body || '<p>'
@@ -90,9 +98,9 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun achat pour ' || v_annee);
+    v_body := v_body || pgv.empty(pgv.t('purchase.empty_no_commande'));
   ELSE
-    v_body := v_body || pgv.stat('Total annuel HT', to_char(v_total_annuel, 'FM999 990.00') || ' EUR');
+    v_body := v_body || pgv.stat(pgv.t('purchase.stat_total_annuel'), to_char(v_total_annuel, 'FM999 990.00') || ' EUR');
     v_body := v_body || pgv.md_table(v_headers, v_rows);
   END IF;
 

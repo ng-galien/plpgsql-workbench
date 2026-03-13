@@ -36,7 +36,7 @@ BEGIN
   RETURN NEXT ok(v_html LIKE '%CHT-TEST-F01%', 'search by objet works');
 
   v_html := project.get_chantiers('{"q":"ZZZZNOTFOUND"}'::jsonb);
-  RETURN NEXT ok(v_html LIKE '%Aucun chantier%', 'no results shows empty msg');
+  RETURN NEXT ok(v_html LIKE '%Aucun projet%', 'no results shows empty msg');
 
   -- Combined filter
   v_html := project.get_chantiers('{"statut":"execution","q":"TestFilterCli"}'::jsonb);

@@ -14,15 +14,15 @@ BEGIN
       adresse = nullif(p_data->>'adresse', '')
     WHERE id = v_id;
 
-    RETURN '<template data-toast="success">Dépôt modifié</template>'
-      || format('<template data-redirect="%s"></template>', pgv.call_ref('get_depot', jsonb_build_object('p_id', v_id)));
+    RETURN pgv.toast(pgv.t('stock.toast_depot_modifie'))
+      || pgv.redirect(pgv.call_ref('get_depot', jsonb_build_object('p_id', v_id)));
   ELSE
     INSERT INTO stock.depot (nom, type, adresse)
     VALUES (p_data->>'nom', p_data->>'type', nullif(p_data->>'adresse', ''))
     RETURNING id INTO v_id;
 
-    RETURN '<template data-toast="success">Dépôt créé</template>'
-      || format('<template data-redirect="%s"></template>', pgv.call_ref('get_depot', jsonb_build_object('p_id', v_id)));
+    RETURN pgv.toast(pgv.t('stock.toast_depot_cree'))
+      || pgv.redirect(pgv.call_ref('get_depot', jsonb_build_object('p_id', v_id)));
   END IF;
 END;
 $function$;

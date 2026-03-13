@@ -9,10 +9,10 @@ BEGIN
    WHERE id = v_id AND statut = 'recue';
 
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">Facture introuvable ou déjà validée</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_facture_already_validated'), 'error');
   END IF;
 
-  RETURN format('<template data-toast="success">Facture validée</template><template data-redirect="%s"></template>',
-    pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_facture_validee'))
+    || pgv.redirect(pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

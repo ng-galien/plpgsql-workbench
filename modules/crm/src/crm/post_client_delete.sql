@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION crm.post_client_delete(p_data jsonb)
 AS $function$
 BEGIN
   DELETE FROM crm.client WHERE id = (p_data->>'id')::int;
-  RETURN '<template data-toast="success">Client supprimé.</template>'
-      || '<template data-redirect="' || pgv.call_ref('get_index') || '"></template>';
+  RETURN pgv.toast(pgv.t('crm.toast_client_deleted'))
+      || pgv.redirect(pgv.call_ref('get_index'));
 END;
 $function$;

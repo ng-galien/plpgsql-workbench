@@ -7,9 +7,9 @@ BEGIN
      SET statut = 'reception', updated_at = now()
    WHERE id = p_id AND statut = 'execution';
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Chantier introuvable ou pas en cours';
+    RAISE EXCEPTION '%', pgv.t('project.err_pas_en_cours');
   END IF;
-  RETURN '<template data-toast="success">Chantier passé en réception</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_chantier', jsonb_build_object('p_id', p_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('project.toast_reception'))
+    || pgv.redirect(pgv.call_ref('get_chantier', jsonb_build_object('p_id', p_id)));
 END;
 $function$;

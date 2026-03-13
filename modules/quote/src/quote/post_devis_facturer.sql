@@ -9,8 +9,8 @@ DECLARE
   d record;
 BEGIN
   SELECT * INTO d FROM quote.devis WHERE id = v_devis_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Devis introuvable'; END IF;
-  IF d.statut <> 'accepte' THEN RAISE EXCEPTION 'Seuls les devis acceptés peuvent être facturés'; END IF;
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_devis'); END IF;
+  IF d.statut <> 'accepte' THEN RAISE EXCEPTION '%', pgv.t('quote.err_accepted_only'); END IF;
 
   v_numero := quote._next_numero('FAC');
 
@@ -23,7 +23,7 @@ BEGIN
     FROM quote.ligne WHERE devis_id = v_devis_id
    ORDER BY sort_order, id;
 
-  RETURN '<template data-toast="success">Facture ' || pgv.esc(v_numero) || ' créée</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_facture', jsonb_build_object('p_id', v_facture_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('quote.toast_facture_created') || ' ' || v_numero)
+    || pgv.redirect(pgv.call_ref('get_facture', jsonb_build_object('p_id', v_facture_id)));
 END;
 $function$;

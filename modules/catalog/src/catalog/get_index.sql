@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION catalog.get_index(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_nb_articles int;
@@ -17,9 +16,9 @@ BEGIN
   FROM catalog.article WHERE actif AND prix_vente IS NOT NULL;
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Articles actifs', v_nb_articles::text),
-    pgv.stat('Catégories', v_nb_categories::text),
-    pgv.stat('Prix moyen vente', to_char(v_prix_moyen, 'FM999G990D00') || ' EUR HT')
+    pgv.stat(pgv.t('catalog.stat_articles_actifs'), v_nb_articles::text),
+    pgv.stat(pgv.t('catalog.stat_categories'), v_nb_categories::text),
+    pgv.stat(pgv.t('catalog.stat_prix_moyen'), to_char(v_prix_moyen, 'FM999G990D00') || ' EUR HT')
   ]);
 
   -- Articles récents
@@ -42,21 +41,21 @@ BEGIN
         THEN to_char(r.prix_vente, 'FM999G990D00') || ' EUR'
         ELSE '—' END,
       r.unite,
-      CASE WHEN r.actif THEN pgv.badge('Actif', 'success') ELSE pgv.badge('Inactif', 'warning') END
+      CASE WHEN r.actif THEN pgv.badge(pgv.t('catalog.badge_actif'), 'success') ELSE pgv.badge(pgv.t('catalog.badge_inactif'), 'warning') END
     ];
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun article', 'Créez votre premier article pour commencer.');
+    v_body := v_body || pgv.empty(pgv.t('catalog.empty_no_article'), pgv.t('catalog.empty_first_article'));
   ELSE
-    v_body := v_body || '<h3>Articles récents</h3>' || pgv.md_table(
-      ARRAY['Réf.', 'Désignation', 'Catégorie', 'Prix vente', 'Unité', 'Statut'],
+    v_body := v_body || '<h3>' || pgv.t('catalog.title_recent') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('catalog.col_ref'), pgv.t('catalog.col_designation'), pgv.t('catalog.col_categorie'), pgv.t('catalog.col_prix_vente'), pgv.t('catalog.col_unite'), pgv.t('catalog.col_statut')],
       v_rows
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouvel article</a></p>',
-    pgv.call_ref('get_article_form'));
+  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
+    pgv.call_ref('get_article_form'), pgv.t('catalog.btn_new_article'));
 
   RETURN v_body;
 END;

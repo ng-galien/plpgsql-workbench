@@ -6,7 +6,7 @@ DECLARE
   v_id int;
 BEGIN
   IF name IS NULL OR trim(name) = '' THEN
-    RETURN '<template data-toast="error">Nom requis</template>';
+    RETURN pgv.toast(pgv.t('cad.err_name_required'), 'error');
   END IF;
 
   INSERT INTO cad.drawing (name) VALUES (trim(name)) RETURNING id INTO v_id;
@@ -14,6 +14,6 @@ BEGIN
   INSERT INTO cad.layer (drawing_id, name, color, stroke_width)
   VALUES (v_id, 'Structure', '#333333', 1.5);
 
-  RETURN format('<template data-redirect="/drawing?p_id=%s"></template>', v_id);
+  RETURN pgv.redirect(format('/drawing?p_id=%s', v_id));
 END;
 $function$;

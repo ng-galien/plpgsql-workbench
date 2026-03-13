@@ -17,7 +17,7 @@ BEGIN
 
   UPDATE ledger.journal_entry SET posted = true WHERE id = v_id;
 
-  RETURN '<template data-toast="success">Écriture validée</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_entry', jsonb_build_object('p_id', v_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('ledger.toast_entry_posted'))
+    || pgv.redirect(pgv.call_ref('get_entry', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

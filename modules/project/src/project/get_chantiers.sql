@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION project.get_chantiers(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_statut text := p_params->>'statut';
@@ -13,15 +12,15 @@ BEGIN
   -- Formulaire de filtre
   v_body := format(
     '<form method="get" action="%s" class="grid">'
-    || '<label>Statut<select name="statut">'
-    || '<option value="">Tous</option>'
-    || '<option value="preparation"%s>Préparation</option>'
-    || '<option value="execution"%s>En cours</option>'
-    || '<option value="reception"%s>Réception</option>'
-    || '<option value="clos"%s>Clos</option>'
+    || '<label>' || pgv.t('project.field_statut') || '<select name="statut">'
+    || '<option value="">' || pgv.t('project.filter_tous') || '</option>'
+    || '<option value="preparation"%s>' || pgv.t('project.statut_preparation') || '</option>'
+    || '<option value="execution"%s>' || pgv.t('project.statut_execution') || '</option>'
+    || '<option value="reception"%s>' || pgv.t('project.statut_reception') || '</option>'
+    || '<option value="clos"%s>' || pgv.t('project.statut_clos') || '</option>'
     || '</select></label>'
-    || '<label>Recherche<input type="search" name="q" value="%s" placeholder="Numéro, client, objet…"></label>'
-    || '<button type="submit">Filtrer</button>'
+    || '<label>' || pgv.t('project.field_recherche') || '<input type="search" name="q" value="%s" placeholder="' || pgv.t('project.ph_recherche') || '"></label>'
+    || '<button type="submit">' || pgv.t('project.btn_filtrer') || '</button>'
     || '</form>',
     pgv.call_ref('get_chantiers'),
     CASE WHEN v_statut = 'preparation' THEN ' selected' ELSE '' END,
@@ -61,16 +60,16 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun chantier trouvé', 'Essayez de modifier vos filtres.');
+    v_body := v_body || pgv.empty(pgv.t('project.empty_aucun_trouve'), pgv.t('project.empty_modifier_filtres'));
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Avancement', 'Devis', 'Début'],
+      ARRAY[pgv.t('project.col_numero'), pgv.t('project.col_client'), pgv.t('project.col_objet'), pgv.t('project.col_statut'), pgv.t('project.col_avancement'), pgv.t('project.col_devis'), pgv.t('project.col_debut')],
       v_rows, 15
     );
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">Nouveau chantier</a>', pgv.call_ref('get_chantier_form'))
+    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_chantier_form'), pgv.t('project.btn_nouveau'))
     || '</p>';
 
   RETURN v_body;

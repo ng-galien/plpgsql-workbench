@@ -34,7 +34,7 @@ BEGIN
   INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
   VALUES (v_entry_id, v_account_id, v_debit, v_credit, coalesce(p_data->>'label', ''));
 
-  RETURN '<template data-toast="success">Ligne ajoutée</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_entry', jsonb_build_object('p_id', v_entry_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('ledger.toast_line_added'))
+    || pgv.redirect(pgv.call_ref('get_entry', jsonb_build_object('p_id', v_entry_id)));
 END;
 $function$;

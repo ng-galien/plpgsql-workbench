@@ -2,14 +2,6 @@ CREATE OR REPLACE FUNCTION stock.entree_reception(p_data jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
 AS $function$
--- p_data: {
---   "reception_ref": "REC-2026-001",  -- reference pour traçabilité
---   "depot_id": 1,                     -- dépôt destination
---   "lignes": [
---     {"article_id": 1, "quantite": 10, "prix_unitaire": 5.50},
---     ...
---   ]
--- }
 DECLARE
   v_depot_id int := (p_data->>'depot_id')::int;
   v_ref text := coalesce(p_data->>'reception_ref', 'RECEPTION');
@@ -22,13 +14,12 @@ DECLARE
   v_total_qty numeric := 0;
   v_total_valeur numeric := 0;
 BEGIN
-  -- Valider le dépôt
   IF NOT EXISTS (SELECT 1 FROM stock.depot WHERE id = v_depot_id AND actif) THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'Dépôt inexistant ou inactif');
+    RETURN jsonb_build_object('ok', false, 'error', pgv.t('stock.err_depot_inactive'));
   END IF;
 
   IF v_lignes IS NULL OR jsonb_array_length(v_lignes) = 0 THEN
-    RETURN jsonb_build_object('ok', false, 'error', 'Aucune ligne à réceptionner');
+    RETURN jsonb_build_object('ok', false, 'error', pgv.t('stock.err_no_lignes'));
   END IF;
 
   FOR i IN 0 .. jsonb_array_length(v_lignes) - 1 LOOP
@@ -37,23 +28,19 @@ BEGIN
     v_quantite := (v_ligne->>'quantite')::numeric;
     v_prix := (v_ligne->>'prix_unitaire')::numeric;
 
-    -- Valider l'article
     IF NOT EXISTS (SELECT 1 FROM stock.article WHERE id = v_article_id AND active) THEN
-      CONTINUE; -- skip articles inconnus
+      CONTINUE;
     END IF;
 
     IF v_quantite IS NULL OR v_quantite <= 0 THEN
       CONTINUE;
     END IF;
 
-    -- Créer mouvement entree
     INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, prix_unitaire, reference)
     VALUES (v_article_id, v_depot_id, 'entree', v_quantite, v_prix, v_ref);
 
-    -- Recalculer PMP
     PERFORM stock._recalc_pmp(v_article_id);
 
-    -- Mettre à jour prix_achat si fourni
     IF v_prix IS NOT NULL THEN
       UPDATE stock.article SET prix_achat = v_prix WHERE id = v_article_id;
     END IF;

@@ -3,6 +3,6 @@ CREATE OR REPLACE FUNCTION expense.brand()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  RETURN 'Notes de frais';
+  RETURN pgv.t('expense.brand');
 END;
 $function$;

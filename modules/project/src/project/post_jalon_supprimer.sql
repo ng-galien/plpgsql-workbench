@@ -10,10 +10,10 @@ BEGIN
     JOIN project.chantier c ON c.id = j.chantier_id
    WHERE j.id = p_id AND c.statut IN ('preparation','execution');
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Jalon introuvable ou chantier non modifiable';
+    RAISE EXCEPTION '%', pgv.t('project.err_jalon_non_modifiable');
   END IF;
   DELETE FROM project.jalon WHERE id = p_id;
-  RETURN '<template data-toast="success">Jalon supprimé</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_chantier_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('project.toast_jalon_supprime'))
+    || pgv.redirect(pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_chantier_id)));
 END;
 $function$;

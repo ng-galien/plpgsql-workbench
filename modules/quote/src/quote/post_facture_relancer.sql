@@ -12,7 +12,7 @@ BEGIN
     FROM quote.facture WHERE id = v_id;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Facture #% introuvable', v_id;
+    RAISE EXCEPTION '%', pgv.t('quote.err_not_found_facture');
   END IF;
 
   IF v_statut <> 'envoyee' THEN
@@ -28,7 +28,7 @@ BEGIN
          notes = notes || E'\n[Relance ' || to_char(now(), 'DD/MM/YYYY') || ']'
    WHERE id = v_id;
 
-  RETURN '<template data-toast="success">Relance enregistree pour la facture</template>'
-      || '<template data-redirect="/quote/facture?p_id=' || v_id || '"></template>';
+  RETURN pgv.toast(pgv.t('quote.toast_facture_relance'))
+      || pgv.redirect('/quote/facture?p_id=' || v_id);
 END;
 $function$;

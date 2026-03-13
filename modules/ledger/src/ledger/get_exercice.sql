@@ -18,14 +18,14 @@ BEGIN
   v_start := make_date(v_year, 1, 1);
   v_end := make_date(v_year, 12, 31);
 
-  v_body := pgv.breadcrumb(VARIADIC ARRAY['Exercice ' || v_year]);
+  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_exercice') || ' ' || v_year]);
 
   -- Year selector
-  v_body := v_body || '<div class="grid">'
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text)
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)), v_year::text)
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
-    || '</div>';
+  v_body := v_body || pgv.grid(VARIADIC ARRAY[
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text),
+    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)), v_year::text),
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
+  ]);
 
   -- Exercice status
   SELECT * INTO v_exercice FROM ledger.exercice WHERE year = v_year;
@@ -49,40 +49,40 @@ BEGIN
 
   -- Stats
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Statut',
-      CASE WHEN v_exercice.closed THEN pgv.badge('Clôturé', 'success')
-           ELSE pgv.badge('Ouvert', 'warning') END),
-    pgv.stat('Produits', to_char(v_total_revenue, 'FM999 990.00') || ' €'),
-    pgv.stat('Charges', to_char(v_total_expense, 'FM999 990.00') || ' €'),
-    pgv.stat('Résultat', to_char(v_resultat, 'FM999 990.00') || ' €',
-      CASE WHEN v_resultat >= 0 THEN 'Bénéfice' ELSE 'Déficit' END)
+    pgv.stat(pgv.t('ledger.stat_status'),
+      CASE WHEN v_exercice.closed THEN pgv.badge(pgv.t('ledger.badge_closed'), 'success')
+           ELSE pgv.badge(pgv.t('ledger.badge_open'), 'warning') END),
+    pgv.stat(pgv.t('ledger.stat_revenue'), to_char(v_total_revenue, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_expenses'), to_char(v_total_expense, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_result'), to_char(v_resultat, 'FM999 990.00') || ' €',
+      CASE WHEN v_resultat >= 0 THEN pgv.t('ledger.stat_benefit') ELSE pgv.t('ledger.stat_deficit') END)
   ]);
 
   -- Entries summary
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Écritures', v_entry_count::text),
-    pgv.stat('Brouillons', v_draft_count::text,
-      CASE WHEN v_draft_count > 0 THEN 'À valider avant clôture' ELSE NULL END)
+    pgv.stat(pgv.t('ledger.stat_entries'), v_entry_count::text),
+    pgv.stat(pgv.t('ledger.stat_drafts'), v_draft_count::text,
+      CASE WHEN v_draft_count > 0 THEN pgv.t('ledger.stat_drafts_hint') ELSE NULL END)
   ]);
 
   -- Links
-  v_body := v_body || '<div class="grid">'
-    || format('<a href="%s" role="button" class="outline">Balance de vérification</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)))
-    || format('<a href="%s" role="button" class="outline">Bilan P&amp;L</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)))
-    || '</div>';
+  v_body := v_body || pgv.grid(VARIADIC ARRAY[
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_balance_check')),
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_bilan_pl'))
+  ]);
 
   -- Clôture action
   IF NOT coalesce(v_exercice.closed, false) THEN
     v_body := v_body || pgv.action(
       'post_cloture',
-      'Clôturer l''exercice ' || v_year,
+      pgv.t('ledger.btn_close_exercice') || ' ' || v_year,
       jsonb_build_object('year', v_year),
-      'Clôturer définitivement l''exercice ' || v_year || ' ? Cette action est irréversible.'
+      pgv.t('ledger.confirm_close_exercice') || ' ' || v_year || ' ' || pgv.t('ledger.confirm_close_suffix')
     );
   ELSE
-    v_body := v_body || '<p>Clôturé le '
+    v_body := v_body || '<p>' || pgv.t('ledger.closed_on') || ' '
       || to_char(v_exercice.closed_at, 'DD/MM/YYYY à HH24:MI')
-      || ' — résultat enregistré : ' || to_char(v_exercice.result, 'FM999 990.00') || ' €</p>';
+      || ' — ' || pgv.t('ledger.result_recorded') || ' : ' || to_char(v_exercice.result, 'FM999 990.00') || ' €</p>';
   END IF;
 
   RETURN v_body;

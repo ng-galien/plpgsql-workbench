@@ -7,10 +7,9 @@ DECLARE
   v_numero text;
 BEGIN
   IF p_data->>'id' IS NOT NULL THEN
-    -- UPDATE (brouillon only)
     v_id := (p_data->>'id')::int;
     IF NOT EXISTS (SELECT 1 FROM quote.devis WHERE id = v_id AND statut = 'brouillon') THEN
-      RAISE EXCEPTION 'Seuls les brouillons sont modifiables';
+      RAISE EXCEPTION '%', pgv.t('quote.err_brouillon_only');
     END IF;
     UPDATE quote.devis SET
       client_id = (p_data->>'client_id')::int,
@@ -19,7 +18,6 @@ BEGIN
       notes = coalesce(p_data->>'notes', '')
     WHERE id = v_id;
   ELSE
-    -- INSERT
     v_numero := quote._next_numero('DEV');
     INSERT INTO quote.devis (numero, client_id, objet, validite_jours, notes)
     VALUES (
@@ -31,7 +29,7 @@ BEGIN
     ) RETURNING id INTO v_id;
   END IF;
 
-  RETURN '<template data-toast="success">Devis enregistré</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_devis', jsonb_build_object('p_id', v_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('quote.toast_devis_saved'))
+    || pgv.redirect(pgv.call_ref('get_devis', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

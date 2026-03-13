@@ -20,20 +20,20 @@ BEGIN
   v_start := make_date(v_year, (v_quarter - 1) * 3 + 1, 1);
   v_end := (v_start + interval '3 months' - interval '1 day')::date;
 
-  v_body := pgv.breadcrumb(VARIADIC ARRAY['TVA']);
+  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_tva')]);
 
   -- Sélecteur période
-  v_body := v_body || '<div class="grid">'
-    || format('<a href="%s" role="button" class="outline">T1</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 1)))
-    || format('<a href="%s" role="button" class="outline">T2</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 2)))
-    || format('<a href="%s" role="button" class="outline">T3</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 3)))
-    || format('<a href="%s" role="button" class="outline">T4</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 4)))
-    || '</div>';
+  v_body := v_body || pgv.grid(VARIADIC ARRAY[
+    format('<a href="%s" role="button" class="outline">T1</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 1))),
+    format('<a href="%s" role="button" class="outline">T2</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 2))),
+    format('<a href="%s" role="button" class="outline">T3</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 3))),
+    format('<a href="%s" role="button" class="outline">T4</a>', pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 4)))
+  ]);
 
-  v_body := v_body || '<p>Période : T' || v_quarter || ' ' || v_year
+  v_body := v_body || '<p>' || pgv.t('ledger.title_period') || ' : T' || v_quarter || ' ' || v_year
     || ' (' || to_char(v_start, 'DD/MM/YYYY') || ' — ' || to_char(v_end, 'DD/MM/YYYY') || ')</p>';
 
-  -- TVA collectée (4457) = SUM credit - SUM debit sur la période
+  -- TVA collectée (4457)
   SELECT coalesce(sum(el.credit) - sum(el.debit), 0) INTO v_collectee
     FROM ledger.entry_line el
     JOIN ledger.journal_entry je ON je.id = el.journal_entry_id
@@ -41,7 +41,7 @@ BEGIN
    WHERE a.code = '4457' AND je.posted = true
      AND je.entry_date >= v_start AND je.entry_date <= v_end;
 
-  -- TVA déductible (4456) = SUM debit - SUM credit sur la période
+  -- TVA déductible (4456)
   SELECT coalesce(sum(el.debit) - sum(el.credit), 0) INTO v_deductible
     FROM ledger.entry_line el
     JOIN ledger.journal_entry je ON je.id = el.journal_entry_id
@@ -52,10 +52,10 @@ BEGIN
   v_solde := v_collectee - v_deductible;
 
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('TVA collectée', to_char(v_collectee, 'FM999 990.00') || ' €'),
-    pgv.stat('TVA déductible', to_char(v_deductible, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_tva_collected'), to_char(v_collectee, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_tva_deductible'), to_char(v_deductible, 'FM999 990.00') || ' €'),
     pgv.stat(
-      CASE WHEN v_solde >= 0 THEN 'TVA à reverser' ELSE 'Crédit de TVA' END,
+      CASE WHEN v_solde >= 0 THEN pgv.t('ledger.stat_tva_due') ELSE pgv.t('ledger.stat_tva_credit') END,
       to_char(abs(v_solde), 'FM999 990.00') || ' €'
     )
   ]);
@@ -82,10 +82,10 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NOT NULL THEN
-    v_body := v_body || '<h4>Détail mouvements TVA</h4>'
-      || pgv.md_table(ARRAY['Date', 'Référence', 'Compte', 'Débit', 'Crédit'], v_rows);
+    v_body := v_body || '<h4>' || pgv.t('ledger.title_tva_detail') || '</h4>'
+      || pgv.md_table(ARRAY[pgv.t('ledger.col_date'), pgv.t('ledger.col_reference'), pgv.t('ledger.col_account'), pgv.t('ledger.col_debit'), pgv.t('ledger.col_credit')], v_rows);
   ELSE
-    v_body := v_body || pgv.empty('Aucun mouvement TVA sur la période');
+    v_body := v_body || pgv.empty(pgv.t('ledger.empty_no_tva'));
   END IF;
 
   RETURN v_body;

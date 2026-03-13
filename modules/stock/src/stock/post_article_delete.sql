@@ -5,7 +5,7 @@ AS $function$
 BEGIN
   UPDATE stock.article SET active = false WHERE id = (p_data->>'id')::int;
 
-  RETURN '<template data-toast="success">Article désactivé</template>'
-    || format('<template data-redirect="%s"></template>', pgv.call_ref('get_articles'));
+  RETURN pgv.toast(pgv.t('stock.toast_article_desactive'))
+    || pgv.redirect(pgv.call_ref('get_articles'));
 END;
 $function$;

@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS workbench.agent_message (
   from_module     TEXT NOT NULL,
   to_module       TEXT NOT NULL,
   msg_type        TEXT NOT NULL CHECK (msg_type IN (
-                    'feature_request','bug_report','breaking_change','question','info','task')),
+                    'feature_request','bug_report','issue_report','breaking_change','question','info','task')),
   subject         TEXT NOT NULL,
   body            TEXT,
   status          TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','acknowledged','resolved')),
@@ -112,17 +112,21 @@ CREATE TABLE IF NOT EXISTS workbench.gotcha (
 CREATE INDEX IF NOT EXISTS idx_gotcha_scope
   ON workbench.gotcha (scope) WHERE active;
 
--- Bug reports (from shell UI)
-CREATE TABLE IF NOT EXISTS workbench.bug_report (
+-- Issue reports (from shell UI — bugs, enhancements, questions)
+CREATE TABLE IF NOT EXISTS workbench.issue_report (
   id          SERIAL PRIMARY KEY,
+  issue_type  TEXT NOT NULL DEFAULT 'bug' CHECK (issue_type IN ('bug','enhancement','question')),
+  module      TEXT,
   description TEXT NOT NULL,
   context     JSONB NOT NULL DEFAULT '{}',
   status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','acknowledged','resolved','closed')),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_bug_report_status
-  ON workbench.bug_report (status) WHERE status != 'closed';
+CREATE INDEX IF NOT EXISTS idx_issue_report_status
+  ON workbench.issue_report (status) WHERE status != 'closed';
+CREATE INDEX IF NOT EXISTS idx_issue_report_module
+  ON workbench.issue_report (module) WHERE module IS NOT NULL;
 
 -- Hook event log
 CREATE TABLE IF NOT EXISTS workbench.hook_log (
@@ -310,5 +314,5 @@ GRANT SELECT, INSERT, UPDATE ON workbench.config TO web_anon;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA workbench TO web_anon;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA workbench TO web_anon;
 GRANT EXECUTE ON FUNCTION workbench.postgrest_pre_request() TO web_anon;
-GRANT SELECT, INSERT, UPDATE ON workbench.bug_report TO web_anon;
-GRANT USAGE, SELECT ON SEQUENCE workbench.bug_report_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE ON workbench.issue_report TO web_anon;
+GRANT USAGE, SELECT ON SEQUENCE workbench.issue_report_id_seq TO web_anon;

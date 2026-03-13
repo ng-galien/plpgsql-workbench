@@ -8,29 +8,25 @@ DECLARE
   v_body text;
 BEGIN
   IF v_note_id IS NULL THEN
-    RETURN pgv.error('400', 'note_id requis');
+    RETURN pgv.error('400', pgv.t('expense.err_note_id_requis'));
   END IF;
 
-  -- Build category options
   SELECT jsonb_agg(jsonb_build_object('value', id::text, 'label', nom) ORDER BY nom)
     INTO v_cat_options
     FROM expense.categorie;
 
   v_cat_options := coalesce(v_cat_options, '[]'::jsonb);
 
-  v_body := '<form data-rpc="post_ligne_ajouter">'
-    || '<input type="hidden" name="note_id" value="' || v_note_id || '">'
-    || pgv.input('date_depense', 'date', 'Date', to_char(now()::date, 'YYYY-MM-DD'), true)
-    || pgv.sel('categorie_id', 'Catégorie', v_cat_options)
-    || pgv.input('description', 'text', 'Description', NULL, true)
+  v_body := '<input type="hidden" name="note_id" value="' || v_note_id || '">'
+    || pgv.input('date_depense', 'date', pgv.t('expense.field_date_depense'), to_char(now()::date, 'YYYY-MM-DD'), true)
+    || pgv.sel('categorie_id', pgv.t('expense.field_categorie'), v_cat_options)
+    || pgv.input('description', 'text', pgv.t('expense.field_description'), NULL, true)
     || '<div class="pgv-grid">'
-    || pgv.input('montant_ht', 'number', 'Montant HT', NULL, true)
-    || pgv.input('tva', 'number', 'TVA', '0')
-    || pgv.input('km', 'number', 'Km (si déplacement)')
-    || '</div>'
-    || '<button type="submit">Ajouter la ligne</button>'
-    || '</form>';
+    || pgv.input('montant_ht', 'number', pgv.t('expense.field_montant_ht'), NULL, true)
+    || pgv.input('tva', 'number', pgv.t('expense.field_tva'), '0')
+    || pgv.input('km', 'number', pgv.t('expense.field_km'))
+    || '</div>';
 
-  RETURN v_body;
+  RETURN pgv.form('post_ligne_ajouter', v_body, pgv.t('expense.btn_ajouter_ligne'));
 END;
 $function$;

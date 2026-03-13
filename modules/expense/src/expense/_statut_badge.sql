@@ -5,11 +5,11 @@ AS $function$
 BEGIN
   RETURN pgv.badge(
     CASE p_statut
-      WHEN 'brouillon'   THEN 'Brouillon'
-      WHEN 'soumise'     THEN 'Soumise'
-      WHEN 'validee'     THEN 'Validée'
-      WHEN 'remboursee'  THEN 'Remboursée'
-      WHEN 'rejetee'     THEN 'Rejetée'
+      WHEN 'brouillon'   THEN pgv.t('expense.statut_brouillon')
+      WHEN 'soumise'     THEN pgv.t('expense.statut_soumise')
+      WHEN 'validee'     THEN pgv.t('expense.statut_validee')
+      WHEN 'remboursee'  THEN pgv.t('expense.statut_remboursee')
+      WHEN 'rejetee'     THEN pgv.t('expense.statut_rejetee')
       ELSE initcap(p_statut)
     END,
     CASE p_statut

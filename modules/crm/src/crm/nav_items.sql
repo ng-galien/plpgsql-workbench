@@ -1,7 +1,11 @@
 CREATE OR REPLACE FUNCTION crm.nav_items()
  RETURNS jsonb
  LANGUAGE sql
- IMMUTABLE
+ STABLE
 AS $function$
-  SELECT '[{"href":"/","label":"Clients","icon":"users"},{"href":"/interactions","label":"Interactions","icon":"message-circle"},{"href":"/import","label":"Import","icon":"upload"}]'::jsonb;
+  SELECT jsonb_build_array(
+    jsonb_build_object('href', '/', 'label', pgv.t('crm.nav_clients'), 'icon', 'users'),
+    jsonb_build_object('href', '/interactions', 'label', pgv.t('crm.nav_interactions'), 'icon', 'message-circle'),
+    jsonb_build_object('href', '/import', 'label', pgv.t('crm.nav_import'), 'icon', 'upload')
+  );
 $function$;

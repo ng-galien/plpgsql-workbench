@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION project.brand()
  RETURNS text
  LANGUAGE sql
- IMMUTABLE
+ STABLE
 AS $function$
-  SELECT 'Chantiers';
+  SELECT pgv.t('project.brand');
 $function$;

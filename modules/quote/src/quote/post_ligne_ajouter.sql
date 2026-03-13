@@ -20,21 +20,20 @@ BEGIN
   -- Vérifier que le parent est brouillon
   IF v_devis_id IS NOT NULL THEN
     IF NOT EXISTS (SELECT 1 FROM quote.devis WHERE id = v_devis_id AND statut = 'brouillon') THEN
-      RAISE EXCEPTION 'Lignes modifiables uniquement sur un brouillon';
+      RAISE EXCEPTION '%', pgv.t('quote.err_draft_lines_only');
     END IF;
     v_redirect := pgv.call_ref('get_devis', jsonb_build_object('p_id', v_devis_id));
   ELSIF v_facture_id IS NOT NULL THEN
     IF NOT EXISTS (SELECT 1 FROM quote.facture WHERE id = v_facture_id AND statut = 'brouillon') THEN
-      RAISE EXCEPTION 'Lignes modifiables uniquement sur un brouillon';
+      RAISE EXCEPTION '%', pgv.t('quote.err_draft_lines_only');
     END IF;
     v_redirect := pgv.call_ref('get_facture', jsonb_build_object('p_id', v_facture_id));
   ELSE
-    RAISE EXCEPTION 'devis_id ou facture_id requis';
+    RAISE EXCEPTION '%', pgv.t('quote.err_parent_required');
   END IF;
 
   -- Lookup article si sélectionné (catalog > stock)
   IF v_article_id IS NOT NULL THEN
-    -- Priority 1: catalog.article
     IF EXISTS (
       SELECT 1 FROM pg_namespace n
       JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = 'article'
@@ -45,7 +44,6 @@ BEGIN
          FROM catalog.article WHERE id = $1 AND actif'
       INTO v_art USING v_article_id;
     END IF;
-    -- Priority 2: stock.article fallback
     IF v_art.designation IS NULL AND EXISTS (
       SELECT 1 FROM pg_namespace n
       JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = 'article'
@@ -62,7 +60,7 @@ BEGIN
   v_description := coalesce(
     nullif(trim(p_data->>'description'), ''),
     v_art.designation,
-    'Ligne sans description'
+    pgv.t('quote.err_default_description')
   );
   v_prix_unitaire := coalesce(
     nullif((p_data->>'prix_unitaire')::numeric, 0),
@@ -87,7 +85,7 @@ BEGIN
     v_tva_rate
   );
 
-  RETURN '<template data-toast="success">Ligne ajoutée</template>'
-    || '<template data-redirect="' || v_redirect || '"></template>';
+  RETURN pgv.toast(pgv.t('quote.toast_ligne_added'))
+    || pgv.redirect(v_redirect);
 END;
 $function$;

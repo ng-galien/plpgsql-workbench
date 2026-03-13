@@ -27,7 +27,7 @@ BEGIN
         purchase._statut_badge(r.statut)
           || CASE WHEN r.statut IN ('envoyee', 'partiellement_recue')
                       AND r.created_at < now() - interval '14 days'
-             THEN ' ' || pgv.badge('retard', 'danger')
+             THEN ' ' || pgv.badge(pgv.t('purchase.badge_retard'), 'danger')
              ELSE '' END,
         to_char(r.ttc, 'FM999 990.00') || ' EUR',
         to_char(r.created_at, 'DD/MM/YYYY')
@@ -35,12 +35,12 @@ BEGIN
     END LOOP;
 
     IF array_length(v_rows, 1) IS NULL THEN
-      RETURN pgv.empty('Aucune commande', 'Créez votre première commande fournisseur.')
-        || format('<p><a href="%s" role="button">Nouvelle commande</a></p>', pgv.call_ref('get_commande_form'));
+      RETURN pgv.empty(pgv.t('purchase.empty_no_commande'), pgv.t('purchase.empty_first_commande'))
+        || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_commande_form'), pgv.t('purchase.btn_nouvelle_commande'));
     END IF;
 
-    RETURN '<p>' || format('<a href="%s" role="button">Nouvelle commande</a>', pgv.call_ref('get_commande_form')) || '</p>'
-      || pgv.md_table(ARRAY['Numéro', 'Fournisseur', 'Objet', 'Statut', 'Total TTC', 'Date'], v_rows);
+    RETURN '<p>' || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_commande_form'), pgv.t('purchase.btn_nouvelle_commande')) || '</p>'
+      || pgv.md_table(ARRAY[pgv.t('purchase.col_numero'), pgv.t('purchase.col_fournisseur'), pgv.t('purchase.col_objet'), pgv.t('purchase.col_statut'), pgv.t('purchase.col_total_ttc'), pgv.t('purchase.col_date')], v_rows);
   END IF;
 
   -- Détail
@@ -48,27 +48,32 @@ BEGIN
   SELECT name INTO v_fournisseur FROM crm.client WHERE id = v_cmd.fournisseur_id;
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.card('Commande', v_cmd.numero || '<br>' || purchase._statut_badge(v_cmd.statut)),
-    pgv.card('Fournisseur', format('<a href="/crm/client?p_id=%s">%s</a>', v_cmd.fournisseur_id, pgv.esc(v_fournisseur))),
-    pgv.card('Total TTC', to_char(purchase._total_ttc(p_id), 'FM999 990.00') || ' EUR'),
-    pgv.card('Livraison', coalesce(to_char(v_cmd.date_livraison, 'DD/MM/YYYY'), '—'))
+    pgv.card(pgv.t('purchase.card_commande'), v_cmd.numero || '<br>' || purchase._statut_badge(v_cmd.statut)),
+    pgv.card(pgv.t('purchase.card_fournisseur'), format('<a href="/crm/client?p_id=%s">%s</a>', v_cmd.fournisseur_id, pgv.esc(v_fournisseur))),
+    pgv.card(pgv.t('purchase.card_total_ttc'), to_char(purchase._total_ttc(p_id), 'FM999 990.00') || ' EUR'),
+    pgv.card(pgv.t('purchase.card_livraison'), coalesce(to_char(v_cmd.date_livraison, 'DD/MM/YYYY'), '—'))
   ]);
 
   -- Workflow progression
   IF v_cmd.statut <> 'annulee' THEN
     v_body := v_body || pgv.workflow(
-      '[{"key":"brouillon","label":"Brouillon"},{"key":"envoyee","label":"Envoyée"},{"key":"partiellement_recue","label":"Partielle"},{"key":"recue","label":"Reçue"}]'::jsonb,
+      jsonb_build_array(
+        jsonb_build_object('key', 'brouillon', 'label', pgv.t('purchase.wf_brouillon')),
+        jsonb_build_object('key', 'envoyee', 'label', pgv.t('purchase.wf_envoyee')),
+        jsonb_build_object('key', 'partiellement_recue', 'label', pgv.t('purchase.wf_partielle')),
+        jsonb_build_object('key', 'recue', 'label', pgv.t('purchase.wf_recue'))
+      ),
       v_cmd.statut);
   END IF;
 
   IF v_cmd.objet <> '' THEN
-    v_body := v_body || '<p><strong>Objet :</strong> ' || pgv.esc(v_cmd.objet) || '</p>';
+    v_body := v_body || '<p><strong>' || pgv.t('purchase.label_objet') || '</strong> ' || pgv.esc(v_cmd.objet) || '</p>';
   END IF;
   IF v_cmd.conditions_paiement <> '' THEN
-    v_body := v_body || '<p><strong>Conditions paiement :</strong> ' || pgv.esc(v_cmd.conditions_paiement) || '</p>';
+    v_body := v_body || '<p><strong>' || pgv.t('purchase.label_conditions') || '</strong> ' || pgv.esc(v_cmd.conditions_paiement) || '</p>';
   END IF;
   IF v_cmd.notes <> '' THEN
-    v_body := v_body || '<p><strong>Notes :</strong> ' || pgv.esc(v_cmd.notes) || '</p>';
+    v_body := v_body || '<p><strong>' || pgv.t('purchase.label_notes') || '</strong> ' || pgv.esc(v_cmd.notes) || '</p>';
   END IF;
 
   -- Lignes
@@ -96,41 +101,46 @@ BEGIN
         ELSE '—'
       END,
       CASE WHEN v_cmd.statut = 'brouillon'
-        THEN pgv.action('post_ligne_supprimer', 'Supprimer',
+        THEN pgv.action('post_ligne_supprimer', pgv.t('purchase.btn_supprimer'),
                jsonb_build_object('p_ligne_id', r.id),
-               'Supprimer cette ligne ?', 'danger')
+               pgv.t('purchase.confirm_supprimer_ligne'), 'danger')
         ELSE ''
       END
     ];
   END LOOP;
 
-  v_body := v_body || '<h4>Lignes</h4>';
+  v_body := v_body || '<h4>' || pgv.t('purchase.title_lignes') || '</h4>';
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucune ligne');
+    v_body := v_body || pgv.empty(pgv.t('purchase.empty_no_ligne'));
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY['Description', 'Qté', 'PU', 'TVA', 'Total HT', 'Restant', ''],
+      ARRAY[pgv.t('purchase.col_description'), pgv.t('purchase.col_qte'), pgv.t('purchase.col_pu'), pgv.t('purchase.col_tva'), pgv.t('purchase.col_total_ht'), pgv.t('purchase.col_restant'), ''],
       v_rows);
-    v_body := v_body || '<p><strong>Total HT :</strong> ' || to_char(purchase._total_ht(p_id), 'FM999 990.00') || ' EUR'
-      || ' | <strong>TVA :</strong> ' || to_char(purchase._total_tva(p_id), 'FM999 990.00') || ' EUR'
-      || ' | <strong>TTC :</strong> ' || to_char(purchase._total_ttc(p_id), 'FM999 990.00') || ' EUR</p>';
+    v_body := v_body || '<p><strong>' || pgv.t('purchase.label_total_ht') || '</strong> ' || to_char(purchase._total_ht(p_id), 'FM999 990.00') || ' EUR'
+      || ' | <strong>' || pgv.t('purchase.label_tva') || '</strong> ' || to_char(purchase._total_tva(p_id), 'FM999 990.00') || ' EUR'
+      || ' | <strong>' || pgv.t('purchase.label_ttc') || '</strong> ' || to_char(purchase._total_ttc(p_id), 'FM999 990.00') || ' EUR</p>';
   END IF;
 
   -- Formulaire ajout ligne (brouillon)
   IF v_cmd.statut = 'brouillon' THEN
-    v_body := v_body || '<details><summary>Ajouter une ligne</summary>'
-      || '<form data-rpc="post_ligne_ajouter">'
-      || format('<input type="hidden" name="p_commande_id" value="%s">', p_id)
-      || '<label>Description<input type="text" name="p_description" required></label>'
-      || '<div class="pgv-grid">'
-      || '<label>Quantité<input type="number" name="p_quantite" value="1" step="0.01" min="0.01"></label>'
-      || '<label>Unité<select name="p_unite"><option value="u">u</option><option value="h">h</option><option value="m">m</option><option value="m2">m²</option><option value="m3">m³</option><option value="kg">kg</option><option value="forfait">forfait</option></select></label>'
-      || '<label>Prix unitaire<input type="number" name="p_prix_unitaire" step="0.01" min="0" required></label>'
-      || '<label>TVA %<select name="p_tva_rate"><option value="20.00" selected>20%</option><option value="10.00">10%</option><option value="5.50">5.5%</option><option value="0.00">0%</option></select></label>'
-      || '</div>'
-      || pgv.select_search('p_article_id', 'Article stock', 'article_options', 'Rechercher un article...')
-      || '<button type="submit">Ajouter</button>'
-      || '</form></details>';
+    DECLARE v_add_body text;
+    BEGIN
+      v_add_body := format('<input type="hidden" name="p_commande_id" value="%s">', p_id)
+        || pgv.input('p_description', 'text', pgv.t('purchase.field_description'), NULL, true)
+        || '<div class="pgv-grid">'
+        || '<label>' || pgv.t('purchase.field_quantite') || '<input type="number" name="p_quantite" value="1" step="0.01" min="0.01"></label>'
+        || pgv.sel('p_unite', pgv.t('purchase.field_unite'),
+             '[{"value":"u","label":"u"},{"value":"h","label":"h"},{"value":"m","label":"m"},{"value":"m2","label":"m\u00b2"},{"value":"m3","label":"m\u00b3"},{"value":"kg","label":"kg"},{"value":"forfait","label":"forfait"}]'::jsonb, 'u')
+        || '<label>' || pgv.t('purchase.field_prix_unitaire') || '<input type="number" name="p_prix_unitaire" step="0.01" min="0" required></label>'
+        || pgv.sel('p_tva_rate', pgv.t('purchase.field_tva'),
+             '[{"value":"20.00","label":"20%"},{"value":"10.00","label":"10%"},{"value":"5.50","label":"5.5%"},{"value":"0.00","label":"0%"}]'::jsonb, '20.00')
+        || '</div>'
+        || pgv.select_search('p_article_id', pgv.t('purchase.field_article_stock'), 'article_options', pgv.t('purchase.field_search_article'));
+      v_body := v_body || pgv.accordion(VARIADIC ARRAY[
+        pgv.t('purchase.btn_ajouter_ligne'),
+        pgv.form('post_ligne_ajouter', v_add_body, pgv.t('purchase.btn_ajouter'))
+      ]);
+    END;
   END IF;
 
   -- Réceptions
@@ -145,39 +155,39 @@ BEGIN
     v_rows_r := v_rows_r || ARRAY[
       pgv.esc(r.numero),
       to_char(r.received_at, 'DD/MM/YYYY HH24:MI'),
-      r.nb_lignes::text || ' lignes',
+      r.nb_lignes::text || ' ' || pgv.t('purchase.col_lignes'),
       coalesce(pgv.esc(r.notes), '')
     ];
   END LOOP;
 
   IF array_length(v_rows_r, 1) IS NOT NULL THEN
-    v_body := v_body || '<h4>Réceptions</h4>'
-      || pgv.md_table(ARRAY['Numéro', 'Date', 'Lignes', 'Notes'], v_rows_r);
+    v_body := v_body || '<h4>' || pgv.t('purchase.title_receptions') || '</h4>'
+      || pgv.md_table(ARRAY[pgv.t('purchase.col_numero'), pgv.t('purchase.col_date'), pgv.t('purchase.col_lignes'), pgv.t('purchase.col_notes')], v_rows_r);
   END IF;
 
   -- Bon de commande link
-  v_body := v_body || format('<p><a href="%s">Voir le bon de commande</a></p>',
-    pgv.call_ref('get_bon_commande', jsonb_build_object('p_id', p_id)));
+  v_body := v_body || format('<p><a href="%s">%s</a></p>',
+    pgv.call_ref('get_bon_commande', jsonb_build_object('p_id', p_id)), pgv.t('purchase.btn_voir_bon'));
 
   -- Actions
   v_body := v_body || '<p>';
   IF v_cmd.statut = 'brouillon' THEN
     v_body := v_body
-      || format('<a href="%s" role="button">Modifier</a> ', pgv.call_ref('get_commande_form', jsonb_build_object('p_id', p_id)))
-      || pgv.action('post_commande_envoyer', 'Envoyer',
+      || format('<a href="%s" role="button">%s</a> ', pgv.call_ref('get_commande_form', jsonb_build_object('p_id', p_id)), pgv.t('purchase.btn_modifier'))
+      || pgv.action('post_commande_envoyer', pgv.t('purchase.btn_envoyer'),
            jsonb_build_object('p_id', p_id),
-           'Marquer cette commande comme envoyée ?') || ' '
-      || pgv.action('post_commande_annuler', 'Annuler',
+           pgv.t('purchase.confirm_envoyer')) || ' '
+      || pgv.action('post_commande_annuler', pgv.t('purchase.btn_annuler'),
            jsonb_build_object('p_id', p_id),
-           'Annuler cette commande ?', 'danger');
+           pgv.t('purchase.confirm_annuler'), 'danger');
   ELSIF v_cmd.statut IN ('envoyee', 'partiellement_recue') THEN
     v_body := v_body
-      || pgv.action('post_reception_creer', 'Réceptionner',
+      || pgv.action('post_reception_creer', pgv.t('purchase.btn_receptionner'),
            jsonb_build_object('p_commande_id', p_id),
-           'Créer une réception pour cette commande ?') || ' '
-      || pgv.action('post_commande_annuler', 'Annuler',
+           pgv.t('purchase.confirm_reception')) || ' '
+      || pgv.action('post_commande_annuler', pgv.t('purchase.btn_annuler'),
            jsonb_build_object('p_id', p_id),
-           'Annuler cette commande ?', 'danger');
+           pgv.t('purchase.confirm_annuler'), 'danger');
   END IF;
   v_body := v_body || '</p>';
 

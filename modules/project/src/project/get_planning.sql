@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION project.get_planning()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_body text;
@@ -9,7 +8,7 @@ DECLARE
   r record;
   v_tl_items jsonb;
 BEGIN
-  v_body := '<h3>Planning des chantiers actifs</h3>';
+  v_body := '<h3>' || pgv.t('project.title_planning') || '</h3>';
 
   v_rows := ARRAY[]::text[];
   FOR r IN
@@ -23,7 +22,6 @@ BEGIN
      WHERE c.statut IN ('preparation', 'execution', 'reception')
      ORDER BY c.date_debut NULLS LAST, c.numero
   LOOP
-    -- Build timeline items for this chantier's jalons
     SELECT COALESCE(jsonb_agg(
       jsonb_build_object(
         'date', COALESCE(to_char(j.date_prevue, 'DD/MM/YYYY'), '—'),
@@ -40,17 +38,17 @@ BEGIN
       pgv.esc(r.client),
       r.statut_badge,
       pgv.progress(r.pct, 100),
-      COALESCE(to_char(r.date_debut, 'DD/MM'), '—') || ' → ' || COALESCE(to_char(r.date_fin_prevue, 'DD/MM'), '—'),
+      COALESCE(to_char(r.date_debut, 'DD/MM'), '—') || ' -> ' || COALESCE(to_char(r.date_fin_prevue, 'DD/MM'), '—'),
       r.nb_intervenants::text,
       CASE WHEN v_tl_items = '[]'::jsonb THEN '—' ELSE pgv.timeline(v_tl_items) END
     ];
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun chantier actif');
+    v_body := v_body || pgv.empty(pgv.t('project.empty_aucun_actif'));
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY['Chantier', 'Client', 'Statut', 'Avancement', 'Période', 'Équipe', 'Jalons'],
+      ARRAY[pgv.t('project.col_projet'), pgv.t('project.col_client'), pgv.t('project.col_statut'), pgv.t('project.col_avancement'), pgv.t('project.col_periode'), pgv.t('project.col_equipe'), pgv.t('project.col_jalons')],
       v_rows
     );
   END IF;

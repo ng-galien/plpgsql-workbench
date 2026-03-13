@@ -12,24 +12,22 @@ DECLARE
   r record;
 BEGIN
   IF p_id IS NULL THEN
-    RETURN pgv.error('400', 'ID requis', 'Spécifiez un identifiant de note.');
+    RETURN pgv.error('400', pgv.t('expense.err_id_requis'), pgv.t('expense.err_id_requis_detail'));
   END IF;
 
   SELECT * INTO v_note FROM expense.note WHERE id = p_id;
   IF NOT FOUND THEN
-    RETURN pgv.error('404', 'Note introuvable', 'La note #' || p_id || ' n''existe pas.');
+    RETURN pgv.error('404', pgv.t('expense.err_not_found'), pgv.t('expense.err_not_found_detail'));
   END IF;
 
-  -- En-tête
   v_body := pgv.dl(VARIADIC ARRAY[
-    'Référence', coalesce(v_note.reference, '#' || v_note.id),
-    'Auteur', pgv.esc(v_note.auteur),
-    'Période', to_char(v_note.date_debut, 'DD/MM/YYYY') || ' - ' || to_char(v_note.date_fin, 'DD/MM/YYYY'),
-    'Statut', expense._statut_badge(v_note.statut),
-    'Commentaire', coalesce(pgv.esc(v_note.commentaire), '—')
+    pgv.t('expense.dl_reference'), coalesce(v_note.reference, '#' || v_note.id),
+    pgv.t('expense.dl_auteur'), pgv.esc(v_note.auteur),
+    pgv.t('expense.dl_periode'), to_char(v_note.date_debut, 'DD/MM/YYYY') || ' - ' || to_char(v_note.date_fin, 'DD/MM/YYYY'),
+    pgv.t('expense.dl_statut'), expense._statut_badge(v_note.statut),
+    pgv.t('expense.dl_commentaire'), coalesce(pgv.esc(v_note.commentaire), '—')
   ]);
 
-  -- Lignes
   v_rows := ARRAY[]::text[];
   v_total_ht := 0; v_total_tva := 0; v_total_ttc := 0;
 
@@ -57,46 +55,44 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucune ligne', 'Ajoutez des dépenses à cette note.');
+    v_body := v_body || pgv.empty(pgv.t('expense.empty_no_ligne'), pgv.t('expense.empty_add_ligne'));
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY['Date', 'Catégorie', 'Description', 'Km', 'HT', 'TVA', 'TTC'],
+      ARRAY[pgv.t('expense.col_date'), pgv.t('expense.col_categorie'), pgv.t('expense.col_description'), pgv.t('expense.col_km'), pgv.t('expense.col_ht'), pgv.t('expense.col_tva'), pgv.t('expense.col_ttc')],
       v_rows
     );
-    -- Totaux
     v_body := v_body || pgv.grid(VARIADIC ARRAY[
-      pgv.stat('Total HT', to_char(v_total_ht, 'FM999 990.00') || ' EUR'),
-      pgv.stat('Total TVA', to_char(v_total_tva, 'FM999 990.00') || ' EUR'),
-      pgv.stat('Total TTC', to_char(v_total_ttc, 'FM999 990.00') || ' EUR')
+      pgv.stat(pgv.t('expense.stat_total_ht'), to_char(v_total_ht, 'FM999 990.00') || ' EUR'),
+      pgv.stat(pgv.t('expense.stat_total_tva'), to_char(v_total_tva, 'FM999 990.00') || ' EUR'),
+      pgv.stat(pgv.t('expense.stat_total_ttc'), to_char(v_total_ttc, 'FM999 990.00') || ' EUR')
     ]);
   END IF;
 
-  -- Actions selon statut
   v_body := v_body || '<p>';
 
   IF v_note.statut = 'brouillon' THEN
     v_body := v_body
-      || pgv.action('post_ligne_ajouter', 'Ajouter une ligne',
+      || pgv.action('post_ligne_ajouter', pgv.t('expense.btn_action_ajouter_ligne'),
            jsonb_build_object('note_id', p_id),
            NULL, 'primary')
       || ' '
-      || pgv.action('post_note_soumettre', 'Soumettre',
+      || pgv.action('post_note_soumettre', pgv.t('expense.btn_soumettre'),
            jsonb_build_object('id', p_id),
-           'Soumettre cette note pour validation ?', 'outline');
+           pgv.t('expense.confirm_soumettre'), 'outline');
   ELSIF v_note.statut = 'soumise' THEN
     v_body := v_body
-      || pgv.action('post_note_valider', 'Valider',
+      || pgv.action('post_note_valider', pgv.t('expense.btn_valider'),
            jsonb_build_object('id', p_id),
-           'Valider cette note de frais ?', 'primary')
+           pgv.t('expense.confirm_valider'), 'primary')
       || ' '
-      || pgv.action('post_note_rejeter', 'Rejeter',
+      || pgv.action('post_note_rejeter', pgv.t('expense.btn_rejeter'),
            jsonb_build_object('id', p_id),
-           'Rejeter cette note de frais ?', 'danger');
+           pgv.t('expense.confirm_rejeter'), 'danger');
   ELSIF v_note.statut = 'validee' THEN
     v_body := v_body
-      || pgv.action('post_note_rembourser', 'Rembourser',
+      || pgv.action('post_note_rembourser', pgv.t('expense.btn_rembourser'),
            jsonb_build_object('id', p_id),
-           'Marquer cette note comme remboursée ?', 'primary');
+           pgv.t('expense.confirm_rembourser'), 'primary');
   END IF;
 
   v_body := v_body || '</p>';

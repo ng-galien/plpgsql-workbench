@@ -1,11 +1,12 @@
 CREATE OR REPLACE FUNCTION catalog.get_categories()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_body text;
   v_rows text[];
+  v_parent_opts jsonb;
+  v_form_body text;
   r record;
 BEGIN
   v_rows := ARRAY[]::text[];
@@ -20,34 +21,33 @@ BEGIN
       pgv.esc(r.nom),
       coalesce(pgv.esc(r.parent_nom), '—'),
       r.nb_articles::text,
-      format('<a href="%s">Articles</a>',
-        pgv.call_ref('get_articles', jsonb_build_object('categorie_id', r.id)))
+      format('<a href="%s">%s</a>',
+        pgv.call_ref('get_articles', jsonb_build_object('categorie_id', r.id)),
+        pgv.t('catalog.nav_articles'))
     ];
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := pgv.empty('Aucune catégorie', 'Créez votre première catégorie.');
+    v_body := pgv.empty(pgv.t('catalog.empty_no_categorie'), pgv.t('catalog.empty_first_categorie'));
   ELSE
     v_body := pgv.md_table(
-      ARRAY['Nom', 'Parente', 'Articles', 'Voir'],
+      ARRAY[pgv.t('catalog.col_nom'), pgv.t('catalog.col_parente'), pgv.t('catalog.col_articles'), pgv.t('catalog.col_voir')],
       v_rows
     );
   END IF;
 
-  -- Formulaire inline ajout catégorie
-  v_body := v_body || '<h3>Nouvelle catégorie</h3>';
-  v_body := v_body || '<form data-rpc="post_categorie_creer">'
-    || '<div class="grid">'
-    || pgv.input('nom', 'text', 'Nom', NULL, true);
+  -- Parent category options
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.nom) ORDER BY c.nom), '[]'::jsonb)
+  INTO v_parent_opts FROM catalog.categorie c WHERE c.parent_id IS NULL;
 
-  -- Select parent
-  v_body := v_body || '<label>Catégorie parente<select name="parent_id"><option value="">-- Aucune (racine) --</option>';
-  FOR r IN SELECT c.id, c.nom FROM catalog.categorie c WHERE c.parent_id IS NULL ORDER BY c.nom LOOP
-    v_body := v_body || format('<option value="%s">%s</option>', r.id, pgv.esc(r.nom));
-  END LOOP;
-  v_body := v_body || '</select></label>'
-    || '</div>'
-    || '<button type="submit">Créer</button></form>';
+  -- Inline create form
+  v_body := v_body || '<h3>' || pgv.t('catalog.title_new_categorie') || '</h3>';
+  v_form_body := '<div class="grid">'
+    || pgv.input('nom', 'text', pgv.t('catalog.col_nom'), NULL, true)
+    || pgv.sel('parent_id', pgv.t('catalog.field_categorie_parente'), v_parent_opts)
+    || '</div>';
+
+  v_body := v_body || pgv.form('post_categorie_creer', v_form_body, pgv.t('catalog.btn_creer'));
 
   RETURN v_body;
 END;

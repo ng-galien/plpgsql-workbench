@@ -9,7 +9,7 @@ DECLARE
 BEGIN
   SELECT statut INTO v_statut FROM purchase.commande WHERE id = v_commande_id;
   IF v_statut IS NULL OR v_statut <> 'brouillon' THEN
-    RETURN '<template data-toast="error">Lignes modifiables uniquement sur brouillon</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_draft_only'), 'error');
   END IF;
 
   SELECT coalesce(max(sort_order), 0) + 1 INTO v_sort
@@ -40,7 +40,7 @@ BEGIN
     );
   END;
 
-  RETURN format('<template data-toast="success">Ligne ajoutée</template><template data-redirect="%s"></template>',
-    pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_ligne_ajoutee'))
+    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
 END;
 $function$;

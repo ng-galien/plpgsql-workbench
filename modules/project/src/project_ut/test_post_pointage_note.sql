@@ -38,12 +38,12 @@ BEGIN
   UPDATE project.chantier SET statut = 'clos' WHERE id = v_cid;
   RETURN NEXT throws_ok(
     format('SELECT project.post_pointage_ajouter(%s, 1, ''fail'')', v_cid),
-    'Chantier introuvable ou non modifiable',
+    pgv.t('project.err_non_modifiable'),
     'cannot add pointage to clos'
   );
   RETURN NEXT throws_ok(
     format('SELECT project.post_note_ajouter(%s, ''fail'')', v_cid),
-    'Chantier introuvable ou non modifiable',
+    pgv.t('project.err_non_modifiable'),
     'cannot add note to clos'
   );
 

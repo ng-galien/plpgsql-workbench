@@ -26,16 +26,16 @@ BEGIN
   v_end := make_date(v_year, 12, 31);
 
   v_body := pgv.breadcrumb(VARIADIC ARRAY[
-    format('<a href="%s">Balance</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year))),
+    pgv.t('ledger.nav_balance'), pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)),
     v_account.code || ' — ' || v_account.label
   ]);
 
   -- Year selector
-  v_body := v_body || '<div class="grid">'
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year - 1)), (v_year - 1)::text)
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year)), v_year::text)
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year + 1)), (v_year + 1)::text)
-    || '</div>';
+  v_body := v_body || pgv.grid(VARIADIC ARRAY[
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year - 1)), (v_year - 1)::text),
+    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year)), v_year::text),
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year + 1)), (v_year + 1)::text)
+  ]);
 
   v_rows := ARRAY[]::text[];
   FOR r IN
@@ -63,16 +63,16 @@ BEGIN
 
   -- Stats
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Total débit', to_char(v_total_debit, 'FM999 990.00') || ' €'),
-    pgv.stat('Total crédit', to_char(v_total_credit, 'FM999 990.00') || ' €'),
-    pgv.stat('Solde', to_char(v_cumul, 'FM999 990.00') || ' €')
+    pgv.stat(pgv.t('ledger.stat_total_debit'), to_char(v_total_debit, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_total_credit'), to_char(v_total_credit, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_balance'), to_char(v_cumul, 'FM999 990.00') || ' €')
   ]);
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun mouvement sur ' || v_year, 'Ce compte n''a pas d''écriture validée sur la période.');
+    v_body := v_body || pgv.empty(pgv.t('ledger.empty_no_movement_on') || ' ' || v_year, pgv.t('ledger.empty_no_posted_period'));
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY['Date', 'Référence', 'Libellé', 'Débit', 'Crédit', 'Solde cumulé'],
+      ARRAY[pgv.t('ledger.col_date'), pgv.t('ledger.col_reference'), pgv.t('ledger.col_label'), pgv.t('ledger.col_debit'), pgv.t('ledger.col_credit'), pgv.t('ledger.col_cumulative')],
       v_rows, 20
     );
   END IF;

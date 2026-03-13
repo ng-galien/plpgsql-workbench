@@ -37,7 +37,7 @@ BEGIN
   UPDATE project.chantier SET statut = 'clos' WHERE id = v_cid;
   RETURN NEXT throws_ok(
     format('SELECT project.post_jalon_ajouter(%s, ''test'')', v_cid),
-    'Chantier introuvable ou non modifiable',
+    pgv.t('project.err_non_modifiable'),
     'cannot add jalon to clos chantier'
   );
 

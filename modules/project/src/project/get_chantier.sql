@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION project.get_chantier(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   c record;
@@ -20,7 +19,7 @@ DECLARE
   v_expense_rows text[];
 BEGIN
   SELECT * INTO c FROM project.chantier WHERE id = p_id;
-  IF NOT FOUND THEN RETURN pgv.empty('Chantier introuvable'); END IF;
+  IF NOT FOUND THEN RETURN pgv.empty(pgv.t('project.empty_introuvable')); END IF;
 
   SELECT name INTO v_client_name FROM crm.client WHERE id = c.client_id;
   IF c.devis_id IS NOT NULL THEN
@@ -56,9 +55,9 @@ BEGIN
         SELECT row_number() OVER () AS rn,
                format('<a href="/expense/note?p_id=%%s">%%s</a>', n.id, pgv.esc(COALESCE(n.reference, '#' || n.id))),
                pgv.esc(n.auteur),
-               to_char(n.date_debut, 'DD/MM/YYYY') || ' → ' || to_char(n.date_fin, 'DD/MM/YYYY'),
+               to_char(n.date_debut, 'DD/MM/YYYY') || ' -> ' || to_char(n.date_fin, 'DD/MM/YYYY'),
                pgv.badge(
-                 CASE n.statut WHEN 'brouillon' THEN 'Brouillon' WHEN 'soumise' THEN 'Soumise' WHEN 'validee' THEN 'Validée' WHEN 'refusee' THEN 'Refusée' ELSE n.statut END,
+                 CASE n.statut WHEN 'brouillon' THEN pgv.t('project.expense_brouillon') WHEN 'soumise' THEN pgv.t('project.expense_soumise') WHEN 'validee' THEN pgv.t('project.expense_validee') WHEN 'refusee' THEN pgv.t('project.expense_refusee') ELSE n.statut END,
                  CASE n.statut WHEN 'brouillon' THEN 'default' WHEN 'soumise' THEN 'info' WHEN 'validee' THEN 'success' WHEN 'refusee' THEN 'danger' ELSE 'default' END
                ),
                to_char(COALESCE(sum(l.montant_ttc), 0), 'FM999 999.00') || ' €'
@@ -73,37 +72,42 @@ BEGIN
   END IF;
 
   v_body := pgv.breadcrumb(VARIADIC ARRAY[
-    'Chantiers', pgv.call_ref('get_chantiers'),
+    pgv.t('project.bc_projets'), pgv.call_ref('get_chantiers'),
     c.numero
   ]);
 
   -- Workflow bar (statut)
   v_body := v_body || pgv.workflow(
-    '[{"key":"preparation","label":"Préparation"},{"key":"execution","label":"Exécution"},{"key":"reception","label":"Réception"},{"key":"clos","label":"Clos"}]'::jsonb,
+    jsonb_build_array(
+      jsonb_build_object('key', 'preparation', 'label', pgv.t('project.statut_preparation')),
+      jsonb_build_object('key', 'execution', 'label', pgv.t('project.statut_execution')),
+      jsonb_build_object('key', 'reception', 'label', pgv.t('project.statut_reception')),
+      jsonb_build_object('key', 'clos', 'label', pgv.t('project.statut_clos'))
+    ),
     c.statut
   );
 
   -- Progress bar (avancement)
-  v_body := v_body || pgv.progress(v_pct, 100, 'Avancement');
+  v_body := v_body || pgv.progress(v_pct, 100, pgv.t('project.title_avancement'));
 
   -- Header stats
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Heures totales', v_heures_total::text || ' h'),
-    pgv.stat('Client', format('<a href="/crm/client?p_id=%s">%s</a>', c.client_id, pgv.esc(v_client_name)))
+    pgv.stat(pgv.t('project.stat_heures_totales'), v_heures_total::text || ' h'),
+    pgv.stat(pgv.t('project.stat_client'), format('<a href="/crm/client?p_id=%s">%s</a>', c.client_id, pgv.esc(v_client_name)))
   ] || CASE WHEN v_has_expense AND v_total_frais > 0
-    THEN ARRAY[pgv.stat('Frais', to_char(v_total_frais, 'FM999 999.00') || ' €')]
+    THEN ARRAY[pgv.stat(pgv.t('project.stat_frais'), to_char(v_total_frais, 'FM999 999.00') || ' €')]
     ELSE ARRAY[]::text[]
   END);
 
   -- Info card
-  v_body := v_body || pgv.card('Informations',
+  v_body := v_body || pgv.card(pgv.t('project.title_informations'),
     pgv.dl(VARIADIC ARRAY[
-      'Objet', pgv.esc(c.objet),
-      'Adresse', CASE WHEN c.adresse = '' THEN '—' ELSE pgv.esc(c.adresse) END,
-      'Devis', CASE WHEN v_devis_numero IS NOT NULL THEN format('<a href="/quote/devis?p_id=%s">%s</a>', c.devis_id, pgv.esc(v_devis_numero)) ELSE '—' END,
-      'Début', COALESCE(to_char(c.date_debut, 'DD/MM/YYYY'), '—'),
-      'Fin prévue', COALESCE(to_char(c.date_fin_prevue, 'DD/MM/YYYY'), '—'),
-      'Fin réelle', COALESCE(to_char(c.date_fin_reelle, 'DD/MM/YYYY'), '—')
+      pgv.t('project.dl_objet'), pgv.esc(c.objet),
+      pgv.t('project.dl_adresse'), CASE WHEN c.adresse = '' THEN '—' ELSE pgv.esc(c.adresse) END,
+      pgv.t('project.dl_devis'), CASE WHEN v_devis_numero IS NOT NULL THEN format('<a href="/quote/devis?p_id=%s">%s</a>', c.devis_id, pgv.esc(v_devis_numero)) ELSE '—' END,
+      pgv.t('project.dl_debut'), COALESCE(to_char(c.date_debut, 'DD/MM/YYYY'), '—'),
+      pgv.t('project.dl_fin_prevue'), COALESCE(to_char(c.date_fin_prevue, 'DD/MM/YYYY'), '—'),
+      pgv.t('project.dl_fin_reelle'), COALESCE(to_char(c.date_fin_reelle, 'DD/MM/YYYY'), '—')
     ])
   );
 
@@ -111,19 +115,19 @@ BEGIN
   v_body := v_body || '<p>';
   IF c.statut = 'preparation' THEN
     v_body := v_body
-      || pgv.action('post_chantier_demarrer', 'Démarrer', jsonb_build_object('p_id', p_id), 'Démarrer ce chantier ?')
+      || pgv.action('post_chantier_demarrer', pgv.t('project.btn_demarrer'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_demarrer'))
       || ' '
-      || format('<a href="%s" role="button" class="outline">Modifier</a>', pgv.call_ref('get_chantier_form', jsonb_build_object('p_id', p_id)))
+      || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_chantier_form', jsonb_build_object('p_id', p_id)), pgv.t('project.btn_modifier'))
       || ' '
-      || pgv.action('post_chantier_supprimer', 'Supprimer', jsonb_build_object('p_id', p_id), 'Supprimer ce chantier ?', 'danger');
+      || pgv.action('post_chantier_supprimer', pgv.t('project.btn_supprimer'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_supprimer'), 'danger');
   ELSIF c.statut = 'execution' THEN
     v_body := v_body
-      || pgv.action('post_chantier_reception', 'Passer en réception', jsonb_build_object('p_id', p_id), 'Passer ce chantier en réception ?')
+      || pgv.action('post_chantier_reception', pgv.t('project.btn_reception'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_reception'))
       || ' '
-      || format('<a href="%s" role="button" class="outline">Modifier</a>', pgv.call_ref('get_chantier_form', jsonb_build_object('p_id', p_id)));
+      || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_chantier_form', jsonb_build_object('p_id', p_id)), pgv.t('project.btn_modifier'));
   ELSIF c.statut = 'reception' THEN
     v_body := v_body
-      || pgv.action('post_chantier_clore', 'Clore le chantier', jsonb_build_object('p_id', p_id), 'Clore définitivement ce chantier ?');
+      || pgv.action('post_chantier_clore', pgv.t('project.btn_clore'), jsonb_build_object('p_id', p_id), pgv.t('project.confirm_clore'));
   END IF;
   v_body := v_body || '</p>';
 
@@ -136,7 +140,7 @@ BEGIN
       r.sort_order::text,
       pgv.esc(r.label),
       pgv.badge(
-        CASE r.statut WHEN 'a_faire' THEN 'À faire' WHEN 'en_cours' THEN 'En cours' ELSE 'Validé' END,
+        CASE r.statut WHEN 'a_faire' THEN pgv.t('project.statut_a_faire') WHEN 'en_cours' THEN pgv.t('project.statut_en_cours') ELSE pgv.t('project.statut_valide') END,
         CASE r.statut WHEN 'a_faire' THEN 'default' WHEN 'en_cours' THEN 'info' ELSE 'success' END
       ),
       r.pct_avancement::text || ' %',
@@ -144,9 +148,9 @@ BEGIN
       CASE WHEN c.statut IN ('preparation','execution') THEN
         pgv.action('post_jalon_avancer', '% ', jsonb_build_object('p_id', r.id, 'p_pct', LEAST(r.pct_avancement + 25, 100)))
         || ' '
-        || CASE WHEN r.statut <> 'valide' THEN pgv.action('post_jalon_valider', 'Valider', jsonb_build_object('p_id', r.id), NULL, 'outline') ELSE '' END
+        || CASE WHEN r.statut <> 'valide' THEN pgv.action('post_jalon_valider', pgv.t('project.btn_valider'), jsonb_build_object('p_id', r.id), NULL, 'outline') ELSE '' END
         || ' '
-        || pgv.action('post_jalon_supprimer', 'X', jsonb_build_object('p_id', r.id), 'Supprimer ce jalon ?', 'danger')
+        || pgv.action('post_jalon_supprimer', 'X', jsonb_build_object('p_id', r.id), pgv.t('project.confirm_supprimer_jalon'), 'danger')
       ELSE '' END
     ];
   END LOOP;
@@ -161,7 +165,7 @@ BEGIN
       r.heures::text || ' h',
       pgv.esc(r.description),
       CASE WHEN c.statut IN ('preparation','execution') THEN
-        pgv.action('post_pointage_supprimer', 'X', jsonb_build_object('p_id', r.id), 'Supprimer ce pointage ?', 'danger')
+        pgv.action('post_pointage_supprimer', 'X', jsonb_build_object('p_id', r.id), pgv.t('project.confirm_supprimer_pointage'), 'danger')
       ELSE '' END
     ];
   END LOOP;
@@ -175,7 +179,7 @@ BEGIN
       to_char(r.created_at, 'DD/MM/YYYY HH24:MI'),
       pgv.esc(r.contenu),
       CASE WHEN c.statut IN ('preparation','execution') THEN
-        pgv.action('post_note_supprimer', 'X', jsonb_build_object('p_id', r.id), 'Supprimer cette note ?', 'danger')
+        pgv.action('post_note_supprimer', 'X', jsonb_build_object('p_id', r.id), pgv.t('project.confirm_supprimer_note'), 'danger')
       ELSE '' END
     ];
   END LOOP;
@@ -190,72 +194,68 @@ BEGIN
       CASE WHEN r.role = '' THEN '—' ELSE pgv.esc(r.role) END,
       CASE WHEN r.heures_prevues IS NOT NULL THEN r.heures_prevues::text || ' h' ELSE '—' END,
       CASE WHEN c.statut IN ('preparation','execution') THEN
-        pgv.action('post_affectation_supprimer', 'X', jsonb_build_object('p_id', r.id), 'Retirer cet intervenant ?', 'danger')
+        pgv.action('post_affectation_supprimer', 'X', jsonb_build_object('p_id', r.id), pgv.t('project.confirm_retirer_intervenant'), 'danger')
       ELSE '' END
     ];
   END LOOP;
 
   v_body := v_body || pgv.tabs(VARIADIC ARRAY[
-    'Jalons (' || COALESCE(array_length(v_rows_j, 1) / 6, 0) || ')',
+    pgv.t('project.tab_jalons') || ' (' || COALESCE(array_length(v_rows_j, 1) / 6, 0) || ')',
     CASE WHEN array_length(v_rows_j, 1) IS NULL
-      THEN pgv.empty('Aucun jalon')
-      ELSE pgv.md_table(ARRAY['#', 'Jalon', 'Statut', 'Avancement', 'Date prévue', 'Actions'], v_rows_j)
+      THEN pgv.empty(pgv.t('project.empty_aucun_jalon'))
+      ELSE pgv.md_table(ARRAY[pgv.t('project.col_order'), pgv.t('project.col_jalon'), pgv.t('project.col_statut'), pgv.t('project.col_avancement'), pgv.t('project.col_date_prevue'), pgv.t('project.col_actions')], v_rows_j)
     END
     || CASE WHEN c.statut IN ('preparation','execution') THEN
-      '<form data-rpc="post_jalon_ajouter" class="grid">'
-      || '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
-      || '<input type="text" name="p_label" placeholder="Nouveau jalon..." required>'
-      || '<button type="submit">Ajouter</button>'
-      || '</form>'
+      pgv.form('post_jalon_ajouter',
+        '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
+        || pgv.input('p_label', 'text', pgv.t('project.ph_nouveau_jalon'), NULL, true),
+        pgv.t('project.btn_ajouter'))
     ELSE '' END,
 
-    'Équipe (' || COALESCE(array_length(v_rows_a, 1) / 4, 0) || ')',
+    pgv.t('project.tab_equipe') || ' (' || COALESCE(array_length(v_rows_a, 1) / 4, 0) || ')',
     CASE WHEN array_length(v_rows_a, 1) IS NULL
-      THEN pgv.empty('Aucun intervenant')
-      ELSE pgv.md_table(ARRAY['Intervenant', 'Rôle', 'Heures prévues', ''], v_rows_a)
+      THEN pgv.empty(pgv.t('project.empty_aucun_intervenant'))
+      ELSE pgv.md_table(ARRAY[pgv.t('project.col_intervenant'), pgv.t('project.col_role'), pgv.t('project.col_heures_prevues'), ''], v_rows_a)
     END
     || CASE WHEN c.statut IN ('preparation','execution') THEN
-      '<form data-rpc="post_affectation_ajouter" class="grid">'
-      || '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
-      || '<input type="text" name="p_nom_intervenant" placeholder="Nom intervenant" required>'
-      || '<input type="text" name="p_role" placeholder="Rôle">'
-      || '<input type="number" name="p_heures_prevues" placeholder="Heures" step="0.5" min="0">'
-      || '<button type="submit">Ajouter</button>'
-      || '</form>'
+      pgv.form('post_affectation_ajouter',
+        '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
+        || pgv.input('p_nom_intervenant', 'text', pgv.t('project.ph_nom_intervenant'), NULL, true)
+        || pgv.input('p_role', 'text', pgv.t('project.ph_role'))
+        || pgv.input('p_heures_prevues', 'number', pgv.t('project.ph_heures')),
+        pgv.t('project.btn_ajouter'))
     ELSE '' END,
 
-    'Pointages (' || COALESCE(array_length(v_rows_p, 1) / 4, 0) || ')',
+    pgv.t('project.tab_pointages') || ' (' || COALESCE(array_length(v_rows_p, 1) / 4, 0) || ')',
     CASE WHEN array_length(v_rows_p, 1) IS NULL
-      THEN pgv.empty('Aucun pointage')
-      ELSE pgv.md_table(ARRAY['Date', 'Heures', 'Description', ''], v_rows_p, 10)
+      THEN pgv.empty(pgv.t('project.empty_aucun_pointage'))
+      ELSE pgv.md_table(ARRAY[pgv.t('project.col_date'), pgv.t('project.col_heures'), pgv.t('project.col_description'), ''], v_rows_p, 10)
     END
     || CASE WHEN c.statut IN ('preparation','execution') THEN
-      '<form data-rpc="post_pointage_ajouter" class="grid">'
-      || '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
-      || '<input type="date" name="p_date" value="' || CURRENT_DATE::text || '">'
-      || '<input type="number" name="p_heures" placeholder="Heures" step="0.25" min="0.25" required>'
-      || '<input type="text" name="p_description" placeholder="Description...">'
-      || '<button type="submit">Ajouter</button>'
-      || '</form>'
+      pgv.form('post_pointage_ajouter',
+        '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
+        || pgv.input('p_date', 'date', pgv.t('project.field_date'), CURRENT_DATE::text)
+        || pgv.input('p_heures', 'number', pgv.t('project.ph_heures'), NULL, true)
+        || pgv.input('p_description', 'text', pgv.t('project.ph_description')),
+        pgv.t('project.btn_ajouter'))
     ELSE '' END,
 
-    'Notes (' || COALESCE(array_length(v_rows_n, 1) / 3, 0) || ')',
+    pgv.t('project.tab_notes') || ' (' || COALESCE(array_length(v_rows_n, 1) / 3, 0) || ')',
     CASE WHEN array_length(v_rows_n, 1) IS NULL
-      THEN pgv.empty('Aucune note')
-      ELSE pgv.md_table(ARRAY['Date', 'Contenu', ''], v_rows_n, 10)
+      THEN pgv.empty(pgv.t('project.empty_aucune_note'))
+      ELSE pgv.md_table(ARRAY[pgv.t('project.col_date'), pgv.t('project.col_contenu'), ''], v_rows_n, 10)
     END
     || CASE WHEN c.statut IN ('preparation','execution') THEN
-      '<form data-rpc="post_note_ajouter">'
-      || '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
-      || '<textarea name="p_contenu" placeholder="Nouvelle note..." required></textarea>'
-      || '<button type="submit">Ajouter</button>'
-      || '</form>'
+      pgv.form('post_note_ajouter',
+        '<input type="hidden" name="p_chantier_id" value="' || p_id || '">'
+        || pgv.textarea('p_contenu', pgv.t('project.ph_nouvelle_note')),
+        pgv.t('project.btn_ajouter'))
     ELSE '' END
   ] || CASE WHEN v_has_expense THEN ARRAY[
-    'Notes de frais (' || COALESCE(array_length(v_expense_rows, 1) / 5, 0) || ')',
+    pgv.t('project.tab_frais') || ' (' || COALESCE(array_length(v_expense_rows, 1) / 5, 0) || ')',
     CASE WHEN array_length(v_expense_rows, 1) IS NULL
-      THEN pgv.empty('Aucune note de frais liée')
-      ELSE pgv.md_table(ARRAY['Référence', 'Auteur', 'Période', 'Statut', 'Total TTC'], v_expense_rows)
+      THEN pgv.empty(pgv.t('project.empty_aucun_frais'))
+      ELSE pgv.md_table(ARRAY[pgv.t('project.col_reference'), pgv.t('project.col_auteur'), pgv.t('project.col_periode'), pgv.t('project.col_statut'), pgv.t('project.col_total_ttc')], v_expense_rows)
     END
   ] ELSE ARRAY[]::text[] END);
 

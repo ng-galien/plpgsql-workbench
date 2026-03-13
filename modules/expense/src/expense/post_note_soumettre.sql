@@ -7,22 +7,22 @@ DECLARE
   v_nb_lignes int;
 BEGIN
   IF v_id IS NULL THEN
-    RETURN '<template data-toast="error">ID requis.</template>';
+    RETURN pgv.toast(pgv.t('expense.err_id_requis'), 'error');
   END IF;
 
   SELECT count(*)::int INTO v_nb_lignes FROM expense.ligne WHERE note_id = v_id;
   IF v_nb_lignes = 0 THEN
-    RETURN '<template data-toast="error">Impossible de soumettre une note sans ligne.</template>';
+    RETURN pgv.toast(pgv.t('expense.err_no_ligne'), 'error');
   END IF;
 
   UPDATE expense.note SET statut = 'soumise', updated_at = now()
    WHERE id = v_id AND statut = 'brouillon';
 
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">Note introuvable ou pas en brouillon.</template>';
+    RETURN pgv.toast(pgv.t('expense.err_not_brouillon_submit'), 'error');
   END IF;
 
-  RETURN '<template data-toast="success">Note soumise pour validation.</template>'
-    || '<template data-redirect="/note?p_id=' || v_id || '"></template>';
+  RETURN pgv.toast(pgv.t('expense.toast_note_soumise'))
+    || pgv.redirect('/note?p_id=' || v_id);
 END;
 $function$;

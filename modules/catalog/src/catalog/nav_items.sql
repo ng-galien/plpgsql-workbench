@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION catalog.nav_items()
  STABLE
 AS $function$
 SELECT jsonb_build_array(
-    jsonb_build_object('label', 'Articles',    'href', '/articles'),
-    jsonb_build_object('label', 'Catégories',  'href', '/categories')
+    jsonb_build_object('label', pgv.t('catalog.nav_articles'),    'href', '/articles'),
+    jsonb_build_object('label', pgv.t('catalog.nav_categories'),  'href', '/categories')
 );
 $function$;

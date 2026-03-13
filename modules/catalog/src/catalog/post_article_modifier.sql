@@ -6,12 +6,11 @@ DECLARE
   v_id int := (p_params->>'id')::int;
 BEGIN
   IF v_id IS NULL THEN
-    RETURN '<template data-toast="error">ID article manquant</template>';
+    RETURN pgv.toast(pgv.t('catalog.err_id_missing'), 'error');
   END IF;
 
   -- Modification partielle (toggle actif) ou complète
   IF p_params ? 'designation' THEN
-    -- Modification complète depuis formulaire
     UPDATE catalog.article SET
       reference = nullif(trim(p_params->>'reference'), ''),
       designation = trim(p_params->>'designation'),
@@ -24,15 +23,13 @@ BEGIN
       updated_at = now()
     WHERE id = v_id;
   ELSE
-    -- Modification partielle (actif toggle)
     UPDATE catalog.article SET
       actif = coalesce((p_params->>'actif')::boolean, actif),
       updated_at = now()
     WHERE id = v_id;
   END IF;
 
-  RETURN '<template data-toast="success">Article modifié</template>'
-    || format('<template data-redirect="%s"></template>',
-       pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('catalog.toast_article_modified'))
+    || pgv.redirect(pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

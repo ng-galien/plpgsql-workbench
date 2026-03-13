@@ -13,12 +13,12 @@ BEGIN
    WHERE l.id = v_ligne_id;
 
   IF v_statut IS NULL OR v_statut <> 'brouillon' THEN
-    RETURN '<template data-toast="error">Lignes modifiables uniquement sur brouillon</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_draft_only'), 'error');
   END IF;
 
   DELETE FROM purchase.ligne WHERE id = v_ligne_id;
 
-  RETURN format('<template data-toast="success">Ligne supprimée</template><template data-redirect="%s"></template>',
-    pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_ligne_supprimee'))
+    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
 END;
 $function$;

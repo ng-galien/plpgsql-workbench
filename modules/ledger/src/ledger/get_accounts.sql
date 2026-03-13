@@ -26,14 +26,14 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := pgv.empty('Aucun compte', 'Le plan comptable est vide.');
+    v_body := pgv.empty(pgv.t('ledger.empty_no_account'), pgv.t('ledger.empty_chart_empty'));
   ELSE
     v_body := pgv.md_table(
-      ARRAY['Code', 'Libellé', 'Type', 'Solde'],
+      ARRAY[pgv.t('ledger.col_code'), pgv.t('ledger.col_label'), pgv.t('ledger.col_type'), pgv.t('ledger.col_balance')],
       v_rows, 20
     );
   END IF;
 
-  RETURN pgv.breadcrumb(VARIADIC ARRAY['Plan comptable']) || v_body;
+  RETURN pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_accounts')]) || v_body;
 END;
 $function$;

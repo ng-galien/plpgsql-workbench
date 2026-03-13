@@ -8,6 +8,8 @@ BEGIN
   RETURN NEXT ok(length(ops.get_tests()) > 0, 'get_tests renders HTML');
   RETURN NEXT ok(length(ops.get_messages()) > 0, 'get_messages renders HTML');
   RETURN NEXT ok(length(ops.get_hooks()) > 0, 'get_hooks renders HTML');
+  RETURN NEXT ok(length(ops.get_tools()) > 0, 'get_tools renders HTML');
+  RETURN NEXT ok(length(ops.get_tool('pg_query')) > 0, 'get_tool renders HTML');
   RETURN NEXT ok(length(ops.get_agent('cad')) > 0, 'get_agent renders HTML');
 
   -- Navigation

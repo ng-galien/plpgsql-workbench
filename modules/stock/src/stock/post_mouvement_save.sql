@@ -20,44 +20,38 @@ BEGIN
 
   SELECT * INTO v_art FROM stock.article WHERE id = v_article_id;
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">Article introuvable</template>';
+    RETURN pgv.toast(pgv.t('stock.err_article_not_found'), 'error');
   END IF;
 
-  -- Validate transfert
   IF v_type = 'transfert' AND v_dest_id IS NULL THEN
-    RETURN '<template data-toast="error">Dépôt destination requis pour un transfert</template>';
+    RETURN pgv.toast(pgv.t('stock.err_depot_dest_requis'), 'error');
   END IF;
   IF v_type = 'transfert' AND v_depot_id = v_dest_id THEN
-    RETURN '<template data-toast="error">Dépôt source et destination identiques</template>';
+    RETURN pgv.toast(pgv.t('stock.err_depot_src_dest_identiques'), 'error');
   END IF;
 
-  -- Check stock suffisant pour sortie
   IF v_type = 'sortie' THEN
     IF stock._stock_actuel(v_article_id, v_depot_id) < v_qty THEN
-      RETURN '<template data-toast="error">Stock insuffisant dans ce dépôt</template>';
+      RETURN pgv.toast(pgv.t('stock.err_stock_insuffisant'), 'error');
     END IF;
   END IF;
 
   IF v_type = 'entree' THEN
-    -- Entrée: quantité positive, PU fourni ou prix_achat
     INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, prix_unitaire, reference, notes)
     VALUES (v_article_id, v_depot_id, 'entree', v_qty, coalesce(v_pu, v_art.prix_achat), nullif(p_data->>'reference', ''), coalesce(p_data->>'notes', ''));
 
-    -- Recalc PMP + update prix_achat
     PERFORM stock._recalc_pmp(v_article_id);
     IF v_pu IS NOT NULL THEN
       UPDATE stock.article SET prix_achat = v_pu WHERE id = v_article_id;
     END IF;
 
   ELSIF v_type = 'sortie' THEN
-    -- Sortie: quantité négative, PU = PMP figé
     INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, prix_unitaire, reference, notes)
     VALUES (v_article_id, v_depot_id, 'sortie', -v_qty, v_art.pmp, nullif(p_data->>'reference', ''), coalesce(p_data->>'notes', ''));
 
   ELSIF v_type = 'transfert' THEN
-    -- Transfert: sortie du dépôt source + entrée au dépôt destination
     IF stock._stock_actuel(v_article_id, v_depot_id) < v_qty THEN
-      RETURN '<template data-toast="error">Stock insuffisant pour le transfert</template>';
+      RETURN pgv.toast(pgv.t('stock.err_stock_insuffisant_transfert'), 'error');
     END IF;
 
     INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, prix_unitaire, reference, depot_destination_id, notes)
@@ -67,7 +61,6 @@ BEGIN
     VALUES (v_article_id, v_dest_id, 'transfert', v_qty, v_art.pmp, nullif(p_data->>'reference', ''), v_depot_id, coalesce(p_data->>'notes', ''));
 
   ELSIF v_type = 'inventaire' THEN
-    -- Inventaire: ajustement pour corriger l'écart
     DECLARE
       v_stock_actuel numeric;
       v_ecart numeric;
@@ -76,7 +69,7 @@ BEGIN
       v_ecart := v_qty - v_stock_actuel;
 
       IF v_ecart = 0 THEN
-        RETURN '<template data-toast="success">Stock déjà correct, aucun ajustement</template>';
+        RETURN pgv.toast(pgv.t('stock.toast_stock_correct'));
       END IF;
 
       INSERT INTO stock.mouvement (article_id, depot_id, type, quantite, prix_unitaire, reference, notes)
@@ -86,7 +79,7 @@ BEGIN
     END;
   END IF;
 
-  RETURN '<template data-toast="success">Mouvement enregistré</template>'
-    || format('<template data-redirect="%s"></template>', pgv.call_ref('get_mouvements'));
+  RETURN pgv.toast(pgv.t('stock.toast_mvt_enregistre'))
+    || pgv.redirect(pgv.call_ref('get_mouvements'));
 END;
 $function$;

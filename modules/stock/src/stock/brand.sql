@@ -3,5 +3,5 @@ CREATE OR REPLACE FUNCTION stock.brand()
  LANGUAGE sql
  STABLE
 AS $function$
-  SELECT 'Stock';
+  SELECT pgv.t('stock.brand');
 $function$;

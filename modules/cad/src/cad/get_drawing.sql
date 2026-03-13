@@ -7,17 +7,18 @@ DECLARE
   v_body text;
   v_shapes text;
   v_layers jsonb;
+  v_form text;
 BEGIN
   SELECT * INTO v_drawing FROM cad.drawing WHERE id = p_id;
   IF NOT FOUND THEN
-    RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
+    RETURN pgv.error('404', pgv.t('cad.err_not_found'), format(pgv.t('cad.err_not_found_detail'), p_id));
   END IF;
 
   -- Navigation
   v_body := '<p>'
-    || '<strong>Vue 2D</strong>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', p_id)) || '">Vue 3D</a>'
-    || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">Liste de débit</a>'
+    || '<strong>' || pgv.t('cad.vue_2d') || '</strong>'
+    || ' | <a href="' || pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', p_id)) || '">' || pgv.t('cad.vue_3d') || '</a>'
+    || ' | <a href="' || pgv.call_ref('get_drawing_bom', jsonb_build_object('p_id', p_id)) || '">' || pgv.t('cad.liste_debit') || '</a>'
     || '</p>';
 
   -- Layout: tree + canvas
@@ -28,10 +29,10 @@ BEGIN
 
   -- Stats
   v_body := v_body || pgv.grid(
-    pgv.stat('Shapes', (SELECT count(*)::text FROM cad.shape WHERE drawing_id = p_id)),
-    pgv.stat('Calques', (SELECT count(*)::text FROM cad.layer WHERE drawing_id = p_id)),
-    pgv.stat('Échelle', '1:' || v_drawing.scale::text),
-    pgv.stat('Taille', v_drawing.width || ' × ' || v_drawing.height || ' ' || v_drawing.unit)
+    pgv.stat(pgv.t('cad.stat_shapes'), (SELECT count(*)::text FROM cad.shape WHERE drawing_id = p_id)),
+    pgv.stat(pgv.t('cad.stat_calques'), (SELECT count(*)::text FROM cad.layer WHERE drawing_id = p_id)),
+    pgv.stat(pgv.t('cad.stat_echelle'), '1:' || v_drawing.scale::text),
+    pgv.stat(pgv.t('cad.stat_taille'), v_drawing.width || ' × ' || v_drawing.height || ' ' || v_drawing.unit)
   );
 
   -- Liste des shapes
@@ -42,9 +43,9 @@ BEGIN
         s.id, s.type,
         COALESCE(s.label, '-'),
         l.name,
-        pgv.action('shape_delete', 'Suppr.',
+        pgv.action('shape_delete', pgv.t('cad.btn_suppr'),
           jsonb_build_object('shape_id', s.id, 'drawing_id', p_id),
-          'Supprimer cette shape ?', 'danger')
+          pgv.t('cad.confirm_delete_shape'), 'danger')
       ) AS line
     FROM cad.shape s
     JOIN cad.layer l ON l.id = s.layer_id
@@ -53,7 +54,9 @@ BEGIN
 
   IF v_shapes IS NOT NULL THEN
     v_body := v_body || '<md>' || E'\n'
-      || '| ID | Type | Label | Calque | Action |' || E'\n'
+      || format('| %s | %s | %s | %s | %s |',
+           pgv.t('cad.col_id'), pgv.t('cad.col_type'), pgv.t('cad.col_label'),
+           pgv.t('cad.col_calque'), pgv.t('cad.col_action')) || E'\n'
       || '|----|------|-------|--------|--------|' || E'\n'
       || v_shapes || E'\n'
       || '</md>';
@@ -64,29 +67,29 @@ BEGIN
   INTO v_layers
   FROM cad.layer l WHERE l.drawing_id = p_id;
 
-  -- Formulaire ajout shape via RPC dédié
-  v_body := v_body || '<details><summary>Ajouter une shape</summary>'
-    || '<form data-rpc="shape_add">'
-    || format('<input type="hidden" name="drawing_id" value="%s">', p_id)
+  -- Build form body with nested accordion for geometry/props
+  v_form := format('<input type="hidden" name="drawing_id" value="%s">', p_id)
     || '<div class="grid">'
-    || pgv.sel('layer_id', 'Calque', COALESCE(v_layers, '[]'::jsonb))
-    || pgv.sel('type', 'Type', '[
-        {"value":"line","label":"Ligne"},
-        {"value":"rect","label":"Rectangle"},
-        {"value":"circle","label":"Cercle"},
-        {"value":"text","label":"Texte"},
-        {"value":"dimension","label":"Cote"}
-      ]'::jsonb)
+    || pgv.sel('layer_id', pgv.t('cad.col_calque'), COALESCE(v_layers, '[]'::jsonb))
+    || pgv.sel('type', pgv.t('cad.col_type'), jsonb_build_array(
+         jsonb_build_object('value', 'line', 'label', pgv.t('cad.shape_line')),
+         jsonb_build_object('value', 'rect', 'label', pgv.t('cad.shape_rect')),
+         jsonb_build_object('value', 'circle', 'label', pgv.t('cad.shape_circle')),
+         jsonb_build_object('value', 'text', 'label', pgv.t('cad.shape_text')),
+         jsonb_build_object('value', 'dimension', 'label', pgv.t('cad.shape_dimension'))
+       ))
     || '</div>'
-    || pgv.input('label', 'text', 'Label (optionnel)')
-    || '<details><summary>Géométrie (JSON)</summary>'
-    || pgv.textarea('geometry', 'Géométrie JSON', '{"x1":0,"y1":0,"x2":100,"y2":0}')
-    || '</details>'
-    || '<details><summary>Propriétés bois (JSON)</summary>'
-    || pgv.textarea('props', 'Props JSON', '{}')
-    || '</details>'
-    || '<button type="submit">Ajouter</button>'
-    || '</form></details>';
+    || pgv.input('label', 'text', pgv.t('cad.field_label'))
+    || pgv.accordion(
+         pgv.t('cad.title_geometry'), pgv.textarea('geometry', pgv.t('cad.field_geometry'), '{"x1":0,"y1":0,"x2":100,"y2":0}'),
+         pgv.t('cad.title_props'), pgv.textarea('props', pgv.t('cad.field_props'), '{}')
+       );
+
+  -- Wrap in collapsible accordion + form
+  v_body := v_body || pgv.accordion(
+    pgv.t('cad.title_add_shape'),
+    pgv.form('shape_add', v_form, pgv.t('cad.btn_ajouter'))
+  );
 
   RETURN v_body;
 END;

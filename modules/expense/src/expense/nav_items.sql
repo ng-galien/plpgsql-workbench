@@ -3,6 +3,10 @@ CREATE OR REPLACE FUNCTION expense.nav_items()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  RETURN '[{"href":"/","label":"Dashboard","icon":"home"},{"href":"/notes","label":"Notes","icon":"file-text"},{"href":"/categories","label":"Catégories","icon":"tag"}]'::jsonb;
+  RETURN jsonb_build_array(
+    jsonb_build_object('href', '/', 'label', pgv.t('expense.nav_dashboard'), 'icon', 'home'),
+    jsonb_build_object('href', '/notes', 'label', pgv.t('expense.nav_notes'), 'icon', 'file-text'),
+    jsonb_build_object('href', '/categories', 'label', pgv.t('expense.nav_categories'), 'icon', 'tag')
+  );
 END;
 $function$;

@@ -25,7 +25,7 @@ BEGIN
         pgv.esc(r.designation),
         v_qty::text || ' ' || r.unite,
         r.seuil_mini::text || ' ' || r.unite,
-        pgv.badge('ALERTE', 'danger'),
+        pgv.badge(pgv.t('stock.col_alerte'), 'danger'),
         CASE WHEN r.fournisseur IS NOT NULL
           THEN format('<a href="/crm/client?p_id=%s">%s</a>', r.fournisseur_id, pgv.esc(r.fournisseur))
           ELSE '—'
@@ -35,10 +35,10 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := pgv.empty('Aucune alerte', 'Tous les articles sont au-dessus du seuil minimum.');
+    v_body := pgv.empty(pgv.t('stock.empty_no_alerte'), pgv.t('stock.empty_all_above'));
   ELSE
     v_body := pgv.md_table(
-      ARRAY['Réf.', 'Désignation', 'Stock', 'Seuil', 'Statut', 'Fournisseur'],
+      ARRAY[pgv.t('stock.col_ref'), pgv.t('stock.col_designation'), pgv.t('stock.col_stock'), pgv.t('stock.col_seuil'), pgv.t('stock.col_statut'), pgv.t('stock.col_fournisseur')],
       v_rows
     );
   END IF;

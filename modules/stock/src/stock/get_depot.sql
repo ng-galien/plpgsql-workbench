@@ -10,12 +10,12 @@ DECLARE
   r record;
 BEGIN
   SELECT * INTO v_dep FROM stock.depot WHERE id = p_id;
-  IF NOT FOUND THEN RETURN pgv.empty('Dépôt introuvable', ''); END IF;
+  IF NOT FOUND THEN RETURN pgv.empty(pgv.t('stock.empty_depot_not_found'), ''); END IF;
 
-  v_body := format('<p><strong>Type:</strong> %s | <strong>Adresse:</strong> %s | <strong>Actif:</strong> %s</p>',
-    pgv.badge(v_dep.type, NULL),
-    coalesce(pgv.esc(v_dep.adresse), '—'),
-    CASE WHEN v_dep.actif THEN 'Oui' ELSE 'Non' END
+  v_body := format('<p><strong>%s</strong> %s | <strong>%s</strong> %s | <strong>%s</strong> %s</p>',
+    pgv.t('stock.label_type'), pgv.badge(v_dep.type, NULL),
+    pgv.t('stock.label_adresse'), coalesce(pgv.esc(v_dep.adresse), '—'),
+    pgv.t('stock.label_actif'), CASE WHEN v_dep.actif THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END
   );
 
   -- Contenu du dépôt
@@ -38,12 +38,12 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NOT NULL THEN
-    v_body := v_body || '<h3>Contenu</h3>' || pgv.md_table(
-      ARRAY['Réf.', 'Désignation', 'Quantité'],
+    v_body := v_body || '<h3>' || pgv.t('stock.title_contenu') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_ref'), pgv.t('stock.col_designation'), pgv.t('stock.col_quantite')],
       v_rows
     );
   ELSE
-    v_body := v_body || pgv.empty('Dépôt vide', '');
+    v_body := v_body || pgv.empty(pgv.t('stock.empty_depot_vide'), '');
   END IF;
 
   -- Derniers mouvements
@@ -71,14 +71,14 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NOT NULL THEN
-    v_body := v_body || '<h3>Mouvements récents</h3>' || pgv.md_table(
-      ARRAY['Date', 'Article', 'Type', 'Qté', 'Réf.'],
+    v_body := v_body || '<h3>' || pgv.t('stock.title_mvt_recents') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_date'), pgv.t('stock.col_article'), pgv.t('stock.col_type'), pgv.t('stock.col_qty'), pgv.t('stock.col_ref')],
       v_rows, 10
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Modifier</a></p>',
-    pgv.call_ref('get_depot_form', jsonb_build_object('p_id', p_id)));
+  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
+    pgv.call_ref('get_depot_form', jsonb_build_object('p_id', p_id)), pgv.t('stock.btn_modifier'));
 
   RETURN v_body;
 END;

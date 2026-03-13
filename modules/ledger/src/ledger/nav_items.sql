@@ -1,14 +1,15 @@
 CREATE OR REPLACE FUNCTION ledger.nav_items()
  RETURNS jsonb
  LANGUAGE sql
+ STABLE
 AS $function$
-SELECT '[
-    {"href":"/","label":"Tableau de bord","icon":"home"},
-    {"href":"/entries","label":"Écritures","icon":"list"},
-    {"href":"/accounts","label":"Plan comptable","icon":"book"},
-    {"href":"/balance","label":"Balance","icon":"scale"},
-    {"href":"/exercice","label":"Exercice","icon":"calendar"},
-    {"href":"/tva","label":"TVA","icon":"percent"},
-    {"href":"/bilan","label":"Bilan","icon":"bar-chart"}
-  ]'::jsonb;
+  SELECT jsonb_build_array(
+    jsonb_build_object('href', '/', 'label', pgv.t('ledger.nav_dashboard'), 'icon', 'home'),
+    jsonb_build_object('href', '/entries', 'label', pgv.t('ledger.nav_entries'), 'icon', 'list'),
+    jsonb_build_object('href', '/accounts', 'label', pgv.t('ledger.nav_accounts'), 'icon', 'book'),
+    jsonb_build_object('href', '/balance', 'label', pgv.t('ledger.nav_balance'), 'icon', 'scale'),
+    jsonb_build_object('href', '/exercice', 'label', pgv.t('ledger.nav_exercice'), 'icon', 'calendar'),
+    jsonb_build_object('href', '/tva', 'label', pgv.t('ledger.nav_tva'), 'icon', 'percent'),
+    jsonb_build_object('href', '/bilan', 'label', pgv.t('ledger.nav_bilan'), 'icon', 'bar-chart')
+  );
 $function$;

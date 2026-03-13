@@ -35,30 +35,35 @@ BEGIN
     END LOOP;
 
     IF array_length(v_rows, 1) IS NULL THEN
-      RETURN pgv.empty('Aucune facture fournisseur', 'Les factures apparaissent ici après saisie.');
+      RETURN pgv.empty(pgv.t('purchase.empty_no_facture'), pgv.t('purchase.empty_facture_hint'));
     END IF;
 
-    v_body := '<details><summary>Saisir une facture fournisseur</summary>'
-      || '<form data-rpc="post_facture_saisir">'
-      || '<label>N° fournisseur<input type="text" name="p_numero_fournisseur" required placeholder="ex: FAC-2026-042"></label>'
-      || '<div class="pgv-grid">'
-      || '<label>Montant HT<input type="number" name="p_montant_ht" step="0.01" min="0" required></label>'
-      || '<label>Montant TTC<input type="number" name="p_montant_ttc" step="0.01" min="0" required></label>'
-      || '</div>'
-      || '<div class="pgv-grid">'
-      || '<label>Date facture<input type="date" name="p_date_facture" required></label>'
-      || '<label>Date échéance<input type="date" name="p_date_echeance"></label>'
-      || '</div>'
-      || '<label>Commande liée<select name="p_commande_id"><option value="">(aucune)</option>';
-    FOR r IN SELECT id, numero FROM purchase.commande ORDER BY created_at DESC LIMIT 20 LOOP
-      v_body := v_body || format('<option value="%s">%s</option>', r.id, pgv.esc(r.numero));
-    END LOOP;
-    RETURN v_body
-      || '</select></label>'
-      || '<label>Notes<textarea name="p_notes"></textarea></label>'
-      || '<button type="submit">Saisir</button>'
-      || '</form></details>'
-      || pgv.md_table(ARRAY['N° fournisseur', 'Fournisseur', 'Commande', 'Statut', 'Montant TTC', 'Date facture', 'Echéance'], v_rows);
+    DECLARE
+      v_form_body text;
+      v_cmd_options jsonb;
+    BEGIN
+      SELECT coalesce(jsonb_agg(jsonb_build_object('value', id::text, 'label', numero)), '[]'::jsonb)
+        INTO v_cmd_options
+        FROM (SELECT id, numero FROM purchase.commande ORDER BY created_at DESC LIMIT 20) sub;
+
+      v_form_body := pgv.input('p_numero_fournisseur', 'text', pgv.t('purchase.field_no_fournisseur'), NULL, true)
+        || '<div class="pgv-grid">'
+        || '<label>' || pgv.t('purchase.field_montant_ht') || '<input type="number" name="p_montant_ht" step="0.01" min="0" required></label>'
+        || '<label>' || pgv.t('purchase.field_montant_ttc') || '<input type="number" name="p_montant_ttc" step="0.01" min="0" required></label>'
+        || '</div>'
+        || '<div class="pgv-grid">'
+        || pgv.input('p_date_facture', 'date', pgv.t('purchase.field_date_facture'), NULL, true)
+        || pgv.input('p_date_echeance', 'date', pgv.t('purchase.field_date_echeance'))
+        || '</div>'
+        || pgv.sel('p_commande_id', pgv.t('purchase.field_commande_liee'), v_cmd_options)
+        || pgv.textarea('p_notes', pgv.t('purchase.field_notes'));
+
+      RETURN pgv.accordion(VARIADIC ARRAY[
+        pgv.t('purchase.title_saisir_facture'),
+        pgv.form('post_facture_saisir', v_form_body, pgv.t('purchase.btn_saisir'))
+      ])
+      || pgv.md_table(ARRAY[pgv.t('purchase.col_no_fournisseur'), pgv.t('purchase.col_fournisseur'), pgv.t('purchase.col_commande'), pgv.t('purchase.col_statut'), pgv.t('purchase.col_montant_ttc'), pgv.t('purchase.col_date_facture'), pgv.t('purchase.col_echeance')], v_rows);
+    END;
   END IF;
 
   -- Détail
@@ -72,27 +77,31 @@ BEGIN
    WHERE c.id = v_fac.commande_id;
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.card('Facture', pgv.esc(v_fac.numero_fournisseur) || '<br>' || purchase._statut_badge(v_fac.statut)),
-    pgv.card('Fournisseur', CASE WHEN v_fournisseur_id IS NOT NULL
+    pgv.card(pgv.t('purchase.card_facture'), pgv.esc(v_fac.numero_fournisseur) || '<br>' || purchase._statut_badge(v_fac.statut)),
+    pgv.card(pgv.t('purchase.card_fournisseur'), CASE WHEN v_fournisseur_id IS NOT NULL
       THEN format('<a href="/crm/client?p_id=%s">%s</a>', v_fournisseur_id, pgv.esc(v_fournisseur_name))
       ELSE '—' END),
-    pgv.card('Commande', coalesce(v_cmd_numero, '—')),
-    pgv.card('Montant HT', to_char(v_fac.montant_ht, 'FM999 990.00') || ' EUR'),
-    pgv.card('Montant TTC', to_char(v_fac.montant_ttc, 'FM999 990.00') || ' EUR')
+    pgv.card(pgv.t('purchase.card_commande'), coalesce(v_cmd_numero, '—')),
+    pgv.card(pgv.t('purchase.card_montant_ht'), to_char(v_fac.montant_ht, 'FM999 990.00') || ' EUR'),
+    pgv.card(pgv.t('purchase.card_montant_ttc'), to_char(v_fac.montant_ttc, 'FM999 990.00') || ' EUR')
   ]);
 
   -- Workflow progression
   v_body := v_body || pgv.workflow(
-    '[{"key":"recue","label":"Reçue"},{"key":"validee","label":"Validée"},{"key":"payee","label":"Payée"}]'::jsonb,
+    jsonb_build_array(
+      jsonb_build_object('key', 'recue', 'label', pgv.t('purchase.wf_recue_fac')),
+      jsonb_build_object('key', 'validee', 'label', pgv.t('purchase.wf_validee')),
+      jsonb_build_object('key', 'payee', 'label', pgv.t('purchase.wf_payee'))
+    ),
     v_fac.statut);
 
   v_body := v_body || '<p>'
-    || '<strong>Date facture :</strong> ' || to_char(v_fac.date_facture, 'DD/MM/YYYY')
-    || ' | <strong>Echéance :</strong> ' || coalesce(to_char(v_fac.date_echeance, 'DD/MM/YYYY'), '—')
+    || '<strong>' || pgv.t('purchase.label_date_facture') || '</strong> ' || to_char(v_fac.date_facture, 'DD/MM/YYYY')
+    || ' | <strong>' || pgv.t('purchase.label_echeance') || '</strong> ' || coalesce(to_char(v_fac.date_echeance, 'DD/MM/YYYY'), '—')
     || '</p>';
 
   IF v_fac.notes <> '' THEN
-    v_body := v_body || '<p><strong>Notes :</strong> ' || pgv.esc(v_fac.notes) || '</p>';
+    v_body := v_body || '<p><strong>' || pgv.t('purchase.label_notes') || '</strong> ' || pgv.esc(v_fac.notes) || '</p>';
   END IF;
 
   -- Rapprochement: comparer montants commande vs facture
@@ -103,13 +112,13 @@ BEGIN
     BEGIN
       v_cmd_ttc := purchase._total_ttc(v_fac.commande_id);
       v_ecart := v_fac.montant_ttc - v_cmd_ttc;
-      v_body := v_body || '<p><strong>Rapprochement :</strong> Commande TTC = '
+      v_body := v_body || '<p><strong>' || pgv.t('purchase.label_rapprochement') || '</strong> ' || pgv.t('purchase.label_commande_ttc') || ' '
         || to_char(v_cmd_ttc, 'FM999 990.00') || ' EUR'
-        || ' | Ecart = ' || to_char(v_ecart, 'FM999 990.00') || ' EUR';
+        || ' | ' || pgv.t('purchase.label_ecart') || ' ' || to_char(v_ecart, 'FM999 990.00') || ' EUR';
       IF abs(v_ecart) > 0.01 THEN
-        v_body := v_body || ' ' || pgv.badge('écart', 'warning');
+        v_body := v_body || ' ' || pgv.badge(pgv.t('purchase.badge_ecart'), 'warning');
       ELSE
-        v_body := v_body || ' ' || pgv.badge('OK', 'success');
+        v_body := v_body || ' ' || pgv.badge(pgv.t('purchase.badge_ok'), 'success');
       END IF;
       v_body := v_body || '</p>';
     END;
@@ -118,20 +127,20 @@ BEGIN
   -- Actions
   v_body := v_body || '<p>';
   IF v_fac.statut = 'recue' THEN
-    v_body := v_body || pgv.action('post_facture_valider', 'Valider',
+    v_body := v_body || pgv.action('post_facture_valider', pgv.t('purchase.btn_valider'),
       jsonb_build_object('p_id', p_id),
-      'Valider cette facture ?');
+      pgv.t('purchase.confirm_valider_facture'));
   ELSIF v_fac.statut = 'validee' THEN
-    v_body := v_body || pgv.action('post_facture_payer', 'Marquer payée',
+    v_body := v_body || pgv.action('post_facture_payer', pgv.t('purchase.btn_payer'),
       jsonb_build_object('p_id', p_id),
-      'Marquer cette facture comme payée ?');
+      pgv.t('purchase.confirm_payer'));
   ELSIF v_fac.statut = 'payee' AND NOT v_fac.comptabilisee THEN
-    v_body := v_body || pgv.action('post_facture_comptabiliser', 'Comptabiliser',
+    v_body := v_body || pgv.action('post_facture_comptabiliser', pgv.t('purchase.btn_comptabiliser'),
       jsonb_build_object('p_id', p_id),
-      'Créer l''écriture comptable pour cette facture ?');
+      pgv.t('purchase.confirm_comptabiliser'));
   END IF;
   IF v_fac.comptabilisee THEN
-    v_body := v_body || ' ' || pgv.badge('comptabilisée', 'success');
+    v_body := v_body || ' ' || pgv.badge(pgv.t('purchase.badge_comptabilisee'), 'success');
   END IF;
   v_body := v_body || '</p>';
 

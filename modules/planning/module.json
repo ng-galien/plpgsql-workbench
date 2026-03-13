@@ -4,11 +4,12 @@
   "description": "Agenda partagé, planification, affectation équipes par jour",
   "schemas": {
     "public": "planning",
-    "private": null,
+    "test": "planning_ut",
     "qa": "planning_qa"
   },
   "dependencies": [
-    "pgv"
+    "pgv",
+    "project"
   ],
   "extensions": [],
   "sql": [

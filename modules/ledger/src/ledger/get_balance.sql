@@ -16,14 +16,14 @@ BEGIN
   v_start := make_date(v_year, 1, 1);
   v_end := make_date(v_year, 12, 31);
 
-  v_body := pgv.breadcrumb(VARIADIC ARRAY['Balance de vérification']);
+  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.btn_balance_check')]);
 
   -- Year selector
-  v_body := v_body || '<div class="grid">'
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text)
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), v_year::text)
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
-    || '</div>';
+  v_body := v_body || pgv.grid(VARIADIC ARRAY[
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text),
+    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), v_year::text),
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
+  ]);
 
   v_rows := ARRAY[]::text[];
   FOR r IN
@@ -53,17 +53,17 @@ BEGIN
 
   -- Stats
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Total débit', to_char(v_total_debit, 'FM999 990.00') || ' €'),
-    pgv.stat('Total crédit', to_char(v_total_credit, 'FM999 990.00') || ' €'),
-    pgv.stat('Écart', to_char(v_total_debit - v_total_credit, 'FM999 990.00') || ' €',
-      CASE WHEN v_total_debit = v_total_credit THEN 'Équilibre OK' ELSE 'DÉSÉQUILIBRE' END)
+    pgv.stat(pgv.t('ledger.stat_total_debit'), to_char(v_total_debit, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_total_credit'), to_char(v_total_credit, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_gap'), to_char(v_total_debit - v_total_credit, 'FM999 990.00') || ' €',
+      CASE WHEN v_total_debit = v_total_credit THEN pgv.t('ledger.stat_balance_ok') ELSE pgv.t('ledger.stat_imbalance') END)
   ]);
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun mouvement sur ' || v_year);
+    v_body := v_body || pgv.empty(pgv.t('ledger.empty_no_movement_on') || ' ' || v_year);
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY['Code', 'Libellé', 'Débit', 'Crédit', 'Solde'],
+      ARRAY[pgv.t('ledger.col_code'), pgv.t('ledger.col_label'), pgv.t('ledger.col_debit'), pgv.t('ledger.col_credit'), pgv.t('ledger.col_balance')],
       v_rows, 20
     );
   END IF;

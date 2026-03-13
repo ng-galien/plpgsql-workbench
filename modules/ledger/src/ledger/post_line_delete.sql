@@ -15,7 +15,7 @@ BEGIN
 
   DELETE FROM ledger.entry_line WHERE id = v_id AND journal_entry_id = v_entry_id;
 
-  RETURN '<template data-toast="success">Ligne supprimée</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_entry', jsonb_build_object('p_id', v_entry_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('ledger.toast_line_deleted'))
+    || pgv.redirect(pgv.call_ref('get_entry', jsonb_build_object('p_id', v_entry_id)));
 END;
 $function$;

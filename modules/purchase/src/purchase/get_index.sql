@@ -42,14 +42,14 @@ BEGIN
      AND created_at < now() - interval '14 days';
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Commandes en cours', v_cmd_en_cours::text),
-    pgv.stat('A réceptionner', v_receptions_attente::text),
-    pgv.stat('Factures impayées', v_factures_impayees::text),
-    pgv.stat('Achats du mois', to_char(v_achats_mois, 'FM999 990.00') || ' EUR'),
-    pgv.stat('Total à payer', to_char(v_total_a_payer, 'FM999 990.00') || ' EUR'),
+    pgv.stat(pgv.t('purchase.stat_commandes_en_cours'), v_cmd_en_cours::text),
+    pgv.stat(pgv.t('purchase.stat_a_receptionner'), v_receptions_attente::text),
+    pgv.stat(pgv.t('purchase.stat_factures_impayees'), v_factures_impayees::text),
+    pgv.stat(pgv.t('purchase.stat_achats_mois'), to_char(v_achats_mois, 'FM999 990.00') || ' EUR'),
+    pgv.stat(pgv.t('purchase.stat_total_a_payer'), to_char(v_total_a_payer, 'FM999 990.00') || ' EUR'),
     CASE WHEN v_en_retard > 0
-      THEN pgv.stat('En retard', v_en_retard::text || ' ' || pgv.badge('> 14j', 'danger'))
-      ELSE pgv.stat('En retard', '0')
+      THEN pgv.stat(pgv.t('purchase.stat_en_retard'), v_en_retard::text || ' ' || pgv.badge(pgv.t('purchase.badge_14j'), 'danger'))
+      ELSE pgv.stat(pgv.t('purchase.stat_en_retard'), '0')
     END
   ]);
 
@@ -69,7 +69,7 @@ BEGIN
       purchase._statut_badge(r.statut)
         || CASE WHEN r.statut IN ('envoyee', 'partiellement_recue')
                     AND r.created_at < now() - interval '14 days'
-           THEN ' ' || pgv.badge('retard', 'danger')
+           THEN ' ' || pgv.badge(pgv.t('purchase.badge_retard'), 'danger')
            ELSE '' END,
       to_char(r.ttc, 'FM999 990.00') || ' EUR',
       to_char(r.created_at, 'DD/MM/YYYY')
@@ -117,25 +117,25 @@ BEGIN
   END LOOP;
 
   v_body := v_body || pgv.tabs(VARIADIC ARRAY[
-    'Commandes récentes',
+    pgv.t('purchase.tab_commandes_recentes'),
     CASE WHEN array_length(v_rows_c, 1) IS NULL
-      THEN pgv.empty('Aucune commande', 'Créez votre première commande fournisseur.')
-      ELSE pgv.md_table(ARRAY['Numéro', 'Fournisseur', 'Objet', 'Statut', 'Total TTC', 'Date'], v_rows_c)
+      THEN pgv.empty(pgv.t('purchase.empty_no_commande'), pgv.t('purchase.empty_first_commande'))
+      ELSE pgv.md_table(ARRAY[pgv.t('purchase.col_numero'), pgv.t('purchase.col_fournisseur'), pgv.t('purchase.col_objet'), pgv.t('purchase.col_statut'), pgv.t('purchase.col_total_ttc'), pgv.t('purchase.col_date')], v_rows_c)
     END,
-    'Factures fournisseur',
+    pgv.t('purchase.tab_factures_fournisseur'),
     CASE WHEN array_length(v_rows_f, 1) IS NULL
-      THEN pgv.empty('Aucune facture fournisseur')
-      ELSE pgv.md_table(ARRAY['N° fournisseur', 'Commande', 'Statut', 'Montant TTC', 'Date facture', 'Echéance'], v_rows_f)
+      THEN pgv.empty(pgv.t('purchase.empty_no_facture'))
+      ELSE pgv.md_table(ARRAY[pgv.t('purchase.col_no_fournisseur'), pgv.t('purchase.col_commande'), pgv.t('purchase.col_statut'), pgv.t('purchase.col_montant_ttc'), pgv.t('purchase.col_date_facture'), pgv.t('purchase.col_echeance')], v_rows_f)
     END,
-    'Top fournisseurs',
+    pgv.t('purchase.tab_top_fournisseurs'),
     CASE WHEN array_length(v_rows_s, 1) IS NULL
-      THEN pgv.empty('Aucune commande')
-      ELSE pgv.md_table(ARRAY['Fournisseur', 'Commandes', 'Total achats HT', 'Dernière commande'], v_rows_s)
+      THEN pgv.empty(pgv.t('purchase.empty_no_commande'))
+      ELSE pgv.md_table(ARRAY[pgv.t('purchase.col_fournisseur'), pgv.t('purchase.col_commandes'), pgv.t('purchase.col_total_achats_ht'), pgv.t('purchase.col_derniere_commande')], v_rows_s)
     END
   ]);
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">Nouvelle commande</a>', pgv.call_ref('get_commande_form'))
+    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_commande_form'), pgv.t('purchase.btn_nouvelle_commande'))
     || '</p>';
 
   RETURN v_body;

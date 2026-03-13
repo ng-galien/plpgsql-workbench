@@ -20,7 +20,7 @@ BEGIN
 
   -- Guard: doublon interdit
   IF EXISTS (SELECT 1 FROM ledger.journal_entry WHERE facture_id = v_facture_id) THEN
-    RETURN '<template data-toast="error">Cette facture a déjà une écriture comptable</template>';
+    RETURN pgv.toast(pgv.t('ledger.err_duplicate_facture'), 'error');
   END IF;
 
   -- Totaux
@@ -62,7 +62,7 @@ BEGIN
   INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
   VALUES (v_entry_id, v_account_706, 0, v_total_ht, 'Prestation facture ' || v_facture.numero);
 
-  RETURN '<template data-toast="success">Écriture créée depuis facture ' || pgv.esc(v_facture.numero) || '</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_entry', jsonb_build_object('p_id', v_entry_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('ledger.toast_entry_from_facture') || ' ' || pgv.esc(v_facture.numero))
+    || pgv.redirect(pgv.call_ref('get_entry', jsonb_build_object('p_id', v_entry_id)));
 END;
 $function$;

@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION pgv.i18n_seed()
 AS $function$
 BEGIN
   INSERT INTO pgv.i18n (lang, key, value) VALUES
-    ('fr', 'pgv.bug_reported', 'Bug reporté, merci !'),
+    ('fr', 'pgv.issue_reported', 'Signalement envoyé, merci !'),
     ('fr', 'pgv.page_not_found', 'Page non trouvee'),
     ('fr', 'pgv.path_not_found', 'Le chemin %s n''existe pas.'),
     ('fr', 'pgv.error', 'Erreur'),

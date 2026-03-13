@@ -6,7 +6,7 @@ DECLARE
   v_client_id int := (p_data->>'client_id')::int;
 BEGIN
   IF trim(COALESCE(p_data->>'subject', '')) = '' THEN
-    RETURN '<template data-toast="error">Le sujet est obligatoire.</template>';
+    RETURN pgv.toast(pgv.t('crm.err_subject_required'), 'error');
   END IF;
 
   INSERT INTO crm.interaction (client_id, type, subject, body)
@@ -17,7 +17,7 @@ BEGIN
     COALESCE(p_data->>'body', '')
   );
 
-  RETURN '<template data-toast="success">Interaction ajoutée.</template>'
-      || '<template data-redirect="' || pgv.call_ref('get_client', jsonb_build_object('p_id', v_client_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('crm.toast_interaction_added'))
+      || pgv.redirect(pgv.call_ref('get_client', jsonb_build_object('p_id', v_client_id)));
 END;
 $function$;

@@ -7,12 +7,12 @@ DECLARE
   v_statut text;
 BEGIN
   SELECT statut INTO v_statut FROM quote.devis WHERE id = v_id;
-  IF v_statut IS NULL THEN RAISE EXCEPTION 'Devis introuvable'; END IF;
+  IF v_statut IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_devis'); END IF;
   IF v_statut <> 'envoye' THEN RAISE EXCEPTION 'Transition invalide: % -> refuse', v_statut; END IF;
 
   UPDATE quote.devis SET statut = 'refuse' WHERE id = v_id;
 
-  RETURN '<template data-toast="success">Devis refusé</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_devis', jsonb_build_object('p_id', v_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('quote.toast_devis_refused'))
+    || pgv.redirect(pgv.call_ref('get_devis', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

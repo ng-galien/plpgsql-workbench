@@ -12,22 +12,22 @@ BEGIN
   -- Check facture exists and is payee
   SELECT * INTO v_facture FROM purchase.facture_fournisseur WHERE id = v_id;
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">Facture introuvable</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_facture_not_found'), 'error');
   END IF;
   IF v_facture.statut <> 'payee' THEN
-    RETURN '<template data-toast="error">La facture doit être payée avant comptabilisation</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_must_pay_first'), 'error');
   END IF;
   IF v_facture.montant_ttc = 0 THEN
-    RETURN '<template data-toast="error">Facture sans montant</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_no_amount'), 'error');
   END IF;
   IF v_facture.comptabilisee THEN
-    RETURN '<template data-toast="error">Facture déjà comptabilisée</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_already_booked'), 'error');
   END IF;
 
   -- Check ledger schema exists
   SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'ledger') INTO v_ledger_exists;
   IF NOT v_ledger_exists THEN
-    RETURN '<template data-toast="error">Module ledger non déployé</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_no_ledger'), 'error');
   END IF;
 
   -- Compute TVA (TTC - HT)
@@ -42,7 +42,7 @@ BEGIN
     'Facture fournisseur ' || v_facture.numero_fournisseur
   ) INTO v_entry_id;
 
-  -- 601 Achats matériaux — débit HT
+  -- 601 Achats — débit HT
   EXECUTE format(
     $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
     VALUES (%s, (SELECT id FROM ledger.account WHERE code = '601'), %s, 0, %L)$e$,
@@ -71,8 +71,7 @@ BEGIN
   -- Flag anti-doublon
   UPDATE purchase.facture_fournisseur SET comptabilisee = true WHERE id = v_id;
 
-  RETURN '<template data-toast="success">Écriture comptable créée</template>'
-    || format('<template data-redirect="%s"></template>',
-       pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_ecriture_creee'))
+    || pgv.redirect(pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

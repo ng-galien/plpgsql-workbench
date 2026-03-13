@@ -14,14 +14,14 @@ DECLARE
 BEGIN
   SELECT * INTO v_drawing FROM cad.drawing WHERE id = p_id;
   IF NOT FOUND THEN
-    RETURN pgv.error('404', 'Dessin non trouvé', 'Le dessin #' || p_id || ' n''existe pas.');
+    RETURN pgv.error('404', pgv.t('cad.err_not_found'), format(pgv.t('cad.err_not_found_detail'), p_id));
   END IF;
 
   -- Breadcrumb: Dessins > [nom] > Vue 3D
   v_body := pgv.breadcrumb(
-    'Dessins', '/cad/',
+    pgv.t('cad.nav_dessins'), '/cad/',
     pgv.esc(v_drawing.name), '/cad/drawing?p_id=' || p_id,
-    'Vue 3D'
+    pgv.t('cad.vue_3d')
   );
 
   -- Drawing selector
@@ -36,9 +36,9 @@ BEGIN
 
   -- View tabs: 2D | 3D | BOM
   v_body := v_body || '<p>'
-    || '<a href="/cad/drawing?p_id=' || p_id || '">Vue 2D</a>'
-    || ' | <strong>Vue 3D</strong>'
-    || ' | <a href="/cad/drawing_bom?p_id=' || p_id || '">Liste de débit</a>'
+    || '<a href="/cad/drawing?p_id=' || p_id || '">' || pgv.t('cad.vue_2d') || '</a>'
+    || ' | <strong>' || pgv.t('cad.vue_3d') || '</strong>'
+    || ' | <a href="/cad/drawing_bom?p_id=' || p_id || '">' || pgv.t('cad.liste_debit') || '</a>'
     || '</p>';
 
   -- Stats
@@ -50,10 +50,10 @@ BEGIN
   FROM cad.piece_group WHERE drawing_id = p_id;
 
   v_body := v_body || pgv.grid(
-    pgv.stat('Pièces', COALESCE(v_piece_count, 0)::text),
-    pgv.stat('Groupes', COALESCE(v_group_count, 0)::text),
-    pgv.stat('Volume', COALESCE(v_total_vol, 0) || ' m³'),
-    pgv.stat('Échelle', '1:' || v_drawing.scale::text)
+    pgv.stat(pgv.t('cad.stat_pieces'), COALESCE(v_piece_count, 0)::text),
+    pgv.stat(pgv.t('cad.stat_groupes'), COALESCE(v_group_count, 0)::text),
+    pgv.stat(pgv.t('cad.stat_volume'), COALESCE(v_total_vol, 0) || ' m³'),
+    pgv.stat(pgv.t('cad.stat_echelle'), '1:' || v_drawing.scale::text)
   );
 
   -- 3D Viewer + Tree in cad-layout
@@ -65,9 +65,9 @@ BEGIN
   -- Wireframe projections in tabs
   IF v_piece_count > 0 THEN
     v_body := v_body || pgv.tabs(
-      'Face (XZ)', pgv.svg_canvas(cad.render_wireframe(p_id, 'front', 800, 500)),
-      'Dessus (XY)', pgv.svg_canvas(cad.render_wireframe(p_id, 'top', 800, 500)),
-      'Côté (YZ)', pgv.svg_canvas(cad.render_wireframe(p_id, 'side', 800, 500))
+      pgv.t('cad.tab_face'), pgv.svg_canvas(cad.render_wireframe(p_id, 'front', 800, 500)),
+      pgv.t('cad.tab_dessus'), pgv.svg_canvas(cad.render_wireframe(p_id, 'top', 800, 500)),
+      pgv.t('cad.tab_cote'), pgv.svg_canvas(cad.render_wireframe(p_id, 'side', 800, 500))
     );
   END IF;
 
@@ -93,9 +93,12 @@ BEGIN
   ) sub;
 
   IF v_pieces IS NOT NULL THEN
-    v_body := v_body || '<h4>Pièces</h4>'
+    v_body := v_body || '<h4>' || pgv.t('cad.stat_pieces') || '</h4>'
       || '<md data-page="15">' || E'\n'
-      || '| # | Label | Rôle | Section | Longueur | Essence | Groupe |' || E'\n'
+      || format('| %s | %s | %s | %s | %s | %s | %s |',
+           pgv.t('cad.col_id'), pgv.t('cad.col_label'), pgv.t('cad.col_role'),
+           pgv.t('cad.col_section'), pgv.t('cad.col_longueur'), pgv.t('cad.col_essence'),
+           pgv.t('cad.col_groupe')) || E'\n'
       || '|---|-------|------|---------|----------|---------|--------|' || E'\n'
       || v_pieces || E'\n'
       || '</md>';

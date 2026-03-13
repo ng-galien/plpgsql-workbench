@@ -9,7 +9,7 @@ BEGIN
   IF p_data->>'id' IS NOT NULL THEN
     v_id := (p_data->>'id')::int;
     IF NOT EXISTS (SELECT 1 FROM project.chantier WHERE id = v_id AND statut IN ('preparation','execution')) THEN
-      RAISE EXCEPTION 'Seuls les chantiers en préparation ou en cours sont modifiables';
+      RAISE EXCEPTION '%', pgv.t('project.err_seuls_modifiables');
     END IF;
     UPDATE project.chantier SET
       client_id = (p_data->>'client_id')::int,
@@ -36,7 +36,7 @@ BEGIN
     ) RETURNING id INTO v_id;
   END IF;
 
-  RETURN '<template data-toast="success">Chantier enregistré</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('project.toast_enregistre'))
+    || pgv.redirect(pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

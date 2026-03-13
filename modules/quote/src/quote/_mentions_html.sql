@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION quote._mentions_html()
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_html text := '';
@@ -17,6 +18,6 @@ BEGIN
     RETURN '';
   END IF;
 
-  RETURN '<details><summary>Mentions légales</summary><dl>' || v_html || '</dl></details>';
+  RETURN '<details><summary>' || pgv.t('quote.title_mentions') || '</summary><dl>' || v_html || '</dl></details>';
 END;
 $function$;

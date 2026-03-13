@@ -6,7 +6,7 @@ DECLARE
   v_client_id int := (p_data->>'client_id')::int;
 BEGIN
   IF trim(COALESCE(p_data->>'name', '')) = '' THEN
-    RETURN '<template data-toast="error">Le nom est obligatoire.</template>';
+    RETURN pgv.toast(pgv.t('crm.err_name_required'), 'error');
   END IF;
 
   INSERT INTO crm.contact (client_id, name, role, email, phone, is_primary)
@@ -19,7 +19,7 @@ BEGIN
     COALESCE((p_data->>'is_primary')::boolean, false)
   );
 
-  RETURN '<template data-toast="success">Contact ajouté.</template>'
-      || '<template data-redirect="' || pgv.call_ref('get_client', jsonb_build_object('p_id', v_client_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('crm.toast_contact_added'))
+      || pgv.redirect(pgv.call_ref('get_client', jsonb_build_object('p_id', v_client_id)));
 END;
 $function$;

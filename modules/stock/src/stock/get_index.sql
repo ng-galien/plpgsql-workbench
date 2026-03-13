@@ -49,10 +49,10 @@ BEGIN
   WHERE a.active AND a.pmp > 0;
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Articles', v_nb_articles::text),
-    pgv.stat('Valeur stock', to_char(v_valeur_totale, 'FM999G999G990D00') || ' EUR'),
-    pgv.stat('Alertes', v_nb_alertes::text, CASE WHEN v_nb_alertes > 0 THEN 'danger' ELSE NULL END),
-    pgv.stat('Mouvements semaine', v_mvt_semaine::text || coalesce(' (' || v_variation || ')', ''))
+    pgv.stat(pgv.t('stock.stat_articles'), v_nb_articles::text),
+    pgv.stat(pgv.t('stock.stat_valeur_stock'), to_char(v_valeur_totale, 'FM999G999G990D00') || ' EUR'),
+    pgv.stat(pgv.t('stock.stat_alertes'), v_nb_alertes::text, CASE WHEN v_nb_alertes > 0 THEN 'danger' ELSE NULL END),
+    pgv.stat(pgv.t('stock.stat_mvt_semaine'), v_mvt_semaine::text || coalesce(' (' || v_variation || ')', ''))
   ]);
 
   -- Alertes stock bas
@@ -75,8 +75,8 @@ BEGIN
         r.seuil_mini::text || ' ' || r.unite
       ];
     END LOOP;
-    v_body := v_body || '<h3>Stock bas</h3>' || pgv.md_table(
-      ARRAY['Article', 'Réf.', 'Stock actuel', 'Seuil'],
+    v_body := v_body || '<h3>' || pgv.t('stock.title_stock_bas') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_article'), pgv.t('stock.col_ref'), pgv.t('stock.col_stock_actuel'), pgv.t('stock.col_seuil')],
       v_rows
     );
   END IF;
@@ -102,8 +102,8 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NOT NULL THEN
-    v_body := v_body || '<h3>Top articles ce mois</h3>' || pgv.md_table(
-      ARRAY['Article', 'Mouvements', 'Qté totale'],
+    v_body := v_body || '<h3>' || pgv.t('stock.title_top_articles') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_article'), pgv.t('stock.col_mouvements'), pgv.t('stock.col_qty_totale')],
       v_rows
     );
   END IF;
@@ -134,16 +134,16 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun mouvement', 'Enregistrez votre premier mouvement de stock.');
+    v_body := v_body || pgv.empty(pgv.t('stock.empty_no_mouvement'), pgv.t('stock.empty_first_mouvement'));
   ELSE
-    v_body := v_body || '<h3>Derniers mouvements</h3>' || pgv.md_table(
-      ARRAY['Date', 'Article', 'Dépôt', 'Type', 'Qté', 'Réf.'],
+    v_body := v_body || '<h3>' || pgv.t('stock.title_derniers_mvt') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_date'), pgv.t('stock.col_article'), pgv.t('stock.col_depot'), pgv.t('stock.col_type'), pgv.t('stock.col_qty'), pgv.t('stock.col_ref')],
       v_rows
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouveau mouvement</a></p>',
-    pgv.call_ref('get_mouvement_form'));
+  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
+    pgv.call_ref('get_mouvement_form'), pgv.t('stock.btn_nouveau_mvt'));
 
   RETURN v_body;
 END;

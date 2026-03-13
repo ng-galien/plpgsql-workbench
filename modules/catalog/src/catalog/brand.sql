@@ -3,5 +3,5 @@ CREATE OR REPLACE FUNCTION catalog.brand()
  LANGUAGE sql
  STABLE
 AS $function$
-SELECT 'Catalogue';
+SELECT pgv.t('catalog.brand');
 $function$;

@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION stock.get_valorisation()
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_body text;
@@ -23,9 +24,9 @@ BEGIN
     AND stock._stock_actuel(a.id) < a.seuil_mini;
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Valeur totale', to_char(v_valeur_totale, 'FM999G999G990D00') || ' EUR'),
-    pgv.stat('Articles en stock', v_nb_articles::text),
-    pgv.stat('En alerte', v_nb_alertes::text, CASE WHEN v_nb_alertes > 0 THEN 'danger' ELSE NULL END)
+    pgv.stat(pgv.t('stock.stat_valeur_totale'), to_char(v_valeur_totale, 'FM999G999G990D00') || ' EUR'),
+    pgv.stat(pgv.t('stock.stat_articles_stock'), v_nb_articles::text),
+    pgv.stat(pgv.t('stock.stat_en_alerte'), v_nb_alertes::text, CASE WHEN v_nb_alertes > 0 THEN 'danger' ELSE NULL END)
   ]);
 
   -- Valorisation par dépôt
@@ -55,8 +56,8 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NOT NULL THEN
-    v_body := v_body || '<h3>Par dépôt</h3>' || pgv.md_table(
-      ARRAY['Dépôt', 'Type', 'Articles', 'Valeur'],
+    v_body := v_body || '<h3>' || pgv.t('stock.title_par_depot') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_depot'), pgv.t('stock.col_type'), pgv.t('stock.col_articles'), pgv.t('stock.col_valeur')],
       v_rows
     );
   END IF;
@@ -87,8 +88,8 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NOT NULL THEN
-    v_body := v_body || '<h3>Par catégorie</h3>' || pgv.md_table(
-      ARRAY['Catégorie', 'Articles', 'Valeur'],
+    v_body := v_body || '<h3>' || pgv.t('stock.title_par_categorie') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_categorie'), pgv.t('stock.col_articles'), pgv.t('stock.col_valeur')],
       v_rows
     );
   END IF;

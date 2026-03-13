@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION crm.brand()
  RETURNS text
  LANGUAGE sql
- IMMUTABLE
+ STABLE
 AS $function$
-  SELECT 'CRM';
+  SELECT pgv.t('crm.brand');
 $function$;

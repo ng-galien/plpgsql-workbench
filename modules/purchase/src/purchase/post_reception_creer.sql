@@ -13,7 +13,7 @@ DECLARE
 BEGIN
   SELECT statut INTO v_statut FROM purchase.commande WHERE id = v_commande_id;
   IF v_statut NOT IN ('envoyee', 'partiellement_recue') THEN
-    RETURN '<template data-toast="error">Commande non réceptionnable</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_not_receivable'), 'error');
   END IF;
 
   v_numero := purchase._next_numero('REC');
@@ -36,7 +36,7 @@ BEGIN
   IF v_nb_lignes = 0 THEN
     -- Rien à réceptionner, rollback reception
     DELETE FROM purchase.reception WHERE id = v_reception_id;
-    RETURN '<template data-toast="error">Tout est déjà réceptionné</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_all_received'), 'error');
   END IF;
 
   -- Vérifier si tout est reçu
@@ -52,10 +52,7 @@ BEGIN
     UPDATE purchase.commande SET statut = 'partiellement_recue' WHERE id = v_commande_id;
   END IF;
 
-  -- TODO: créer mouvements stock quand module stock implémenté
-
-  RETURN format('<template data-toast="success">Réception %s créée (%s lignes)</template><template data-redirect="%s"></template>',
-    v_numero, v_nb_lignes,
-    pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
+  RETURN pgv.toast(format('Réception %s créée (%s %s)', v_numero, v_nb_lignes, pgv.t('purchase.col_lignes')))
+    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
 END;
 $function$;

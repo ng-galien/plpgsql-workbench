@@ -3,5 +3,5 @@ CREATE OR REPLACE FUNCTION cad.brand()
  LANGUAGE sql
  STABLE
 AS $function$
-  SELECT 'CAD 3D'::text;
+  SELECT pgv.t('cad.brand');
 $function$;

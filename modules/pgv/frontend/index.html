@@ -43,29 +43,34 @@
     </main>
   </div>
 
-  <!-- Bug Report Button -->
-  <button class="pgv-bug-btn" @click="bugOpen()" :title="t('bug.title')">&#x1F41B;</button>
+  <!-- Issue Report Button -->
+  <button class="pgv-issue-btn" @click="issueOpen()" :title="t('issue.title')">&#x270F;&#xFE0F;</button>
 
-  <!-- Bug Report Overlay -->
-  <template x-if="bug.open">
+  <!-- Issue Report Overlay -->
+  <template x-if="issue.open">
     <div>
-      <div class="pgv-bug-backdrop" @click="bugClose()"></div>
-      <div class="pgv-bug-panel" @keydown.escape.prevent="bugClose()">
-        <header class="pgv-bug-header">
-          <strong x-text="t('bug.title')"></strong>
-          <button class="pgv-bug-close" @click="bugClose()">&times;</button>
+      <div class="pgv-issue-backdrop" @click="issueClose()"></div>
+      <div class="pgv-issue-panel" @keydown.escape.prevent="issueClose()">
+        <header class="pgv-issue-header">
+          <strong x-text="t('issue.title')"></strong>
+          <button class="pgv-issue-close" @click="issueClose()">&times;</button>
         </header>
-        <div class="pgv-bug-body">
-          <label for="bug-desc" x-text="t('bug.label')"></label>
-          <textarea id="bug-desc" x-model="bug.desc" rows="4" :placeholder="t('bug.placeholder')"></textarea>
+        <div class="pgv-issue-body">
+          <select x-model="issue.type" class="pgv-issue-type">
+            <option value="bug" x-text="t('issue.type_bug')">Bug</option>
+            <option value="enhancement" x-text="t('issue.type_enhancement')">Amélioration</option>
+            <option value="question" x-text="t('issue.type_question')">Question</option>
+          </select>
+          <label for="issue-desc" x-text="t('issue.label')"></label>
+          <textarea id="issue-desc" x-model="issue.desc" rows="4" :placeholder="t('issue.placeholder')"></textarea>
           <details>
-            <summary x-text="t('bug.context')"></summary>
-            <pre x-text="JSON.stringify(bugContext(), null, 2)"></pre>
+            <summary x-text="t('issue.context')"></summary>
+            <pre x-text="JSON.stringify(issueContext(), null, 2)"></pre>
           </details>
         </div>
-        <footer class="pgv-bug-footer">
-          <button class="secondary" @click="bugClose()" x-text="t('cancel')"></button>
-          <button @click="bugSubmit()" :disabled="!bug.desc.trim()" x-text="t('send')"></button>
+        <footer class="pgv-issue-footer">
+          <button class="secondary" @click="issueClose()" x-text="t('cancel')"></button>
+          <button @click="issueSubmit()" :disabled="!issue.desc.trim()" x-text="t('send')"></button>
         </footer>
       </div>
     </div>
@@ -79,7 +84,7 @@
       <div x-show="toast.detail" style="color:var(--pgv-muted);font-size:0.8rem"
            x-text="toast.detail"></div>
       <a x-show="toast.level === 'error'" class="pgv-toast-report" href="#"
-         @click.prevent="bugFromError()" x-text="t('bug.report')"></a>
+         @click.prevent="issueFromError()" x-text="t('issue.report')"></a>
     </article>
   </div>
 
@@ -138,7 +143,7 @@
       toast: { show: false, msg: '', level: 'success', detail: '' },
       dlg:   { title: '', target: '' },
       search: { open: false, query: '', idx: 0 },
-      bug: { open: false, desc: '' },
+      issue: { open: false, desc: '', type: 'bug' },
       _tt: null,
       _modules: [],
       _currentSchema: null,
@@ -804,23 +809,23 @@
         });
       },
 
-      /* ── Bug Report ─────────────────────────────────── */
-      bugFromError: function() {
+      /* ── Issue Report ────────────────────────────────── */
+      issueFromError: function() {
         var desc = this.toast.msg || '';
         if (this.toast.detail) desc += '\n' + this.toast.detail;
         this.toast.show = false;
-        this.bug = { open: true, desc: desc };
+        this.issue = { open: true, desc: desc, type: 'bug' };
       },
 
-      bugOpen: function() {
-        this.bug = { open: true, desc: '' };
+      issueOpen: function() {
+        this.issue = { open: true, desc: '', type: 'bug' };
       },
 
-      bugClose: function() {
-        this.bug.open = false;
+      issueClose: function() {
+        this.issue.open = false;
       },
 
-      bugContext: function() {
+      issueContext: function() {
         return {
           path: location.pathname + location.search,
           schema: this._currentSchema,
@@ -832,24 +837,25 @@
         };
       },
 
-      bugSubmit: function() {
-        var desc = this.bug.desc.trim();
+      issueSubmit: function() {
+        var desc = this.issue.desc.trim();
         if (!desc) return;
         var self = this;
-        var data = this.bugContext();
+        var data = this.issueContext();
         data.description = desc;
-        this.bug.open = false;
-        fetch('/rpc/post_bug_report', {
+        data.issue_type = this.issue.type;
+        this.issue.open = false;
+        fetch('/rpc/post_issue_report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
           body: JSON.stringify({ p: data })
         })
         .then(function(r) {
           if (!r.ok) throw new Error(r.status);
-          self.showToast(self.t('bug.success'), 'success');
+          self.showToast(self.t('issue.success'), 'success');
         })
         .catch(function() {
-          self.showToast(self.t('bug.error'), 'error');
+          self.showToast(self.t('issue.error'), 'error');
         });
       }
     }; });

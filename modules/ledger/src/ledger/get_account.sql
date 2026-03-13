@@ -12,23 +12,23 @@ DECLARE
   r record;
 BEGIN
   SELECT * INTO v_account FROM ledger.account WHERE id = p_id;
-  IF NOT FOUND THEN RETURN pgv.empty('Compte introuvable'); END IF;
+  IF NOT FOUND THEN RETURN pgv.empty(pgv.t('ledger.empty_account_not_found')); END IF;
 
   v_balance := ledger._account_balance(p_id);
   v_sign := ledger._type_sign(v_account.type);
 
   v_body := pgv.breadcrumb(VARIADIC ARRAY[
-    'Plan comptable', pgv.call_ref('get_accounts'),
+    pgv.t('ledger.nav_accounts'), pgv.call_ref('get_accounts'),
     v_account.code || ' — ' || v_account.label
   ]);
 
   v_body := v_body || pgv.dl(VARIADIC ARRAY[
-    'Code', v_account.code,
-    'Libellé', pgv.esc(v_account.label),
-    'Type', pgv.badge(ledger._type_label(v_account.type),
+    pgv.t('ledger.col_code'), v_account.code,
+    pgv.t('ledger.col_label'), pgv.esc(v_account.label),
+    pgv.t('ledger.col_type'), pgv.badge(ledger._type_label(v_account.type),
       CASE v_account.type WHEN 'asset' THEN 'info' WHEN 'liability' THEN 'warning'
         WHEN 'equity' THEN 'default' WHEN 'revenue' THEN 'success' WHEN 'expense' THEN 'danger' END),
-    'Solde', to_char(v_balance, 'FM999 990.00') || ' €'
+    pgv.t('ledger.col_balance'), to_char(v_balance, 'FM999 990.00') || ' €'
   ]);
 
   -- Lignes du grand livre
@@ -53,10 +53,10 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun mouvement', 'Ce compte n''a pas encore de lignes validées.');
+    v_body := v_body || pgv.empty(pgv.t('ledger.empty_no_movement'), pgv.t('ledger.empty_no_posted_lines'));
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY['Date', 'Référence', 'Libellé', 'Débit', 'Crédit', 'Solde'],
+      ARRAY[pgv.t('ledger.col_date'), pgv.t('ledger.col_reference'), pgv.t('ledger.col_label'), pgv.t('ledger.col_debit'), pgv.t('ledger.col_credit'), pgv.t('ledger.col_balance')],
       v_rows
     );
   END IF;

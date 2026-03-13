@@ -18,7 +18,7 @@ BEGIN
 
   -- Guard: pas de double clôture
   IF EXISTS (SELECT 1 FROM ledger.exercice WHERE year = v_year AND closed = true) THEN
-    RETURN '<template data-toast="error">L''exercice ' || v_year || ' est déjà clôturé</template>';
+    RETURN pgv.toast(pgv.t('ledger.nav_exercice') || ' ' || v_year || ' ' || pgv.t('ledger.err_already_closed'), 'error');
   END IF;
 
   v_start := make_date(v_year, 1, 1);
@@ -31,7 +31,7 @@ BEGIN
      AND entry_date >= v_start AND entry_date <= v_end;
 
   IF v_draft_count > 0 THEN
-    RETURN '<template data-toast="error">' || v_draft_count || ' écriture(s) brouillon sur ' || v_year || ' — validez-les avant clôture</template>';
+    RETURN pgv.toast(v_draft_count || ' ' || pgv.t('ledger.err_drafts_remaining'), 'error');
   END IF;
 
   -- Calcul résultat : produits - charges (écritures postées)
@@ -54,7 +54,7 @@ BEGIN
   VALUES (v_end, 'CLO-' || v_year, 'Clôture exercice ' || v_year || ' — résultat ' || to_char(v_resultat, 'FM999 990.00') || ' €')
   RETURNING id INTO v_entry_id;
 
-  -- Zero out revenue accounts: DEBIT (revenue normally has credit balance)
+  -- Zero out revenue accounts
   INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
   SELECT v_entry_id, a.id, coalesce(sum(el.credit - el.debit), 0), 0, 'Solde ' || a.label
     FROM ledger.account a
@@ -66,7 +66,7 @@ BEGIN
    GROUP BY a.id, a.label
   HAVING coalesce(sum(el.credit - el.debit), 0) <> 0;
 
-  -- Zero out expense accounts: CREDIT (expense normally has debit balance)
+  -- Zero out expense accounts
   INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
   SELECT v_entry_id, a.id, 0, coalesce(sum(el.debit - el.credit), 0), 'Solde ' || a.label
     FROM ledger.account a
@@ -78,7 +78,7 @@ BEGIN
    GROUP BY a.id, a.label
   HAVING coalesce(sum(el.debit - el.credit), 0) <> 0;
 
-  -- Result to account 120: credit if benefit, debit if deficit
+  -- Result to account 120
   IF v_resultat >= 0 THEN
     INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
     VALUES (v_entry_id, v_account_120, 0, v_resultat, 'Résultat bénéficiaire ' || v_year);
@@ -87,16 +87,14 @@ BEGIN
     VALUES (v_entry_id, v_account_120, abs(v_resultat), 0, 'Résultat déficitaire ' || v_year);
   END IF;
 
-  -- Valider l'écriture de clôture
   UPDATE ledger.journal_entry SET posted = true WHERE id = v_entry_id;
 
-  -- Marquer l'exercice clos
   INSERT INTO ledger.exercice (year, closed, closed_at, result)
   VALUES (v_year, true, now(), v_resultat)
   ON CONFLICT ON CONSTRAINT exercice_tenant_year_key
   DO UPDATE SET closed = true, closed_at = now(), result = v_resultat;
 
-  RETURN '<template data-toast="success">Exercice ' || v_year || ' clôturé — résultat : ' || to_char(v_resultat, 'FM999 990.00') || ' €</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)) || '"></template>';
+  RETURN pgv.toast(pgv.t('ledger.toast_exercice_closed') || ' ' || v_year || ' — ' || pgv.t('ledger.stat_result') || ' : ' || to_char(v_resultat, 'FM999 990.00') || ' €')
+    || pgv.redirect(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)));
 END;
 $function$;

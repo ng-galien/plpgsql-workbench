@@ -61,3 +61,30 @@ END IF;
 
 - `pg_msg_inbox module:catalog` → lire les messages entrants
 - `pg_msg` → envoyer un message à un autre module
+
+## i18n
+
+Le framework utilise `pgv.t(key)` pour l'internationalisation. Chaque module doit :
+1. Créer `catalog.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) les traductions FR
+2. Clés namespaced : `catalog.nav_xxx`, `catalog.title_xxx`, `catalog.btn_xxx`, etc.
+3. Utiliser `pgv.t('catalog.xxx')` dans nav_items(), brand(), et toutes les fonctions get_*/post_*
+4. `ON CONFLICT DO NOTHING` dans le seed
+
+## QA Seed Data
+
+Le schema `catalog_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
+- `catalog_qa.seed()` — INSERT données démo réalistes
+- `catalog_qa.clean()` — DELETE dans l'ordre inverse des FK
+- `ON CONFLICT DO NOTHING`, penser multi-tenant (`current_setting('app.tenant_id', true)`)
+
+## Workflow agent
+
+1. Au démarrage ou quand on te dit "go" : **toujours lire `pg_msg_inbox module:catalog`**
+2. Traiter les messages par priorité (HIGH d'abord)
+3. Ne pas résoudre un message tant que la tâche n'est pas vérifiée
+4. Après chaque tâche : `pg_pack schemas: catalog,catalog_ut,catalog_qa` (les 3 schemas)
+5. Puis `pg_func_save target: plpgsql://catalog` + `plpgsql://catalog_ut` + `plpgsql://catalog_qa`
+
+## Gotchas
+
+- (a completer au fil du developpement)

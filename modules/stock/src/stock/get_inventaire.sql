@@ -8,6 +8,7 @@ DECLARE
   v_rows text[];
   r record;
   v_qty numeric;
+  v_form_body text;
 BEGIN
   -- Si pas de dépôt sélectionné, afficher le choix
   IF p_depot_id IS NULL THEN
@@ -29,22 +30,21 @@ BEGIN
     END LOOP;
 
     IF array_length(v_rows, 1) IS NULL THEN
-      RETURN pgv.empty('Aucun dépôt', 'Créez un dépôt avant de faire un inventaire.');
+      RETURN pgv.empty(pgv.t('stock.empty_no_depot'), pgv.t('stock.empty_depot_create_first'));
     END IF;
 
-    RETURN '<p>Sélectionnez le dépôt à inventorier :</p>' || pgv.md_table(
-      ARRAY['Dépôt', 'Type'],
+    RETURN '<p>' || pgv.t('stock.title_select_depot') || '</p>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_depot'), pgv.t('stock.col_type')],
       v_rows
     );
   END IF;
 
   SELECT nom INTO v_depot_nom FROM stock.depot WHERE id = p_depot_id AND actif;
   IF v_depot_nom IS NULL THEN
-    RETURN pgv.empty('Dépôt introuvable', 'Ce dépôt n''existe pas ou est inactif.');
+    RETURN pgv.empty(pgv.t('stock.empty_depot_not_found'), pgv.t('stock.empty_depot_inactive'));
   END IF;
 
-  v_body := format('<h3>Inventaire : %s</h3>', pgv.esc(v_depot_nom));
-  v_body := v_body || format('<form data-rpc="post_inventaire_valider"><input type="hidden" name="p_depot_id" value="%s">', p_depot_id);
+  v_body := format('<h3>%s : %s</h3>', pgv.t('stock.nav_inventaire'), pgv.esc(v_depot_nom));
 
   -- Liste des articles avec stock théorique
   v_rows := ARRAY[]::text[];
@@ -65,17 +65,19 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun article', 'Aucun article actif dans le catalogue.');
-    v_body := v_body || '</form>';
+    v_form_body := format('<input type="hidden" name="p_depot_id" value="%s">', p_depot_id)
+      || pgv.empty(pgv.t('stock.empty_no_article'), pgv.t('stock.empty_no_article_actif'));
+    v_body := v_body || pgv.form('post_inventaire_valider', v_form_body, pgv.t('stock.btn_valider_inventaire'));
     RETURN v_body;
   END IF;
 
-  v_body := v_body || pgv.md_table(
-    ARRAY['Réf.', 'Désignation', 'Unité', 'Théorique', 'Réel'],
-    v_rows
-  );
+  v_form_body := format('<input type="hidden" name="p_depot_id" value="%s">', p_depot_id)
+    || pgv.md_table(
+      ARRAY[pgv.t('stock.col_ref'), pgv.t('stock.col_designation'), pgv.t('stock.col_unite'), pgv.t('stock.col_theorique'), pgv.t('stock.col_reel')],
+      v_rows
+    );
 
-  v_body := v_body || '<p><button type="submit" class="pgv-btn-primary">Valider l''inventaire</button></p></form>';
+  v_body := v_body || pgv.form('post_inventaire_valider', v_form_body, pgv.t('stock.btn_valider_inventaire'));
 
   RETURN v_body;
 END;

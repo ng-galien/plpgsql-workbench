@@ -7,13 +7,13 @@ DECLARE
 BEGIN
   SELECT statut INTO v_statut FROM project.chantier WHERE id = p_chantier_id;
   IF v_statut = 'clos' THEN
-    RAISE EXCEPTION 'Impossible d''affecter sur un chantier clos';
+    RAISE EXCEPTION '%', pgv.t('project.err_projet_clos_affectation');
   END IF;
 
   INSERT INTO project.affectation (chantier_id, nom_intervenant, role, heures_prevues)
   VALUES (p_chantier_id, trim(p_nom_intervenant), trim(p_role), p_heures_prevues);
 
-  RETURN '<template data-toast="success">Intervenant ajouté</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_chantier', jsonb_build_object('p_id', p_chantier_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('project.toast_intervenant_ajoute'))
+    || pgv.redirect(pgv.call_ref('get_chantier', jsonb_build_object('p_id', p_chantier_id)));
 END;
 $function$;

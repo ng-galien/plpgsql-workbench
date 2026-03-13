@@ -11,11 +11,11 @@ DECLARE
   v_note_id int;
 BEGIN
   IF v_auteur IS NULL OR v_date_debut IS NULL OR v_date_fin IS NULL THEN
-    RETURN '<template data-toast="error">Auteur, date début et date fin sont requis.</template>';
+    RETURN pgv.toast(pgv.t('expense.err_fields_requis'), 'error');
   END IF;
 
   IF v_date_fin < v_date_debut THEN
-    RETURN '<template data-toast="error">La date de fin doit être postérieure à la date de début.</template>';
+    RETURN pgv.toast(pgv.t('expense.err_date_order'), 'error');
   END IF;
 
   IF v_id IS NOT NULL THEN
@@ -28,7 +28,7 @@ BEGIN
      WHERE id = v_id AND statut = 'brouillon';
 
     IF NOT FOUND THEN
-      RETURN '<template data-toast="error">Note introuvable ou non modifiable.</template>';
+      RETURN pgv.toast(pgv.t('expense.err_note_or_modifiable'), 'error');
     END IF;
     v_note_id := v_id;
   ELSE
@@ -37,7 +37,7 @@ BEGIN
     RETURNING id INTO v_note_id;
   END IF;
 
-  RETURN '<template data-toast="success">Note ' || CASE WHEN v_id IS NOT NULL THEN 'modifiée' ELSE 'créée' END || '.</template>'
-    || '<template data-redirect="/note?p_id=' || v_note_id || '"></template>';
+  RETURN pgv.toast(CASE WHEN v_id IS NOT NULL THEN pgv.t('expense.toast_note_modifiee') ELSE pgv.t('expense.toast_note_creee') END)
+    || pgv.redirect('/note?p_id=' || v_note_id);
 END;
 $function$;

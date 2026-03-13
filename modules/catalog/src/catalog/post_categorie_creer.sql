@@ -9,7 +9,7 @@ BEGIN
     nullif(p_params->>'parent_id', '')::int
   );
 
-  RETURN '<template data-toast="success">Catégorie créée</template>'
-    || format('<template data-redirect="%s"></template>', pgv.call_ref('get_categories'));
+  RETURN pgv.toast(pgv.t('catalog.toast_categorie_created'))
+    || pgv.redirect(pgv.call_ref('get_categories'));
 END;
 $function$;

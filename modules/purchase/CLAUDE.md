@@ -52,6 +52,29 @@ Chaque `build/{schema}.ddl.sql` DOIT inclure :
 - `pg_msg` → envoyer un message a un autre module
 - Chaque module est autonome — ne jamais modifier les fonctions d'un autre module
 
+## i18n
+
+Le framework utilise `pgv.t(key)` pour l'internationalisation. Chaque module doit :
+1. Créer `purchase.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) les traductions FR
+2. Clés namespaced : `purchase.nav_xxx`, `purchase.title_xxx`, `purchase.btn_xxx`, etc.
+3. Utiliser `pgv.t('purchase.xxx')` dans nav_items(), brand(), et toutes les fonctions get_*/post_*
+4. `ON CONFLICT DO NOTHING` dans le seed
+
+## QA Seed Data
+
+Le schema `purchase_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
+- `purchase_qa.seed()` — INSERT données démo réalistes
+- `purchase_qa.clean()` — DELETE dans l'ordre inverse des FK
+- `ON CONFLICT DO NOTHING`, penser multi-tenant (`current_setting('app.tenant_id', true)`)
+
+## Workflow agent
+
+1. Au démarrage ou quand on te dit "go" : **toujours lire `pg_msg_inbox module:purchase`**
+2. Traiter les messages par priorité (HIGH d'abord)
+3. Ne pas résoudre un message tant que la tâche n'est pas vérifiée
+4. Après chaque tâche : `pg_pack schemas: purchase,purchase_ut,purchase_qa` (les 3 schemas)
+5. Puis `pg_func_save target: plpgsql://purchase` + `plpgsql://purchase_ut` + `plpgsql://purchase_qa`
+
 ## Gotchas
 
 - CRM + Stock doivent etre deployes avant

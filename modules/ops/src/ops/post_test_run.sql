@@ -11,12 +11,12 @@ DECLARE
   v_line text;
 BEGIN
   IF p_schema IS NULL OR p_schema = '' THEN
-    RETURN '<template data-toast="error">Schema requis</template>';
+    RETURN pgv.toast('Schema requis', 'error');
   END IF;
 
   -- Verify schema exists
   IF NOT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = p_schema) THEN
-    RETURN '<template data-toast="error">Schema ' || pgv.esc(p_schema) || ' introuvable</template>';
+    RETURN pgv.toast('Schema ' || pgv.esc(p_schema) || ' introuvable', 'error');
   END IF;
 
   v_start := clock_timestamp();
@@ -41,11 +41,9 @@ BEGIN
   VALUES (p_schema, v_total, v_passed, v_failed, v_duration_ms);
 
   IF v_failed > 0 THEN
-    RETURN '<template data-toast="error">' || pgv.esc(p_schema)
-      || ' : ' || v_passed || ' OK, ' || v_failed || ' KO (' || v_duration_ms || ' ms)</template>';
+    RETURN pgv.toast(pgv.esc(p_schema) || ' : ' || v_passed || ' OK, ' || v_failed || ' KO (' || v_duration_ms || ' ms)', 'error');
   END IF;
 
-  RETURN '<template data-toast="success">' || pgv.esc(p_schema)
-    || ' : ' || v_passed || '/' || v_total || ' OK (' || v_duration_ms || ' ms)</template>';
+  RETURN pgv.toast(pgv.esc(p_schema) || ' : ' || v_passed || '/' || v_total || ' OK (' || v_duration_ms || ' ms)', 'success');
 END;
 $function$;

@@ -52,11 +52,40 @@ Chaque `build/{schema}.ddl.sql` DOIT inclure :
 - `pg_msg` → envoyer un message a un autre module
 - Chaque module est autonome — ne jamais modifier les fonctions d'un autre module
 
+## i18n
+
+Le framework utilise `pgv.t(key)` pour l'internationalisation. Chaque module doit :
+1. Créer `planning.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) les traductions FR
+2. Clés namespaced : `planning.nav_agenda`, `planning.title_intervenant`, `planning.btn_ajouter`, etc.
+3. Utiliser `pgv.t('planning.xxx')` dans nav_items(), brand(), et toutes les fonctions get_*/post_*
+4. `ON CONFLICT DO NOTHING` dans le seed
+
+Référence : `pg_get plpgsql://hr/function/i18n_seed` (95 clés)
+
+## QA Seed Data
+
+Le schema `planning_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
+- `planning_qa.seed()` — INSERT données démo réalistes (intervenants, événements, affectations)
+- `planning_qa.clean()` — DELETE dans l'ordre inverse des FK
+- `ON CONFLICT DO NOTHING`, penser multi-tenant (`current_setting('app.tenant_id', true)`)
+
+Référence : `pg_get plpgsql://hr_qa/function/seed`
+
+## Workflow agent
+
+1. Au démarrage ou quand on te dit "go" : **toujours lire `pg_msg_inbox module:planning`**
+2. Traiter les messages par priorité (HIGH d'abord)
+3. Ne pas résoudre un message tant que la tâche n'est pas vérifiée
+4. Après chaque tâche : `pg_pack schemas: planning,planning_ut,planning_qa` (les 3 schemas)
+5. Puis `pg_func_save target: plpgsql://planning` + `plpgsql://planning_ut` + `plpgsql://planning_qa`
+
 ## Gotchas
 
-- (a completer au fil du developpement)
+- pg_pack doit inclure les 3 schemas : planning,planning_ut,planning_qa
+- Ne pas tester via curl/fetch — utiliser pg_preview ou pg_test
+- Toujours lire l'inbox avant de commencer
 
 ## Premier demarrage
 
 Lire `pg_msg_inbox module:planning` pour les instructions d'implementation detaillees.
-Consulter crm, quote, ledger comme reference pour les patterns pgView.
+Consulter crm, quote, ledger, hr comme reference pour les patterns pgView.

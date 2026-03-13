@@ -9,7 +9,7 @@ DECLARE
 BEGIN
   v_name := trim(p_data->>'name');
   IF v_name IS NULL OR v_name = '' THEN
-    RETURN '<template data-toast="error">Le nom est obligatoire.</template>';
+    RETURN pgv.toast(pgv.t('crm.err_name_required'), 'error');
   END IF;
 
   IF p_data->>'tags' IS NOT NULL AND trim(p_data->>'tags') <> '' THEN
@@ -37,8 +37,8 @@ BEGIN
       active = COALESCE((p_data->>'active')::boolean, active)
     WHERE id = v_id;
 
-    RETURN '<template data-toast="success">Client modifié.</template>'
-        || '<template data-redirect="' || pgv.call_ref('get_client', jsonb_build_object('p_id', v_id)) || '"></template>';
+    RETURN pgv.toast(pgv.t('crm.toast_client_saved'))
+        || pgv.redirect(pgv.call_ref('get_client', jsonb_build_object('p_id', v_id)));
   ELSE
     INSERT INTO crm.client (type, name, email, phone, address, city, postal_code, tier, tags, notes)
     VALUES (
@@ -54,8 +54,8 @@ BEGIN
       COALESCE(p_data->>'notes', '')
     ) RETURNING id INTO v_id;
 
-    RETURN '<template data-toast="success">Client créé.</template>'
-        || '<template data-redirect="' || pgv.call_ref('get_client', jsonb_build_object('p_id', v_id)) || '"></template>';
+    RETURN pgv.toast(pgv.t('crm.toast_client_created'))
+        || pgv.redirect(pgv.call_ref('get_client', jsonb_build_object('p_id', v_id)));
   END IF;
 END;
 $function$;

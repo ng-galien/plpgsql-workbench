@@ -28,22 +28,35 @@ BEGIN
   SELECT count(*)::int INTO v_interactions_week FROM crm.interaction WHERE created_at >= date_trunc('week', now());
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Total clients', v_total::text),
-    pgv.stat('Nouveaux ce mois', v_new_month::text),
-    pgv.stat('Interactions cette semaine', v_interactions_week::text)
+    pgv.stat(pgv.t('crm.stat_total_clients'), v_total::text),
+    pgv.stat(pgv.t('crm.stat_new_month'), v_new_month::text),
+    pgv.stat(pgv.t('crm.stat_interactions_week'), v_interactions_week::text)
   ]);
 
   -- Search/filter form
   v_body := v_body
     || '<form>'
     || '<div class="grid">'
-    || pgv.input('q', 'search', 'Recherche nom/email', v_q)
-    || pgv.sel('type', 'Type', '[{"label":"Tous","value":""},{"label":"Particulier","value":"individual"},{"label":"Entreprise","value":"company"}]'::jsonb, COALESCE(v_type, ''))
-    || pgv.sel('tier', 'Tier', '[{"label":"Tous","value":""},{"label":"Standard","value":"standard"},{"label":"Premium","value":"premium"},{"label":"VIP","value":"vip"}]'::jsonb, COALESCE(v_tier, ''))
-    || pgv.sel('active', 'Actif', '[{"label":"Tous","value":""},{"label":"Oui","value":"true"},{"label":"Non","value":"false"}]'::jsonb, COALESCE(v_active, ''))
-    || pgv.input('city', 'text', 'Ville', v_city)
+    || pgv.input('q', 'search', pgv.t('crm.field_search_name_email'), v_q)
+    || pgv.sel('type', pgv.t('crm.field_type'), jsonb_build_array(
+         jsonb_build_object('label', pgv.t('crm.filter_all'), 'value', ''),
+         jsonb_build_object('label', pgv.t('crm.type_individual'), 'value', 'individual'),
+         jsonb_build_object('label', pgv.t('crm.type_company'), 'value', 'company')
+       ), COALESCE(v_type, ''))
+    || pgv.sel('tier', pgv.t('crm.field_tier'), jsonb_build_array(
+         jsonb_build_object('label', pgv.t('crm.filter_all'), 'value', ''),
+         jsonb_build_object('label', 'Standard', 'value', 'standard'),
+         jsonb_build_object('label', 'Premium', 'value', 'premium'),
+         jsonb_build_object('label', 'VIP', 'value', 'vip')
+       ), COALESCE(v_tier, ''))
+    || pgv.sel('active', pgv.t('crm.field_active'), jsonb_build_array(
+         jsonb_build_object('label', pgv.t('crm.filter_all'), 'value', ''),
+         jsonb_build_object('label', pgv.t('crm.yes'), 'value', 'true'),
+         jsonb_build_object('label', pgv.t('crm.no'), 'value', 'false')
+       ), COALESCE(v_active, ''))
+    || pgv.input('city', 'text', pgv.t('crm.field_city'), v_city)
     || '</div>'
-    || '<button type="submit" class="secondary">Filtrer</button>'
+    || '<button type="submit" class="secondary">' || pgv.t('crm.btn_filter') || '</button>'
     || '</form>';
 
   -- Client list with filters
@@ -66,23 +79,25 @@ BEGIN
       COALESCE(r.city, '—'),
       pgv.badge(upper(r.tier), crm.tier_variant(r.tier)),
       r.nb_interactions::text,
-      CASE WHEN r.active THEN 'Oui' ELSE 'Non' END
+      CASE WHEN r.active THEN pgv.t('crm.yes') ELSE pgv.t('crm.no') END
     ];
   END LOOP;
 
   IF v_total = 0 THEN
-    v_body := v_body || pgv.empty('Aucun client', 'Créez votre premier client pour commencer.');
+    v_body := v_body || pgv.empty(pgv.t('crm.empty_no_client'), pgv.t('crm.empty_first_client'));
   ELSIF cardinality(v_rows) = 0 THEN
-    v_body := v_body || pgv.empty('Aucun résultat pour ces filtres.');
+    v_body := v_body || pgv.empty(pgv.t('crm.empty_no_results'));
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY['Client', 'Type', 'Ville', 'Tier', 'Interactions', 'Actif'],
+      ARRAY[pgv.t('crm.col_client'), pgv.t('crm.col_type'), pgv.t('crm.col_city'), pgv.t('crm.col_tier'), pgv.t('crm.col_interactions'), pgv.t('crm.col_active')],
       v_rows,
       20
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouveau client</a> <a href="%s" role="button" class="secondary">Import CSV</a></p>', pgv.call_ref('get_client_form'), pgv.call_ref('get_import'));
+  v_body := v_body || format('<p><a href="%s" role="button">%s</a> <a href="%s" role="button" class="secondary">%s</a></p>',
+    pgv.call_ref('get_client_form'), pgv.t('crm.btn_new_client'),
+    pgv.call_ref('get_import'), pgv.t('crm.btn_import_csv'));
 
   RETURN v_body;
 END;

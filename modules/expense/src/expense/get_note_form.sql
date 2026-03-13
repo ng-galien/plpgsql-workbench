@@ -10,29 +10,27 @@ BEGIN
   IF v_id IS NOT NULL THEN
     SELECT * INTO v_note FROM expense.note WHERE id = v_id;
     IF NOT FOUND THEN
-      RETURN pgv.error('404', 'Note introuvable');
+      RETURN pgv.error('404', pgv.t('expense.err_not_found'));
     END IF;
     IF v_note.statut <> 'brouillon' THEN
-      RETURN pgv.error('400', 'Modification impossible', 'Seules les notes en brouillon peuvent être modifiées.');
+      RETURN pgv.error('400', pgv.t('expense.err_not_modifiable'), pgv.t('expense.err_not_modifiable_detail'));
     END IF;
   END IF;
 
-  v_body := '<form data-rpc="post_note_creer">';
+  v_body := '';
 
   IF v_id IS NOT NULL THEN
     v_body := v_body || '<input type="hidden" name="id" value="' || v_id || '">';
   END IF;
 
   v_body := v_body
-    || pgv.input('auteur', 'text', 'Auteur', v_note.auteur, true)
+    || pgv.input('auteur', 'text', pgv.t('expense.field_auteur'), v_note.auteur, true)
     || '<div class="pgv-grid">'
-    || pgv.input('date_debut', 'date', 'Date début', CASE WHEN v_note IS NOT NULL THEN to_char(v_note.date_debut, 'YYYY-MM-DD') ELSE to_char(date_trunc('month', now()), 'YYYY-MM-DD') END, true)
-    || pgv.input('date_fin', 'date', 'Date fin', CASE WHEN v_note IS NOT NULL THEN to_char(v_note.date_fin, 'YYYY-MM-DD') ELSE to_char(now()::date, 'YYYY-MM-DD') END, true)
+    || pgv.input('date_debut', 'date', pgv.t('expense.field_date_debut'), CASE WHEN v_note IS NOT NULL THEN to_char(v_note.date_debut, 'YYYY-MM-DD') ELSE to_char(date_trunc('month', now()), 'YYYY-MM-DD') END, true)
+    || pgv.input('date_fin', 'date', pgv.t('expense.field_date_fin'), CASE WHEN v_note IS NOT NULL THEN to_char(v_note.date_fin, 'YYYY-MM-DD') ELSE to_char(now()::date, 'YYYY-MM-DD') END, true)
     || '</div>'
-    || pgv.textarea('commentaire', 'Commentaire', v_note.commentaire)
-    || '<button type="submit">' || CASE WHEN v_id IS NOT NULL THEN 'Modifier' ELSE 'Créer la note' END || '</button>'
-    || '</form>';
+    || pgv.textarea('commentaire', pgv.t('expense.field_commentaire'), v_note.commentaire);
 
-  RETURN v_body;
+  RETURN pgv.form('post_note_creer', v_body, CASE WHEN v_id IS NOT NULL THEN pgv.t('expense.btn_modifier') ELSE pgv.t('expense.btn_creer_note') END);
 END;
 $function$;

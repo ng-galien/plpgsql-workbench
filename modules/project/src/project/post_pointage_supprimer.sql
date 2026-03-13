@@ -10,10 +10,10 @@ BEGIN
     JOIN project.chantier c ON c.id = p.chantier_id
    WHERE p.id = p_id AND c.statut IN ('preparation','execution');
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Pointage introuvable ou chantier non modifiable';
+    RAISE EXCEPTION '%', pgv.t('project.err_pointage_non_modifiable');
   END IF;
   DELETE FROM project.pointage WHERE id = p_id;
-  RETURN '<template data-toast="success">Pointage supprimé</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_chantier_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('project.toast_pointage_supprime'))
+    || pgv.redirect(pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_chantier_id)));
 END;
 $function$;

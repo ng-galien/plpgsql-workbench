@@ -20,8 +20,8 @@ BEGIN
       notes = coalesce(p_data->>'notes', '')
     WHERE id = v_id;
 
-    RETURN '<template data-toast="success">Article modifié</template>'
-      || format('<template data-redirect="%s"></template>', pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
+    RETURN pgv.toast(pgv.t('stock.toast_article_modifie'))
+      || pgv.redirect(pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
   ELSE
     INSERT INTO stock.article (reference, designation, categorie, unite, prix_achat, seuil_mini, fournisseur_id, catalog_article_id, notes)
     VALUES (
@@ -36,8 +36,8 @@ BEGIN
       coalesce(p_data->>'notes', '')
     ) RETURNING id INTO v_id;
 
-    RETURN '<template data-toast="success">Article créé</template>'
-      || format('<template data-redirect="%s"></template>', pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
+    RETURN pgv.toast(pgv.t('stock.toast_article_cree'))
+      || pgv.redirect(pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
   END IF;
 END;
 $function$;

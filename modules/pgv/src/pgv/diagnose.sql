@@ -354,6 +354,53 @@ BEGIN
       || '</md>' || chr(10);
   END IF;
 
+  -- 11. i18n: hardcoded French strings (schema-wide)
+  v_rows := '';
+  v_warn := 0;
+  v_ok := 0;
+
+  FOR v_rec IN
+    WITH fn_scan AS (
+      SELECT p.proname, pg_get_functiondef(p.oid) AS def
+      FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = p_schema
+        AND (p.proname LIKE 'get_%' OR p.proname LIKE 'post_%'
+             OR p.proname IN ('nav_items', 'brand'))
+    )
+    SELECT proname,
+           def ~ '[éèêëàâùûôîïüçÉÈÊËÀÂÙÛÔÎÏÜÇ]' AS has_fr,
+           def LIKE '%pgv.t(%' AS has_t,
+           CASE WHEN def ~ '[éèêëàâùûôîïüçÉÈÊËÀÂÙÛÔÎÏÜÇ]' AND NOT def LIKE '%pgv.t(%' THEN
+             (regexp_match(def, '''([^'']*[éèêëàâùûôîïüçÉÈÊËÀÂÙÛÔÎÏÜÇ][^'']*)'''))[1]
+           END AS sample
+    FROM fn_scan
+    ORDER BY proname
+  LOOP
+    IF v_rec.has_fr AND NOT v_rec.has_t THEN
+      v_rows := v_rows || '| ' || pgv.badge('WARN', 'warning') || ' | ' || v_rec.proname || '() | `' || pgv.esc(coalesce(substr(v_rec.sample, 1, 50), '?')) || '` |' || chr(10);
+      v_warn := v_warn + 1;
+    ELSE
+      v_ok := v_ok + 1;
+    END IF;
+  END LOOP;
+
+  IF v_warn > 0 OR v_ok > 0 THEN
+    v_reports := v_reports || pgv.dl(
+      'i18n', p_schema,
+      'Bilan',
+        CASE WHEN v_warn > 0 THEN pgv.badge(v_warn || ' fonction(s) FR', 'warning') || ' ' ELSE '' END
+        || CASE WHEN v_ok > 0 THEN pgv.badge(v_ok || ' ok', 'success') ELSE '' END)
+      || '<md>' || chr(10)
+      || '| Niveau | Source | Detail |' || chr(10)
+      || '|--------|--------|--------|' || chr(10)
+      || v_rows
+      || '</md>' || chr(10);
+  END IF;
+
+  -- 12. HTML audit: raw HTML that should use pgv.* primitives (schema-wide)
+  v_reports := v_reports || pgv.html_audit(p_schema);
+
   RETURN v_reports;
 END;
 $function$;

@@ -27,7 +27,7 @@ BEGIN
 
   -- Guard: doublon interdit
   IF EXISTS (SELECT 1 FROM ledger.journal_entry WHERE expense_note_id = v_note_id) THEN
-    RETURN '<template data-toast="error">Cette note de frais a déjà une écriture comptable</template>';
+    RETURN pgv.toast(pgv.t('ledger.err_duplicate_expense'), 'error');
   END IF;
 
   -- Resolve account IDs
@@ -62,7 +62,7 @@ BEGIN
   INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
   VALUES (v_entry_id, v_account_421, 0, v_montant_ttc, 'Remboursement NDF-' || v_note_id);
 
-  RETURN '<template data-toast="success">Écriture NDF créée — ' || pgv.esc(v_libelle) || '</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_entry', jsonb_build_object('p_id', v_entry_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('ledger.toast_entry_from_expense') || ' — ' || pgv.esc(v_libelle))
+    || pgv.redirect(pgv.call_ref('get_entry', jsonb_build_object('p_id', v_entry_id)));
 END;
 $function$;

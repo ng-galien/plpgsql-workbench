@@ -12,17 +12,16 @@ BEGIN
     JOIN project.chantier c ON c.id = j.chantier_id
    WHERE j.id = p_id AND j.statut <> 'valide' AND c.statut IN ('preparation','execution');
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Jalon introuvable, déjà validé, ou chantier non modifiable';
+    RAISE EXCEPTION '%', pgv.t('project.err_jalon_deja_valide');
   END IF;
 
-  -- Vérifier que tous les jalons précédents sont validés
   SELECT EXISTS (
     SELECT 1 FROM project.jalon
      WHERE chantier_id = v_chantier_id AND sort_order < v_sort AND statut <> 'valide'
   ) INTO v_prev_not_valide;
 
   IF v_prev_not_valide THEN
-    RAISE EXCEPTION 'Les jalons précédents doivent être validés avant';
+    RAISE EXCEPTION '%', pgv.t('project.err_jalons_precedents');
   END IF;
 
   UPDATE project.jalon SET
@@ -31,7 +30,7 @@ BEGIN
     date_reelle = CURRENT_DATE
   WHERE id = p_id;
 
-  RETURN '<template data-toast="success">Jalon validé</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_chantier_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('project.toast_jalon_valide'))
+    || pgv.redirect(pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_chantier_id)));
 END;
 $function$;

@@ -18,14 +18,14 @@ BEGIN
   v_start := make_date(v_year, 1, 1);
   v_end := make_date(v_year, 12, 31);
 
-  v_body := pgv.breadcrumb(VARIADIC ARRAY['Bilan']);
+  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_bilan')]);
 
   -- Sélecteur année
-  v_body := v_body || '<div class="grid">'
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text)
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), v_year::text)
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
-    || '</div>';
+  v_body := v_body || pgv.grid(VARIADIC ARRAY[
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text),
+    format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), v_year::text),
+    format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text)
+  ]);
 
   -- Produits (revenue = classe 7)
   v_rows_r := ARRAY[]::text[];
@@ -77,25 +77,25 @@ BEGIN
 
   -- Stats résumé
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Produits', to_char(v_total_revenue, 'FM999 990.00') || ' €'),
-    pgv.stat('Charges', to_char(v_total_expense, 'FM999 990.00') || ' €'),
-    pgv.stat('Résultat net', to_char(v_resultat, 'FM999 990.00') || ' €',
-      CASE WHEN v_resultat >= 0 THEN 'Bénéfice' ELSE 'Déficit' END)
+    pgv.stat(pgv.t('ledger.stat_revenue'), to_char(v_total_revenue, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_expenses'), to_char(v_total_expense, 'FM999 990.00') || ' €'),
+    pgv.stat(pgv.t('ledger.stat_result_net'), to_char(v_resultat, 'FM999 990.00') || ' €',
+      CASE WHEN v_resultat >= 0 THEN pgv.t('ledger.stat_benefit') ELSE pgv.t('ledger.stat_deficit') END)
   ]);
 
   -- Tables détail
   v_body := v_body || pgv.tabs(VARIADIC ARRAY[
-    'Produits (classe 7)',
+    pgv.t('ledger.title_revenue'),
     CASE WHEN array_length(v_rows_r, 1) IS NULL
-      THEN pgv.empty('Aucun produit sur ' || v_year)
-      ELSE pgv.md_table(ARRAY['Code', 'Libellé', 'Montant'], v_rows_r)
-        || '<p><strong>Total produits : ' || to_char(v_total_revenue, 'FM999 990.00') || ' €</strong></p>'
+      THEN pgv.empty(pgv.t('ledger.empty_no_revenue_on') || ' ' || v_year)
+      ELSE pgv.md_table(ARRAY[pgv.t('ledger.col_code'), pgv.t('ledger.col_label'), pgv.t('ledger.col_amount')], v_rows_r)
+        || '<p><strong>' || pgv.t('ledger.total_revenue') || ' : ' || to_char(v_total_revenue, 'FM999 990.00') || ' €</strong></p>'
     END,
-    'Charges (classe 6)',
+    pgv.t('ledger.title_expenses'),
     CASE WHEN array_length(v_rows_e, 1) IS NULL
-      THEN pgv.empty('Aucune charge sur ' || v_year)
-      ELSE pgv.md_table(ARRAY['Code', 'Libellé', 'Montant'], v_rows_e)
-        || '<p><strong>Total charges : ' || to_char(v_total_expense, 'FM999 990.00') || ' €</strong></p>'
+      THEN pgv.empty(pgv.t('ledger.empty_no_expense_on') || ' ' || v_year)
+      ELSE pgv.md_table(ARRAY[pgv.t('ledger.col_code'), pgv.t('ledger.col_label'), pgv.t('ledger.col_amount')], v_rows_e)
+        || '<p><strong>' || pgv.t('ledger.total_expenses') || ' : ' || to_char(v_total_expense, 'FM999 990.00') || ' €</strong></p>'
     END
   ]);
 

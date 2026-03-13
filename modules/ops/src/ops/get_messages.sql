@@ -22,6 +22,7 @@ BEGIN
     v_type_variant := CASE r.msg_type
       WHEN 'feature_request' THEN 'info'
       WHEN 'bug_report' THEN 'danger'
+      WHEN 'issue_report' THEN 'danger'
       WHEN 'question' THEN 'warning'
       WHEN 'task' THEN 'success'
       ELSE 'default'

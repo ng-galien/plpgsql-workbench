@@ -19,6 +19,7 @@ BEGIN
   v_type_variant := CASE v_msg.msg_type
     WHEN 'feature_request' THEN 'info'
     WHEN 'bug_report' THEN 'danger'
+    WHEN 'issue_report' THEN 'danger'
     WHEN 'question' THEN 'warning'
     WHEN 'task' THEN 'success'
     ELSE 'default'
@@ -31,7 +32,7 @@ BEGIN
   END;
 
   -- Breadcrumb
-  v_body := pgv.breadcrumb(VARIADIC ARRAY['Messages', '/messages', '#' || p_id::text]);
+  v_body := pgv.breadcrumb(VARIADIC ARRAY['Messages', '/ops/messages', '#' || p_id::text]);
 
   -- Header stats
   v_body := v_body || pgv.grid(VARIADIC ARRAY[

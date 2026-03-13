@@ -9,10 +9,10 @@ BEGIN
    WHERE id = v_id AND statut = 'brouillon';
 
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">Commande introuvable ou déjà envoyée</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_already_sent'), 'error');
   END IF;
 
-  RETURN format('<template data-toast="success">Commande envoyée</template><template data-redirect="%s"></template>',
-    pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_commande_envoyee'))
+    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

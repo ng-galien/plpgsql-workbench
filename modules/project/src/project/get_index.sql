@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION project.get_index()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_en_cours int;
@@ -29,10 +28,10 @@ BEGIN
    WHERE date_pointage >= date_trunc('week', CURRENT_DATE);
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat('En cours', v_en_cours::text),
-    pgv.stat('En préparation', v_preparation::text),
-    pgv.stat('Terminés ce mois', v_clos_mois::text),
-    pgv.stat('Heures semaine', v_heures_semaine::text || ' h')
+    pgv.stat(pgv.t('project.stat_en_cours'), v_en_cours::text),
+    pgv.stat(pgv.t('project.stat_preparation'), v_preparation::text),
+    pgv.stat(pgv.t('project.stat_termines_mois'), v_clos_mois::text),
+    pgv.stat(pgv.t('project.stat_heures_semaine'), v_heures_semaine::text || ' h')
   ]);
 
   -- Alertes retard
@@ -57,14 +56,14 @@ BEGIN
   END LOOP;
 
   IF array_length(v_alert_rows, 1) IS NOT NULL THEN
-    v_body := v_body || '<h3>Alertes retard</h3>'
+    v_body := v_body || '<h3>' || pgv.t('project.title_alertes_retard') || '</h3>'
       || pgv.md_table(
-        ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Retard'],
+        ARRAY[pgv.t('project.col_numero'), pgv.t('project.col_client'), pgv.t('project.col_objet'), pgv.t('project.col_statut'), pgv.t('project.col_retard')],
         v_alert_rows
       );
   END IF;
 
-  -- Liste chantiers actifs
+  -- Liste projets actifs
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT c.id, c.client_id, c.devis_id, c.numero, cl.name AS client, c.objet, c.statut,
@@ -91,17 +90,17 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun chantier actif', 'Créez votre premier chantier pour commencer.');
+    v_body := v_body || pgv.empty(pgv.t('project.empty_aucun_actif'), pgv.t('project.empty_premier'));
   ELSE
-    v_body := v_body || '<h3>Chantiers actifs</h3>'
+    v_body := v_body || '<h3>' || pgv.t('project.title_projets_actifs') || '</h3>'
       || pgv.md_table(
-        ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Avancement', 'Devis', 'Début'],
+        ARRAY[pgv.t('project.col_numero'), pgv.t('project.col_client'), pgv.t('project.col_objet'), pgv.t('project.col_statut'), pgv.t('project.col_avancement'), pgv.t('project.col_devis'), pgv.t('project.col_debut')],
         v_rows, 10
       );
   END IF;
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">Nouveau chantier</a>', pgv.call_ref('get_chantier_form'))
+    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_chantier_form'), pgv.t('project.btn_nouveau'))
     || '</p>';
 
   RETURN v_body;

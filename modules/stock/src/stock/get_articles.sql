@@ -30,29 +30,29 @@ BEGIN
       r.qty::text || ' ' || r.unite,
       CASE WHEN r.pmp > 0 THEN to_char(r.pmp, 'FM999G990D00') ELSE '—' END,
       CASE WHEN r.seuil_mini > 0 AND r.qty < r.seuil_mini
-        THEN pgv.badge('ALERTE', 'danger')
+        THEN pgv.badge(pgv.t('stock.col_alerte'), 'danger')
         ELSE '—'
       END,
       CASE WHEN r.fournisseur IS NOT NULL
         THEN format('<a href="/crm/client?p_id=%s">%s</a>', r.fournisseur_id, pgv.esc(r.fournisseur))
         ELSE '—'
       END,
-      CASE WHEN r.active THEN 'Oui' ELSE 'Non' END
+      CASE WHEN r.active THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END
     ];
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := pgv.empty('Aucun article', 'Créez votre premier article pour commencer.');
+    v_body := pgv.empty(pgv.t('stock.empty_no_article'), pgv.t('stock.empty_first_article'));
   ELSE
     v_body := pgv.md_table(
-      ARRAY['Réf.', 'Désignation', 'Catégorie', 'Stock', 'PMP', 'Alerte', 'Fournisseur', 'Actif'],
+      ARRAY[pgv.t('stock.col_ref'), pgv.t('stock.col_designation'), pgv.t('stock.col_categorie'), pgv.t('stock.col_stock'), pgv.t('stock.col_pmp'), pgv.t('stock.col_alerte'), pgv.t('stock.col_fournisseur'), pgv.t('stock.col_actif')],
       v_rows,
       20
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouvel article</a></p>',
-    pgv.call_ref('get_article_form'));
+  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
+    pgv.call_ref('get_article_form'), pgv.t('stock.btn_nouvel_article'));
 
   RETURN v_body;
 END;

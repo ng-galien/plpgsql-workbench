@@ -21,21 +21,21 @@ BEGIN
       format('<a href="%s">%s</a>', pgv.call_ref('get_entry', jsonb_build_object('p_id', r.id)), pgv.esc(r.reference)),
       pgv.esc(r.description),
       to_char(r.total_debit, 'FM999 990.00') || ' €',
-      CASE WHEN r.posted THEN pgv.badge('Validée', 'success') ELSE pgv.badge('Brouillon', 'warning') END
+      CASE WHEN r.posted THEN pgv.badge(pgv.t('ledger.badge_posted'), 'success') ELSE pgv.badge(pgv.t('ledger.badge_draft'), 'warning') END
     ];
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := pgv.empty('Aucune écriture', 'Créez votre première écriture comptable.');
+    v_body := pgv.empty(pgv.t('ledger.empty_no_entry'), pgv.t('ledger.empty_first_entry_accounting'));
   ELSE
     v_body := pgv.md_table(
-      ARRAY['Date', 'Référence', 'Description', 'Montant', 'Statut'],
+      ARRAY[pgv.t('ledger.col_date'), pgv.t('ledger.col_reference'), pgv.t('ledger.col_description'), pgv.t('ledger.col_amount'), pgv.t('ledger.col_status')],
       v_rows, 15
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouvelle écriture</a></p>', pgv.call_ref('get_entry_form'));
+  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_entry_form'), pgv.t('ledger.btn_new_entry'));
 
-  RETURN pgv.breadcrumb(VARIADIC ARRAY['Écritures']) || v_body;
+  RETURN pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_entries')]) || v_body;
 END;
 $function$;

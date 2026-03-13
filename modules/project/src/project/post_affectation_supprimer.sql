@@ -12,12 +12,12 @@ BEGIN
    WHERE a.id = p_id;
 
   IF v_statut = 'clos' THEN
-    RAISE EXCEPTION 'Impossible de modifier un chantier clos';
+    RAISE EXCEPTION '%', pgv.t('project.err_projet_clos_modification');
   END IF;
 
   DELETE FROM project.affectation WHERE id = p_id;
 
-  RETURN '<template data-toast="success">Affectation supprimée</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_chantier_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('project.toast_affectation_supprimee'))
+    || pgv.redirect(pgv.call_ref('get_chantier', jsonb_build_object('p_id', v_chantier_id)));
 END;
 $function$;

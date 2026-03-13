@@ -9,12 +9,12 @@ DECLARE
   v_has_ledger boolean;
 BEGIN
   IF v_id IS NULL THEN
-    RETURN '<template data-toast="error">ID requis.</template>';
+    RETURN pgv.toast(pgv.t('expense.err_id_requis'), 'error');
   END IF;
 
   SELECT * INTO v_note FROM expense.note WHERE id = v_id AND statut = 'validee';
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">Note introuvable ou pas en statut validée.</template>';
+    RETURN pgv.toast(pgv.t('expense.err_not_validee'), 'error');
   END IF;
 
   SELECT coalesce(sum(montant_ttc), 0) INTO v_total_ttc FROM expense.ligne WHERE note_id = v_id;
@@ -40,7 +40,7 @@ BEGIN
     END;
   END IF;
 
-  RETURN '<template data-toast="success">Note remboursée (' || to_char(v_total_ttc, 'FM999 990.00') || ' EUR).</template>'
-    || '<template data-redirect="/note?p_id=' || v_id || '"></template>';
+  RETURN pgv.toast(pgv.t('expense.toast_note_remboursee') || ' (' || to_char(v_total_ttc, 'FM999 990.00') || ' EUR).')
+    || pgv.redirect('/note?p_id=' || v_id);
 END;
 $function$;

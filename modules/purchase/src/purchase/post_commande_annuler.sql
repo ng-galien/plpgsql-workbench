@@ -9,17 +9,17 @@ BEGIN
   SELECT exists(SELECT 1 FROM purchase.reception WHERE commande_id = v_id) INTO v_has_receptions;
 
   IF v_has_receptions THEN
-    RETURN '<template data-toast="error">Impossible d''annuler : des réceptions existent</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_cancel_receptions'), 'error');
   END IF;
 
   UPDATE purchase.commande SET statut = 'annulee'
    WHERE id = v_id AND statut IN ('brouillon', 'envoyee');
 
   IF NOT FOUND THEN
-    RETURN '<template data-toast="error">Commande introuvable ou non annulable</template>';
+    RETURN pgv.toast(pgv.t('purchase.err_not_cancellable'), 'error');
   END IF;
 
-  RETURN format('<template data-toast="success">Commande annulée</template><template data-redirect="%s"></template>',
-    pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_commande_annulee'))
+    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

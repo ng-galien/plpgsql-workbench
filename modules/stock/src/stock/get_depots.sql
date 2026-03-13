@@ -25,21 +25,21 @@ BEGIN
       END),
       coalesce(r.adresse, '—'),
       r.nb_articles::text,
-      CASE WHEN r.actif THEN 'Oui' ELSE 'Non' END
+      CASE WHEN r.actif THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END
     ];
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := pgv.empty('Aucun dépôt', 'Créez votre premier dépôt pour commencer.');
+    v_body := pgv.empty(pgv.t('stock.empty_no_depot'), pgv.t('stock.empty_first_depot'));
   ELSE
     v_body := pgv.md_table(
-      ARRAY['Nom', 'Type', 'Adresse', 'Articles', 'Actif'],
+      ARRAY[pgv.t('stock.col_nom'), pgv.t('stock.col_type'), pgv.t('stock.col_adresse'), pgv.t('stock.col_articles'), pgv.t('stock.col_actif')],
       v_rows
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouveau dépôt</a></p>',
-    pgv.call_ref('get_depot_form'));
+  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
+    pgv.call_ref('get_depot_form'), pgv.t('stock.btn_nouveau_depot'));
 
   RETURN v_body;
 END;

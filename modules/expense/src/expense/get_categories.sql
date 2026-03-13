@@ -15,9 +15,9 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    RETURN pgv.empty('Aucune catégorie');
+    RETURN pgv.empty(pgv.t('expense.empty_no_categorie'));
   END IF;
 
-  RETURN pgv.md_table(ARRAY['Catégorie', 'Code comptable'], v_rows);
+  RETURN pgv.md_table(ARRAY[pgv.t('expense.col_categorie'), pgv.t('expense.col_code_comptable')], v_rows);
 END;
 $function$;

@@ -14,7 +14,7 @@ BEGIN
   v_html := project.get_index();
   RETURN NEXT ok(v_html IS NOT NULL AND length(v_html) > 50, 'get_index renders');
   RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'has stats grid');
-  RETURN NEXT ok(v_html LIKE '%Nouveau chantier%', 'has new chantier button');
+  RETURN NEXT ok(v_html LIKE '%Nouveau projet%', 'has new projet button');
 
   -- Create a late chantier to trigger alerts
   INSERT INTO crm.client(type, name, email, tenant_id) VALUES ('individual', 'RetardCli', 'retard@test.com', 'dev') RETURNING id INTO v_cli_id;
@@ -26,7 +26,7 @@ BEGIN
   RETURN NEXT ok(v_html LIKE '%Alertes retard%', 'has alerts section');
   RETURN NEXT ok(v_html LIKE '%CHT-RETARD-01%', 'shows late chantier');
   RETURN NEXT ok(v_html LIKE '%pgv-badge-warn%', 'has warn badge');
-  RETURN NEXT ok(v_html LIKE '%Chantiers actifs%', 'has active chantiers section');
+  RETURN NEXT ok(v_html LIKE '%Projets actifs%', 'has active projets section');
 
   -- Cleanup
   DELETE FROM project.chantier WHERE id = v_ch_id;

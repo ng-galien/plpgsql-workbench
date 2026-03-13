@@ -1129,8 +1129,8 @@ dialog article {
 .pgv-wf-future .pgv-wf-dot { background: var(--pgv-surface); border-color: var(--pgv-border); }
 .pgv-wf-future .pgv-wf-label { color: var(--pgv-muted); opacity: 0.6; }
 
-/* ── Bug Report ──────────────────────────────────────────────── */
-.pgv-bug-btn {
+/* ── Issue Report ────────────────────────────────────────────── */
+.pgv-issue-btn {
   all: unset;
   cursor: pointer;
   position: fixed;
@@ -1150,19 +1150,19 @@ dialog article {
   opacity: 0.5;
   transition: opacity 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
-.pgv-bug-btn:hover {
+.pgv-issue-btn:hover {
   opacity: 1;
   border-color: var(--pgv-accent);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
 }
 
-.pgv-bug-backdrop {
+.pgv-issue-backdrop {
   position: fixed; inset: 0; z-index: 900;
   background: rgba(0, 0, 0, 0.4);
   animation: pgv-fade-in 0.12s ease-out;
 }
 
-.pgv-bug-panel {
+.pgv-issue-panel {
   position: fixed;
   bottom: 1rem;
   left: 1rem;
@@ -1172,14 +1172,14 @@ dialog article {
   border: 1px solid var(--pgv-border);
   border-radius: 0.5rem;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
-  animation: pgv-bug-in 0.15s ease-out;
+  animation: pgv-issue-in 0.15s ease-out;
 }
-@keyframes pgv-bug-in {
+@keyframes pgv-issue-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.pgv-bug-header {
+.pgv-issue-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1188,7 +1188,7 @@ dialog article {
   font-size: 0.875rem;
 }
 
-.pgv-bug-close {
+.pgv-issue-close {
   all: unset;
   cursor: pointer;
   font-size: 1.1rem;
@@ -1196,24 +1196,24 @@ dialog article {
   padding: 0 0.2rem;
   line-height: 1;
 }
-.pgv-bug-close:hover { color: var(--pgv-text); }
+.pgv-issue-close:hover { color: var(--pgv-text); }
 
-.pgv-bug-body {
+.pgv-issue-body {
   padding: 0.75rem 0.85rem;
 }
 
-.pgv-bug-body textarea {
+.pgv-issue-body textarea {
   width: 100%;
   resize: vertical;
   font-size: 0.8125rem;
   margin-bottom: 0.5rem;
 }
 
-.pgv-bug-body details {
+.pgv-issue-body details {
   margin-bottom: 0;
 }
 
-.pgv-bug-body pre {
+.pgv-issue-body pre {
   font-size: 0.7rem;
   max-height: 10rem;
   overflow: auto;
@@ -1222,7 +1222,7 @@ dialog article {
   word-break: break-all;
 }
 
-.pgv-bug-footer {
+.pgv-issue-footer {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;

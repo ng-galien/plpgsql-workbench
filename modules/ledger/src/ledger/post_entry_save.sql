@@ -24,7 +24,7 @@ BEGIN
     ) RETURNING id INTO v_id;
   END IF;
 
-  RETURN '<template data-toast="success">Écriture enregistrée</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_entry', jsonb_build_object('p_id', v_id)) || '"></template>';
+  RETURN pgv.toast(pgv.t('ledger.toast_entry_saved'))
+    || pgv.redirect(pgv.call_ref('get_entry', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

@@ -1,15 +1,15 @@
 CREATE OR REPLACE FUNCTION crm.type_label(p_type text)
  RETURNS text
  LANGUAGE sql
- IMMUTABLE
+ STABLE
 AS $function$
   SELECT CASE p_type
-    WHEN 'individual' THEN 'Particulier'
-    WHEN 'company' THEN 'Entreprise'
-    WHEN 'call' THEN 'Appel'
-    WHEN 'visit' THEN 'Visite'
-    WHEN 'email' THEN 'Courriel'
-    WHEN 'note' THEN 'Note'
+    WHEN 'individual' THEN pgv.t('crm.type_individual')
+    WHEN 'company' THEN pgv.t('crm.type_company')
+    WHEN 'call' THEN pgv.t('crm.type_call')
+    WHEN 'visit' THEN pgv.t('crm.type_visit')
+    WHEN 'email' THEN pgv.t('crm.type_email')
+    WHEN 'note' THEN pgv.t('crm.type_note')
     ELSE p_type
   END;
 $function$;

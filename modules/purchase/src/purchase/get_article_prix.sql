@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION purchase.get_article_prix(p_article_id integer)
  RETURNS text
  LANGUAGE plpgsql
- SECURITY DEFINER
 AS $function$
 DECLARE
   v_ref text;
@@ -25,7 +24,7 @@ BEGIN
     v_designation := 'Article ' || p_article_id;
   END IF;
 
-  v_body := '<h3>Historique prix — ' || pgv.esc(v_ref) || ' ' || pgv.esc(v_designation) || '</h3>';
+  v_body := '<h3>' || pgv.t('purchase.title_historique_prix') || ' — ' || pgv.esc(v_ref) || ' ' || pgv.esc(v_designation) || '</h3>';
 
   -- Price history: all purchase lines with this article_id, grouped by supplier
   v_rows := ARRAY[]::text[];
@@ -50,31 +49,31 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty('Aucun achat enregistré pour cet article');
+    v_body := v_body || pgv.empty(pgv.t('purchase.empty_no_achat_article'));
   ELSE
     -- Stats summary
     v_body := v_body || pgv.grid(VARIADIC ARRAY[
-      pgv.stat('Achats', (array_length(v_rows, 1) / 6)::text),
-      pgv.stat('Prix min', (SELECT to_char(min(l.prix_unitaire), 'FM999 990.00') || ' EUR'
+      pgv.stat(pgv.t('purchase.stat_achats'), (array_length(v_rows, 1) / 6)::text),
+      pgv.stat(pgv.t('purchase.stat_prix_min'), (SELECT to_char(min(l.prix_unitaire), 'FM999 990.00') || ' EUR'
         FROM purchase.ligne l WHERE l.article_id = p_article_id)),
-      pgv.stat('Prix max', (SELECT to_char(max(l.prix_unitaire), 'FM999 990.00') || ' EUR'
+      pgv.stat(pgv.t('purchase.stat_prix_max'), (SELECT to_char(max(l.prix_unitaire), 'FM999 990.00') || ' EUR'
         FROM purchase.ligne l WHERE l.article_id = p_article_id)),
-      pgv.stat('Prix moyen', (SELECT to_char(avg(l.prix_unitaire), 'FM999 990.00') || ' EUR'
+      pgv.stat(pgv.t('purchase.stat_prix_moyen'), (SELECT to_char(avg(l.prix_unitaire), 'FM999 990.00') || ' EUR'
         FROM purchase.ligne l WHERE l.article_id = p_article_id))
     ]);
     v_body := v_body || pgv.md_table(
-      ARRAY['Fournisseur', 'Commande', 'Prix unitaire', 'Quantité', 'Statut', 'Date'],
+      ARRAY[pgv.t('purchase.col_fournisseur'), pgv.t('purchase.col_commande'), pgv.t('purchase.col_prix_unitaire'), pgv.t('purchase.col_quantite'), pgv.t('purchase.col_statut'), pgv.t('purchase.col_date')],
       v_rows);
   END IF;
 
   -- Link to catalog if available
   IF EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
              WHERE n.nspname = 'catalog' AND c.relname = 'article') THEN
-    v_body := v_body || format('<p><a href="/catalog/article?p_id=%s">Voir fiche article</a> | ', p_article_id);
+    v_body := v_body || format('<p><a href="/catalog/article?p_id=%s">%s</a> | ', p_article_id, pgv.t('purchase.btn_voir_fiche'));
   ELSE
     v_body := v_body || '<p>';
   END IF;
-  v_body := v_body || format('<a href="%s">Retour commandes</a></p>', pgv.call_ref('get_commande'));
+  v_body := v_body || format('<a href="%s">%s</a></p>', pgv.call_ref('get_commande'), pgv.t('purchase.btn_retour_commandes'));
 
   RETURN v_body;
 END;

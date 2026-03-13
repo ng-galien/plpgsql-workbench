@@ -18,7 +18,7 @@ BEGIN
     coalesce(p_data->>'p_notes', '')
   ) RETURNING id INTO v_id;
 
-  RETURN format('<template data-toast="success">Facture fournisseur saisie</template><template data-redirect="%s"></template>',
-    pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_facture_saisie'))
+    || pgv.redirect(pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
 END;
 $function$;

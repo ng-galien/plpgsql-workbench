@@ -38,10 +38,10 @@ BEGIN
   END IF;
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat('Devis en cours', v_devis_en_cours::text),
-    pgv.stat('Factures impayées', v_factures_impayees::text),
-    pgv.stat('CA du mois', to_char(v_ca_mois, 'FM999 990.00') || ' EUR'),
-    pgv.stat('Taux acceptation', v_taux_acceptation)
+    pgv.stat(pgv.t('quote.stat_devis_en_cours'), v_devis_en_cours::text),
+    pgv.stat(pgv.t('quote.stat_factures_impayees'), v_factures_impayees::text),
+    pgv.stat(pgv.t('quote.stat_ca_mois'), to_char(v_ca_mois, 'FM999 990.00') || ' ' || pgv.t('quote.currency')),
+    pgv.stat(pgv.t('quote.stat_taux_acceptation'), v_taux_acceptation)
   ]);
 
   -- Tab 1: Devis récents
@@ -58,7 +58,7 @@ BEGIN
       format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
       pgv.esc(r.objet),
       quote._statut_badge(r.statut),
-      to_char(r.ttc, 'FM999 990.00') || ' EUR',
+      to_char(r.ttc, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
       to_char(r.created_at, 'DD/MM/YYYY')
     ];
   END LOOP;
@@ -77,28 +77,28 @@ BEGIN
       format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
       pgv.esc(r.objet),
       quote._statut_badge(r.statut),
-      to_char(r.ttc, 'FM999 990.00') || ' EUR',
+      to_char(r.ttc, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
       to_char(r.created_at, 'DD/MM/YYYY')
     ];
   END LOOP;
 
   v_body := v_body || pgv.tabs(VARIADIC ARRAY[
-    'Devis récents',
+    pgv.t('quote.tab_devis_recents'),
     CASE WHEN array_length(v_rows_d, 1) IS NULL
-      THEN pgv.empty('Aucun devis', 'Créez votre premier devis pour commencer.')
-      ELSE pgv.md_table(ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Total TTC', 'Date'], v_rows_d)
+      THEN pgv.empty(pgv.t('quote.empty_no_devis'), pgv.t('quote.empty_first_devis'))
+      ELSE pgv.md_table(ARRAY[pgv.t('quote.col_numero'), pgv.t('quote.col_client'), pgv.t('quote.col_objet'), pgv.t('quote.col_statut'), pgv.t('quote.col_total_ttc'), pgv.t('quote.col_date')], v_rows_d)
     END,
-    'Factures récentes',
+    pgv.t('quote.tab_factures_recentes'),
     CASE WHEN array_length(v_rows_f, 1) IS NULL
-      THEN pgv.empty('Aucune facture')
-      ELSE pgv.md_table(ARRAY['Numéro', 'Client', 'Objet', 'Statut', 'Total TTC', 'Date'], v_rows_f)
+      THEN pgv.empty(pgv.t('quote.empty_no_facture'))
+      ELSE pgv.md_table(ARRAY[pgv.t('quote.col_numero'), pgv.t('quote.col_client'), pgv.t('quote.col_objet'), pgv.t('quote.col_statut'), pgv.t('quote.col_total_ttc'), pgv.t('quote.col_date')], v_rows_f)
     END
   ]);
 
   v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">Nouveau devis</a>', pgv.call_ref('get_devis_form'))
+    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_devis_form'), pgv.t('quote.btn_nouveau_devis'))
     || ' '
-    || format('<a href="%s" role="button" class="outline">Nouvelle facture</a>', pgv.call_ref('get_facture_form'))
+    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_facture_form'), pgv.t('quote.btn_nouvelle_facture'))
     || '</p>';
 
   RETURN v_body;

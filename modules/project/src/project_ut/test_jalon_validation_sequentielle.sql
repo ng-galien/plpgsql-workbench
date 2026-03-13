@@ -20,7 +20,7 @@ BEGIN
   -- Validate jalon 2 should fail (jalon 1 not validated)
   RETURN NEXT throws_ok(
     format('SELECT project.post_jalon_valider(%s)', v_j2),
-    'Les jalons précédents doivent être validés avant',
+    pgv.t('project.err_jalons_precedents'),
     'cannot validate jalon 2 before jalon 1'
   );
 

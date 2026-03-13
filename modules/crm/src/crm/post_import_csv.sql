@@ -16,7 +16,7 @@ DECLARE
 BEGIN
   v_csv := trim(COALESCE(p_data->>'csv', ''));
   IF v_csv = '' THEN
-    RETURN '<template data-toast="error">Aucun contenu CSV fourni.</template>';
+    RETURN pgv.toast(pgv.t('crm.err_no_csv'), 'error');
   END IF;
 
   v_lines := string_to_array(v_csv, E'\n');
@@ -67,14 +67,13 @@ BEGIN
   END LOOP;
 
   IF v_imported = 0 THEN
-    RETURN '<template data-toast="error">Aucun client importé.' ||
-      CASE WHEN v_skipped > 0 THEN ' ' || v_skipped || ' ligne(s) ignorée(s).' ELSE '' END ||
-      '</template>';
+    RETURN pgv.toast(
+      pgv.t('crm.err_no_import') || CASE WHEN v_skipped > 0 THEN ' ' || v_skipped || ' ligne(s) ignorée(s).' ELSE '' END,
+      'error');
   END IF;
 
-  RETURN '<template data-toast="success">' || v_imported || ' client(s) importé(s).' ||
-    CASE WHEN v_skipped > 0 THEN ' ' || v_skipped || ' ignoré(s).' ELSE '' END ||
-    '</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_index') || '"></template>';
+  RETURN pgv.toast(
+      v_imported || ' client(s) importé(s).' || CASE WHEN v_skipped > 0 THEN ' ' || v_skipped || ' ignoré(s).' ELSE '' END)
+    || pgv.redirect(pgv.call_ref('get_index'));
 END;
 $function$;

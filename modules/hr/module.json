@@ -5,7 +5,6 @@
   "schemas": {
     "public": "hr",
     "test": "hr_ut",
-    "private": null,
     "qa": "hr_qa"
   },
   "dependencies": [

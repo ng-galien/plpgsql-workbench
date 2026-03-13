@@ -13,7 +13,7 @@ BEGIN
 
   DELETE FROM ledger.journal_entry WHERE id = v_id;
 
-  RETURN '<template data-toast="success">Écriture supprimée</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_entries') || '"></template>';
+  RETURN pgv.toast(pgv.t('ledger.toast_entry_deleted'))
+    || pgv.redirect(pgv.call_ref('get_entries'));
 END;
 $function$;

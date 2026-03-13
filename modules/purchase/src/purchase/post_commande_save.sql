@@ -20,18 +20,18 @@ BEGIN
      WHERE id = v_id AND statut = 'brouillon';
 
     IF NOT FOUND THEN
-      RETURN '<template data-toast="error">Commande introuvable ou non modifiable</template>';
+      RETURN pgv.toast(pgv.t('purchase.err_commande_not_found'), 'error');
     END IF;
 
-    RETURN format('<template data-toast="success">Commande mise à jour</template><template data-redirect="%s"></template>',
-      pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
+    RETURN pgv.toast(pgv.t('purchase.toast_commande_updated'))
+      || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
   ELSE
     INSERT INTO purchase.commande (numero, fournisseur_id, objet, notes, date_livraison, conditions_paiement)
     VALUES (purchase._next_numero('CMD'), v_fournisseur_id, v_objet, v_notes, v_date_livraison, v_conditions)
     RETURNING id INTO v_id;
 
-    RETURN format('<template data-toast="success">Commande créée</template><template data-redirect="%s"></template>',
-      pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
+    RETURN pgv.toast(pgv.t('purchase.toast_commande_created'))
+      || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
   END IF;
 END;
 $function$;

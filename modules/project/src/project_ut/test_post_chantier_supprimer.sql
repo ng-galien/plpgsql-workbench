@@ -18,7 +18,7 @@ BEGIN
   UPDATE project.chantier SET statut = 'execution' WHERE id = v_id;
   RETURN NEXT throws_ok(
     format('SELECT project.post_chantier_supprimer(%s)', v_id),
-    'Seuls les chantiers en préparation peuvent être supprimés',
+    pgv.t('project.err_seuls_supprimables'),
     'cannot delete execution chantier'
   );
 

@@ -7,12 +7,12 @@ DECLARE
   v_statut text;
 BEGIN
   SELECT statut INTO v_statut FROM quote.facture WHERE id = v_id;
-  IF v_statut IS NULL THEN RAISE EXCEPTION 'Facture introuvable'; END IF;
-  IF v_statut <> 'brouillon' THEN RAISE EXCEPTION 'Seuls les brouillons peuvent être supprimés'; END IF;
+  IF v_statut IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_facture'); END IF;
+  IF v_statut <> 'brouillon' THEN RAISE EXCEPTION '%', pgv.t('quote.err_draft_delete_only'); END IF;
 
   DELETE FROM quote.facture WHERE id = v_id;
 
-  RETURN '<template data-toast="success">Facture supprimée</template>'
-    || '<template data-redirect="' || pgv.call_ref('get_facture') || '"></template>';
+  RETURN pgv.toast(pgv.t('quote.toast_facture_deleted'))
+    || pgv.redirect(pgv.call_ref('get_facture'));
 END;
 $function$;

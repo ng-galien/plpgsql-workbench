@@ -32,7 +32,7 @@ BEGIN
   UPDATE project.chantier SET statut = 'clos' WHERE id = v_id;
   RETURN NEXT throws_ok(
     format('SELECT project.post_chantier_save(''{"id":%s,"client_id":%s,"objet":"fail"}''::jsonb)', v_id, v_client_id),
-    'Seuls les chantiers en préparation ou en cours sont modifiables',
+    pgv.t('project.err_seuls_modifiables'),
     'cannot update clos chantier'
   );
 

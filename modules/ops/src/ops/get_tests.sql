@@ -55,7 +55,7 @@ BEGIN
         THEN to_char(v_run.run_at, 'DD/MM HH24:MI')
         ELSE '-'
       END,
-      pgv.action('Lancer', 'post_test_run',
+      pgv.action('post_test_run', 'Lancer',
         jsonb_build_object('p_schema', r.schema_ut),
         'Lancer les tests ' || r.schema_ut || ' ?')
     ];

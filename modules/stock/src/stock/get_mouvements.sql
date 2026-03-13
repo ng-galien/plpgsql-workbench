@@ -36,16 +36,16 @@ BEGIN
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := pgv.empty('Aucun mouvement', 'Enregistrez votre premier mouvement.');
+    v_body := pgv.empty(pgv.t('stock.empty_no_mouvement'), pgv.t('stock.empty_first_mouvement_short'));
   ELSE
     v_body := pgv.md_table(
-      ARRAY['Date', 'Réf.', 'Article', 'Dépôt', 'Type', 'Qté', 'Réf. doc'],
+      ARRAY[pgv.t('stock.col_date'), pgv.t('stock.col_ref'), pgv.t('stock.col_article'), pgv.t('stock.col_depot'), pgv.t('stock.col_type'), pgv.t('stock.col_qty'), pgv.t('stock.col_ref_doc')],
       v_rows, 20
     );
   END IF;
 
-  v_body := v_body || format('<p><a href="%s" role="button">Nouveau mouvement</a></p>',
-    pgv.call_ref('get_mouvement_form'));
+  v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>',
+    pgv.call_ref('get_mouvement_form'), pgv.t('stock.btn_nouveau_mvt'));
 
   RETURN v_body;
 END;
