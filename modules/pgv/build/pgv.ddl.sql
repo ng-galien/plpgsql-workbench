@@ -25,5 +25,16 @@ CREATE TABLE IF NOT EXISTS pgv.i18n (
   PRIMARY KEY (lang, key)
 );
 
+-- FTS: French stemming + unaccent
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+DO $$ BEGIN
+  CREATE TEXT SEARCH CONFIGURATION pgv_search (COPY = french);
+  ALTER TEXT SEARCH CONFIGURATION pgv_search
+    ALTER MAPPING FOR hword, hword_part, word
+    WITH unaccent, french_stem;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 GRANT USAGE ON SCHEMA pgv TO web_anon;
 GRANT SELECT ON pgv.i18n TO web_anon;

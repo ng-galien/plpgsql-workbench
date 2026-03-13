@@ -464,7 +464,8 @@ BEGIN
     ('fr', 'pgv.invalid_param', 'Parametre invalide'),
     ('fr', 'pgv.internal_error', 'Erreur interne'),
     ('fr', 'pgv.unexpected_error', 'Une erreur inattendue est survenue.'),
-    ('fr', 'pgv.filter', 'Filtrer')
+    ('fr', 'pgv.filter', 'Filtrer'),
+    ('fr', 'pgv.filter_clear', 'Effacer')
   ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
 END;
 $function$;
@@ -1053,7 +1054,9 @@ BEGIN
         'pgv-link-button',
         'pgv-form-dialog','pgv-form-dialog-article','pgv-form-dialog-header',
         'pgv-form-dialog-close','pgv-form-dialog-body','pgv-form-dialog-footer',
-        'pgv-plugin-error'
+        'pgv-plugin-error',
+        'pgv-filter','pgv-filter-bar','pgv-filter-inputs','pgv-filter-submit','pgv-filter-chips',
+        'pgv-col-link','pgv-col-badge','pgv-col-date'
       ) THEN
         v_rows := v_rows || '| ' || pgv.badge('WARN', 'warning') || ' | CSS | classe `' || pgv.esc(v_rec.cls) || '` inconnue |' || chr(10);
         v_warn := v_warn + 1;
@@ -1473,17 +1476,20 @@ CREATE OR REPLACE FUNCTION pgv.filter_form(p_body text, p_submit text DEFAULT NU
  STABLE
 AS $function$
 BEGIN
-  RETURN '<form data-filter>'
-    || '<div class="grid">'
+  RETURN '<div class="pgv-filter">'
+    || '<form data-filter class="pgv-filter-bar">'
+    || '<div class="pgv-filter-inputs">'
     || p_body
     || '</div>'
-    || '<button type="submit" class="secondary">'
+    || '<button type="submit" class="pgv-filter-submit">'
     || pgv.esc(coalesce(p_submit, pgv.t('pgv.filter')))
     || '</button>'
-    || '</form>';
+    || '</form>'
+    || '<div class="pgv-filter-chips"></div>'
+    || '</div>';
 END;
 $function$;
-COMMENT ON FUNCTION pgv.filter_form(text,text) IS 'Filter form wrapper: wraps inputs in grid layout with secondary submit button. GET-based (no data-rpc), shell intercepts for SPA navigation with query params.';
+COMMENT ON FUNCTION pgv.filter_form(text,text) IS 'Inline filter bar: wraps inputs in compact flex row with submit button and chips container. GET-based (data-filter), shell handles SPA navigation + active filter chips.';
 
 CREATE OR REPLACE FUNCTION pgv.form(p_rpc text, p_body text, p_submit text DEFAULT NULL::text)
  RETURNS text
@@ -1544,6 +1550,17 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv.form_dialog(text,text,text,text,text,text,text) IS 'Render a button that opens a modal dialog containing a form. Supports create (inline body) and edit (lazy-load via data-src). On submit success: toast + close + reload.';
+
+CREATE OR REPLACE FUNCTION pgv."table"(p_config jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+BEGIN
+  RETURN '<div x-data="pgvTable" data-config="' || pgv.esc(p_config::text) || '"></div>';
+END;
+$function$;
+COMMENT ON FUNCTION pgv."table"(jsonb) IS 'Declarative table with filters, pagination, and sorting. Generates Alpine pgvTable placeholder from JSON config.';
 
 CREATE OR REPLACE FUNCTION pgv.tabs(VARIADIC p_items text[])
  RETURNS text
@@ -2193,13 +2210,15 @@ DECLARE
 BEGIN
   -- Basic output
   v := pgv.filter_form(pgv.input('p_status', 'text', 'Statut'));
-  RETURN NEXT ok(v LIKE '%<form data-filter>%', 'has data-filter attribute');
-  RETURN NEXT ok(v LIKE '%<div class="grid">%', 'wraps inputs in grid');
-  RETURN NEXT ok(v LIKE '%</div>%', 'grid is closed');
-  RETURN NEXT ok(v LIKE '%class="secondary"%', 'submit button is secondary');
+  RETURN NEXT ok(v LIKE '%data-filter%', 'has data-filter attribute');
+  RETURN NEXT ok(v LIKE '%pgv-filter-bar%', 'form has filter-bar class');
+  RETURN NEXT ok(v LIKE '%pgv-filter-inputs%', 'wraps inputs in filter-inputs');
+  RETURN NEXT ok(v LIKE '%pgv-filter-submit%', 'submit has filter-submit class');
   RETURN NEXT ok(v LIKE '%type="submit"%', 'has submit button');
   RETURN NEXT ok(v NOT LIKE '%data-rpc%', 'no data-rpc attribute');
   RETURN NEXT ok(v LIKE '%name="p_status"%', 'body content preserved');
+  RETURN NEXT ok(v LIKE '%pgv-filter-chips%', 'has chips container');
+  RETURN NEXT ok(v LIKE '%<div class="pgv-filter">%', 'has filter wrapper');
 
   -- Default label uses i18n
   RETURN NEXT ok(v LIKE '%' || pgv.t('pgv.filter') || '%', 'default label uses i18n filter key');
@@ -2219,7 +2238,7 @@ BEGIN
   RETURN NEXT ok(v LIKE '%A&amp;B%', 'submit label is escaped');
 END;
 $function$;
-COMMENT ON FUNCTION pgv_ut.test_filter_form() IS 'Unit tests for pgv.filter_form() primitive';
+COMMENT ON FUNCTION pgv_ut.test_filter_form() IS 'Unit tests for pgv.filter_form() inline filter bar primitive';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_form()
  RETURNS SETOF text
@@ -2296,6 +2315,49 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_form_dialog() IS 'Unit tests for pgv.form_dialog() primitive';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_fts()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result jsonb;
+BEGIN
+  -- Stemming: "poutre" matches "poutres", "Poutre"
+  v_result := pgv_qa.data_products('{"q":"poutre"}'::jsonb);
+  RETURN NEXT ok((v_result->>'total')::int > 0, 'poutre matches Poutre (case-insensitive)');
+  RETURN NEXT ok(v_result->'rows'->0->>1 LIKE '%outre%', 'poutre result contains poutre in name');
+
+  -- Accent: "chene" matches "chêne"
+  v_result := pgv_qa.data_products('{"q":"chene"}'::jsonb);
+  RETURN NEXT ok((v_result->>'total')::int >= 2, 'chene matches chêne (accent-insensitive)');
+
+  -- Multi-word: "coffrage beton" matches planche de coffrage
+  v_result := pgv_qa.data_products('{"q":"coffrage beton"}'::jsonb);
+  RETURN NEXT ok((v_result->>'total')::int > 0, 'coffrage beton matches multi-word');
+
+  -- No match
+  v_result := pgv_qa.data_products('{"q":"xyz123"}'::jsonb);
+  RETURN NEXT is((v_result->>'total')::int, 0, 'xyz123 no match → total 0');
+  RETURN NEXT is(v_result->'rows', '[]'::jsonb, 'xyz123 no match → rows empty');
+
+  -- Pagination: page 1, size 5 on 20 products
+  v_result := pgv_qa.data_products('{"_page":1,"_size":5}'::jsonb);
+  RETURN NEXT is((v_result->>'total')::int, 20, 'pagination total = 20');
+  RETURN NEXT is(jsonb_array_length(v_result->'rows'), 5, 'pagination page 1 returns 5 rows');
+  RETURN NEXT is((v_result->>'page')::int, 1, 'pagination page = 1');
+  RETURN NEXT is((v_result->>'size')::int, 5, 'pagination size = 5');
+
+  -- Filter: category = bois
+  v_result := pgv_qa.data_products('{"p_category":"bois"}'::jsonb);
+  RETURN NEXT ok((v_result->>'total')::int >= 5, 'category filter bois returns >= 5');
+
+  -- Filter + FTS combined
+  v_result := pgv_qa.data_products('{"p_category":"quincaillerie","q":"vis"}'::jsonb);
+  RETURN NEXT ok((v_result->>'total')::int >= 1, 'category + FTS combined works');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_fts() IS 'Tests FTS pgv_search: stemming, accents, multi-words, pagination, empty results';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_href()
  RETURNS SETOF text
@@ -2748,6 +2810,55 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_stat() IS 'Unit tests for pgv.stat: CSS classes, no inline style';
 
+CREATE OR REPLACE FUNCTION pgv_ut.test_table()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v text;
+  v_config jsonb;
+BEGIN
+  -- Minimal config
+  v_config := '{"rpc":"data_test","schema":"test","cols":[{"key":"id","label":"#"}]}'::jsonb;
+  v := pgv.table(v_config);
+  RETURN NEXT ok(v LIKE '%x-data="pgvTable"%', 'has Alpine pgvTable directive');
+  RETURN NEXT ok(v LIKE '%data-config=%', 'has data-config attribute');
+  RETURN NEXT ok(v LIKE '%data_test%', 'config contains rpc name');
+  RETURN NEXT ok(v LIKE '%<div %', 'wrapper is div');
+
+  -- Config with filters
+  v_config := jsonb_build_object(
+    'rpc', 'data_items',
+    'schema', 'myapp',
+    'page_size', 15,
+    'filters', jsonb_build_array(
+      jsonb_build_object('name', 'p_status', 'type', 'select', 'label', 'Statut',
+        'options', jsonb_build_array(jsonb_build_array('', 'Tous'), jsonb_build_array('active', 'Actif'))),
+      jsonb_build_object('name', 'q', 'type', 'search', 'label', 'Recherche')),
+    'cols', jsonb_build_array(
+      jsonb_build_object('key', 'id', 'label', '#'),
+      jsonb_build_object('key', 'name', 'label', 'Nom'),
+      jsonb_build_object('key', 'status', 'label', 'Statut', 'class', 'pgv-col-badge'))
+  );
+  v := pgv.table(v_config);
+  RETURN NEXT ok(v LIKE '%data_items%', 'config contains rpc');
+  RETURN NEXT ok(v LIKE '%myapp%', 'config contains schema');
+  RETURN NEXT ok(v LIKE '%page_size%', 'config contains page_size');
+  RETURN NEXT ok(v LIKE '%p_status%', 'config contains filter name');
+  RETURN NEXT ok(v LIKE '%pgv-col-badge%', 'config contains column class');
+  RETURN NEXT ok(v LIKE '%Recherche%', 'config contains search label');
+
+  -- HTML escaping
+  v_config := '{"rpc":"test","schema":"s","cols":[{"key":"x","label":"A&B"}]}'::jsonb;
+  v := pgv.table(v_config);
+  RETURN NEXT ok(v LIKE '%A&amp;B%', 'label is HTML-escaped in attribute');
+
+  -- No inline styles
+  RETURN NEXT ok(v NOT LIKE '%style=%', 'no inline styles');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_table() IS 'Unit tests for pgv.table() declarative table primitive';
+
 CREATE OR REPLACE FUNCTION pgv_ut.test_tabs()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -2972,6 +3083,104 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv_ut TO web_anon;
 
 -- Schema: pgv_qa
 CREATE SCHEMA IF NOT EXISTS pgv_qa;
+
+CREATE OR REPLACE FUNCTION pgv_qa.data_demo(p_params jsonb DEFAULT '{}'::jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_page int := coalesce((p_params->>'_page')::int, 1);
+  v_size int := coalesce((p_params->>'_size')::int, 20);
+  v_status text := p_params->>'p_status';
+  v_q text := p_params->>'q';
+  v_all jsonb;
+  v_filtered jsonb;
+  v_total int;
+  v_rows jsonb;
+BEGIN
+  -- Generate 50 demo rows
+  SELECT jsonb_agg(row) INTO v_all FROM (
+    SELECT jsonb_build_array(
+      i,
+      CASE i % 3 WHEN 0 THEN 'Alice' WHEN 1 THEN 'Bob' ELSE 'Charlie' END,
+      'Item ' || i,
+      CASE i % 4 WHEN 0 THEN 'active' WHEN 1 THEN 'draft' WHEN 2 THEN 'archived' ELSE 'active' END,
+      to_char(now() - (i || ' hours')::interval, 'YYYY-MM-DD HH24:MI')
+    ) AS row
+    FROM generate_series(1, 50) AS i
+  ) sub;
+
+  -- Apply filters
+  SELECT jsonb_agg(r) INTO v_filtered FROM jsonb_array_elements(v_all) AS r
+  WHERE (v_status IS NULL OR v_status = '' OR r->>3 = v_status)
+    AND (v_q IS NULL OR v_q = '' OR r->>2 ILIKE '%' || v_q || '%' OR r->>1 ILIKE '%' || v_q || '%');
+
+  v_filtered := coalesce(v_filtered, '[]'::jsonb);
+  v_total := jsonb_array_length(v_filtered);
+
+  -- Paginate
+  SELECT jsonb_agg(r) INTO v_rows FROM (
+    SELECT r FROM jsonb_array_elements(v_filtered) AS r
+    OFFSET (v_page - 1) * v_size LIMIT v_size
+  ) sub;
+
+  RETURN jsonb_build_object(
+    'total', v_total,
+    'page', v_page,
+    'size', v_size,
+    'rows', coalesce(v_rows, '[]'::jsonb)
+  );
+END;
+$function$;
+COMMENT ON FUNCTION pgv_qa.data_demo(jsonb) IS 'Demo data provider for pgv.table() QA showcase — returns paginated JSON with filters';
+
+CREATE OR REPLACE FUNCTION pgv_qa.data_products(p_params jsonb DEFAULT '{}'::jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  -- Business filters
+  v_status   text := p_params->>'p_status';
+  v_category text := p_params->>'p_category';
+  -- Search
+  v_q        text := p_params->>'q';
+  -- Meta
+  v_page     int  := coalesce((p_params->>'_page')::int, 1);
+  v_size     int  := coalesce((p_params->>'_size')::int, 20);
+  -- Result
+  v_total    int;
+  v_rows     jsonb;
+BEGIN
+  -- Count
+  SELECT count(*) INTO v_total
+  FROM pgv_qa.product t
+  WHERE (v_status IS NULL OR t.status = v_status)
+    AND (v_category IS NULL OR t.category = v_category)
+    AND (v_q IS NULL OR t.search_vec @@ plainto_tsquery('pgv_search', v_q));
+
+  -- Rows (paginated)
+  SELECT coalesce(jsonb_agg(row), '[]') INTO v_rows
+  FROM (
+    SELECT jsonb_build_array(t.id, t.name, t.category, t.price, t.status) AS row
+    FROM pgv_qa.product t
+    WHERE (v_status IS NULL OR t.status = v_status)
+      AND (v_category IS NULL OR t.category = v_category)
+      AND (v_q IS NULL OR t.search_vec @@ plainto_tsquery('pgv_search', v_q))
+    ORDER BY t.id
+    LIMIT v_size OFFSET (v_page - 1) * v_size
+  ) sub;
+
+  RETURN jsonb_build_object(
+    'total', v_total,
+    'page',  v_page,
+    'size',  v_size,
+    'rows',  v_rows
+  );
+END;
+$function$;
+COMMENT ON FUNCTION pgv_qa.data_products(jsonb) IS 'Data provider for pgv.table(): product catalog with FTS, filters, pagination';
 
 CREATE OR REPLACE FUNCTION pgv_qa.demo_options(p_search text DEFAULT ''::text)
  RETURNS jsonb
@@ -3239,50 +3448,6 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_qa.get_diagnostics() IS 'Run pgv.diagnose() on all nav pages and display consolidated report';
 
-CREATE OR REPLACE FUNCTION pgv_qa.get_tables()
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  RETURN
-    '<section><h4>Table simple (tri automatique)</h4>'
-    || '<md>' || chr(10)
-    || '| Nom | Role | Statut |' || chr(10)
-    || '|-----|------|--------|' || chr(10)
-    || '| Alice Martin | Developpeur | ' || pgv.badge('actif', 'success') || ' |' || chr(10)
-    || '| Bob Durand | Designer | ' || pgv.badge('actif', 'success') || ' |' || chr(10)
-    || '| Claire Petit | Chef de projet | ' || pgv.badge('conge', 'warning') || ' |' || chr(10)
-    || '| David Moreau | Developpeur | ' || pgv.badge('actif', 'success') || ' |' || chr(10)
-    || '| Eva Bernard | QA | ' || pgv.badge('inactif', 'danger') || ' |' || chr(10)
-    || '</md></section>'
-    || '<section><h4>Table paginee (3 lignes/page)</h4>'
-    || '<md data-page="3">' || chr(10)
-    || '| # | Commande | Montant | Date | Etat |' || chr(10)
-    || '|---|----------|---------|------|------|' || chr(10)
-    || '| 1 | CMD-001 | ' || pgv.money(245.00) || ' | 15/01/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
-    || '| 2 | CMD-002 | ' || pgv.money(89.50) || ' | 18/01/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
-    || '| 3 | CMD-003 | ' || pgv.money(1250.00) || ' | 22/01/2026 | ' || pgv.badge('en cours', 'warning') || ' |' || chr(10)
-    || '| 4 | CMD-004 | ' || pgv.money(45.99) || ' | 25/01/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
-    || '| 5 | CMD-005 | ' || pgv.money(670.00) || ' | 02/02/2026 | ' || pgv.badge('annulee', 'danger') || ' |' || chr(10)
-    || '| 6 | CMD-006 | ' || pgv.money(320.75) || ' | 08/02/2026 | ' || pgv.badge('en cours', 'warning') || ' |' || chr(10)
-    || '| 7 | CMD-007 | ' || pgv.money(158.00) || ' | 14/02/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
-    || '| 8 | CMD-008 | ' || pgv.money(2100.00) || ' | 20/02/2026 | ' || pgv.badge('brouillon', 'default') || ' |' || chr(10)
-    || '| 9 | CMD-009 | ' || pgv.money(430.25) || ' | 01/03/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
-    || '| 10 | CMD-010 | ' || pgv.money(75.00) || ' | 05/03/2026 | ' || pgv.badge('en cours', 'info') || ' |' || chr(10)
-    || '</md></section>'
-    || '<section><h4>pgv.md_table (helper PL/pgSQL)</h4>'
-    || '<p>Genere le markdown depuis des tableaux PL/pgSQL :</p>'
-    || pgv.md_table(
-        ARRAY['Metrique', 'Valeur', 'Tendance'],
-        ARRAY['Pages vues', '12 480', pgv.badge('+18%', 'success'),
-              'Visiteurs', '3 241', pgv.badge('+5%', 'info'),
-              'Rebond', '42%', pgv.badge('-3%', 'success'),
-              'Conversion', '2.8%', pgv.badge('stable', 'default')])
-    || '</section>';
-END;
-$function$;
-COMMENT ON FUNCTION pgv_qa.get_tables() IS 'Table showcase: md tables with pagination, sorting, badges, and clickable rows';
-
 CREATE OR REPLACE FUNCTION pgv_qa.nav_items()
  RETURNS jsonb
  LANGUAGE sql
@@ -3300,6 +3465,7 @@ AS $function$
     {"href": "/settings", "label": "Config"},
     {"href": "/diagnostics", "label": "Diagnostics"},
     {"href": "/plugins", "label": "Plugins"},
+    {"href": "/datatable", "label": "Datatable FTS"},
     {"href": "http://localhost:8080/", "label": "Accueil"}
   ]'::jsonb;
 $function$;
@@ -3436,6 +3602,112 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_qa.get_svg() IS 'SVG canvas showcase: interactive SVG with panzoom toolbar';
+
+CREATE OR REPLACE FUNCTION pgv_qa.get_datatable()
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN
+    '<section><h4>Catalogue produits — FTS + filtres + pagination</h4>'
+    || '<p>Recherche full-text avec stemming français et suppression des accents (pgv_search).</p>'
+    || pgv.table(jsonb_build_object(
+      'rpc',     'data_products',
+      'schema',  'pgv_qa',
+      'filters', jsonb_build_array(
+        jsonb_build_object('name','p_status','type','select','label','Statut',
+          'options', jsonb_build_array(
+            jsonb_build_array('','Tous'),
+            jsonb_build_array('active','Actif'),
+            jsonb_build_array('discontinued','Arrêté'))),
+        jsonb_build_object('name','p_category','type','select','label','Catégorie',
+          'options', jsonb_build_array(
+            jsonb_build_array('','Toutes'),
+            jsonb_build_array('bois','Bois'),
+            jsonb_build_array('quincaillerie','Quincaillerie'),
+            jsonb_build_array('chimie','Chimie'),
+            jsonb_build_array('panneau','Panneau'),
+            jsonb_build_array('isolation','Isolation'))),
+        jsonb_build_object('name','q','type','search','label','Recherche FTS')
+      ),
+      'cols', jsonb_build_array(
+        jsonb_build_object('key','id','label','#'),
+        jsonb_build_object('key','name','label','Produit'),
+        jsonb_build_object('key','category','label','Catégorie','class','pgv-col-badge'),
+        jsonb_build_object('key','price','label','Prix'),
+        jsonb_build_object('key','status','label','Statut','class','pgv-col-badge')
+      ),
+      'page_size', 10
+    ))
+    || '</section>';
+END;
+$function$;
+COMMENT ON FUNCTION pgv_qa.get_datatable() IS 'Demo page: pgv.table() with FTS search, filters, pagination on product catalog';
+
+CREATE OR REPLACE FUNCTION pgv_qa.get_tables()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN
+    '<section><h4>Table simple (tri automatique)</h4>'
+    || '<md>' || chr(10)
+    || '| Nom | Role | Statut |' || chr(10)
+    || '|-----|------|--------|' || chr(10)
+    || '| Alice Martin | Developpeur | ' || pgv.badge('actif', 'success') || ' |' || chr(10)
+    || '| Bob Durand | Designer | ' || pgv.badge('actif', 'success') || ' |' || chr(10)
+    || '| Claire Petit | Chef de projet | ' || pgv.badge('conge', 'warning') || ' |' || chr(10)
+    || '| David Moreau | Developpeur | ' || pgv.badge('actif', 'success') || ' |' || chr(10)
+    || '| Eva Bernard | QA | ' || pgv.badge('inactif', 'danger') || ' |' || chr(10)
+    || '</md></section>'
+    || '<section><h4>Table paginee (3 lignes/page)</h4>'
+    || '<md data-page="3">' || chr(10)
+    || '| # | Commande | Montant | Date | Etat |' || chr(10)
+    || '|---|----------|---------|------|------|' || chr(10)
+    || '| 1 | CMD-001 | ' || pgv.money(245.00) || ' | 15/01/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
+    || '| 2 | CMD-002 | ' || pgv.money(89.50) || ' | 18/01/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
+    || '| 3 | CMD-003 | ' || pgv.money(1250.00) || ' | 22/01/2026 | ' || pgv.badge('en cours', 'warning') || ' |' || chr(10)
+    || '| 4 | CMD-004 | ' || pgv.money(45.99) || ' | 25/01/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
+    || '| 5 | CMD-005 | ' || pgv.money(670.00) || ' | 02/02/2026 | ' || pgv.badge('annulee', 'danger') || ' |' || chr(10)
+    || '| 6 | CMD-006 | ' || pgv.money(320.75) || ' | 08/02/2026 | ' || pgv.badge('en cours', 'warning') || ' |' || chr(10)
+    || '| 7 | CMD-007 | ' || pgv.money(158.00) || ' | 14/02/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
+    || '| 8 | CMD-008 | ' || pgv.money(2100.00) || ' | 20/02/2026 | ' || pgv.badge('brouillon', 'default') || ' |' || chr(10)
+    || '| 9 | CMD-009 | ' || pgv.money(430.25) || ' | 01/03/2026 | ' || pgv.badge('payee', 'success') || ' |' || chr(10)
+    || '| 10 | CMD-010 | ' || pgv.money(75.00) || ' | 05/03/2026 | ' || pgv.badge('en cours', 'info') || ' |' || chr(10)
+    || '</md></section>'
+    || '<section><h4>pgv.md_table (helper PL/pgSQL)</h4>'
+    || '<p>Genere le markdown depuis des tableaux PL/pgSQL :</p>'
+    || pgv.md_table(
+        ARRAY['Metrique', 'Valeur', 'Tendance'],
+        ARRAY['Pages vues', '12 480', pgv.badge('+18%', 'success'),
+              'Visiteurs', '3 241', pgv.badge('+5%', 'info'),
+              'Rebond', '42%', pgv.badge('-3%', 'success'),
+              'Conversion', '2.8%', pgv.badge('stable', 'default')])
+    || '</section>'
+    || '<section><h4>pgv.table() — declaratif avec filtres + pagination server-side</h4>'
+    || pgv.table(jsonb_build_object(
+         'rpc', 'data_demo',
+         'schema', 'pgv_qa',
+         'page_size', 10,
+         'filters', jsonb_build_array(
+           jsonb_build_object('name', 'p_status', 'type', 'select', 'label', 'Statut',
+             'options', jsonb_build_array(
+               jsonb_build_array('', 'Tous'),
+               jsonb_build_array('active', 'Actif'),
+               jsonb_build_array('draft', 'Brouillon'),
+               jsonb_build_array('archived', 'Archive'))),
+           jsonb_build_object('name', 'q', 'type', 'search', 'label', 'Recherche')),
+         'cols', jsonb_build_array(
+           jsonb_build_object('key', 'id', 'label', '#'),
+           jsonb_build_object('key', 'author', 'label', 'Auteur'),
+           jsonb_build_object('key', 'title', 'label', 'Titre'),
+           jsonb_build_object('key', 'status', 'label', 'Statut', 'class', 'pgv-col-badge'),
+           jsonb_build_object('key', 'date', 'label', 'Date', 'class', 'pgv-col-date'))))
+    || '</section>';
+END;
+$function$;
+COMMENT ON FUNCTION pgv_qa.get_tables() IS 'Table showcase: md tables with pagination, sorting, badges, and clickable rows';
 
 CREATE OR REPLACE FUNCTION pgv_qa.toast_error()
  RETURNS "text/html"

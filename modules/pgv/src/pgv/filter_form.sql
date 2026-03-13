@@ -4,13 +4,16 @@ CREATE OR REPLACE FUNCTION pgv.filter_form(p_body text, p_submit text DEFAULT NU
  STABLE
 AS $function$
 BEGIN
-  RETURN '<form data-filter>'
-    || '<div class="grid">'
+  RETURN '<div class="pgv-filter">'
+    || '<form data-filter class="pgv-filter-bar">'
+    || '<div class="pgv-filter-inputs">'
     || p_body
     || '</div>'
-    || '<button type="submit" class="secondary">'
+    || '<button type="submit" class="pgv-filter-submit">'
     || pgv.esc(coalesce(p_submit, pgv.t('pgv.filter')))
     || '</button>'
-    || '</form>';
+    || '</form>'
+    || '<div class="pgv-filter-chips"></div>'
+    || '</div>';
 END;
 $function$;

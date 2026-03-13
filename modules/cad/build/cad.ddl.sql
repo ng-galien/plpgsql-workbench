@@ -115,6 +115,10 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA cad GRANT EXECUTE ON FUNCTIONS TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA cad_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA cad_qa GRANT EXECUTE ON FUNCTIONS TO web_anon;
 
+-- Dimension (2D/3D)
+ALTER TABLE cad.drawing ADD COLUMN IF NOT EXISTS dimension text
+  NOT NULL DEFAULT '2d' CHECK (dimension IN ('2d', '3d'));
+
 -- Tenant indexes
 CREATE INDEX IF NOT EXISTS idx_drawing_tenant ON cad.drawing(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_layer_tenant ON cad.layer(tenant_id);
@@ -124,21 +128,26 @@ CREATE INDEX IF NOT EXISTS idx_piece_group_tenant ON cad.piece_group(tenant_id);
 
 -- RLS
 ALTER TABLE cad.drawing ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON cad.drawing;
 CREATE POLICY tenant_isolation ON cad.drawing
   USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));
 
 ALTER TABLE cad.layer ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON cad.layer;
 CREATE POLICY tenant_isolation ON cad.layer
   USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));
 
 ALTER TABLE cad.shape ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON cad.shape;
 CREATE POLICY tenant_isolation ON cad.shape
   USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));
 
 ALTER TABLE cad.piece ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON cad.piece;
 CREATE POLICY tenant_isolation ON cad.piece
   USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));
 
 ALTER TABLE cad.piece_group ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON cad.piece_group;
 CREATE POLICY tenant_isolation ON cad.piece_group
   USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));

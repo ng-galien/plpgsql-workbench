@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION workbench.get_index()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_new_msg   integer;
@@ -26,6 +25,7 @@ BEGIN
     pgv.stat(pgv.t('workbench.stat_tools'), v_tools::text)
   );
 
+  -- Section: Messages récents
   v_html := v_html || '<h3>' || pgv.t('workbench.title_recent_msg') || '</h3>';
   v_html := v_html || '<md data-page="10">' || E'\n';
   v_html := v_html || '| # | De | A | Type | Sujet | Statut |' || E'\n';
@@ -54,6 +54,29 @@ BEGIN
   ), '') || E'\n</md>'
   INTO v_html
   FROM workbench.agent_message m;
+
+  -- Section: Issues ouvertes
+  v_html := v_html || '<h3>' || pgv.t('workbench.title_open_issues') || '</h3>';
+  v_html := v_html || '<md data-page="10">' || E'\n';
+  v_html := v_html || '| # | Type | Module | Description | Statut | Message |' || E'\n';
+  v_html := v_html || '|---|------|--------|-------------|--------|---------|' || E'\n';
+
+  SELECT v_html || coalesce(string_agg(
+    '| ' || i.id
+    || ' | ' || pgv.badge(i.issue_type, CASE i.issue_type WHEN 'bug' THEN 'danger' WHEN 'enhancement' THEN 'info' ELSE 'muted' END)
+    || ' | ' || coalesce(i.module, '-')
+    || ' | ' || pgv.md_esc(i.description, 80)
+    || ' | ' || pgv.badge(i.status, CASE i.status WHEN 'open' THEN 'warning' WHEN 'acknowledged' THEN 'info' ELSE 'muted' END)
+    || ' | ' || CASE WHEN i.message_id IS NOT NULL
+                  THEN '[#' || i.message_id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', i.message_id)) || ')'
+                  ELSE '-'
+                END
+    || ' |', E'\n'
+    ORDER BY i.id DESC
+  ), pgv.t('workbench.label_no_issues')) || E'\n</md>'
+  INTO v_html
+  FROM workbench.issue_report i
+  WHERE i.status IN ('open', 'acknowledged');
 
   RETURN v_html;
 END;

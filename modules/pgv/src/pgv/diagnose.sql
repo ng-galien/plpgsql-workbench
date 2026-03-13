@@ -225,7 +225,9 @@ BEGIN
         'pgv-link-button',
         'pgv-form-dialog','pgv-form-dialog-article','pgv-form-dialog-header',
         'pgv-form-dialog-close','pgv-form-dialog-body','pgv-form-dialog-footer',
-        'pgv-plugin-error'
+        'pgv-plugin-error',
+        'pgv-filter','pgv-filter-bar','pgv-filter-inputs','pgv-filter-submit','pgv-filter-chips',
+        'pgv-col-link','pgv-col-badge','pgv-col-date'
       ) THEN
         v_rows := v_rows || '| ' || pgv.badge('WARN', 'warning') || ' | CSS | classe `' || pgv.esc(v_rec.cls) || '` inconnue |' || chr(10);
         v_warn := v_warn + 1;

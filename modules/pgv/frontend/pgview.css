@@ -1279,6 +1279,88 @@ dialog article {
 .pgv-plugin-error { padding: 1rem; text-align: center; color: var(--pgv-badge-danger-fg); }
 .pgv-plugin-error small { display: block; margin-top: 0.5rem; opacity: 0.7; }
 
+/* ── Filter Bar (pgv.filter_form) ────────────────────────────── */
+.pgv-filter { margin-bottom: 1rem; }
+.pgv-filter-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0;
+}
+.pgv-filter-inputs {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.pgv-filter-inputs input,
+.pgv-filter-inputs select,
+.pgv-filter-inputs textarea {
+  margin-bottom: 0;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  height: auto;
+  min-width: 0;
+  flex: 1 1 120px;
+  max-width: 220px;
+}
+.pgv-filter-inputs label {
+  font-size: 0.78rem;
+  margin-bottom: 0.15rem;
+  opacity: 0.7;
+}
+.pgv-filter-submit {
+  white-space: nowrap;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.85rem;
+  margin-bottom: 0;
+  height: auto;
+  --pico-background-color: var(--pgv-badge-info-bg);
+  --pico-color: var(--pgv-badge-info-fg);
+  border: 1px solid var(--pgv-badge-info-bg);
+}
+.pgv-filter-submit:hover {
+  opacity: 0.85;
+}
+.pgv-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  align-items: center;
+}
+.pgv-filter-chips:empty { display: none; }
+.pgv-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 1rem;
+  font-size: 0.78rem;
+  background: var(--pgv-badge-info-bg);
+  color: var(--pgv-badge-info-fg);
+}
+.pgv-filter-chip button {
+  all: unset;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0.6;
+  padding: 0 0.1rem;
+}
+.pgv-filter-chip button:hover { opacity: 1; }
+.pgv-filter-clear {
+  font-size: 0.78rem;
+  color: var(--pgv-muted);
+  text-decoration: none;
+  margin-left: 0.25rem;
+}
+.pgv-filter-clear:hover { color: var(--pgv-color); text-decoration: underline; }
+
+/* ── pgv.table() column classes ───────────────────────────────── */
+
 /* ── Form Dialog (pgv.form_dialog) ───────────────────────────── */
 .pgv-form-dialog {
   border: 1px solid var(--pgv-border);

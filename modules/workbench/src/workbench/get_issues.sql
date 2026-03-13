@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION workbench.get_issues()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_open    integer;
@@ -22,15 +21,19 @@ BEGIN
   );
 
   v_html := v_html || '<md data-page="20">' || E'\n';
-  v_html := v_html || '| # | Type | Module | Description | Statut | Date |' || E'\n';
-  v_html := v_html || '|---|------|--------|-------------|--------|------|' || E'\n';
+  v_html := v_html || '| # | Type | Module | Description | Statut | Message | Date |' || E'\n';
+  v_html := v_html || '|---|------|--------|-------------|--------|---------|------|' || E'\n';
 
   SELECT v_html || coalesce(string_agg(
-    '| ' || i.id
+    '| [' || i.id || '](' || pgv.call_ref('get_issue', jsonb_build_object('p_id', i.id)) || ')'
     || ' | ' || pgv.badge(i.issue_type, CASE i.issue_type WHEN 'bug' THEN 'danger' WHEN 'enhancement' THEN 'info' ELSE 'muted' END)
     || ' | ' || coalesce(i.module, '-')
     || ' | ' || pgv.md_esc(i.description)
     || ' | ' || pgv.badge(i.status, CASE i.status WHEN 'open' THEN 'warning' WHEN 'acknowledged' THEN 'info' WHEN 'resolved' THEN 'success' ELSE 'muted' END)
+    || ' | ' || CASE WHEN i.message_id IS NOT NULL
+                  THEN '[#' || i.message_id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', i.message_id)) || ')'
+                  ELSE '-'
+                END
     || ' | ' || to_char(i.created_at, 'DD/MM HH24:MI')
     || ' |', E'\n'
     ORDER BY i.id DESC

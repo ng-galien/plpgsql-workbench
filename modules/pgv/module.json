@@ -10,7 +10,8 @@
   "dependencies": [],
   "extensions": [
     "plpgsql_check",
-    "pgtap"
+    "pgtap",
+    "unaccent"
   ],
   "sql": [
     "build/pgv.ddl.sql",

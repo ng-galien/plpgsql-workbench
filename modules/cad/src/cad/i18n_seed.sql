@@ -21,6 +21,20 @@ BEGIN
     ('fr', 'cad.stat_shapes', 'Shapes'),
     ('fr', 'cad.stat_calques', 'Calques'),
     ('fr', 'cad.stat_taille', 'Taille'),
+    ('fr', 'cad.stat_total', 'Total dessins'),
+    ('fr', 'cad.stat_dessins_2d', 'Dessins 2D'),
+    ('fr', 'cad.stat_modeles_3d', 'Modèles 3D'),
+
+    -- Index tabs
+    ('fr', 'cad.tab_2d', 'Dessins 2D'),
+    ('fr', 'cad.tab_3d', 'Modèles 3D'),
+    ('fr', 'cad.col_nom', 'Nom'),
+    ('fr', 'cad.col_taille_dessin', 'Taille'),
+    ('fr', 'cad.col_echelle', 'Échelle'),
+    ('fr', 'cad.col_elements', 'Éléments'),
+    ('fr', 'cad.col_modifie', 'Modifié'),
+    ('fr', 'cad.empty_no_2d', 'Aucun dessin 2D'),
+    ('fr', 'cad.empty_no_3d', 'Aucun modèle 3D'),
 
     -- Wireframe tabs
     ('fr', 'cad.tab_face', 'Face (XZ)'),
@@ -44,6 +58,9 @@ BEGIN
     ('fr', 'cad.empty_no_drawing', 'Aucun dessin. Créez-en un ci-dessous.'),
     ('fr', 'cad.field_name', 'Nom du dessin'),
     ('fr', 'cad.btn_nouveau_dessin', 'Nouveau dessin'),
+    ('fr', 'cad.field_dimension', 'Type'),
+    ('fr', 'cad.dim_2d', 'Dessin 2D'),
+    ('fr', 'cad.dim_3d', 'Modèle 3D'),
 
     -- Drawing page (2D)
     ('fr', 'cad.btn_suppr', 'Suppr.'),

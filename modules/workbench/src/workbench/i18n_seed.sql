@@ -17,6 +17,7 @@ BEGIN
     ('fr', 'workbench.stat_tools', 'Outils'),
     ('fr', 'workbench.stat_tools_detail', 'disponibles'),
     ('fr', 'workbench.title_recent_msg', 'Messages recents'),
+    ('fr', 'workbench.title_open_issues', 'Issues ouvertes'),
     ('fr', 'workbench.title_messages', 'Messages'),
     ('fr', 'workbench.title_issues', 'Issues'),
     ('fr', 'workbench.title_tools', 'Outils'),

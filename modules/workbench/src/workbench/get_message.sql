@@ -1,12 +1,12 @@
 CREATE OR REPLACE FUNCTION workbench.get_message(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_msg    record;
   v_html   text;
   v_issue  record;
+  v_fmt    text;
 BEGIN
   SELECT * INTO v_msg FROM workbench.agent_message WHERE id = p_id;
   IF NOT FOUND THEN
@@ -40,10 +40,10 @@ BEGIN
   v_html := v_html || '</md>' || E'\n';
 
   IF v_msg.body IS NOT NULL THEN
-    v_html := v_html || '<h4>Corps</h4><md>' || E'\n' || v_msg.body || E'\n</md>' || E'\n';
+    v_html := v_html || '<h4>Corps</h4><md>' || E'\n' || v_msg.body || E'\n</md>';
   END IF;
   IF v_msg.resolution IS NOT NULL THEN
-    v_html := v_html || '<h4>Resolution</h4><md>' || E'\n' || v_msg.resolution || E'\n</md>' || E'\n';
+    v_html := v_html || '<h4>Resolution</h4><md>' || E'\n' || v_msg.resolution || E'\n</md>';
   END IF;
 
   SELECT * INTO v_issue FROM workbench.issue_report WHERE message_id = p_id;
@@ -82,11 +82,13 @@ BEGIN
   FROM workbench.agent_message r
   WHERE r.reply_to = p_id OR r.id = p_id;
 
-  IF v_msg.payload IS NOT NULL THEN
-    v_html := v_html || '<h4>Payload</h4><pre>' || jsonb_pretty(v_msg.payload) || '</pre>';
+  v_fmt := workbench.format_jsonb(v_msg.payload);
+  IF v_fmt IS NOT NULL THEN
+    v_html := v_html || '<h4>Payload</h4>' || v_fmt;
   END IF;
-  IF v_msg.result IS NOT NULL THEN
-    v_html := v_html || '<h4>Result</h4><pre>' || jsonb_pretty(v_msg.result) || '</pre>';
+  v_fmt := workbench.format_jsonb(v_msg.result);
+  IF v_fmt IS NOT NULL THEN
+    v_html := v_html || '<h4>Result</h4>' || v_fmt;
   END IF;
 
   RETURN v_html;

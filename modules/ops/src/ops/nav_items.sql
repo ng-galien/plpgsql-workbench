@@ -1,11 +1,9 @@
 CREATE OR REPLACE FUNCTION ops.nav_items()
  RETURNS jsonb
  LANGUAGE sql
- STABLE
 AS $function$
   SELECT '[
-    {"href":"/agents","label":"Agents","icon":"terminal"},
-    {"href":"/","label":"Dashboard","icon":"monitor"},
+    {"href":"/","label":"Agents","icon":"terminal"},
     {"href":"/modules","label":"Modules","icon":"package"},
     {"href":"/tests","label":"Tests","icon":"check-circle"},
     {"href":"/dashboard","label":"Sante","icon":"activity"},

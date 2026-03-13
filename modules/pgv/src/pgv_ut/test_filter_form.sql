@@ -7,13 +7,15 @@ DECLARE
 BEGIN
   -- Basic output
   v := pgv.filter_form(pgv.input('p_status', 'text', 'Statut'));
-  RETURN NEXT ok(v LIKE '%<form data-filter>%', 'has data-filter attribute');
-  RETURN NEXT ok(v LIKE '%<div class="grid">%', 'wraps inputs in grid');
-  RETURN NEXT ok(v LIKE '%</div>%', 'grid is closed');
-  RETURN NEXT ok(v LIKE '%class="secondary"%', 'submit button is secondary');
+  RETURN NEXT ok(v LIKE '%data-filter%', 'has data-filter attribute');
+  RETURN NEXT ok(v LIKE '%pgv-filter-bar%', 'form has filter-bar class');
+  RETURN NEXT ok(v LIKE '%pgv-filter-inputs%', 'wraps inputs in filter-inputs');
+  RETURN NEXT ok(v LIKE '%pgv-filter-submit%', 'submit has filter-submit class');
   RETURN NEXT ok(v LIKE '%type="submit"%', 'has submit button');
   RETURN NEXT ok(v NOT LIKE '%data-rpc%', 'no data-rpc attribute');
   RETURN NEXT ok(v LIKE '%name="p_status"%', 'body content preserved');
+  RETURN NEXT ok(v LIKE '%pgv-filter-chips%', 'has chips container');
+  RETURN NEXT ok(v LIKE '%<div class="pgv-filter">%', 'has filter wrapper');
 
   -- Default label uses i18n
   RETURN NEXT ok(v LIKE '%' || pgv.t('pgv.filter') || '%', 'default label uses i18n filter key');

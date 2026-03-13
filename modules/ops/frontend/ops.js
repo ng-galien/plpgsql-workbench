@@ -12,6 +12,7 @@ const BACKPRESSURE_LIMIT   = 131072;    // 128KB pending → drop + schedule ref
 const BUFFER_RESTORE_CHUNK = 131072;    // 128KB per rAF during buffer restore
 const MAX_BUFFER_CACHE     = 20;
 const MAX_BUFFER_SIZE      = 5242880;   // 5MB max per session buffer
+const WS_MAX_RECONNECT     = 5;         // max attempts before giving up
 
 /* ── Theme ── */
 const THEME_DARK  = { background: '#1a1b26', foreground: '#a9b1d6', cursor: '#c0caf5', selectionBackground: '#33467c' };
@@ -157,8 +158,17 @@ document.addEventListener('alpine:init', () => {
 
     activateSession(mod) {
       console.log('[OPS:grid] activateSession()', mod, '— current active:', this.activeModule, 'xtermReady:', this._xtermReady);
+      // If re-clicking the same module after gave-up, retry connection
       if (this.activeModule === mod) {
-        console.log('[OPS:grid] activateSession() — already active, skip');
+        const conn = this._connections.get(mod);
+        if (conn && conn.attempt > WS_MAX_RECONNECT) {
+          console.log('[OPS:grid] activateSession() — retrying gave-up connection for', mod);
+          conn.attempt = 0;
+          this._setState(mod, { _gaveUp: false, _reconnecting: true });
+          this._connectWs(mod, conn);
+        } else {
+          console.log('[OPS:grid] activateSession() — already active, skip');
+        }
         return;
       }
       this.activeModule = mod;
@@ -344,6 +354,11 @@ document.addEventListener('alpine:init', () => {
         console.log('[OPS:grid] WS onclose', mod, 'code:', e.code, 'reason:', e.reason);
         clearTimeout(conn.heartbeatTimer);
         this._setState(mod, { _connected: false, _disconnected: true });
+        // Show error in terminal if this is the active session
+        if (this._term && this.activeModule === mod) {
+          const reason = e.reason || (e.code === 1006 ? 'connexion perdue' : '');
+          this._term.write(`\r\n\x1b[31m[Deconnecte] ${reason}\x1b[0m\r\n`);
+        }
         if (!conn.destroyed) this._scheduleReconnect(mod, conn);
       };
 
@@ -420,8 +435,17 @@ document.addEventListener('alpine:init', () => {
 
     _scheduleReconnect(mod, conn) {
       if (conn.destroyed) return;
-      const delay = Math.min(WS_RECONNECT_BASE * Math.pow(2, conn.attempt), WS_RECONNECT_MAX);
       conn.attempt++;
+      if (conn.attempt > WS_MAX_RECONNECT) {
+        console.log('[OPS:grid] _scheduleReconnect — max attempts reached for', mod);
+        this._setState(mod, { _reconnecting: false, _disconnected: true, _gaveUp: true });
+        if (this._term && this.activeModule === mod) {
+          this._term.write(`\r\n\x1b[31m[Echec] Reconnexion impossible apres ${WS_MAX_RECONNECT} tentatives.\x1b[0m\r\n`);
+          this._term.write('\x1b[33mCliquer sur l\'agent dans la liste pour reessayer.\x1b[0m\r\n');
+        }
+        return;
+      }
+      const delay = Math.min(WS_RECONNECT_BASE * Math.pow(2, conn.attempt - 1), WS_RECONNECT_MAX);
       console.log('[OPS:grid] _scheduleReconnect', mod, 'attempt:', conn.attempt, 'delay:', delay);
       this._setState(mod, { _reconnecting: true, _reconnectAttempt: conn.attempt });
       const jitter = delay * (0.5 + Math.random() * 0.5);
@@ -747,6 +771,11 @@ document.addEventListener('alpine:init', () => {
         console.log('[OPS:detail] WS onclose code:', e.code, 'reason:', e.reason);
         this.connected = false;
         clearTimeout(this._heartbeatTimer);
+        // Show error in terminal
+        if (this.term) {
+          const reason = e.reason || (e.code === 1006 ? 'connexion perdue' : '');
+          this.term.write(`\r\n\x1b[31m[Deconnecte] ${reason}\x1b[0m\r\n`);
+        }
         this._scheduleReconnect();
       };
 
@@ -796,9 +825,17 @@ document.addEventListener('alpine:init', () => {
 
     _scheduleReconnect() {
       if (this._destroyed) return;
-      const delay = Math.min(WS_RECONNECT_BASE * Math.pow(2, this._reconnectAttempt), WS_RECONNECT_MAX);
-      const jitter = delay * (0.5 + Math.random() * 0.5);
       this._reconnectAttempt++;
+      if (this._reconnectAttempt > WS_MAX_RECONNECT) {
+        console.log('[OPS:detail] _scheduleReconnect — max attempts reached');
+        if (this.term) {
+          this.term.write(`\r\n\x1b[31m[Echec] Reconnexion impossible apres ${WS_MAX_RECONNECT} tentatives.\x1b[0m\r\n`);
+          this.term.write('\x1b[33mRecharger la page pour reessayer.\x1b[0m\r\n');
+        }
+        return;
+      }
+      const delay = Math.min(WS_RECONNECT_BASE * Math.pow(2, this._reconnectAttempt - 1), WS_RECONNECT_MAX);
+      const jitter = delay * (0.5 + Math.random() * 0.5);
       console.log('[OPS:detail] _scheduleReconnect attempt:', this._reconnectAttempt, 'delay:', delay);
       this._reconnectTimer = setTimeout(() => this._connectWs(), jitter);
     },

@@ -37,6 +37,26 @@ BEGIN
               'Visiteurs', '3 241', pgv.badge('+5%', 'info'),
               'Rebond', '42%', pgv.badge('-3%', 'success'),
               'Conversion', '2.8%', pgv.badge('stable', 'default')])
+    || '</section>'
+    || '<section><h4>pgv.table() — declaratif avec filtres + pagination server-side</h4>'
+    || pgv.table(jsonb_build_object(
+         'rpc', 'data_demo',
+         'schema', 'pgv_qa',
+         'page_size', 10,
+         'filters', jsonb_build_array(
+           jsonb_build_object('name', 'p_status', 'type', 'select', 'label', 'Statut',
+             'options', jsonb_build_array(
+               jsonb_build_array('', 'Tous'),
+               jsonb_build_array('active', 'Actif'),
+               jsonb_build_array('draft', 'Brouillon'),
+               jsonb_build_array('archived', 'Archive'))),
+           jsonb_build_object('name', 'q', 'type', 'search', 'label', 'Recherche')),
+         'cols', jsonb_build_array(
+           jsonb_build_object('key', 'id', 'label', '#'),
+           jsonb_build_object('key', 'author', 'label', 'Auteur'),
+           jsonb_build_object('key', 'title', 'label', 'Titre'),
+           jsonb_build_object('key', 'status', 'label', 'Statut', 'class', 'pgv-col-badge'),
+           jsonb_build_object('key', 'date', 'label', 'Date', 'class', 'pgv-col-date'))))
     || '</section>';
 END;
 $function$;

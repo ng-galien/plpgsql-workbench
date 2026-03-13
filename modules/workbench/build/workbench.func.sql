@@ -67,10 +67,44 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION workbench.brand() IS 'Module brand name for nav';
 
+CREATE OR REPLACE FUNCTION workbench.format_jsonb(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_has_nested boolean;
+  v_pairs text[] := ARRAY[]::text[];
+  v_rec record;
+BEGIN
+  IF p_data IS NULL THEN RETURN NULL; END IF;
+  IF jsonb_typeof(p_data) <> 'object' THEN
+    RETURN '<pre><code>' || pgv.esc(jsonb_pretty(p_data)) || '</code></pre>';
+  END IF;
+
+  SELECT bool_or(jsonb_typeof(value) IN ('object', 'array'))
+    INTO v_has_nested
+    FROM jsonb_each(p_data);
+
+  IF coalesce(v_has_nested, false) THEN
+    RETURN '<pre><code>' || pgv.esc(jsonb_pretty(p_data)) || '</code></pre>';
+  END IF;
+
+  FOR v_rec IN SELECT key, value FROM jsonb_each(p_data)
+  LOOP
+    v_pairs := v_pairs || pgv.esc(v_rec.key) || CASE
+      WHEN jsonb_typeof(v_rec.value) = 'null' THEN '-'
+      ELSE pgv.esc(v_rec.value #>> '{}')
+    END;
+  END LOOP;
+
+  RETURN pgv.dl(VARIADIC v_pairs);
+END;
+$function$;
+COMMENT ON FUNCTION workbench.format_jsonb(jsonb) IS 'Format JSONB as DL (flat objects) or pre/code (complex objects)';
+
 CREATE OR REPLACE FUNCTION workbench.get_index()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_new_msg   integer;
@@ -95,6 +129,7 @@ BEGIN
     pgv.stat(pgv.t('workbench.stat_tools'), v_tools::text)
   );
 
+  -- Section: Messages récents
   v_html := v_html || '<h3>' || pgv.t('workbench.title_recent_msg') || '</h3>';
   v_html := v_html || '<md data-page="10">' || E'\n';
   v_html := v_html || '| # | De | A | Type | Sujet | Statut |' || E'\n';
@@ -124,15 +159,120 @@ BEGIN
   INTO v_html
   FROM workbench.agent_message m;
 
+  -- Section: Issues ouvertes
+  v_html := v_html || '<h3>' || pgv.t('workbench.title_open_issues') || '</h3>';
+  v_html := v_html || '<md data-page="10">' || E'\n';
+  v_html := v_html || '| # | Type | Module | Description | Statut | Message |' || E'\n';
+  v_html := v_html || '|---|------|--------|-------------|--------|---------|' || E'\n';
+
+  SELECT v_html || coalesce(string_agg(
+    '| ' || i.id
+    || ' | ' || pgv.badge(i.issue_type, CASE i.issue_type WHEN 'bug' THEN 'danger' WHEN 'enhancement' THEN 'info' ELSE 'muted' END)
+    || ' | ' || coalesce(i.module, '-')
+    || ' | ' || pgv.md_esc(i.description, 80)
+    || ' | ' || pgv.badge(i.status, CASE i.status WHEN 'open' THEN 'warning' WHEN 'acknowledged' THEN 'info' ELSE 'muted' END)
+    || ' | ' || CASE WHEN i.message_id IS NOT NULL
+                  THEN '[#' || i.message_id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', i.message_id)) || ')'
+                  ELSE '-'
+                END
+    || ' |', E'\n'
+    ORDER BY i.id DESC
+  ), pgv.t('workbench.label_no_issues')) || E'\n</md>'
+  INTO v_html
+  FROM workbench.issue_report i
+  WHERE i.status IN ('open', 'acknowledged');
+
   RETURN v_html;
 END;
 $function$;
-COMMENT ON FUNCTION workbench.get_index() IS 'Workbench dashboard — messaging stats, recent messages';
+COMMENT ON FUNCTION workbench.get_index() IS 'Workbench dashboard — messaging stats, recent messages, open issues';
+
+CREATE OR REPLACE FUNCTION workbench.get_issue(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_iss    record;
+  v_html   text;
+  v_ctx    text;
+BEGIN
+  SELECT * INTO v_iss FROM workbench.issue_report WHERE id = p_id;
+  IF NOT FOUND THEN
+    RETURN pgv.empty('Issue introuvable');
+  END IF;
+
+  v_html := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('workbench.nav_issues'), pgv.call_ref('get_issues'), '#' || p_id::text]);
+
+  v_html := v_html || pgv.grid(
+    pgv.stat('Type', pgv.badge(v_iss.issue_type, CASE v_iss.issue_type WHEN 'bug' THEN 'danger' WHEN 'enhancement' THEN 'info' ELSE 'muted' END)),
+    pgv.stat('Statut', pgv.badge(v_iss.status, CASE v_iss.status WHEN 'open' THEN 'warning' WHEN 'acknowledged' THEN 'info' WHEN 'resolved' THEN 'success' ELSE 'muted' END)),
+    pgv.stat('Module', coalesce(v_iss.module, '-')),
+    pgv.stat('Date', to_char(v_iss.created_at, 'DD/MM/YYYY HH24:MI'))
+  );
+
+  -- Description
+  v_html := v_html || '<h4>Description</h4><md>' || E'\n' || pgv.md_esc(v_iss.description) || E'\n</md>';
+
+  -- Context (if valid jsonb object, not garbage like "[object Object]")
+  IF v_iss.context IS NOT NULL
+     AND v_iss.context <> '{}'::jsonb
+     AND jsonb_typeof(v_iss.context) = 'object'
+  THEN
+    v_ctx := workbench.format_jsonb(v_iss.context);
+    IF v_ctx IS NOT NULL THEN
+      v_html := v_html || '<h4>Contexte</h4>' || v_ctx;
+    END IF;
+  END IF;
+
+  -- Message de dispatch lié
+  IF v_iss.message_id IS NOT NULL THEN
+    v_html := v_html || '<h4>Message de dispatch</h4>';
+    v_html := v_html || '<md>' || E'\n';
+    v_html := v_html || '| # | De | A | Type | Sujet | Statut |' || E'\n';
+    v_html := v_html || '|---|----|----|------|-------|--------|' || E'\n';
+
+    SELECT v_html || coalesce(
+      '| [' || m.id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', m.id)) || ')'
+      || ' | ' || pgv.md_esc(m.from_module)
+      || ' | ' || pgv.md_esc(m.to_module)
+      || ' | ' || pgv.badge(m.msg_type, CASE m.msg_type WHEN 'task' THEN 'info' WHEN 'bug_report' THEN 'danger' ELSE 'muted' END)
+      || ' | ' || pgv.md_esc(m.subject, 60)
+      || ' | ' || pgv.badge(m.status, CASE m.status WHEN 'new' THEN 'warning' WHEN 'acknowledged' THEN 'info' WHEN 'resolved' THEN 'success' ELSE 'muted' END)
+      || ' |', '') || E'\n</md>'
+    INTO v_html
+    FROM workbench.agent_message m
+    WHERE m.id = v_iss.message_id;
+  END IF;
+
+  -- Autres messages référençant cette issue via payload
+  v_html := v_html || '<h4>Messages lies</h4>';
+  v_html := v_html || '<md>' || E'\n';
+  v_html := v_html || '| # | De | A | Type | Sujet | Statut |' || E'\n';
+  v_html := v_html || '|---|----|----|------|-------|--------|' || E'\n';
+
+  SELECT v_html || coalesce(string_agg(
+    '| [' || m.id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', m.id)) || ')'
+    || ' | ' || pgv.md_esc(m.from_module)
+    || ' | ' || pgv.md_esc(m.to_module)
+    || ' | ' || pgv.badge(m.msg_type, CASE m.msg_type WHEN 'task' THEN 'info' WHEN 'bug_report' THEN 'danger' ELSE 'muted' END)
+    || ' | ' || pgv.md_esc(m.subject, 60)
+    || ' | ' || pgv.badge(m.status, CASE m.status WHEN 'new' THEN 'warning' WHEN 'acknowledged' THEN 'info' WHEN 'resolved' THEN 'success' ELSE 'muted' END)
+    || ' |', E'\n'
+    ORDER BY m.id
+  ), pgv.t('workbench.label_no_messages')) || E'\n</md>'
+  INTO v_html
+  FROM workbench.agent_message m
+  WHERE (m.payload->>'issue_id')::integer = p_id
+    AND m.id IS DISTINCT FROM v_iss.message_id;
+
+  RETURN v_html;
+END;
+$function$;
+COMMENT ON FUNCTION workbench.get_issue(integer) IS 'Issue detail view with dispatch message and related messages';
 
 CREATE OR REPLACE FUNCTION workbench.get_issues()
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_open    integer;
@@ -153,15 +293,19 @@ BEGIN
   );
 
   v_html := v_html || '<md data-page="20">' || E'\n';
-  v_html := v_html || '| # | Type | Module | Description | Statut | Date |' || E'\n';
-  v_html := v_html || '|---|------|--------|-------------|--------|------|' || E'\n';
+  v_html := v_html || '| # | Type | Module | Description | Statut | Message | Date |' || E'\n';
+  v_html := v_html || '|---|------|--------|-------------|--------|---------|------|' || E'\n';
 
   SELECT v_html || coalesce(string_agg(
-    '| ' || i.id
+    '| [' || i.id || '](' || pgv.call_ref('get_issue', jsonb_build_object('p_id', i.id)) || ')'
     || ' | ' || pgv.badge(i.issue_type, CASE i.issue_type WHEN 'bug' THEN 'danger' WHEN 'enhancement' THEN 'info' ELSE 'muted' END)
     || ' | ' || coalesce(i.module, '-')
     || ' | ' || pgv.md_esc(i.description)
     || ' | ' || pgv.badge(i.status, CASE i.status WHEN 'open' THEN 'warning' WHEN 'acknowledged' THEN 'info' WHEN 'resolved' THEN 'success' ELSE 'muted' END)
+    || ' | ' || CASE WHEN i.message_id IS NOT NULL
+                  THEN '[#' || i.message_id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', i.message_id)) || ')'
+                  ELSE '-'
+                END
     || ' | ' || to_char(i.created_at, 'DD/MM HH24:MI')
     || ' |', E'\n'
     ORDER BY i.id DESC
@@ -172,17 +316,17 @@ BEGIN
   RETURN v_html;
 END;
 $function$;
-COMMENT ON FUNCTION workbench.get_issues() IS 'Issue tracker listing with status stats';
+COMMENT ON FUNCTION workbench.get_issues() IS 'Issue tracker listing with status stats, clickable issue and message links';
 
 CREATE OR REPLACE FUNCTION workbench.get_message(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_msg    record;
   v_html   text;
   v_issue  record;
+  v_fmt    text;
 BEGIN
   SELECT * INTO v_msg FROM workbench.agent_message WHERE id = p_id;
   IF NOT FOUND THEN
@@ -216,10 +360,10 @@ BEGIN
   v_html := v_html || '</md>' || E'\n';
 
   IF v_msg.body IS NOT NULL THEN
-    v_html := v_html || '<h4>Corps</h4><md>' || E'\n' || v_msg.body || E'\n</md>' || E'\n';
+    v_html := v_html || '<h4>Corps</h4><md>' || E'\n' || v_msg.body || E'\n</md>';
   END IF;
   IF v_msg.resolution IS NOT NULL THEN
-    v_html := v_html || '<h4>Resolution</h4><md>' || E'\n' || v_msg.resolution || E'\n</md>' || E'\n';
+    v_html := v_html || '<h4>Resolution</h4><md>' || E'\n' || v_msg.resolution || E'\n</md>';
   END IF;
 
   SELECT * INTO v_issue FROM workbench.issue_report WHERE message_id = p_id;
@@ -258,11 +402,13 @@ BEGIN
   FROM workbench.agent_message r
   WHERE r.reply_to = p_id OR r.id = p_id;
 
-  IF v_msg.payload IS NOT NULL THEN
-    v_html := v_html || '<h4>Payload</h4><pre>' || jsonb_pretty(v_msg.payload) || '</pre>';
+  v_fmt := workbench.format_jsonb(v_msg.payload);
+  IF v_fmt IS NOT NULL THEN
+    v_html := v_html || '<h4>Payload</h4>' || v_fmt;
   END IF;
-  IF v_msg.result IS NOT NULL THEN
-    v_html := v_html || '<h4>Result</h4><pre>' || jsonb_pretty(v_msg.result) || '</pre>';
+  v_fmt := workbench.format_jsonb(v_msg.result);
+  IF v_fmt IS NOT NULL THEN
+    v_html := v_html || '<h4>Result</h4>' || v_fmt;
   END IF;
 
   RETURN v_html;
@@ -275,19 +421,19 @@ CREATE OR REPLACE FUNCTION workbench.get_messages(p_params jsonb DEFAULT '{}'::j
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_from   text := p_params->>'p_from';
-  v_to     text := p_params->>'p_to';
-  v_status text := p_params->>'p_status';
-  v_type   text := p_params->>'p_type';
-  v_search text := p_params->>'p_search';
-  v_total   integer;
-  v_new     integer;
-  v_ack     integer;
+  v_from     text := p_params->>'p_from';
+  v_to       text := p_params->>'p_to';
+  v_status   text := p_params->>'p_status';
+  v_type     text := p_params->>'p_type';
+  v_search   text := p_params->>'p_search';
+  v_total    integer;
+  v_new      integer;
+  v_ack      integer;
   v_resolved integer;
-  v_html    text;
-  v_filter  text;
-  v_opt     text;
-  r         record;
+  v_html     text;
+  v_filter   text;
+  v_opt      text;
+  r          record;
 BEGIN
   -- Stats (global, unfiltered)
   SELECT count(*),
@@ -304,8 +450,7 @@ BEGIN
     pgv.stat('Resolus', v_resolved::text)
   );
 
-  -- Filter form
-  -- From select
+  -- Filter form content (selects)
   v_opt := '<option value="">Tous</option>';
   FOR r IN SELECT DISTINCT from_module FROM workbench.agent_message ORDER BY 1 LOOP
     v_opt := v_opt || '<option value="' || pgv.esc(r.from_module) || '"'
@@ -314,7 +459,6 @@ BEGIN
   END LOOP;
   v_filter := '<label>De<select name="p_from">' || v_opt || '</select></label>';
 
-  -- To select
   v_opt := '<option value="">Tous</option>';
   FOR r IN SELECT DISTINCT to_module FROM workbench.agent_message ORDER BY 1 LOOP
     v_opt := v_opt || '<option value="' || pgv.esc(r.to_module) || '"'
@@ -323,15 +467,13 @@ BEGIN
   END LOOP;
   v_filter := v_filter || '<label>A<select name="p_to">' || v_opt || '</select></label>';
 
-  -- Status select
   v_filter := v_filter || '<label>Statut<select name="p_status">'
     || '<option value="">Tous</option>'
-    || '<option value="new"'    || CASE WHEN v_status = 'new'          THEN ' selected' ELSE '' END || '>Nouveau</option>'
+    || '<option value="new"'          || CASE WHEN v_status = 'new'          THEN ' selected' ELSE '' END || '>Nouveau</option>'
     || '<option value="acknowledged"' || CASE WHEN v_status = 'acknowledged' THEN ' selected' ELSE '' END || '>En cours</option>'
     || '<option value="resolved"'     || CASE WHEN v_status = 'resolved'     THEN ' selected' ELSE '' END || '>Resolu</option>'
     || '</select></label>';
 
-  -- Type select
   v_filter := v_filter || '<label>Type<select name="p_type">'
     || '<option value="">Tous</option>'
     || '<option value="task"'            || CASE WHEN v_type = 'task'            THEN ' selected' ELSE '' END || '>task</option>'
@@ -342,15 +484,15 @@ BEGIN
     || '<option value="breaking_change"' || CASE WHEN v_type = 'breaking_change' THEN ' selected' ELSE '' END || '>breaking_change</option>'
     || '</select></label>';
 
-  -- Search input
   v_filter := v_filter || pgv.input('p_search', 'search', 'Recherche', v_search);
 
+  -- Filter form (inline)
   v_html := v_html || pgv.filter_form(v_filter);
 
-  -- Message table
+  -- Message table (with issue cross-link)
   v_html := v_html || '<md data-page="20">' || E'\n';
-  v_html := v_html || '| # | De | A | Type | Priorite | Sujet | Statut | Date |' || E'\n';
-  v_html := v_html || '|---|----|----|------|----------|-------|--------|------|' || E'\n';
+  v_html := v_html || '| # | De | A | Type | Priorite | Sujet | Issue | Statut | Date |' || E'\n';
+  v_html := v_html || '|---|----|----|------|----------|-------|-------|--------|------|' || E'\n';
 
   SELECT v_html || coalesce(string_agg(
     '| [' || m.id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', m.id)) || ')'
@@ -365,6 +507,10 @@ BEGIN
         ELSE 'muted' END)
     || ' | ' || CASE WHEN m.priority = 'high' THEN pgv.badge('HIGH','danger') ELSE 'normal' END
     || ' | ' || pgv.md_esc(m.subject, 60)
+    || ' | ' || CASE WHEN ir.id IS NOT NULL
+                  THEN '[#' || ir.id || '](' || pgv.call_ref('get_issue', jsonb_build_object('p_id', ir.id)) || ')'
+                  ELSE '-'
+                END
     || ' | ' || pgv.badge(m.status, CASE m.status
         WHEN 'new' THEN 'warning'
         WHEN 'acknowledged' THEN 'info'
@@ -378,6 +524,7 @@ BEGIN
   ), '') || E'\n</md>'
   INTO v_html
   FROM workbench.agent_message m
+  LEFT JOIN workbench.issue_report ir ON ir.message_id = m.id
   WHERE (v_from IS NULL OR m.from_module = v_from)
     AND (v_to IS NULL OR m.to_module = v_to)
     AND (v_status IS NULL OR m.status = v_status)
@@ -387,7 +534,7 @@ BEGIN
   RETURN v_html;
 END;
 $function$;
-COMMENT ON FUNCTION workbench.get_messages(jsonb) IS 'List inter-module messages with filter form (from, to, status, type, search)';
+COMMENT ON FUNCTION workbench.get_messages(jsonb) IS 'List inter-module messages with filter dialog and issue cross-links';
 
 CREATE OR REPLACE FUNCTION workbench.get_primitives()
  RETURNS text
@@ -608,6 +755,7 @@ BEGIN
     ('fr', 'workbench.stat_tools', 'Outils'),
     ('fr', 'workbench.stat_tools_detail', 'disponibles'),
     ('fr', 'workbench.title_recent_msg', 'Messages recents'),
+    ('fr', 'workbench.title_open_issues', 'Issues ouvertes'),
     ('fr', 'workbench.title_messages', 'Messages'),
     ('fr', 'workbench.title_issues', 'Issues'),
     ('fr', 'workbench.title_tools', 'Outils'),

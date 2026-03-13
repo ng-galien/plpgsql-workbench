@@ -925,30 +925,101 @@ CREATE OR REPLACE FUNCTION cad.get_index()
 AS $function$
 DECLARE
   v_body text;
-  v_drawings text;
+  v_total int;
+  v_nb_2d int;
+  v_nb_3d int;
+  v_rows_2d text[];
+  v_rows_3d text[];
+  r record;
 BEGIN
-  SELECT string_agg(
-    pgv.card(
-      d.name,
-      format('%s × %s %s — échelle 1:%s', d.width, d.height, d.unit, d.scale),
+  -- Stats
+  SELECT count(*)::int INTO v_total FROM cad.drawing;
+
+  SELECT count(*)::int INTO v_nb_2d FROM cad.drawing WHERE dimension = '2d';
+  SELECT count(*)::int INTO v_nb_3d FROM cad.drawing WHERE dimension = '3d';
+
+  v_body := pgv.grid(
+    pgv.stat(pgv.t('cad.stat_total'), v_total::text),
+    pgv.stat(pgv.t('cad.stat_dessins_2d'), v_nb_2d::text),
+    pgv.stat(pgv.t('cad.stat_modeles_3d'), v_nb_3d::text)
+  );
+
+  -- Tab 2D
+  v_rows_2d := ARRAY[]::text[];
+  FOR r IN
+    SELECT d.id, d.name, d.width, d.height, d.unit, d.scale,
+      (SELECT count(*) FROM cad.shape s WHERE s.drawing_id = d.id) AS cnt,
+      d.updated_at
+    FROM cad.drawing d
+    WHERE d.dimension = '2d'
+    ORDER BY d.updated_at DESC
+  LOOP
+    v_rows_2d := v_rows_2d || ARRAY[
       format('<a href="%s">%s</a>',
-        pgv.call_ref('get_drawing', jsonb_build_object('p_id', d.id)),
-        pgv.t('cad.btn_ouvrir'))
-    ), E'\n' ORDER BY d.updated_at DESC
-  ) INTO v_drawings
-  FROM cad.drawing d;
+        pgv.call_ref('get_drawing', jsonb_build_object('p_id', r.id)),
+        pgv.esc(r.name)),
+      r.width || ' × ' || r.height || ' ' || r.unit,
+      '1:' || r.scale::text,
+      r.cnt || ' shapes',
+      to_char(r.updated_at, 'DD/MM/YYYY')
+    ];
+  END LOOP;
 
-  v_body := COALESCE(v_drawings, '<p>' || pgv.t('cad.empty_no_drawing') || '</p>');
+  -- Tab 3D
+  v_rows_3d := ARRAY[]::text[];
+  FOR r IN
+    SELECT d.id, d.name,
+      (SELECT count(*) FROM cad.piece p WHERE p.drawing_id = d.id) AS cnt,
+      (SELECT round((sum(ST_Volume(p.geom)) / 1e9)::numeric, 4)
+       FROM cad.piece p WHERE p.drawing_id = d.id) AS vol,
+      d.updated_at
+    FROM cad.drawing d
+    WHERE d.dimension = '3d'
+    ORDER BY d.updated_at DESC
+  LOOP
+    v_rows_3d := v_rows_3d || ARRAY[
+      format('<a href="%s">%s</a>',
+        pgv.call_ref('get_drawing_3d', jsonb_build_object('p_id', r.id)),
+        pgv.esc(r.name)),
+      r.cnt || ' ' || pgv.t('cad.stat_pieces'),
+      COALESCE(r.vol::text, '0') || ' m³',
+      to_char(r.updated_at, 'DD/MM/YYYY')
+    ];
+  END LOOP;
 
+  -- Tabs
+  v_body := v_body || pgv.tabs(
+    pgv.t('cad.tab_2d'),
+    CASE WHEN cardinality(v_rows_2d) = 0
+      THEN pgv.empty(pgv.t('cad.empty_no_2d'))
+      ELSE pgv.md_table(
+        ARRAY[pgv.t('cad.col_nom'), pgv.t('cad.col_taille_dessin'), pgv.t('cad.col_echelle'), pgv.t('cad.col_elements'), pgv.t('cad.col_modifie')],
+        v_rows_2d, 20)
+    END,
+    pgv.t('cad.tab_3d'),
+    CASE WHEN cardinality(v_rows_3d) = 0
+      THEN pgv.empty(pgv.t('cad.empty_no_3d'))
+      ELSE pgv.md_table(
+        ARRAY[pgv.t('cad.col_nom'), pgv.t('cad.col_elements'), pgv.t('cad.stat_volume'), pgv.t('cad.col_modifie')],
+        v_rows_3d, 20)
+    END
+  );
+
+  -- New drawing dialog
   v_body := v_body || pgv.form_dialog('dlg-new-drawing',
     pgv.t('cad.btn_nouveau_dessin'),
-    pgv.input('name', 'text', pgv.t('cad.field_name')),
+    pgv.input('name', 'text', pgv.t('cad.field_name'))
+      || pgv.sel('dimension', pgv.t('cad.field_dimension'),
+           jsonb_build_array(
+             jsonb_build_object('value', '2d', 'label', pgv.t('cad.dim_2d')),
+             jsonb_build_object('value', '3d', 'label', pgv.t('cad.dim_3d'))
+           ), '2d'),
     'drawing_add');
 
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION cad.get_index() IS 'Page index: liste des dessins + formulaire nouveau dessin (dialog)';
+COMMENT ON FUNCTION cad.get_index() IS 'Page index: stats + tabs 2D/3D avec tables paginées + dialog nouveau dessin';
 
 CREATE OR REPLACE FUNCTION cad.group_pieces(p_drawing_id integer, p_piece_ids integer[], p_label text)
  RETURNS integer
@@ -1067,6 +1138,20 @@ BEGIN
     ('fr', 'cad.stat_shapes', 'Shapes'),
     ('fr', 'cad.stat_calques', 'Calques'),
     ('fr', 'cad.stat_taille', 'Taille'),
+    ('fr', 'cad.stat_total', 'Total dessins'),
+    ('fr', 'cad.stat_dessins_2d', 'Dessins 2D'),
+    ('fr', 'cad.stat_modeles_3d', 'Modèles 3D'),
+
+    -- Index tabs
+    ('fr', 'cad.tab_2d', 'Dessins 2D'),
+    ('fr', 'cad.tab_3d', 'Modèles 3D'),
+    ('fr', 'cad.col_nom', 'Nom'),
+    ('fr', 'cad.col_taille_dessin', 'Taille'),
+    ('fr', 'cad.col_echelle', 'Échelle'),
+    ('fr', 'cad.col_elements', 'Éléments'),
+    ('fr', 'cad.col_modifie', 'Modifié'),
+    ('fr', 'cad.empty_no_2d', 'Aucun dessin 2D'),
+    ('fr', 'cad.empty_no_3d', 'Aucun modèle 3D'),
 
     -- Wireframe tabs
     ('fr', 'cad.tab_face', 'Face (XZ)'),
@@ -1090,6 +1175,9 @@ BEGIN
     ('fr', 'cad.empty_no_drawing', 'Aucun dessin. Créez-en un ci-dessous.'),
     ('fr', 'cad.field_name', 'Nom du dessin'),
     ('fr', 'cad.btn_nouveau_dessin', 'Nouveau dessin'),
+    ('fr', 'cad.field_dimension', 'Type'),
+    ('fr', 'cad.dim_2d', 'Dessin 2D'),
+    ('fr', 'cad.dim_3d', 'Modèle 3D'),
 
     -- Drawing page (2D)
     ('fr', 'cad.btn_suppr', 'Suppr.'),
@@ -1645,18 +1733,21 @@ END;
 $function$;
 COMMENT ON FUNCTION cad.page(text,jsonb) IS 'Router wrapper for cad pages — delegates to pgv.route with query param parsing.';
 
-CREATE OR REPLACE FUNCTION cad.post_drawing_add(name text)
+CREATE OR REPLACE FUNCTION cad.post_drawing_add(name text, dimension text DEFAULT '2d'::text)
  RETURNS "text/html"
  LANGUAGE plpgsql
 AS $function$
 DECLARE
   v_id int;
+  v_dim text;
 BEGIN
   IF name IS NULL OR trim(name) = '' THEN
     RETURN pgv.toast(pgv.t('cad.err_name_required'), 'error');
   END IF;
 
-  INSERT INTO cad.drawing (name) VALUES (trim(name)) RETURNING id INTO v_id;
+  v_dim := CASE WHEN dimension = '3d' THEN '3d' ELSE '2d' END;
+
+  INSERT INTO cad.drawing (name, dimension) VALUES (trim(name), v_dim) RETURNING id INTO v_id;
 
   INSERT INTO cad.layer (drawing_id, name, color, stroke_width)
   VALUES (v_id, 'Structure', '#333333', 1.5);
@@ -1664,7 +1755,7 @@ BEGIN
   RETURN pgv.redirect(format('/drawing?p_id=%s', v_id));
 END;
 $function$;
-COMMENT ON FUNCTION cad.post_drawing_add(text) IS 'Creer un nouveau dessin.';
+COMMENT ON FUNCTION cad.post_drawing_add(text,text) IS 'Creer un nouveau dessin (2D ou 3D).';
 
 CREATE OR REPLACE FUNCTION cad.post_shape_add(drawing_id integer, layer_id integer, type text, geometry text DEFAULT '{}'::text, props text DEFAULT '{}'::text, label text DEFAULT NULL::text)
  RETURNS "text/html"

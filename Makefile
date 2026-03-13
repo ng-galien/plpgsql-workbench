@@ -38,7 +38,7 @@ dev-up: image dev-env ## Start dev stack: postgres:5433, postgrest:3000, nginx:8
 dev-env: # (internal) Generate .env with PGRST_DB_SCHEMAS from module.json files
 	@schemas=$$(python3 -c "import json,glob; \
 		s=[]; \
-		[s.extend([p, p+'_ut']) for f in sorted(glob.glob('modules/*/module.json')) \
+		[s.extend([p, p+'_ut', p+'_qa']) for f in sorted(glob.glob('modules/*/module.json')) \
 		 for p in [json.load(open(f)).get('schemas',{}).get('public','')] if p]; \
 		s.sort(key=lambda x: (0 if x.startswith('pgv') else 1, x)); \
 		print(','.join(s))" 2>/dev/null || echo "pgv"); \
