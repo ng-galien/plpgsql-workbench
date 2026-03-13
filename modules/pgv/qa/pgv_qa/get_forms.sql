@@ -26,6 +26,13 @@ BEGIN
     || pgv.action('toast_error', 'Action danger', NULL::jsonb, NULL, 'danger')
     || pgv.action('toast_success', 'Outline', NULL::jsonb, NULL, 'outline')
     || '</div></section>'
+    || '<section><h4>pgv.filter_form</h4>'
+    || pgv.filter_form(
+         pgv.input('p_status', 'text', 'Statut')
+         || pgv.sel('p_type', 'Type', '["bug", "enhancement", "question"]'::jsonb)
+         || pgv.input('p_search', 'text', 'Recherche')
+       )
+    || '</section>'
     || '<section><h4>pgv.checkbox + pgv.toggle</h4>'
     || pgv.checkbox('notifications', 'Recevoir les notifications')
     || pgv.checkbox('newsletter', 'Abonne a la newsletter', true)

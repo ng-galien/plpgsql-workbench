@@ -18,9 +18,14 @@ BEGIN
     || pgv.input('date_naissance', 'date', 'Date de naissance', CASE WHEN p_emp.date_naissance IS NOT NULL THEN to_char(p_emp.date_naissance, 'YYYY-MM-DD') END)
     || '</div>'
     || '<div class="grid">'
+    || pgv.sel('sexe', 'Sexe', '[{"label":"—","value":""},{"label":"Homme","value":"M"},{"label":"Femme","value":"F"}]'::jsonb, COALESCE(p_emp.sexe, ''))
+    || pgv.input('nationalite', 'text', 'Nationalit\u00e9', NULLIF(p_emp.nationalite, ''))
+    || '</div>'
+    || '<div class="grid">'
     || pgv.input('poste', 'text', 'Poste', NULLIF(p_emp.poste, ''))
     || pgv.input('departement', 'text', 'Département', NULLIF(p_emp.departement, ''))
     || '</div>'
+    || pgv.input('qualification', 'text', 'Qualification', NULLIF(p_emp.qualification, ''))
     || '<div class="grid">'
     || pgv.sel('type_contrat', 'Type de contrat', '[{"label":"CDI","value":"cdi"},{"label":"CDD","value":"cdd"},{"label":"Alternance","value":"alternance"},{"label":"Stage","value":"stage"},{"label":"Intérim","value":"interim"}]'::jsonb, COALESCE(p_emp.type_contrat, 'cdi'))
     || pgv.input('date_embauche', 'date', 'Date d''embauche', to_char(COALESCE(p_emp.date_embauche, CURRENT_DATE), 'YYYY-MM-DD'), true)

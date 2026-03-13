@@ -1,7 +1,6 @@
 CREATE OR REPLACE FUNCTION hr.get_employee(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
   v_emp hr.employee;
@@ -13,6 +12,8 @@ DECLARE
   r record;
   v_total_heures numeric;
   v_total_absences int;
+  v_balance_stats text[];
+  v_bal record;
 BEGIN
   SELECT * INTO v_emp FROM hr.employee WHERE id = p_id;
   IF NOT FOUND THEN
@@ -25,8 +26,11 @@ BEGIN
     'Email', COALESCE(v_emp.email, '—'),
     'Téléphone', COALESCE(v_emp.phone, '—'),
     'Date de naissance', CASE WHEN v_emp.date_naissance IS NOT NULL THEN to_char(v_emp.date_naissance, 'DD/MM/YYYY') ELSE '—' END,
+    'Sexe', CASE v_emp.sexe WHEN 'M' THEN 'Homme' WHEN 'F' THEN 'Femme' ELSE '—' END,
+    'Nationalité', CASE WHEN v_emp.nationalite = '' THEN '—' ELSE pgv.esc(v_emp.nationalite) END,
     'Poste', CASE WHEN v_emp.poste = '' THEN '—' ELSE pgv.esc(v_emp.poste) END,
     'Département', CASE WHEN v_emp.departement = '' THEN '—' ELSE pgv.esc(v_emp.departement) END,
+    'Qualification', CASE WHEN v_emp.qualification = '' THEN '—' ELSE pgv.esc(v_emp.qualification) END,
     'Contrat', hr.contrat_label(v_emp.type_contrat),
     'Embauche', to_char(v_emp.date_embauche, 'DD/MM/YYYY'),
     'Fin de contrat', CASE WHEN v_emp.date_fin IS NOT NULL THEN to_char(v_emp.date_fin, 'DD/MM/YYYY') ELSE '—' END,
@@ -42,6 +46,21 @@ BEGIN
       'post_employee_save',
       'Modifier', 'outline') || ' '
     || pgv.action('post_employee_delete', 'Supprimer', jsonb_build_object('id', p_id), 'Supprimer définitivement ce salarié et tout son historique ?', 'danger');
+
+  -- Leave balance stats
+  v_balance_stats := ARRAY[]::text[];
+  FOR v_bal IN
+    SELECT lb.leave_type, lb.allocated, lb.used, (lb.allocated - lb.used) AS remaining
+      FROM hr.leave_balance lb
+     WHERE lb.employee_id = p_id
+     ORDER BY lb.leave_type
+  LOOP
+    v_balance_stats := v_balance_stats || pgv.stat(
+      hr.absence_label(v_bal.leave_type),
+      v_bal.remaining::text || 'j / ' || v_bal.allocated::text || 'j',
+      CASE WHEN v_bal.remaining <= 0 THEN 'danger' WHEN v_bal.remaining <= 3 THEN 'warning' ELSE NULL END
+    );
+  END LOOP;
 
   -- Absences
   v_rows := ARRAY[]::text[];
@@ -66,10 +85,16 @@ BEGIN
     ];
   END LOOP;
 
-  IF v_total_absences = 0 THEN
-    v_absences := pgv.empty('Aucune absence enregistrée');
+  IF cardinality(v_balance_stats) > 0 THEN
+    v_absences := pgv.grid(VARIADIC v_balance_stats);
   ELSE
-    v_absences := pgv.md_table(
+    v_absences := '';
+  END IF;
+
+  IF v_total_absences = 0 THEN
+    v_absences := v_absences || pgv.empty('Aucune absence enregistrée');
+  ELSE
+    v_absences := v_absences || pgv.md_table(
       ARRAY['Type', 'Début', 'Fin', 'Jours', 'Statut', 'Actions'],
       v_rows,
       10

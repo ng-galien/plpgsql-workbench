@@ -9,6 +9,7 @@ BEGIN
     ('fr', 'hr.nav_salaries', 'Salariés'),
     ('fr', 'hr.nav_absences', 'Absences'),
     ('fr', 'hr.nav_heures', 'Heures'),
+    ('fr', 'hr.nav_registre', 'Registre'),
 
     -- Contract types
     ('fr', 'hr.contrat_cdi', 'CDI'),
@@ -25,6 +26,10 @@ BEGIN
     ('fr', 'hr.absence_formation', 'Formation'),
     ('fr', 'hr.absence_autre', 'Autre'),
 
+    -- Sexe
+    ('fr', 'hr.sexe_m', 'Homme'),
+    ('fr', 'hr.sexe_f', 'Femme'),
+
     -- Status
     ('fr', 'hr.statut_actif', 'Actif'),
     ('fr', 'hr.statut_inactif', 'Inactif'),
@@ -40,8 +45,11 @@ BEGIN
     ('fr', 'hr.field_phone', 'Téléphone'),
     ('fr', 'hr.field_matricule', 'Matricule'),
     ('fr', 'hr.field_date_naissance', 'Date de naissance'),
+    ('fr', 'hr.field_sexe', 'Sexe'),
+    ('fr', 'hr.field_nationalite', 'Nationalité'),
     ('fr', 'hr.field_poste', 'Poste'),
     ('fr', 'hr.field_departement', 'Département'),
+    ('fr', 'hr.field_qualification', 'Qualification'),
     ('fr', 'hr.field_type_contrat', 'Type de contrat'),
     ('fr', 'hr.field_date_embauche', 'Date d''embauche'),
     ('fr', 'hr.field_date_fin', 'Date de fin'),
@@ -54,6 +62,9 @@ BEGIN
     ('fr', 'hr.field_description', 'Description'),
     ('fr', 'hr.field_heures', 'Heures'),
     ('fr', 'hr.field_date_travail', 'Date'),
+    ('fr', 'hr.field_allocated', 'Alloués'),
+    ('fr', 'hr.field_used', 'Pris'),
+    ('fr', 'hr.field_remaining', 'Restants'),
 
     -- Stats
     ('fr', 'hr.stat_total', 'Total salariés'),
@@ -82,6 +93,15 @@ BEGIN
     ('fr', 'hr.col_date', 'Date'),
     ('fr', 'hr.col_heures', 'Heures'),
     ('fr', 'hr.col_objectif', 'Objectif'),
+    ('fr', 'hr.col_sexe', 'Sexe'),
+    ('fr', 'hr.col_nationalite', 'Nationalité'),
+    ('fr', 'hr.col_naissance', 'Naissance'),
+    ('fr', 'hr.col_emploi', 'Emploi'),
+    ('fr', 'hr.col_qualification', 'Qualification'),
+    ('fr', 'hr.col_entree', 'Entrée'),
+    ('fr', 'hr.col_sortie', 'Sortie'),
+    ('fr', 'hr.col_matricule', 'Matricule'),
+    ('fr', 'hr.col_nom_prenom', 'Nom Prénom'),
 
     -- Buttons / Actions
     ('fr', 'hr.btn_filtrer', 'Filtrer'),
@@ -100,6 +120,8 @@ BEGIN
     ('fr', 'hr.title_heures', 'Heures'),
     ('fr', 'hr.title_declarer_absence', 'Déclarer une absence'),
     ('fr', 'hr.title_saisir_heures', 'Saisir des heures'),
+    ('fr', 'hr.title_registre', 'Registre du personnel'),
+    ('fr', 'hr.title_registre_notice', 'Registre obligatoire (Art. L1221-13 du Code du travail)'),
 
     -- Empty states
     ('fr', 'hr.empty_no_salarie', 'Aucun salarié'),
@@ -116,6 +138,7 @@ BEGIN
     ('fr', 'hr.toast_employee_deleted', 'Salarié supprimé.'),
     ('fr', 'hr.toast_absence_declared', 'Absence déclarée.'),
     ('fr', 'hr.toast_timesheet_saved', 'Heures enregistrées.'),
+    ('fr', 'hr.toast_balance_insufficient', 'Solde insuffisant.'),
 
     -- Error messages
     ('fr', 'hr.err_not_found', 'Salarié introuvable.'),

@@ -10,7 +10,8 @@ BEGIN
     ('fr', 'pgv.error', 'Erreur'),
     ('fr', 'pgv.invalid_param', 'Parametre invalide'),
     ('fr', 'pgv.internal_error', 'Erreur interne'),
-    ('fr', 'pgv.unexpected_error', 'Une erreur inattendue est survenue.')
+    ('fr', 'pgv.unexpected_error', 'Une erreur inattendue est survenue.'),
+    ('fr', 'pgv.filter', 'Filtrer')
   ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
 END;
 $function$;

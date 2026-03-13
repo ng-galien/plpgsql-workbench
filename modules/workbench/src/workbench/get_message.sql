@@ -35,15 +35,16 @@ BEGIN
   v_html := v_html || '| Champ | Valeur |' || E'\n';
   v_html := v_html || '|-------|--------|' || E'\n';
   v_html := v_html || '| De | ' || pgv.md_esc(v_msg.from_module) || ' |' || E'\n';
-  v_html := v_html || '| A | ' || pgv.md_esc(v_msg.to_module) || ' |' || E'\n';
+  v_html := v_html || '| A | ' || CASE WHEN v_msg.to_module = 'owner' THEN pgv.badge('owner', 'primary') ELSE pgv.md_esc(v_msg.to_module) END || ' |' || E'\n';
   v_html := v_html || '| Sujet | ' || pgv.md_esc(v_msg.subject, 120) || ' |' || E'\n';
+  v_html := v_html || '</md>' || E'\n';
+
   IF v_msg.body IS NOT NULL THEN
-    v_html := v_html || '| Corps | ' || pgv.md_esc(v_msg.body, 200) || ' |' || E'\n';
+    v_html := v_html || '<h4>Corps</h4><md>' || E'\n' || v_msg.body || E'\n</md>' || E'\n';
   END IF;
   IF v_msg.resolution IS NOT NULL THEN
-    v_html := v_html || '| Resolution | ' || pgv.md_esc(v_msg.resolution, 200) || ' |' || E'\n';
+    v_html := v_html || '<h4>Resolution</h4><md>' || E'\n' || v_msg.resolution || E'\n</md>' || E'\n';
   END IF;
-  v_html := v_html || '</md>' || E'\n';
 
   SELECT * INTO v_issue FROM workbench.issue_report WHERE message_id = p_id;
   IF FOUND THEN

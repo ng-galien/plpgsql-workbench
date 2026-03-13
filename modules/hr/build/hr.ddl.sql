@@ -15,7 +15,10 @@ CREATE TABLE IF NOT EXISTS hr.employee (
   email text,
   phone text,
   date_naissance date,
+  sexe text NOT NULL DEFAULT '' CHECK (sexe IN ('', 'M', 'F')),
+  nationalite text NOT NULL DEFAULT '',
   poste text NOT NULL DEFAULT '',
+  qualification text NOT NULL DEFAULT '',
   departement text NOT NULL DEFAULT '',
   type_contrat text NOT NULL DEFAULT 'cdi' CHECK (type_contrat IN ('cdi', 'cdd', 'alternance', 'stage', 'interim')),
   date_embauche date NOT NULL DEFAULT CURRENT_DATE,
@@ -27,6 +30,11 @@ CREATE TABLE IF NOT EXISTS hr.employee (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Registre du personnel — colonnes obligatoires (Art. L1221-13)
+ALTER TABLE hr.employee ADD COLUMN IF NOT EXISTS sexe text NOT NULL DEFAULT '' CHECK (sexe IN ('', 'M', 'F'));
+ALTER TABLE hr.employee ADD COLUMN IF NOT EXISTS nationalite text NOT NULL DEFAULT '';
+ALTER TABLE hr.employee ADD COLUMN IF NOT EXISTS qualification text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_employee_tenant ON hr.employee(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_employee_statut_nom ON hr.employee(statut, nom);
@@ -65,6 +73,22 @@ CREATE TABLE IF NOT EXISTS hr.timesheet (
 CREATE INDEX IF NOT EXISTS idx_timesheet_tenant ON hr.timesheet(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_timesheet_employee_date ON hr.timesheet(employee_id, date_travail DESC);
 
+-- Soldes congés (compteur par type et par salarié)
+CREATE TABLE IF NOT EXISTS hr.leave_balance (
+  id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  employee_id int NOT NULL REFERENCES hr.employee(id) ON DELETE CASCADE,
+  leave_type text NOT NULL CHECK (leave_type IN ('conge_paye', 'rtt', 'maladie', 'sans_solde', 'formation', 'autre')),
+  allocated numeric NOT NULL DEFAULT 0,
+  used numeric NOT NULL DEFAULT 0,
+  CONSTRAINT leave_balance_unique UNIQUE (employee_id, leave_type),
+  CONSTRAINT leave_balance_allocated_positive CHECK (allocated >= 0),
+  CONSTRAINT leave_balance_used_positive CHECK (used >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_leave_balance_tenant ON hr.leave_balance(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_leave_balance_employee ON hr.leave_balance(employee_id);
+
 -- Trigger updated_at (fonction créée via pg_func_set)
 DROP TRIGGER IF EXISTS trg_employee_updated_at ON hr.employee;
 CREATE TRIGGER trg_employee_updated_at
@@ -75,6 +99,7 @@ CREATE TRIGGER trg_employee_updated_at
 ALTER TABLE hr.employee ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hr.absence ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hr.timesheet ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hr.leave_balance ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS tenant_isolation ON hr.employee;
 CREATE POLICY tenant_isolation ON hr.employee
@@ -84,6 +109,9 @@ CREATE POLICY tenant_isolation ON hr.absence
   USING (tenant_id = current_setting('app.tenant_id', true));
 DROP POLICY IF EXISTS tenant_isolation ON hr.timesheet;
 CREATE POLICY tenant_isolation ON hr.timesheet
+  USING (tenant_id = current_setting('app.tenant_id', true));
+DROP POLICY IF EXISTS tenant_isolation ON hr.leave_balance;
+CREATE POLICY tenant_isolation ON hr.leave_balance
   USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Permissions
@@ -95,6 +123,9 @@ GRANT USAGE ON SEQUENCE hr.absence_id_seq TO web_anon;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON hr.timesheet TO web_anon;
 GRANT USAGE ON SEQUENCE hr.timesheet_id_seq TO web_anon;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON hr.leave_balance TO web_anon;
+GRANT USAGE ON SEQUENCE hr.leave_balance_id_seq TO web_anon;
 
 GRANT USAGE ON SCHEMA hr_ut TO web_anon;
 GRANT USAGE ON SCHEMA hr_qa TO web_anon;

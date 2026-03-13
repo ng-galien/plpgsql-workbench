@@ -101,9 +101,9 @@ BEGIN
   v_html := v_html || '|---|----|----|------|-------|--------|' || E'\n';
 
   SELECT v_html || coalesce(string_agg(
-    '| <button type="button" data-form-dialog="msg-detail" data-src="/message?p_id=' || m.id || '" class="outline pgv-btn-sm">' || m.id || '</button> '
+    '| [' || m.id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', m.id)) || ') '
     || '| ' || m.from_module
-    || ' | ' || m.to_module
+    || ' | ' || CASE WHEN m.to_module = 'owner' THEN pgv.badge('owner', 'primary') ELSE m.to_module END
     || ' | ' || pgv.badge(m.msg_type, CASE m.msg_type
         WHEN 'task' THEN 'info'
         WHEN 'bug_report' THEN 'danger'
@@ -117,13 +117,10 @@ BEGIN
         WHEN 'resolved' THEN 'success'
         ELSE 'muted' END)
     || ' |', E'\n'
-    ORDER BY m.id DESC
+    ORDER BY
+      CASE WHEN m.to_module = 'owner' AND m.status <> 'resolved' THEN 0 ELSE 1 END,
+      m.id DESC
   ), '') || E'\n</md>'
-    || '<dialog id="msg-detail" class="pgv-form-dialog"><article class="pgv-form-dialog-article">'
-    || '<header class="pgv-form-dialog-header"><strong>' || pgv.t('workbench.title_message_detail') || '</strong>'
-    || '<button class="pgv-form-dialog-close" onclick="this.closest(''dialog'').close()">&times;</button></header>'
-    || '<div class="pgv-form-dialog-body"></div>'
-    || '</article></dialog>'
   INTO v_html
   FROM workbench.agent_message m;
 
@@ -214,15 +211,16 @@ BEGIN
   v_html := v_html || '| Champ | Valeur |' || E'\n';
   v_html := v_html || '|-------|--------|' || E'\n';
   v_html := v_html || '| De | ' || pgv.md_esc(v_msg.from_module) || ' |' || E'\n';
-  v_html := v_html || '| A | ' || pgv.md_esc(v_msg.to_module) || ' |' || E'\n';
+  v_html := v_html || '| A | ' || CASE WHEN v_msg.to_module = 'owner' THEN pgv.badge('owner', 'primary') ELSE pgv.md_esc(v_msg.to_module) END || ' |' || E'\n';
   v_html := v_html || '| Sujet | ' || pgv.md_esc(v_msg.subject, 120) || ' |' || E'\n';
+  v_html := v_html || '</md>' || E'\n';
+
   IF v_msg.body IS NOT NULL THEN
-    v_html := v_html || '| Corps | ' || pgv.md_esc(v_msg.body, 200) || ' |' || E'\n';
+    v_html := v_html || '<h4>Corps</h4><md>' || E'\n' || v_msg.body || E'\n</md>' || E'\n';
   END IF;
   IF v_msg.resolution IS NOT NULL THEN
-    v_html := v_html || '| Resolution | ' || pgv.md_esc(v_msg.resolution, 200) || ' |' || E'\n';
+    v_html := v_html || '<h4>Resolution</h4><md>' || E'\n' || v_msg.resolution || E'\n</md>' || E'\n';
   END IF;
-  v_html := v_html || '</md>' || E'\n';
 
   SELECT * INTO v_issue FROM workbench.issue_report WHERE message_id = p_id;
   IF FOUND THEN
@@ -272,27 +270,32 @@ END;
 $function$;
 COMMENT ON FUNCTION workbench.get_message(integer) IS 'Message detail view with linked issue and reply chain';
 
-CREATE OR REPLACE FUNCTION workbench.get_messages(p_module text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION workbench.get_messages(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 DECLARE
+  v_from   text := p_params->>'p_from';
+  v_to     text := p_params->>'p_to';
+  v_status text := p_params->>'p_status';
+  v_type   text := p_params->>'p_type';
+  v_search text := p_params->>'p_search';
   v_total   integer;
   v_new     integer;
   v_ack     integer;
   v_resolved integer;
   v_html    text;
+  v_filter  text;
+  v_opt     text;
+  r         record;
 BEGIN
+  -- Stats (global, unfiltered)
   SELECT count(*),
          count(*) FILTER (WHERE status = 'new'),
          count(*) FILTER (WHERE status = 'acknowledged'),
          count(*) FILTER (WHERE status = 'resolved')
     INTO v_total, v_new, v_ack, v_resolved
-    FROM workbench.agent_message
-   WHERE p_module IS NULL
-      OR from_module = p_module
-      OR to_module = p_module;
+    FROM workbench.agent_message;
 
   v_html := pgv.grid(
     pgv.stat('Total', v_total::text),
@@ -301,14 +304,58 @@ BEGIN
     pgv.stat('Resolus', v_resolved::text)
   );
 
+  -- Filter form
+  -- From select
+  v_opt := '<option value="">Tous</option>';
+  FOR r IN SELECT DISTINCT from_module FROM workbench.agent_message ORDER BY 1 LOOP
+    v_opt := v_opt || '<option value="' || pgv.esc(r.from_module) || '"'
+      || CASE WHEN r.from_module = v_from THEN ' selected' ELSE '' END
+      || '>' || pgv.esc(r.from_module) || '</option>';
+  END LOOP;
+  v_filter := '<label>De<select name="p_from">' || v_opt || '</select></label>';
+
+  -- To select
+  v_opt := '<option value="">Tous</option>';
+  FOR r IN SELECT DISTINCT to_module FROM workbench.agent_message ORDER BY 1 LOOP
+    v_opt := v_opt || '<option value="' || pgv.esc(r.to_module) || '"'
+      || CASE WHEN r.to_module = v_to THEN ' selected' ELSE '' END
+      || '>' || pgv.esc(r.to_module) || '</option>';
+  END LOOP;
+  v_filter := v_filter || '<label>A<select name="p_to">' || v_opt || '</select></label>';
+
+  -- Status select
+  v_filter := v_filter || '<label>Statut<select name="p_status">'
+    || '<option value="">Tous</option>'
+    || '<option value="new"'    || CASE WHEN v_status = 'new'          THEN ' selected' ELSE '' END || '>Nouveau</option>'
+    || '<option value="acknowledged"' || CASE WHEN v_status = 'acknowledged' THEN ' selected' ELSE '' END || '>En cours</option>'
+    || '<option value="resolved"'     || CASE WHEN v_status = 'resolved'     THEN ' selected' ELSE '' END || '>Resolu</option>'
+    || '</select></label>';
+
+  -- Type select
+  v_filter := v_filter || '<label>Type<select name="p_type">'
+    || '<option value="">Tous</option>'
+    || '<option value="task"'            || CASE WHEN v_type = 'task'            THEN ' selected' ELSE '' END || '>task</option>'
+    || '<option value="info"'            || CASE WHEN v_type = 'info'            THEN ' selected' ELSE '' END || '>info</option>'
+    || '<option value="bug_report"'      || CASE WHEN v_type = 'bug_report'      THEN ' selected' ELSE '' END || '>bug_report</option>'
+    || '<option value="feature_request"' || CASE WHEN v_type = 'feature_request' THEN ' selected' ELSE '' END || '>feature_request</option>'
+    || '<option value="question"'        || CASE WHEN v_type = 'question'        THEN ' selected' ELSE '' END || '>question</option>'
+    || '<option value="breaking_change"' || CASE WHEN v_type = 'breaking_change' THEN ' selected' ELSE '' END || '>breaking_change</option>'
+    || '</select></label>';
+
+  -- Search input
+  v_filter := v_filter || pgv.input('p_search', 'search', 'Recherche', v_search);
+
+  v_html := v_html || pgv.filter_form(v_filter);
+
+  -- Message table
   v_html := v_html || '<md data-page="20">' || E'\n';
   v_html := v_html || '| # | De | A | Type | Priorite | Sujet | Statut | Date |' || E'\n';
   v_html := v_html || '|---|----|----|------|----------|-------|--------|------|' || E'\n';
 
   SELECT v_html || coalesce(string_agg(
-    '| <button type="button" data-form-dialog="msg-detail" data-src="/message?p_id=' || m.id || '" class="outline pgv-btn-sm">' || m.id || '</button>'
+    '| [' || m.id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', m.id)) || ')'
     || ' | ' || m.from_module
-    || ' | ' || m.to_module
+    || ' | ' || CASE WHEN m.to_module = 'owner' THEN pgv.badge('owner', 'primary') ELSE m.to_module END
     || ' | ' || pgv.badge(m.msg_type, CASE m.msg_type
         WHEN 'task' THEN 'info'
         WHEN 'bug_report' THEN 'danger'
@@ -325,23 +372,22 @@ BEGIN
         ELSE 'muted' END)
     || ' | ' || to_char(m.created_at, 'DD/MM HH24:MI')
     || ' |', E'\n'
-    ORDER BY m.id DESC
+    ORDER BY
+      CASE WHEN m.to_module = 'owner' AND m.status <> 'resolved' THEN 0 ELSE 1 END,
+      m.id DESC
   ), '') || E'\n</md>'
-    || '<dialog id="msg-detail" class="pgv-form-dialog"><article class="pgv-form-dialog-article">'
-    || '<header class="pgv-form-dialog-header"><strong>' || pgv.t('workbench.title_message_detail') || '</strong>'
-    || '<button class="pgv-form-dialog-close" onclick="this.closest(''dialog'').close()">&times;</button></header>'
-    || '<div class="pgv-form-dialog-body"></div>'
-    || '</article></dialog>'
   INTO v_html
   FROM workbench.agent_message m
-  WHERE p_module IS NULL
-     OR m.from_module = p_module
-     OR m.to_module = p_module;
+  WHERE (v_from IS NULL OR m.from_module = v_from)
+    AND (v_to IS NULL OR m.to_module = v_to)
+    AND (v_status IS NULL OR m.status = v_status)
+    AND (v_type IS NULL OR m.msg_type = v_type)
+    AND (v_search IS NULL OR m.subject ILIKE '%' || v_search || '%');
 
   RETURN v_html;
 END;
 $function$;
-COMMENT ON FUNCTION workbench.get_messages(text) IS 'List all inter-module messages with filters and stats';
+COMMENT ON FUNCTION workbench.get_messages(jsonb) IS 'List inter-module messages with filter form (from, to, status, type, search)';
 
 CREATE OR REPLACE FUNCTION workbench.get_primitives()
  RETURNS text

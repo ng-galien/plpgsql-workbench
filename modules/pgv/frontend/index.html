@@ -413,14 +413,27 @@
 
         app.addEventListener('submit', function(e) {
           var form = e.target.closest('form[data-rpc]');
-          if (!form) return;
-          e.preventDefault();
-          var data = {};
-          new FormData(form).forEach(function(v, k) { data[k] = v; });
-          if (form.hasAttribute('data-dialog-form')) {
-            self.submitFormDialog(form, data);
-          } else {
-            self.post(form.dataset.rpc, data);
+          if (form) {
+            e.preventDefault();
+            var data = {};
+            new FormData(form).forEach(function(v, k) { data[k] = v; });
+            if (form.hasAttribute('data-dialog-form')) {
+              self.submitFormDialog(form, data);
+            } else {
+              self.post(form.dataset.rpc, data);
+            }
+            return;
+          }
+          // Filter forms: GET with query params → SPA navigation
+          var filter = e.target.closest('form[data-filter]');
+          if (filter) {
+            e.preventDefault();
+            var parts = [];
+            new FormData(filter).forEach(function(v, k) {
+              if (v !== '') parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+            });
+            var qs = parts.join('&');
+            self.go(location.pathname + (qs ? '?' + qs : ''));
           }
         });
 
@@ -981,11 +994,15 @@
           body.innerHTML = '<p aria-busy="true">' + this.t('loading') + '</p>';
           dlg.showModal();
           var schema = this._currentSchema;
-          var path = src.charAt(0) === '/' ? src : '/' + src;
+          var raw = src.charAt(0) === '/' ? src : '/' + src;
+          var parts = raw.split('?');
+          var path = parts[0];
+          var params = {};
+          if (parts[1]) new URLSearchParams(parts[1]).forEach(function(v, k) { params[k] = v; });
           fetch('/rpc/route', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'text/html' },
-            body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'GET', p_params: {} })
+            body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'GET', p_params: params })
           })
           .then(function(r) { return r.ok ? r.text() : Promise.reject(r); })
           .then(function(html) {

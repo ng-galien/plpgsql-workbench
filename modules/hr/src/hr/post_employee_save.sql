@@ -23,6 +23,9 @@ BEGIN
       date_naissance = (NULLIF(trim(COALESCE(p_data->>'date_naissance', '')), ''))::date,
       poste = COALESCE(trim(p_data->>'poste'), ''),
       departement = COALESCE(trim(p_data->>'departement'), ''),
+      sexe = COALESCE(NULLIF(trim(p_data->>'sexe'), ''), ''),
+      nationalite = COALESCE(trim(p_data->>'nationalite'), ''),
+      qualification = COALESCE(trim(p_data->>'qualification'), ''),
       type_contrat = COALESCE(NULLIF(trim(p_data->>'type_contrat'), ''), 'cdi'),
       date_embauche = COALESCE((NULLIF(trim(p_data->>'date_embauche'), ''))::date, CURRENT_DATE),
       date_fin = (NULLIF(trim(COALESCE(p_data->>'date_fin', '')), ''))::date,
@@ -37,15 +40,18 @@ BEGIN
     RETURN pgv.toast('Salarié mis à jour.')
       || pgv.redirect(pgv.call_ref('get_employee', jsonb_build_object('p_id', v_id)));
   ELSE
-    INSERT INTO hr.employee (nom, prenom, email, phone, matricule, date_naissance, poste, departement, type_contrat, date_embauche, date_fin, heures_hebdo, notes)
+    INSERT INTO hr.employee (nom, prenom, email, phone, matricule, date_naissance, sexe, nationalite, poste, departement, qualification, type_contrat, date_embauche, date_fin, heures_hebdo, notes)
     VALUES (
       v_nom, v_prenom,
       NULLIF(trim(COALESCE(p_data->>'email', '')), ''),
       NULLIF(trim(COALESCE(p_data->>'phone', '')), ''),
       COALESCE(trim(p_data->>'matricule'), ''),
       (NULLIF(trim(COALESCE(p_data->>'date_naissance', '')), ''))::date,
+      COALESCE(NULLIF(trim(p_data->>'sexe'), ''), ''),
+      COALESCE(trim(p_data->>'nationalite'), ''),
       COALESCE(trim(p_data->>'poste'), ''),
       COALESCE(trim(p_data->>'departement'), ''),
+      COALESCE(trim(p_data->>'qualification'), ''),
       COALESCE(NULLIF(trim(p_data->>'type_contrat'), ''), 'cdi'),
       COALESCE((NULLIF(trim(p_data->>'date_embauche'), ''))::date, CURRENT_DATE),
       (NULLIF(trim(COALESCE(p_data->>'date_fin', '')), ''))::date,

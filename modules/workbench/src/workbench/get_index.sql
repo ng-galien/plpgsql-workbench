@@ -32,9 +32,9 @@ BEGIN
   v_html := v_html || '|---|----|----|------|-------|--------|' || E'\n';
 
   SELECT v_html || coalesce(string_agg(
-    '| <button type="button" data-form-dialog="msg-detail" data-src="/message?p_id=' || m.id || '" class="outline pgv-btn-sm">' || m.id || '</button> '
+    '| [' || m.id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', m.id)) || ') '
     || '| ' || m.from_module
-    || ' | ' || m.to_module
+    || ' | ' || CASE WHEN m.to_module = 'owner' THEN pgv.badge('owner', 'primary') ELSE m.to_module END
     || ' | ' || pgv.badge(m.msg_type, CASE m.msg_type
         WHEN 'task' THEN 'info'
         WHEN 'bug_report' THEN 'danger'
@@ -48,13 +48,10 @@ BEGIN
         WHEN 'resolved' THEN 'success'
         ELSE 'muted' END)
     || ' |', E'\n'
-    ORDER BY m.id DESC
+    ORDER BY
+      CASE WHEN m.to_module = 'owner' AND m.status <> 'resolved' THEN 0 ELSE 1 END,
+      m.id DESC
   ), '') || E'\n</md>'
-    || '<dialog id="msg-detail" class="pgv-form-dialog"><article class="pgv-form-dialog-article">'
-    || '<header class="pgv-form-dialog-header"><strong>' || pgv.t('workbench.title_message_detail') || '</strong>'
-    || '<button class="pgv-form-dialog-close" onclick="this.closest(''dialog'').close()">&times;</button></header>'
-    || '<div class="pgv-form-dialog-body"></div>'
-    || '</article></dialog>'
   INTO v_html
   FROM workbench.agent_message m;
 
