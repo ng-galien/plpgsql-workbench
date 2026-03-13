@@ -3,10 +3,6 @@
     "plpgsql-workbench": {
       "type": "http",
       "url": "http://localhost:3100/mcp"
-    },
-    "workbench-edge": {
-      "type": "http",
-      "url": "http://localhost:54321/functions/v1/mcp"
     }
   }
 }
