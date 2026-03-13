@@ -528,6 +528,7 @@ function moduleClaudeSettings(moduleName: string, mcpPort: number): string {
         "mcp__plpgsql-workbench__pg_test",
         "mcp__plpgsql-workbench__pg_explain",
         "mcp__plpgsql-workbench__pg_search",
+        "mcp__plpgsql-workbench__pg_schema",
         "mcp__plpgsql-workbench__pg_pack",
         "mcp__plpgsql-workbench__pg_coverage",
         "mcp__plpgsql-workbench__pg_doc",
