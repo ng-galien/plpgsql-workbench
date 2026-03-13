@@ -539,6 +539,7 @@ DECLARE
   v_status_variant text;
   v_reply record;
   v_reply_rows text[];
+  v_issue record;
 BEGIN
   SELECT * INTO v_msg FROM workbench.agent_message WHERE id = p_id;
 
@@ -583,14 +584,35 @@ BEGIN
 
   v_body := v_body || '</h3>';
 
-  -- Body
-  IF v_msg.body IS NOT NULL THEN
-    v_body := v_body || pgv.card('Contenu', '<pre>' || pgv.esc(v_msg.body) || '</pre>', NULL);
-  END IF;
+  -- Linked issue (when payload has issue_id)
+  IF v_msg.payload IS NOT NULL AND (v_msg.payload->>'issue_id') IS NOT NULL THEN
+    SELECT * INTO v_issue
+      FROM workbench.issue_report
+     WHERE id = (v_msg.payload->>'issue_id')::int;
 
-  -- Payload
-  IF v_msg.payload IS NOT NULL THEN
-    v_body := v_body || pgv.card('Payload', '<pre>' || pgv.esc(jsonb_pretty(v_msg.payload)) || '</pre>', NULL);
+    IF v_issue IS NOT NULL THEN
+      v_body := v_body || pgv.card(
+        'Issue #' || v_issue.id::text || ' ' || pgv.badge(v_issue.issue_type,
+          CASE v_issue.issue_type WHEN 'bug' THEN 'danger' WHEN 'enhancement' THEN 'info' ELSE 'default' END)
+        || ' ' || pgv.badge(v_issue.status,
+          CASE v_issue.status WHEN 'open' THEN 'danger' WHEN 'closed' THEN 'success' ELSE 'warning' END),
+        '<p>' || pgv.esc(v_issue.description) || '</p>'
+          || CASE WHEN v_issue.context IS NOT NULL THEN
+               '<details><summary>Contexte</summary><pre>' || pgv.esc(jsonb_pretty(v_issue.context)) || '</pre></details>'
+             ELSE '' END,
+        COALESCE(v_issue.module, 'global') || ' · ' || to_char(v_issue.created_at, 'DD/MM/YYYY HH24:MI')
+      );
+    END IF;
+  ELSE
+    -- Body (only when no linked issue)
+    IF v_msg.body IS NOT NULL THEN
+      v_body := v_body || pgv.card('Contenu', '<pre>' || pgv.esc(v_msg.body) || '</pre>', NULL);
+    END IF;
+
+    -- Payload (only when no linked issue)
+    IF v_msg.payload IS NOT NULL THEN
+      v_body := v_body || pgv.card('Payload', '<pre>' || pgv.esc(jsonb_pretty(v_msg.payload)) || '</pre>', NULL);
+    END IF;
   END IF;
 
   -- Resolution
@@ -655,7 +677,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION ops.get_message(integer) IS 'Detail d un message inter-agents avec body, payload, resolution et fil de discussion';
+COMMENT ON FUNCTION ops.get_message(integer) IS 'Detail d un message inter-agents avec body, payload, linked issue, resolution et fil de discussion';
 
 CREATE OR REPLACE FUNCTION ops.get_messages(p_module text DEFAULT NULL::text)
  RETURNS text
@@ -907,17 +929,19 @@ CREATE OR REPLACE FUNCTION ops.get_tool(p_name text)
 AS $function$
 DECLARE
   v_body text;
-  v_exists boolean;
+  v_tool record;
   v_pack text;
   v_rows text[];
   v_total_calls int;
   v_total_blocked int;
   v_mcp_name text;
+  v_param record;
+  v_param_rows text[];
   r record;
 BEGIN
-  -- Check existence
-  SELECT EXISTS(SELECT 1 FROM workbench.toolbox_tool WHERE tool_name = p_name) INTO v_exists;
-  IF NOT v_exists THEN
+  -- Fetch tool with metadata
+  SELECT * INTO v_tool FROM workbench.toolbox_tool WHERE tool_name = p_name;
+  IF v_tool IS NULL THEN
     RETURN pgv.empty('Tool "' || pgv.esc(p_name) || '" introuvable');
   END IF;
 
@@ -948,6 +972,40 @@ BEGIN
     pgv.stat('Appels', v_total_calls::text, 'total traces'),
     pgv.stat('Bloques', v_total_blocked::text, 'par hooks')
   ]);
+
+  -- Description (from MCP registry via sync-tools)
+  IF v_tool.description IS NOT NULL THEN
+    v_body := v_body || pgv.card('Description', '<p>' || pgv.esc(v_tool.description) || '</p>', NULL);
+  END IF;
+
+  -- Parameters (from input_schema via sync-tools)
+  IF v_tool.input_schema IS NOT NULL AND v_tool.input_schema->'properties' IS NOT NULL THEN
+    v_param_rows := ARRAY[]::text[];
+    FOR v_param IN
+      SELECT
+        k.key AS param_name,
+        COALESCE(k.value->>'type', 'any') AS param_type,
+        COALESCE(k.value->>'description', '-') AS param_desc,
+        CASE WHEN v_tool.input_schema->'required' @> to_jsonb(k.key)
+          THEN pgv.badge('requis', 'danger')
+          ELSE pgv.badge('optionnel', 'default')
+        END AS required_badge
+      FROM jsonb_each(v_tool.input_schema->'properties') AS k
+      ORDER BY k.key
+    LOOP
+      v_param_rows := v_param_rows || ARRAY[
+        '<code>' || pgv.esc(v_param.param_name) || '</code>',
+        pgv.badge(v_param.param_type, 'info'),
+        v_param.required_badge,
+        pgv.esc(v_param.param_desc)
+      ];
+    END LOOP;
+
+    IF array_length(v_param_rows, 1) IS NOT NULL THEN
+      v_body := v_body || '<h3>Parametres</h3>'
+        || pgv.md_table(ARRAY['Nom', 'Type', 'Requis', 'Description'], v_param_rows);
+    END IF;
+  END IF;
 
   -- Usage by module
   v_rows := ARRAY[]::text[];
@@ -1016,7 +1074,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION ops.get_tool(text) IS 'Detail d un MCP tool avec stats d utilisation par module et historique recent';
+COMMENT ON FUNCTION ops.get_tool(text) IS 'Detail d un MCP tool avec description, parametres, stats d utilisation par module et historique recent';
 
 CREATE OR REPLACE FUNCTION ops.get_tools()
  RETURNS text

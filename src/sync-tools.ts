@@ -8,6 +8,7 @@
  */
 
 import { Pool } from "pg";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { buildContainer, type ToolPack, type ToolHandler } from "./container.js";
 import { plpgsqlPack } from "./packs/plpgsql.js";
 import { docstorePack } from "./packs/docstore.js";
@@ -50,13 +51,18 @@ try {
        ON CONFLICT (name) DO NOTHING`
     );
 
-    // Sync tools: insert missing, remove stale
-    for (const name of toolNames) {
+    // Sync tools: upsert with description + input_schema
+    for (const [name, handler] of registry) {
+      const desc = handler.metadata?.description ?? null;
+      const schema = handler.metadata?.schema
+        ? JSON.stringify(zodToJsonSchema(handler.metadata.schema as any))
+        : null;
       await client.query(
-        `INSERT INTO workbench.toolbox_tool (toolbox_name, tool_name)
-         VALUES ('admin', $1)
-         ON CONFLICT DO NOTHING`,
-        [name]
+        `INSERT INTO workbench.toolbox_tool (toolbox_name, tool_name, description, input_schema)
+         VALUES ('admin', $1, $2, $3)
+         ON CONFLICT (toolbox_name, tool_name)
+         DO UPDATE SET description = EXCLUDED.description, input_schema = EXCLUDED.input_schema`,
+        [name, desc, schema]
       );
     }
 

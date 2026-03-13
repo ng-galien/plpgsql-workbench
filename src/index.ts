@@ -322,6 +322,25 @@ app.post("/hooks/:module", async (req, res) => {
     }
   }
 
+  // Rule: pg_msg feature_request/bug_report must go through issue_report, not direct module-to-module
+  if (tool_name === "mcp__plpgsql-workbench__pg_msg") {
+    const msgType = (tool_input?.type ?? "") as string;
+    const to = (tool_input?.to ?? "") as string;
+    if ((msgType === "feature_request" || msgType === "bug_report") && to !== "lead") {
+      log.warn({ mod, to, msgType }, "hook: blocked direct inter-module feature_request/bug_report");
+      return deny(
+        res,
+        `Les ${msgType} ne doivent pas être envoyés directement à un autre module.\n` +
+        `Crée une issue à la place :\n` +
+        `pg_query sql: "INSERT INTO workbench.issue_report(issue_type, module, description, context) VALUES ('${msgType === "bug_report" ? "bug" : "enhancement"}', '${to}', '<description>', '{}')"\n` +
+        `Le lead sera notifié automatiquement et décidera du dispatch.`,
+        mod,
+        tool_name,
+        `${msgType}->${to}`,
+      );
+    }
+  }
+
   allow(res, mod, tool_name);
 });
 
@@ -391,9 +410,9 @@ app.post("/hooks/:module/stop", async (req, res) => {
       const pri = msg.priority === "high" ? " [HIGH PRIORITY]" : "";
       stopBlockCount.set(mod, count + 1);
       const lines = [
-        `[MESSAGE #${msg.id}]${pri} from:${msg.from_module} [${msg.msg_type}]: ${msg.subject}`,
+        `NOUVELLE INSTRUCTION PRIORITAIRE — Message #${msg.id}${pri} de ${msg.from_module} [${msg.msg_type}]: ${msg.subject}`,
         msg.payload ? `payload: ${JSON.stringify(msg.payload)}` : null,
-        `→ pg_msg_inbox module:${mod} to read, then pg_msg_inbox module:${mod} resolve:${msg.id} resolution:"..."`,
+        `Action requise : pg_msg_inbox module:${mod} pour lire le message, puis pg_msg_inbox module:${mod} resolve:${msg.id} resolution:"..." une fois traité.`,
       ].filter(Boolean);
       return res.json({
         decision: "block",

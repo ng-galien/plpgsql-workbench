@@ -142,17 +142,18 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv.call_ref(text,jsonb) IS 'Build a verified internal route URL from a function name + params. Checks pg_proc to detect dead links at render time.';
 
-CREATE OR REPLACE FUNCTION pgv.card(p_title text, p_body text, p_footer text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION pgv.card(p_title text, p_body text, p_footer text DEFAULT NULL::text, p_md boolean DEFAULT false)
  RETURNS text
  LANGUAGE sql
  IMMUTABLE
 AS $function$
-  SELECT '<article>'
+SELECT '<article>'
     || CASE WHEN p_title IS NOT NULL THEN '<header>' || p_title || '</header>' ELSE '' END
-    || p_body
+    || CASE WHEN p_md THEN '<md>' || p_body || '</md>' ELSE p_body END
     || CASE WHEN p_footer IS NOT NULL THEN '<footer>' || p_footer || '</footer>' ELSE '' END
     || '</article>';
 $function$;
+COMMENT ON FUNCTION pgv.card(text,text,text,boolean) IS 'Render an article card. p_md=true wraps body in <md> for markdown rendering.';
 
 CREATE OR REPLACE FUNCTION pgv.esc(p_text text)
  RETURNS text
@@ -1985,6 +1986,43 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_call_ref() IS 'Tests for pgv.call_ref: path generation, prefix handling, dead link detection';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_card()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v text;
+BEGIN
+  -- Basic card
+  v := pgv.card('Title', '<p>Body</p>');
+  RETURN NEXT ok(v LIKE '%<article>%', 'has article tag');
+  RETURN NEXT ok(v LIKE '%<header>Title</header>%', 'has header');
+  RETURN NEXT ok(v LIKE '%<p>Body</p>%', 'has body');
+  RETURN NEXT ok(v NOT LIKE '%<footer>%', 'no footer when NULL');
+
+  -- Card with footer
+  v := pgv.card('T', 'B', 'F');
+  RETURN NEXT ok(v LIKE '%<footer>F</footer>%', 'has footer');
+
+  -- Card without title
+  v := pgv.card(NULL, 'B');
+  RETURN NEXT ok(v NOT LIKE '%<header>%', 'no header when NULL');
+
+  -- Markdown mode
+  v := pgv.card('MD Card', '| A | B |', p_md := true);
+  RETURN NEXT ok(v LIKE '%<md>%', 'md mode wraps in md tag');
+  RETURN NEXT ok(v LIKE '%| A | B |%', 'md content preserved');
+  RETURN NEXT ok(v LIKE '%</md>%', 'md closing tag');
+
+  -- Default (no markdown)
+  v := pgv.card('Plain', '| A | B |');
+  RETURN NEXT ok(v NOT LIKE '%<md>%', 'default mode no md tag');
+
+  RETURN;
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_card() IS 'Test pgv.card() — article card with optional markdown body';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_checkbox()
  RETURNS SETOF text

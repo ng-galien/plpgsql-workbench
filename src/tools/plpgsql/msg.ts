@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { execFile } from "node:child_process";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
 import type { ModuleRegistry } from "../../pgm/registry.js";
@@ -84,6 +85,11 @@ export function createMsgTool({ withClient, moduleRegistry }: {
             [from, target, type, subject, body, payload ? JSON.stringify(payload) : null, replyTo, priority],
           );
           ids.push(rows[0].id);
+        }
+
+        // Auto-ping: send "go" to target tmux sessions (fire-and-forget)
+        for (const target of targets) {
+          execFile("tmux", ["send-keys", "-t", target, "go", "Enter"], () => {});
         }
 
         const lines = [

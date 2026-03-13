@@ -4,17 +4,19 @@ CREATE OR REPLACE FUNCTION ops.get_tool(p_name text)
 AS $function$
 DECLARE
   v_body text;
-  v_exists boolean;
+  v_tool record;
   v_pack text;
   v_rows text[];
   v_total_calls int;
   v_total_blocked int;
   v_mcp_name text;
+  v_param record;
+  v_param_rows text[];
   r record;
 BEGIN
-  -- Check existence
-  SELECT EXISTS(SELECT 1 FROM workbench.toolbox_tool WHERE tool_name = p_name) INTO v_exists;
-  IF NOT v_exists THEN
+  -- Fetch tool with metadata
+  SELECT * INTO v_tool FROM workbench.toolbox_tool WHERE tool_name = p_name;
+  IF v_tool IS NULL THEN
     RETURN pgv.empty('Tool "' || pgv.esc(p_name) || '" introuvable');
   END IF;
 
@@ -45,6 +47,40 @@ BEGIN
     pgv.stat('Appels', v_total_calls::text, 'total traces'),
     pgv.stat('Bloques', v_total_blocked::text, 'par hooks')
   ]);
+
+  -- Description (from MCP registry via sync-tools)
+  IF v_tool.description IS NOT NULL THEN
+    v_body := v_body || pgv.card('Description', '<p>' || pgv.esc(v_tool.description) || '</p>', NULL);
+  END IF;
+
+  -- Parameters (from input_schema via sync-tools)
+  IF v_tool.input_schema IS NOT NULL AND v_tool.input_schema->'properties' IS NOT NULL THEN
+    v_param_rows := ARRAY[]::text[];
+    FOR v_param IN
+      SELECT
+        k.key AS param_name,
+        COALESCE(k.value->>'type', 'any') AS param_type,
+        COALESCE(k.value->>'description', '-') AS param_desc,
+        CASE WHEN v_tool.input_schema->'required' @> to_jsonb(k.key)
+          THEN pgv.badge('requis', 'danger')
+          ELSE pgv.badge('optionnel', 'default')
+        END AS required_badge
+      FROM jsonb_each(v_tool.input_schema->'properties') AS k
+      ORDER BY k.key
+    LOOP
+      v_param_rows := v_param_rows || ARRAY[
+        '<code>' || pgv.esc(v_param.param_name) || '</code>',
+        pgv.badge(v_param.param_type, 'info'),
+        v_param.required_badge,
+        pgv.esc(v_param.param_desc)
+      ];
+    END LOOP;
+
+    IF array_length(v_param_rows, 1) IS NOT NULL THEN
+      v_body := v_body || '<h3>Parametres</h3>'
+        || pgv.md_table(ARRAY['Nom', 'Type', 'Requis', 'Description'], v_param_rows);
+    END IF;
+  END IF;
 
   -- Usage by module
   v_rows := ARRAY[]::text[];

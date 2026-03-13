@@ -788,9 +788,10 @@ BEGIN
     v_tab_fiche := v_tab_fiche || '<hr><h4>' || pgv.t('crm.title_activity') || '</h4>' || v_activity;
   END IF;
 
-  v_tab_fiche := v_tab_fiche || '<hr>'
-    || format('<a href="%s" role="button">%s</a> ', pgv.call_ref('get_client_form', jsonb_build_object('p_id', p_id)), pgv.t('crm.btn_edit'))
-    || pgv.action('post_client_delete', pgv.t('crm.btn_delete'), jsonb_build_object('id', p_id), pgv.t('crm.confirm_delete_client'), 'danger');
+  v_tab_fiche := v_tab_fiche || '<hr><div class="grid">'
+    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_client_form', jsonb_build_object('p_id', p_id)), pgv.t('crm.btn_edit'))
+    || pgv.action('post_client_delete', pgv.t('crm.btn_delete'), jsonb_build_object('id', p_id), pgv.t('crm.confirm_delete_client'), 'danger')
+    || '</div>';
 
   -- Timeline (CRM interactions + cross-module)
   v_timeline := '[]'::jsonb;

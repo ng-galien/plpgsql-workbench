@@ -22,13 +22,13 @@ BEGIN
   v_body := '<h3>' || pgv.t('purchase.title_recap') || ' ' || v_annee || '</h3>';
 
   -- Year navigation
-  v_body := v_body || '<p>'
-    || format('<a href="%s">&laquo; %s</a>',
+  v_body := v_body || '<div role="group">'
+    || format('<a href="%s" role="button" class="outline secondary">&laquo; %s</a>',
        pgv.call_ref('get_recapitulatif', jsonb_build_object('p_annee', v_annee - 1)), v_annee - 1)
-    || ' | <strong>' || v_annee || '</strong> | '
-    || format('<a href="%s">%s &raquo;</a>',
+    || '<a role="button">' || v_annee || '</a>'
+    || format('<a href="%s" role="button" class="outline secondary">%s &raquo;</a>',
        pgv.call_ref('get_recapitulatif', jsonb_build_object('p_annee', v_annee + 1)), v_annee + 1)
-    || '</p>';
+    || '</div>';
 
   -- Build rows per supplier
   v_rows := ARRAY[]::text[];

@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS workbench.toolbox (
 CREATE TABLE IF NOT EXISTS workbench.toolbox_tool (
   toolbox_name TEXT NOT NULL REFERENCES workbench.toolbox(name) ON DELETE CASCADE,
   tool_name TEXT NOT NULL,
+  description TEXT,
+  input_schema JSONB,
   PRIMARY KEY (toolbox_name, tool_name)
 );
 
@@ -120,13 +122,44 @@ CREATE TABLE IF NOT EXISTS workbench.issue_report (
   description TEXT NOT NULL,
   context     JSONB NOT NULL DEFAULT '{}',
   status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','acknowledged','resolved','closed')),
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  message_id  INTEGER REFERENCES workbench.agent_message(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_issue_report_status
   ON workbench.issue_report (status) WHERE status != 'closed';
 CREATE INDEX IF NOT EXISTS idx_issue_report_module
   ON workbench.issue_report (module) WHERE module IS NOT NULL;
+
+-- Auto-notify lead on new issue (BEFORE INSERT: sets message_id + status)
+CREATE OR REPLACE FUNCTION workbench.on_issue_report_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  v_msg_id integer;
+BEGIN
+  INSERT INTO workbench.agent_message(from_module, to_module, msg_type, subject, body, priority, payload)
+  VALUES (
+    'shell',
+    'lead',
+    'issue_report',
+    format('Issue #%s à traiter (%s)', NEW.id, NEW.issue_type),
+    format('SELECT * FROM workbench.issue_report WHERE id = %s', NEW.id),
+    CASE WHEN NEW.issue_type = 'bug' THEN 'high' ELSE 'normal' END,
+    jsonb_build_object('issue_id', NEW.id)
+  )
+  RETURNING id INTO v_msg_id;
+
+  NEW.message_id := v_msg_id;
+  NEW.status := 'acknowledged';
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_issue_report_notify ON workbench.issue_report;
+CREATE TRIGGER trg_issue_report_notify
+  BEFORE INSERT ON workbench.issue_report
+  FOR EACH ROW
+  EXECUTE FUNCTION workbench.on_issue_report_insert();
 
 -- Hook event log
 CREATE TABLE IF NOT EXISTS workbench.hook_log (

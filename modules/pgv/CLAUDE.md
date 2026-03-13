@@ -52,6 +52,7 @@ Chaque `build/{schema}.ddl.sql` DOIT inclure :
 
 - `pg_msg_inbox module:pgv` → lire les messages entrants
 - `pg_msg` → envoyer un message a un autre module
+- **feature_request / bug_report → TOUJOURS via issue_report** : ne jamais envoyer de feature_request ou bug_report directement à un autre module. Créer une issue : `INSERT INTO workbench.issue_report(issue_type, module, description) VALUES ('enhancement|bug', '<module_cible>', '<description>')`. Le lead sera notifié et décidera du dispatch.
 - Chaque module est autonome — ne jamais modifier les fonctions d'un autre module
 
 ## i18n

@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS workbench.test_run (
   run_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- Tool metadata (description + input schema from MCP registry)
+ALTER TABLE workbench.toolbox_tool ADD COLUMN IF NOT EXISTS description text;
+ALTER TABLE workbench.toolbox_tool ADD COLUMN IF NOT EXISTS input_schema jsonb;
+
 -- Grants
 GRANT USAGE ON SCHEMA ops TO web_anon;
 GRANT USAGE ON SCHEMA ops_ut TO web_anon;

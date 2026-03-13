@@ -9,6 +9,7 @@ DECLARE
   v_status_variant text;
   v_reply record;
   v_reply_rows text[];
+  v_issue record;
 BEGIN
   SELECT * INTO v_msg FROM workbench.agent_message WHERE id = p_id;
 
@@ -53,14 +54,35 @@ BEGIN
 
   v_body := v_body || '</h3>';
 
-  -- Body
-  IF v_msg.body IS NOT NULL THEN
-    v_body := v_body || pgv.card('Contenu', '<pre>' || pgv.esc(v_msg.body) || '</pre>', NULL);
-  END IF;
+  -- Linked issue (when payload has issue_id)
+  IF v_msg.payload IS NOT NULL AND (v_msg.payload->>'issue_id') IS NOT NULL THEN
+    SELECT * INTO v_issue
+      FROM workbench.issue_report
+     WHERE id = (v_msg.payload->>'issue_id')::int;
 
-  -- Payload
-  IF v_msg.payload IS NOT NULL THEN
-    v_body := v_body || pgv.card('Payload', '<pre>' || pgv.esc(jsonb_pretty(v_msg.payload)) || '</pre>', NULL);
+    IF v_issue IS NOT NULL THEN
+      v_body := v_body || pgv.card(
+        'Issue #' || v_issue.id::text || ' ' || pgv.badge(v_issue.issue_type,
+          CASE v_issue.issue_type WHEN 'bug' THEN 'danger' WHEN 'enhancement' THEN 'info' ELSE 'default' END)
+        || ' ' || pgv.badge(v_issue.status,
+          CASE v_issue.status WHEN 'open' THEN 'danger' WHEN 'closed' THEN 'success' ELSE 'warning' END),
+        '<p>' || pgv.esc(v_issue.description) || '</p>'
+          || CASE WHEN v_issue.context IS NOT NULL THEN
+               '<details><summary>Contexte</summary><pre>' || pgv.esc(jsonb_pretty(v_issue.context)) || '</pre></details>'
+             ELSE '' END,
+        COALESCE(v_issue.module, 'global') || ' · ' || to_char(v_issue.created_at, 'DD/MM/YYYY HH24:MI')
+      );
+    END IF;
+  ELSE
+    -- Body (only when no linked issue)
+    IF v_msg.body IS NOT NULL THEN
+      v_body := v_body || pgv.card('Contenu', '<pre>' || pgv.esc(v_msg.body) || '</pre>', NULL);
+    END IF;
+
+    -- Payload (only when no linked issue)
+    IF v_msg.payload IS NOT NULL THEN
+      v_body := v_body || pgv.card('Payload', '<pre>' || pgv.esc(jsonb_pretty(v_msg.payload)) || '</pre>', NULL);
+    END IF;
   END IF;
 
   -- Resolution
