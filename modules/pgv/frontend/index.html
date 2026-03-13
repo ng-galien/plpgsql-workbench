@@ -138,7 +138,155 @@
   </dialog>
 
   <script>
+  // ── pgv.plugin runtime ──────────────────────────────────────
+  (function() {
+    var registry = {};
+    var instances = [];
+    var pending = [];
+
+    window.pgv = window.pgv || {};
+
+    pgv.plugin = function(name, def) {
+      registry[name] = def;
+      if (typeof Alpine !== 'undefined' && Alpine.data) {
+        _register(name, def);
+      } else {
+        pending.push({ name: name, def: def });
+      }
+    };
+
+    pgv._flushPlugins = function() {
+      for (var i = 0; i < pending.length; i++) {
+        _register(pending[i].name, pending[i].def);
+      }
+      pending = [];
+    };
+
+    function _register(name, def) {
+      Alpine.data(name, function() {
+        var comp = {};
+        if (def.data) {
+          var d = def.data();
+          var keys = Object.keys(d);
+          for (var i = 0; i < keys.length; i++) comp[keys[i]] = d[keys[i]];
+        }
+        var priv = def.priv ? def.priv() : {};
+        Object.defineProperty(comp, '_priv', {
+          get: function() { return priv; },
+          enumerable: false,
+          configurable: false
+        });
+        comp.init = function() {
+          this._rootEl = this.$el;
+          if (def.events && def.events.listen) {
+            this._cleanups = [];
+            var self = this;
+            var evts = Object.keys(def.events.listen);
+            for (var j = 0; j < evts.length; j++) {
+              (function(evt) {
+                var method = def.events.listen[evt];
+                var handler = function(e) { self[method](e.detail); };
+                window.addEventListener(evt, handler);
+                self._cleanups.push(function() {
+                  window.removeEventListener(evt, handler);
+                });
+              })(evts[j]);
+            }
+          }
+        };
+        if (def.methods) {
+          var mk = Object.keys(def.methods);
+          for (var i = 0; i < mk.length; i++) comp[mk[i]] = def.methods[mk[i]];
+        }
+        comp.$emit = function(evtName, detail) {
+          window.dispatchEvent(new CustomEvent(evtName, { detail: detail }));
+        };
+        return comp;
+      });
+    }
+
+    pgv.mount = function(el) {
+      var nodes = el.querySelectorAll('[x-data]');
+      for (var n = 0; n < nodes.length; n++) {
+        (function(node) {
+          var raw = node.getAttribute('x-data');
+          var name = raw.replace(/\(.*/, '').trim();
+          var def = registry[name];
+          if (!def) return;
+          for (var i = 0; i < instances.length; i++) {
+            if (instances[i].el === node) return;
+          }
+          var depsReady = !def.deps ? Promise.resolve() : _loadDeps(def.deps);
+          depsReady.then(function() {
+            var instance = Alpine.$data(node);
+            if (def.mount) def.mount.call(instance, node);
+            instances.push({ name: name, el: node, def: def, instance: instance });
+          }).catch(function(err) {
+            console.error('[pgv.plugin] ' + name + ' mount failed:', err);
+            node.innerHTML = '<div class="pgv-plugin-error">'
+              + '<p>Composant ' + name + ' indisponible</p>'
+              + '<small>' + (err && err.message || String(err)) + '</small>'
+              + '</div>';
+          });
+        })(nodes[n]);
+      }
+    };
+
+    pgv.unmount = function() {
+      for (var i = 0; i < instances.length; i++) {
+        try {
+          var inst = instances[i];
+          if (inst.instance._cleanups) {
+            for (var j = 0; j < inst.instance._cleanups.length; j++) {
+              inst.instance._cleanups[j]();
+            }
+          }
+          if (inst.def.unmount) inst.def.unmount.call(inst.instance);
+        } catch (e) {
+          console.warn('[pgv.plugin] unmount error ' + instances[i].name + ':', e);
+        }
+      }
+      instances = [];
+    };
+
+    var depCache = {};
+    function _loadDeps(deps) {
+      var promises = [];
+      for (var i = 0; i < deps.length; i++) {
+        (function(dep) {
+          if (dep.test && dep.test()) {
+            promises.push(Promise.resolve());
+            return;
+          }
+          if (depCache[dep.src]) {
+            promises.push(depCache[dep.src]);
+            return;
+          }
+          depCache[dep.src] = new Promise(function(resolve, reject) {
+            var el;
+            if (dep.type === 'script') {
+              el = document.createElement('script');
+              el.src = dep.src;
+            } else if (dep.type === 'style') {
+              el = document.createElement('link');
+              el.rel = 'stylesheet';
+              el.href = dep.src;
+            } else {
+              return resolve();
+            }
+            el.onload = resolve;
+            el.onerror = function() { reject(new Error('Failed to load ' + dep.src)); };
+            document.head.appendChild(el);
+          });
+          promises.push(depCache[dep.src]);
+        })(deps[i]);
+      }
+      return Promise.all(promises);
+    }
+  })();
+
   document.addEventListener('alpine:init', function() {
+    pgv._flushPlugins();
     Alpine.data('pgview', function() { return {
       toast: { show: false, msg: '', level: 'success', detail: '' },
       dlg:   { title: '', target: '' },
@@ -393,6 +541,7 @@
         // Render page content
         if (!html.trim()) return;
         var app = document.getElementById('app');
+        pgv.unmount();
         app.innerHTML = html;
 
         // Post-process: markdown, scripts, clickable rows
@@ -527,6 +676,7 @@
         });
         // Initialize Alpine.js on new DOM (module fragments with x-data)
         if (typeof Alpine !== 'undefined') Alpine.initTree(el);
+        pgv.mount(el);
         // Select-search: async combo input + dropdown from RPC
         el.querySelectorAll('[data-ss-rpc]:not([data-ss-init])').forEach(function(ss) {
           ss.setAttribute('data-ss-init', '');
@@ -664,6 +814,7 @@
         }
         h += '</div></main>';
         var app = document.getElementById('app');
+        pgv.unmount();
         app.innerHTML = h;
         var self = this;
         this.$nextTick(function() { self._enhance(app); });

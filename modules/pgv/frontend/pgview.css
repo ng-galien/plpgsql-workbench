@@ -1275,6 +1275,10 @@ dialog article {
   border-top: 1px solid var(--pgv-border);
 }
 
+/* ── Plugin Error Fallback ────────────────────────────────────── */
+.pgv-plugin-error { padding: 1rem; text-align: center; color: var(--pgv-badge-danger-fg); }
+.pgv-plugin-error small { display: block; margin-top: 0.5rem; opacity: 0.7; }
+
 /* ── Form Dialog (pgv.form_dialog) ───────────────────────────── */
 .pgv-form-dialog {
   border: 1px solid var(--pgv-border);

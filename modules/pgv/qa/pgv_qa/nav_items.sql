@@ -14,6 +14,7 @@ AS $function$
     {"href": "/errors", "label": "Erreurs"},
     {"href": "/settings", "label": "Config"},
     {"href": "/diagnostics", "label": "Diagnostics"},
+    {"href": "/plugins", "label": "Plugins"},
     {"href": "http://localhost:8080/", "label": "Accueil"}
   ]'::jsonb;
 $function$;
