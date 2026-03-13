@@ -105,7 +105,18 @@ Le framework utilise `pgv.t(key)` pour l'internationalisation :
 
 Le seed est le **bootstrap minimal** — il cree le schema + les tables de base + insere les donnees dev (tenant, tenant_module). Les fonctions sont dans le module (`build/workbench.func.sql`), PAS dans le seed.
 
+
+## Documentation intégrée
+
+Le workbench embarque de la documentation accessible via `pg_doc` :
+- `pg_doc topic:testing` — Guide pgTAP : conventions test_*(), assertions, patterns
+- `pg_doc topic:data-convention` — Convention data_*() : cursor pagination, FTS, pgv.table()
+- `pg_doc topic:coverage` — Guide couverture de code
+
 ## Gotchas
+
+- **tenant_id** : toujours `PERFORM set_config('app.tenant_id', 'test', true)` au début de chaque test
+- **pg_test** : découvre les fonctions `test_*()` dans le schema `_ut`
 
 - **Tu es l'agent workbench, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:workbench` pour lire TES messages. Ne traiter que les messages adressés à `workbench`.
 - workbench ne possede PAS de schema _ut ni _qa — les tests sont dans ops_ut

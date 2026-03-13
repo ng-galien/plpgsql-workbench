@@ -76,7 +76,18 @@ Le schema `quote_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
 4. Après chaque tâche : `pg_pack schemas: quote,quote_ut,quote_qa` (les 3 schemas)
 5. Puis `pg_func_save target: plpgsql://quote` + `plpgsql://quote_ut` + `plpgsql://quote_qa`
 
+
+## Documentation intégrée
+
+Le workbench embarque de la documentation accessible via `pg_doc` :
+- `pg_doc topic:testing` — Guide pgTAP : conventions test_*(), assertions, patterns
+- `pg_doc topic:data-convention` — Convention data_*() : cursor pagination, FTS, pgv.table()
+- `pg_doc topic:coverage` — Guide couverture de code
+
 ## Gotchas
+
+- **tenant_id** : toujours `PERFORM set_config('app.tenant_id', 'test', true)` au début de chaque test
+- **pg_test** : découvre les fonctions `test_*()` dans le schema `_ut`
 
 - **Tu es l'agent quote, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:quote` pour lire TES messages. Ne traiter que les messages adressés à `quote`.
 - Arrondi par ligne : `SUM(ROUND(..., 2))`, jamais `ROUND(SUM(...), 2)`

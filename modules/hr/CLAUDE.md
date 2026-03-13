@@ -76,7 +76,18 @@ Le schema `hr_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
 4. Après chaque tâche : `pg_pack schemas: hr,hr_ut,hr_qa` (les 3 schemas)
 5. Puis `pg_func_save target: plpgsql://hr` + `plpgsql://hr_ut` + `plpgsql://hr_qa`
 
+
+## Documentation intégrée
+
+Le workbench embarque de la documentation accessible via `pg_doc` :
+- `pg_doc topic:testing` — Guide pgTAP : conventions test_*(), assertions, patterns
+- `pg_doc topic:data-convention` — Convention data_*() : cursor pagination, FTS, pgv.table()
+- `pg_doc topic:coverage` — Guide couverture de code
+
 ## Gotchas
+
+- **tenant_id** : toujours `PERFORM set_config('app.tenant_id', 'test', true)` au début de chaque test
+- **pg_test** : découvre les fonctions `test_*()` dans le schema `_ut`
 
 - **Tu es l'agent hr, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:hr` pour lire TES messages. Ne traiter que les messages adressés à `hr`.
 - (a completer au fil du developpement)

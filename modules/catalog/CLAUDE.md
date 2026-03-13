@@ -87,7 +87,18 @@ Le schema `catalog_qa` contient uniquement `seed()` et `clean()` — PAS de page
 4. Après chaque tâche : `pg_pack schemas: catalog,catalog_ut,catalog_qa` (les 3 schemas)
 5. Puis `pg_func_save target: plpgsql://catalog` + `plpgsql://catalog_ut` + `plpgsql://catalog_qa`
 
+
+## Documentation intégrée
+
+Le workbench embarque de la documentation accessible via `pg_doc` :
+- `pg_doc topic:testing` — Guide pgTAP : conventions test_*(), assertions, patterns
+- `pg_doc topic:data-convention` — Convention data_*() : cursor pagination, FTS, pgv.table()
+- `pg_doc topic:coverage` — Guide couverture de code
+
 ## Gotchas
+
+- **tenant_id** : toujours `PERFORM set_config('app.tenant_id', 'test', true)` au début de chaque test
+- **pg_test** : découvre les fonctions `test_*()` dans le schema `_ut`
 
 - **Tu es l'agent catalog, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:catalog` pour lire TES messages. Ne traiter que les messages adressés à `catalog`.
 - (a completer au fil du developpement)

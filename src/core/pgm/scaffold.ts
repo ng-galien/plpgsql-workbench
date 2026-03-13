@@ -494,8 +494,17 @@ Le schema \`${name}_qa\` contient uniquement \`seed()\` et \`clean()\` — PAS d
 4. Après chaque tâche : \`pg_pack schemas: ${name},${name}_ut,${name}_qa\` (les 3 schemas)
 5. Puis \`pg_func_save target: plpgsql://${name}\` + \`plpgsql://${name}_ut\` + \`plpgsql://${name}_qa\`
 
+## Documentation intégrée
+
+Le workbench embarque de la documentation accessible via \`pg_doc\` :
+- \`pg_doc topic:testing\` — Guide pgTAP : conventions test_*(), assertions, patterns
+- \`pg_doc topic:data-convention\` — Convention data_*() : cursor pagination, FTS, pgv.table()
+- \`pg_doc topic:coverage\` — Guide couverture de code
+
 ## Gotchas
 
+- **tenant_id** : toujours \`PERFORM set_config('app.tenant_id', 'test', true)\` au début de chaque test
+- **pg_test** : découvre les fonctions \`test_*()\` dans le schema \`_ut\` — utiliser \`pg_test schema:${name}_ut\`
 - (a completer au fil du developpement)
 
 ## Premier demarrage
