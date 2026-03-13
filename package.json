@@ -6,10 +6,11 @@
   "main": "dist/index.js",
   "bin": {
     "plpgsql-mcp": "dist/index.js",
-    "pgm": "dist/pgm/cli.js"
+    "pgm": "dist/core/pgm/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run build:edge",
+    "build:edge": "mkdir -p supabase/functions/_shared && rm -rf supabase/functions/_shared/core && cp -r dist/core supabase/functions/_shared/core",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
     "predev": "lsof -ti:3100 | xargs kill -9 2>/dev/null || true",

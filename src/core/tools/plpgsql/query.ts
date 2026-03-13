@@ -30,7 +30,7 @@ export function createQueryTool({ withClient }: {
             return text(`OK (${result.rowCount ?? 0} rows affected, ${duration}ms)`);
           }
 
-          const fields = result.fields.map((f: { name: string }) => f.name);
+          const fields = (result.fields ?? []).map((f: { name: string }) => f.name);
           const totalRows = result.rows.length;
           const truncated = totalRows > MAX_QUERY_ROWS;
           const displayRows = truncated ? result.rows.slice(0, MAX_QUERY_ROWS) : result.rows;

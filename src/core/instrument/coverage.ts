@@ -243,11 +243,11 @@ export async function runCoverage(
   };
 
   try {
-    client.on("notice", onNotice);
+    client.on?.("notice", onNotice);
     await client.query(instrumentedDdl);
     await testFn(client);
   } finally {
-    client.removeListener("notice", onNotice);
+    client.removeListener?.("notice", onNotice);
     try {
       await client.query(originalDdl);
     } catch {

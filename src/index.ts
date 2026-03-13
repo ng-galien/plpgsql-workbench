@@ -14,11 +14,11 @@ import pty from "node-pty";
 import { execFileSync, execFile } from "child_process";
 import { promisify } from "util";
 const execFileAsync = promisify(execFile);
-import { buildContainer, mountTools, type ToolPack } from "./container.js";
-import { plpgsqlPack } from "./packs/plpgsql.js";
-import { docstorePack } from "./packs/docstore.js";
-import { googlePack } from "./packs/google.js";
-import { docmanPack } from "./packs/docman.js";
+import { buildContainer, mountTools, type ToolPack } from "./core/container.js";
+import { plpgsqlPack } from "./core/packs/plpgsql.js";
+import { docstorePack } from "./core/packs/docstore.js";
+import { googlePack } from "./core/packs/google.js";
+import { docmanPack } from "./core/packs/docman.js";
 
 const log = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -155,8 +155,8 @@ const DESTRUCTIVE_PATTERN = /\b(DROP\s+FUNCTION|TRUNCATE|GRANT\s+|REVOKE\s+)\b/i
 const INTERNAL_CALL_RE = /\b(\w+)\._(\w+)\s*\(/g;
 
 // moduleRegistry is registered as a Promise — await it once at startup
-let moduleRegistry: import("./pgm/registry.js").ModuleRegistry | null = null;
-const moduleRegistryPromise: Promise<import("./pgm/registry.js").ModuleRegistry> = container.resolve("moduleRegistry");
+let moduleRegistry: import("./core/pgm/registry.js").ModuleRegistry | null = null;
+const moduleRegistryPromise: Promise<import("./core/pgm/registry.js").ModuleRegistry> = container.resolve("moduleRegistry");
 moduleRegistryPromise.then((r) => { moduleRegistry = r; }).catch(() => {});
 
 function logHook(mod: string, tool: string, action: string, allowed: boolean, reason?: string) {
