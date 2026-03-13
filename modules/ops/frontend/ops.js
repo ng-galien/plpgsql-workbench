@@ -146,7 +146,7 @@ document.addEventListener('alpine:init', () => {
         this._pendingActivation = null;
         if (this.activeModule === pending) {
           console.log('[OPS:grid] processing pending activation:', pending);
-          this._doActivate(pending);
+          this.$nextTick(() => this._doActivate(pending));
         } else {
           console.log('[OPS:grid] pending activation stale — activeModule:', this.activeModule, 'pending:', pending);
         }
@@ -170,7 +170,8 @@ document.addEventListener('alpine:init', () => {
         return;
       }
 
-      this._doActivate(mod);
+      // $nextTick: wait for Alpine to render x-if="activeModule" template
+      this.$nextTick(() => this._doActivate(mod));
     },
 
     _doActivate(mod) {
@@ -575,6 +576,39 @@ document.addEventListener('alpine:init', () => {
       });
 
       this._initTerminal(el);
+    },
+
+    switchTo(mod) {
+      if (!mod || mod === this._module) return;
+      console.log('[OPS:detail] switchTo()', mod, '— from:', this._module);
+
+      // Close current WS
+      clearTimeout(this._reconnectTimer);
+      clearTimeout(this._heartbeatTimer);
+      clearTimeout(this._dropRecoveryTimer);
+      if (this.ws) { this.ws.onclose = null; this.ws.close(); }
+      this.ws = null;
+      this.connected = false;
+      this._reconnectAttempt = 0;
+      this._pendingWrites = [];
+      this._writeFrameScheduled = false;
+      this._wasConnected = false;
+      this._inputBuffer = '';
+
+      // Update module + reconnect
+      this._module = mod;
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      this._wsUrl = `${proto}://${location.host}/ws/tmux/${mod}`;
+
+      if (this.term) {
+        this.term.clear();
+        this.term.reset();
+        this._connectWs();
+      } else {
+        // Terminal not yet initialized — connect() will handle it
+        this._module = null;
+        this.connect(mod);
+      }
     },
 
     destroy() {

@@ -164,3 +164,24 @@
   gap: var(--pgv-spacing, 1rem);
   margin: var(--pgv-spacing, 1rem) 0;
 }
+
+/* ── Agent table row selection ── */
+.ops-row-selected {
+  background: var(--pgv-accent-bg, rgba(59, 130, 246, 0.08));
+}
+
+/* ── Agents terminal (inside pgv.card) ── */
+.ops-agents-terminal .ops-terminal-body {
+  height: clamp(300px, 45vh, 600px);
+  background: #1a1b26;
+  contain: layout paint;
+  overflow: hidden;
+}
+
+[data-theme="light"] .ops-agents-terminal .ops-terminal-body {
+  background: #f8f8f2;
+}
+
+.ops-agents-terminal .ops-terminal-body .xterm {
+  height: 100%;
+}

@@ -2,42 +2,40 @@ CREATE OR REPLACE FUNCTION ops.get_agents()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_body text;
 BEGIN
-  v_body := '<div x-data="opsTmuxGrid">'
-    || '<div class="ops-toolbar">'
-    || '<button class="outline" @click="expandAll()">Ouvrir tout</button>'
-    || '<button class="outline" @click="collapseAll()">Fermer tout</button>'
-    || '<button class="outline" @click="pingAll()">Ping agents</button>'
-    || '</div>'
-    || '<template x-if="loading"><p class="ops-loading">Chargement...</p></template>'
+  RETURN '<div x-data="opsTmuxGrid">'
+    || '<template x-if="loading"><p>Chargement...</p></template>'
     || '<template x-if="!loading && sessions.length === 0">'
     || pgv.empty('Aucune session active', 'make agents pour lancer les agents.')
     || '</template>'
-    || '<div class="ops-agents-list">'
+    || '<template x-if="!loading && sessions.length > 0">'
+    || '<div>'
+    || '<table role="grid">'
+    || '<thead><tr><th>Agent</th><th>Status</th></tr></thead>'
+    || '<tbody>'
     || '<template x-for="s in sessions" :key="s.name">'
-    || '<article class="ops-agent-card" :class="{ ''ops-agent-card--open'': s.open }">'
-    || '<header class="ops-agent-card-header" @click="toggle(s)">'
-    || '<span class="ops-agent-dot" :class="{ connected: s._connected, disconnected: s._disconnected && !s._reconnecting, loading: s._reconnecting }"></span>'
-    || '<span class="ops-agent-name" x-text="s.name"></span>'
-    || '<span class="ops-agent-status" :class="{ ''ops-agent-status--active'': s.status && s.status !== ''idle'' }" x-text="s.status || ''idle''"></span>'
-    || '<span class="ops-agent-chevron">&#9654;</span>'
-    || '</header>'
-    || '<div class="ops-agent-body" x-show="s.open">'
-    || '<div class="ops-terminal" :data-terminal-for="s.name" @click="activateSession(s.name)">'
-    || '<div class="ops-terminal-status"'
-    || ' x-show="activeModule === s.name && (s._reconnecting || s._backpressure || !s._connected)"'
-    || ' :class="{ ''ops-terminal-status--reconnecting'': s._reconnecting, ''ops-terminal-status--backpressure'': s._backpressure }">'
-    || '<span x-text="s._backpressure ? ''Buffer plein...'' : s._reconnecting ? ''Reconnexion...'' : ''Connexion...''"></span>'
-    || '</div>'
-    || '</div>'
-    || '</div>'
-    || '</article>'
+    || '<tr @click="activateSession(s.name)" class="pgv-link" :class="{ ''ops-row-selected'': activeModule === s.name }">'
+    || '<td><span class="ops-agent-dot" :class="{ connected: s._connected, disconnected: s._disconnected && !s._reconnecting, loading: s._reconnecting }"></span> <span x-text="s.name"></span></td>'
+    || '<td><span class="pgv-badge" :class="s.status && s.status !== ''idle'' ? ''pgv-badge-success'' : ''pgv-badge-default''" x-text="s.status || ''idle''"></span></td>'
+    || '</tr>'
+    || '</template>'
+    || '</tbody>'
+    || '</table>'
+    || '<template x-if="activeModule">'
+    || pgv.card(
+        '<span x-text="activeModule"></span>',
+        '<div class="ops-agents-terminal">'
+        || '<template x-for="s in sessions" :key="''term-'' + s.name">'
+        || '<div x-show="activeModule === s.name">'
+        || '<div :data-terminal-for="s.name" class="ops-terminal-body"></div>'
+        || '</div>'
+        || '</template>'
+        || '</div>',
+        NULL
+      )
     || '</template>'
     || '</div>'
+    || '</template>'
     || '</div>';
-
-  RETURN v_body;
 END;
 $function$;

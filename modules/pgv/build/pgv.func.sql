@@ -368,15 +368,34 @@ DECLARE
   v_rules jsonb;
 BEGIN
   -- Rules: tag pattern -> primitive, with exclusion if primitive is also called
+  -- excl: if present, skip match when this pattern is also found (avoids false positives)
   v_rules := '[
-    {"tag":"<template data-toast",  "prim":"pgv.toast()",     "call":"pgv.toast("},
-    {"tag":"<template data-redirect","prim":"pgv.redirect()", "call":"pgv.redirect("},
-    {"tag":"<form data-rpc",        "prim":"pgv.form()",      "call":"pgv.form("},
-    {"tag":"<button data-rpc",      "prim":"pgv.action()",    "call":"pgv.action("},
-    {"tag":"<details>",             "prim":"pgv.accordion()", "call":"pgv.accordion("},
-    {"tag":"<select>",              "prim":"pgv.sel()",       "call":"pgv.sel("},
-    {"tag":"<dl>",                  "prim":"pgv.dl()",        "call":"pgv.dl("},
-    {"tag":"<article",              "prim":"pgv.card()",      "call":"pgv.card("}
+    {"tag":"<template data-toast",  "prim":"pgv.toast()",          "call":"pgv.toast("},
+    {"tag":"<template data-redirect","prim":"pgv.redirect()",     "call":"pgv.redirect("},
+    {"tag":"<form data-rpc",        "prim":"pgv.form()",          "call":"pgv.form("},
+    {"tag":"<button data-rpc",      "prim":"pgv.action()",        "call":"pgv.action("},
+    {"tag":"<details>",             "prim":"pgv.accordion()",     "call":"pgv.accordion("},
+    {"tag":"<select>",              "prim":"pgv.sel()",           "call":"pgv.sel("},
+    {"tag":"<dl>",                  "prim":"pgv.dl()",            "call":"pgv.dl("},
+    {"tag":"<article",              "prim":"pgv.card()",          "call":"pgv.card("},
+    {"tag":"<input ",               "prim":"pgv.input()",         "call":"pgv.input(",         "excl":"type=\\\"hidden\\\""},
+    {"tag":"type=\\\"checkbox\\\"","prim":"pgv.checkbox()",     "call":"pgv.checkbox("},
+    {"tag":"type=\\\"radio\\\"",   "prim":"pgv.radio()",         "call":"pgv.radio("},
+    {"tag":"<textarea",             "prim":"pgv.textarea()",      "call":"pgv.textarea("},
+    {"tag":"<progress",             "prim":"pgv.progress()",      "call":"pgv.progress("},
+    {"tag":"<table",                "prim":"pgv.md_table()",      "call":"pgv.md_table("},
+    {"tag":"pgv-alert",             "prim":"pgv.alert()",         "call":"pgv.alert("},
+    {"tag":"pgv-badge",             "prim":"pgv.badge()",         "call":"pgv.badge("},
+    {"tag":"pgv-stat",              "prim":"pgv.stat()",          "call":"pgv.stat("},
+    {"tag":"pgv-grid",              "prim":"pgv.grid()",          "call":"pgv.grid("},
+    {"tag":"pgv-tabs",              "prim":"pgv.tabs()",          "call":"pgv.tabs("},
+    {"tag":"pgv-breadcrumb",        "prim":"pgv.breadcrumb()",    "call":"pgv.breadcrumb("},
+    {"tag":"pgv-empty",             "prim":"pgv.empty()",         "call":"pgv.empty("},
+    {"tag":"pgv-timeline",          "prim":"pgv.timeline()",      "call":"pgv.timeline("},
+    {"tag":"pgv-workflow",          "prim":"pgv.workflow()",      "call":"pgv.workflow("},
+    {"tag":"pgv-avatar",            "prim":"pgv.avatar()",        "call":"pgv.avatar("},
+    {"tag":"selectSearch",          "prim":"pgv.select_search()", "call":"pgv.select_search("},
+    {"tag":"x-data=\\\"lazy\\\"","prim":"pgv.lazy()",           "call":"pgv.lazy("}
   ]'::jsonb;
 
   FOR v_rec IN
@@ -392,13 +411,16 @@ BEGIN
              r->>'tag' AS tag,
              r->>'prim' AS prim,
              f.def LIKE '%' || (r->>'tag') || '%' AS has_tag,
-             f.def LIKE '%' || (r->>'call') || '%' AS has_call
+             f.def LIKE '%' || (r->>'call') || '%' AS has_call,
+             CASE WHEN r->>'excl' IS NOT NULL
+                  THEN f.def LIKE '%' || (r->>'excl') || '%'
+                  ELSE false END AS has_excl
       FROM fn_bodies f
       CROSS JOIN jsonb_array_elements(v_rules) AS r
     )
     SELECT proname, tag, prim
     FROM rule_checks
-    WHERE has_tag AND NOT has_call
+    WHERE has_tag AND NOT has_call AND NOT has_excl
     ORDER BY proname, tag
   LOOP
     v_rows := v_rows || '| ' || pgv.badge('WARN', 'warning')

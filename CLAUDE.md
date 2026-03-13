@@ -27,6 +27,14 @@ Les agents modules lisent leurs instructions via `pg_msg_inbox module:<name>`. I
 - **No idle agents**: every agent should have an active task — feature-dev or review/polish when backlog is empty
 - **Commit in waves**: batch multiple module changes into single commits, not micro-commits
 
+### Issue Dispatch (STRICT)
+
+When dispatching an `issue_report` to a module agent, **never paraphrase or interpret** the issue content. The message must:
+1. Reference the issue by ID: "Issue #N à traiter"
+2. Include the SQL to read it: `SELECT * FROM workbench.issue_report WHERE id = N`
+3. Explicitly ask the agent to read the issue (description + context with path, errors, actions)
+4. Add supplementary context only if needed — never replace the original issue content
+
 ## Build & Run Commands
 
 ```bash
