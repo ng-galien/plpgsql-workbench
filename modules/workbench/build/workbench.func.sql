@@ -101,12 +101,12 @@ BEGIN
   v_html := v_html || '|---|----|----|------|-------|--------|' || E'\n';
 
   SELECT v_html || coalesce(string_agg(
-    '| [' || m.id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', m.id)) || ') '
+    '| <button type="button" data-form-dialog="msg-detail" data-src="/message?p_id=' || m.id || '" class="outline pgv-btn-sm">' || m.id || '</button> '
     || '| ' || m.from_module
     || ' | ' || m.to_module
     || ' | ' || pgv.badge(m.msg_type, CASE m.msg_type
         WHEN 'task' THEN 'info'
-        WHEN 'bug_report' THEN 'error'
+        WHEN 'bug_report' THEN 'danger'
         WHEN 'feature_request' THEN 'warning'
         WHEN 'info' THEN 'muted'
         ELSE 'muted' END)
@@ -119,6 +119,11 @@ BEGIN
     || ' |', E'\n'
     ORDER BY m.id DESC
   ), '') || E'\n</md>'
+    || '<dialog id="msg-detail" class="pgv-form-dialog"><article class="pgv-form-dialog-article">'
+    || '<header class="pgv-form-dialog-header"><strong>' || pgv.t('workbench.title_message_detail') || '</strong>'
+    || '<button class="pgv-form-dialog-close" onclick="this.closest(''dialog'').close()">&times;</button></header>'
+    || '<div class="pgv-form-dialog-body"></div>'
+    || '</article></dialog>'
   INTO v_html
   FROM workbench.agent_message m;
 
@@ -156,7 +161,7 @@ BEGIN
 
   SELECT v_html || coalesce(string_agg(
     '| ' || i.id
-    || ' | ' || pgv.badge(i.issue_type, CASE i.issue_type WHEN 'bug' THEN 'error' WHEN 'enhancement' THEN 'info' ELSE 'muted' END)
+    || ' | ' || pgv.badge(i.issue_type, CASE i.issue_type WHEN 'bug' THEN 'danger' WHEN 'enhancement' THEN 'info' ELSE 'muted' END)
     || ' | ' || coalesce(i.module, '-')
     || ' | ' || pgv.md_esc(i.description)
     || ' | ' || pgv.badge(i.status, CASE i.status WHEN 'open' THEN 'warning' WHEN 'acknowledged' THEN 'info' WHEN 'resolved' THEN 'success' ELSE 'muted' END)
@@ -192,7 +197,7 @@ BEGIN
   v_html := v_html || pgv.grid(
     pgv.stat('Type', pgv.badge(v_msg.msg_type, CASE v_msg.msg_type
         WHEN 'task' THEN 'info'
-        WHEN 'bug_report' THEN 'error'
+        WHEN 'bug_report' THEN 'danger'
         WHEN 'feature_request' THEN 'warning'
         WHEN 'info' THEN 'muted'
         ELSE 'muted' END)),
@@ -201,7 +206,7 @@ BEGIN
         WHEN 'acknowledged' THEN 'info'
         WHEN 'resolved' THEN 'success'
         ELSE 'muted' END)),
-    pgv.stat('Priorite', CASE WHEN v_msg.priority = 'high' THEN pgv.badge('HIGH','error') ELSE 'normal' END),
+    pgv.stat('Priorite', CASE WHEN v_msg.priority = 'high' THEN pgv.badge('HIGH','danger') ELSE 'normal' END),
     pgv.stat('Date', to_char(v_msg.created_at, 'DD/MM/YYYY HH24:MI'))
   );
 
@@ -225,7 +230,7 @@ BEGIN
     v_html := v_html || '<md>' || E'\n';
     v_html := v_html || '| Champ | Valeur |' || E'\n';
     v_html := v_html || '|-------|--------|' || E'\n';
-    v_html := v_html || '| Type | ' || pgv.badge(v_issue.issue_type, CASE v_issue.issue_type WHEN 'bug' THEN 'error' ELSE 'info' END) || ' |' || E'\n';
+    v_html := v_html || '| Type | ' || pgv.badge(v_issue.issue_type, CASE v_issue.issue_type WHEN 'bug' THEN 'danger' ELSE 'info' END) || ' |' || E'\n';
     v_html := v_html || '| Module | ' || coalesce(v_issue.module, '-') || ' |' || E'\n';
     v_html := v_html || '| Statut | ' || pgv.badge(v_issue.status, CASE v_issue.status WHEN 'open' THEN 'warning' WHEN 'resolved' THEN 'success' ELSE 'info' END) || ' |' || E'\n';
     v_html := v_html || '| Description | ' || pgv.md_esc(v_issue.description, 200) || ' |' || E'\n';
@@ -301,17 +306,17 @@ BEGIN
   v_html := v_html || '|---|----|----|------|----------|-------|--------|------|' || E'\n';
 
   SELECT v_html || coalesce(string_agg(
-    '| [' || m.id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', m.id)) || ')'
+    '| <button type="button" data-form-dialog="msg-detail" data-src="/message?p_id=' || m.id || '" class="outline pgv-btn-sm">' || m.id || '</button>'
     || ' | ' || m.from_module
     || ' | ' || m.to_module
     || ' | ' || pgv.badge(m.msg_type, CASE m.msg_type
         WHEN 'task' THEN 'info'
-        WHEN 'bug_report' THEN 'error'
+        WHEN 'bug_report' THEN 'danger'
         WHEN 'feature_request' THEN 'warning'
-        WHEN 'breaking_change' THEN 'error'
+        WHEN 'breaking_change' THEN 'danger'
         WHEN 'info' THEN 'muted'
         ELSE 'muted' END)
-    || ' | ' || CASE WHEN m.priority = 'high' THEN pgv.badge('HIGH','error') ELSE 'normal' END
+    || ' | ' || CASE WHEN m.priority = 'high' THEN pgv.badge('HIGH','danger') ELSE 'normal' END
     || ' | ' || pgv.md_esc(m.subject, 60)
     || ' | ' || pgv.badge(m.status, CASE m.status
         WHEN 'new' THEN 'warning'
@@ -322,6 +327,11 @@ BEGIN
     || ' |', E'\n'
     ORDER BY m.id DESC
   ), '') || E'\n</md>'
+    || '<dialog id="msg-detail" class="pgv-form-dialog"><article class="pgv-form-dialog-article">'
+    || '<header class="pgv-form-dialog-header"><strong>' || pgv.t('workbench.title_message_detail') || '</strong>'
+    || '<button class="pgv-form-dialog-close" onclick="this.closest(''dialog'').close()">&times;</button></header>'
+    || '<div class="pgv-form-dialog-body"></div>'
+    || '</article></dialog>'
   INTO v_html
   FROM workbench.agent_message m
   WHERE p_module IS NULL
@@ -409,7 +419,7 @@ BEGIN
   SELECT v_html || coalesce(string_agg(
     '| ' || h.module
     || ' | ' || h.action
-    || ' | ' || CASE WHEN h.allowed THEN pgv.badge('oui','success') ELSE pgv.badge('non','error') END
+    || ' | ' || CASE WHEN h.allowed THEN pgv.badge('oui','success') ELSE pgv.badge('non','danger') END
     || ' | ' || coalesce(h.reason, '-')
     || ' | ' || to_char(h.created_at, 'DD/MM HH24:MI')
     || ' |', E'\n'
@@ -560,7 +570,8 @@ BEGIN
     ('fr', 'workbench.btn_back_tools', 'Retour outils'),
     ('fr', 'workbench.label_no_messages', 'Aucun message'),
     ('fr', 'workbench.label_no_issues', 'Aucune issue ouverte'),
-    ('fr', 'workbench.label_no_tools', 'Aucun outil enregistre')
+    ('fr', 'workbench.label_no_tools', 'Aucun outil enregistre'),
+    ('fr', 'workbench.title_message_detail', 'Detail message')
   ON CONFLICT DO NOTHING;
 END;
 $function$;

@@ -18,7 +18,7 @@ BEGIN
   v_html := v_html || pgv.grid(
     pgv.stat('Type', pgv.badge(v_msg.msg_type, CASE v_msg.msg_type
         WHEN 'task' THEN 'info'
-        WHEN 'bug_report' THEN 'error'
+        WHEN 'bug_report' THEN 'danger'
         WHEN 'feature_request' THEN 'warning'
         WHEN 'info' THEN 'muted'
         ELSE 'muted' END)),
@@ -27,7 +27,7 @@ BEGIN
         WHEN 'acknowledged' THEN 'info'
         WHEN 'resolved' THEN 'success'
         ELSE 'muted' END)),
-    pgv.stat('Priorite', CASE WHEN v_msg.priority = 'high' THEN pgv.badge('HIGH','error') ELSE 'normal' END),
+    pgv.stat('Priorite', CASE WHEN v_msg.priority = 'high' THEN pgv.badge('HIGH','danger') ELSE 'normal' END),
     pgv.stat('Date', to_char(v_msg.created_at, 'DD/MM/YYYY HH24:MI'))
   );
 
@@ -51,7 +51,7 @@ BEGIN
     v_html := v_html || '<md>' || E'\n';
     v_html := v_html || '| Champ | Valeur |' || E'\n';
     v_html := v_html || '|-------|--------|' || E'\n';
-    v_html := v_html || '| Type | ' || pgv.badge(v_issue.issue_type, CASE v_issue.issue_type WHEN 'bug' THEN 'error' ELSE 'info' END) || ' |' || E'\n';
+    v_html := v_html || '| Type | ' || pgv.badge(v_issue.issue_type, CASE v_issue.issue_type WHEN 'bug' THEN 'danger' ELSE 'info' END) || ' |' || E'\n';
     v_html := v_html || '| Module | ' || coalesce(v_issue.module, '-') || ' |' || E'\n';
     v_html := v_html || '| Statut | ' || pgv.badge(v_issue.status, CASE v_issue.status WHEN 'open' THEN 'warning' WHEN 'resolved' THEN 'success' ELSE 'info' END) || ' |' || E'\n';
     v_html := v_html || '| Description | ' || pgv.md_esc(v_issue.description, 200) || ' |' || E'\n';

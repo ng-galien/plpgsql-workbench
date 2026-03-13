@@ -32,17 +32,17 @@ BEGIN
   v_html := v_html || '|---|----|----|------|----------|-------|--------|------|' || E'\n';
 
   SELECT v_html || coalesce(string_agg(
-    '| [' || m.id || '](' || pgv.call_ref('get_message', jsonb_build_object('p_id', m.id)) || ')'
+    '| <button type="button" data-form-dialog="msg-detail" data-src="/message?p_id=' || m.id || '" class="outline pgv-btn-sm">' || m.id || '</button>'
     || ' | ' || m.from_module
     || ' | ' || m.to_module
     || ' | ' || pgv.badge(m.msg_type, CASE m.msg_type
         WHEN 'task' THEN 'info'
-        WHEN 'bug_report' THEN 'error'
+        WHEN 'bug_report' THEN 'danger'
         WHEN 'feature_request' THEN 'warning'
-        WHEN 'breaking_change' THEN 'error'
+        WHEN 'breaking_change' THEN 'danger'
         WHEN 'info' THEN 'muted'
         ELSE 'muted' END)
-    || ' | ' || CASE WHEN m.priority = 'high' THEN pgv.badge('HIGH','error') ELSE 'normal' END
+    || ' | ' || CASE WHEN m.priority = 'high' THEN pgv.badge('HIGH','danger') ELSE 'normal' END
     || ' | ' || pgv.md_esc(m.subject, 60)
     || ' | ' || pgv.badge(m.status, CASE m.status
         WHEN 'new' THEN 'warning'
@@ -53,6 +53,11 @@ BEGIN
     || ' |', E'\n'
     ORDER BY m.id DESC
   ), '') || E'\n</md>'
+    || '<dialog id="msg-detail" class="pgv-form-dialog"><article class="pgv-form-dialog-article">'
+    || '<header class="pgv-form-dialog-header"><strong>' || pgv.t('workbench.title_message_detail') || '</strong>'
+    || '<button class="pgv-form-dialog-close" onclick="this.closest(''dialog'').close()">&times;</button></header>'
+    || '<div class="pgv-form-dialog-body"></div>'
+    || '</article></dialog>'
   INTO v_html
   FROM workbench.agent_message m
   WHERE p_module IS NULL

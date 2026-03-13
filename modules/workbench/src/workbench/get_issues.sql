@@ -27,7 +27,7 @@ BEGIN
 
   SELECT v_html || coalesce(string_agg(
     '| ' || i.id
-    || ' | ' || pgv.badge(i.issue_type, CASE i.issue_type WHEN 'bug' THEN 'error' WHEN 'enhancement' THEN 'info' ELSE 'muted' END)
+    || ' | ' || pgv.badge(i.issue_type, CASE i.issue_type WHEN 'bug' THEN 'danger' WHEN 'enhancement' THEN 'info' ELSE 'muted' END)
     || ' | ' || coalesce(i.module, '-')
     || ' | ' || pgv.md_esc(i.description)
     || ' | ' || pgv.badge(i.status, CASE i.status WHEN 'open' THEN 'warning' WHEN 'acknowledged' THEN 'info' WHEN 'resolved' THEN 'success' ELSE 'muted' END)

@@ -25,7 +25,8 @@ BEGIN
     ('fr', 'workbench.btn_back_tools', 'Retour outils'),
     ('fr', 'workbench.label_no_messages', 'Aucun message'),
     ('fr', 'workbench.label_no_issues', 'Aucune issue ouverte'),
-    ('fr', 'workbench.label_no_tools', 'Aucun outil enregistre')
+    ('fr', 'workbench.label_no_tools', 'Aucun outil enregistre'),
+    ('fr', 'workbench.title_message_detail', 'Detail message')
   ON CONFLICT DO NOTHING;
 END;
 $function$;

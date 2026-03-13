@@ -52,7 +52,7 @@ BEGIN
   SELECT v_html || coalesce(string_agg(
     '| ' || h.module
     || ' | ' || h.action
-    || ' | ' || CASE WHEN h.allowed THEN pgv.badge('oui','success') ELSE pgv.badge('non','error') END
+    || ' | ' || CASE WHEN h.allowed THEN pgv.badge('oui','success') ELSE pgv.badge('non','danger') END
     || ' | ' || coalesce(h.reason, '-')
     || ' | ' || to_char(h.created_at, 'DD/MM HH24:MI')
     || ' |', E'\n'
