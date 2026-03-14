@@ -9,21 +9,27 @@
   <style>[x-cloak]{display:none!important}</style>
   <script>
     // Platform config — Cloudflare Pages → Supabase PostgREST
-    window.__PGV_CONFIG__ = {
-      rpcBase: "http://localhost:54321/rest/v1/rpc",  // Supabase PostgREST
-      restBase: "http://localhost:54321/rest/v1",
-      supabaseUrl: "http://localhost:54321",
-      supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0",
-      headers: function(accept, schema) {
-        return {
-          "apikey": this.supabaseKey,
-          "Content-Type": "application/json",
-          "Accept": accept || "application/json",
-          "Content-Profile": schema || "pgv",
-        };
-      },
-      rpc: function(path) { return this.rpcBase + path; },
-    };
+    window.__PGV_CONFIG__ = (function() {
+      var rpcBase = "http://localhost:54321/rest/v1/rpc";
+      var restBase = "http://localhost:54321/rest/v1";
+      var supabaseUrl = "http://localhost:54321";
+      var supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
+      return {
+        rpcBase: rpcBase,
+        restBase: restBase,
+        supabaseUrl: supabaseUrl,
+        supabaseKey: supabaseKey,
+        headers: function(accept, schema) {
+          return {
+            "apikey": supabaseKey,
+            "Content-Type": "application/json",
+            "Accept": accept || "application/json",
+            "Content-Profile": schema || "pgv",
+          };
+        },
+        rpc: function(path) { return rpcBase + path; },
+      };
+    })();
   </script>
   <!-- Stack: Alpine.js (UI), Zustand (state), D3.js (SVG canvas), PicoCSS (style), marked.js (tables) -->
   <script src="/pgv-modules.js"></script>
