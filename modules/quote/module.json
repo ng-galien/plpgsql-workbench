@@ -15,6 +15,7 @@
   "sql": [
     "build/quote.ddl.sql",
     "build/quote.func.sql",
+    "build/quote.seed.sql",
     "build/quote_qa.func.sql",
     "build/quote_ut.func.sql"
   ],

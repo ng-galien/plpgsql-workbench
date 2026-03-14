@@ -1,4 +1,4 @@
--- asset — DDL (v5: add thumb_path migration)
+-- asset — DDL
 
 CREATE SCHEMA IF NOT EXISTS asset;
 CREATE SCHEMA IF NOT EXISTS asset_ut;
@@ -47,14 +47,3 @@ CREATE INDEX IF NOT EXISTS idx_asset_search ON asset.asset USING GIN(search_vec)
 CREATE INDEX IF NOT EXISTS idx_asset_tenant ON asset.asset(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_asset_status ON asset.asset(tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_asset_tags   ON asset.asset USING GIN(tags);
-
--- Grants
-GRANT USAGE ON SCHEMA asset TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset TO anon;
-GRANT SELECT ON ALL TABLES IN SCHEMA asset TO anon;
-
-GRANT USAGE ON SCHEMA asset_ut TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_ut TO anon;
-
-GRANT USAGE ON SCHEMA asset_qa TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_qa TO anon;

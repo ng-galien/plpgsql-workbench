@@ -14,6 +14,7 @@
   "sql": [
     "build/catalog.ddl.sql",
     "build/catalog.func.sql",
+    "build/catalog.seed.sql",
     "build/catalog_qa.func.sql",
     "build/catalog_ut.func.sql"
   ],

@@ -3,7 +3,6 @@
 CREATE SCHEMA IF NOT EXISTS hr;
 CREATE SCHEMA IF NOT EXISTS hr_ut;
 CREATE SCHEMA IF NOT EXISTS hr_qa;
-GRANT USAGE ON SCHEMA hr TO anon;
 
 -- Salariés (registre du personnel)
 CREATE TABLE IF NOT EXISTS hr.employee (
@@ -89,8 +88,6 @@ CREATE TABLE IF NOT EXISTS hr.leave_balance (
 CREATE INDEX IF NOT EXISTS idx_leave_balance_tenant ON hr.leave_balance(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_leave_balance_employee ON hr.leave_balance(employee_id);
 
--- Triggers are in hr.func.sql (attached to their trigger functions by pg_pack)
-
 -- Row Level Security
 ALTER TABLE hr.employee ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hr.absence ENABLE ROW LEVEL SECURITY;
@@ -109,23 +106,3 @@ CREATE POLICY tenant_isolation ON hr.timesheet
 DROP POLICY IF EXISTS tenant_isolation ON hr.leave_balance;
 CREATE POLICY tenant_isolation ON hr.leave_balance
   USING (tenant_id = current_setting('app.tenant_id', true));
-
--- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON hr.employee TO anon;
-GRANT USAGE ON SEQUENCE hr.employee_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON hr.absence TO anon;
-GRANT USAGE ON SEQUENCE hr.absence_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON hr.timesheet TO anon;
-GRANT USAGE ON SEQUENCE hr.timesheet_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON hr.leave_balance TO anon;
-GRANT USAGE ON SEQUENCE hr.leave_balance_id_seq TO anon;
-
-GRANT USAGE ON SCHEMA hr_ut TO anon;
-GRANT USAGE ON SCHEMA hr_qa TO anon;
-
-ALTER DEFAULT PRIVILEGES IN SCHEMA hr GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA hr_ut GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA hr_qa GRANT EXECUTE ON FUNCTIONS TO anon;

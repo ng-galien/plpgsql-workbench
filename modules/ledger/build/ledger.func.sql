@@ -44,6 +44,8 @@ BEGIN
     RETURN NEW;
 END;
 $function$;
+DROP TRIGGER IF EXISTS trg_protect_posted ON ledger.journal_entry;
+CREATE TRIGGER trg_protect_posted BEFORE DELETE OR UPDATE ON ledger.journal_entry FOR EACH ROW EXECUTE FUNCTION ledger._protect_posted();
 
 CREATE OR REPLACE FUNCTION ledger._protect_posted_lines()
  RETURNS trigger
@@ -64,6 +66,8 @@ BEGIN
     RETURN NEW;
 END;
 $function$;
+DROP TRIGGER IF EXISTS trg_protect_posted_lines ON ledger.entry_line;
+CREATE TRIGGER trg_protect_posted_lines BEFORE INSERT OR DELETE OR UPDATE ON ledger.entry_line FOR EACH ROW EXECUTE FUNCTION ledger._protect_posted_lines();
 
 CREATE OR REPLACE FUNCTION ledger._type_label(p_type text)
  RETURNS text

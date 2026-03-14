@@ -3,7 +3,6 @@
 CREATE SCHEMA IF NOT EXISTS purchase;
 CREATE SCHEMA IF NOT EXISTS purchase_ut;
 CREATE SCHEMA IF NOT EXISTS purchase_qa;
-GRANT USAGE ON SCHEMA purchase TO anon;
 
 -- Commandes fournisseur (bons de commande)
 CREATE TABLE IF NOT EXISTS purchase.commande (
@@ -99,9 +98,6 @@ CREATE INDEX IF NOT EXISTS idx_facture_fournisseur_commande ON purchase.facture_
 CREATE INDEX IF NOT EXISTS idx_facture_fournisseur_statut ON purchase.facture_fournisseur(statut);
 CREATE INDEX IF NOT EXISTS idx_facture_fournisseur_tenant ON purchase.facture_fournisseur(tenant_id);
 
--- Triggers updated_at (function deployed via pg_func_set)
-
-
 -- RLS
 ALTER TABLE purchase.commande ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON purchase.commande;
@@ -127,27 +123,3 @@ ALTER TABLE purchase.facture_fournisseur ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON purchase.facture_fournisseur;
 CREATE POLICY tenant_isolation ON purchase.facture_fournisseur
   USING (tenant_id = current_setting('app.tenant_id', true));
-
--- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.commande TO anon;
-GRANT USAGE ON SEQUENCE purchase.commande_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.ligne TO anon;
-GRANT USAGE ON SEQUENCE purchase.ligne_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.reception TO anon;
-GRANT USAGE ON SEQUENCE purchase.reception_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.reception_ligne TO anon;
-GRANT USAGE ON SEQUENCE purchase.reception_ligne_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.facture_fournisseur TO anon;
-GRANT USAGE ON SEQUENCE purchase.facture_fournisseur_id_seq TO anon;
-
-GRANT USAGE ON SCHEMA purchase_ut TO anon;
-GRANT USAGE ON SCHEMA purchase_qa TO anon;
-
--- Default privileges
-ALTER DEFAULT PRIVILEGES IN SCHEMA purchase GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA purchase_ut GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA purchase_qa GRANT EXECUTE ON FUNCTIONS TO anon;

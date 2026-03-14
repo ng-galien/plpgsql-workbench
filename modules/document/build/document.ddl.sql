@@ -219,13 +219,3 @@ CREATE UNLOGGED TABLE document.session (
   PRIMARY KEY (canvas_id, user_id)
 );
 
--- Grants
-GRANT USAGE ON SCHEMA document TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document TO anon;
-GRANT ALL ON ALL TABLES IN SCHEMA document TO anon;
-
-GRANT USAGE ON SCHEMA document_ut TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_ut TO anon;
-
-GRANT USAGE ON SCHEMA document_qa TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_qa TO anon;
