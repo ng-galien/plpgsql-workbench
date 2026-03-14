@@ -89,11 +89,7 @@ CREATE TABLE IF NOT EXISTS hr.leave_balance (
 CREATE INDEX IF NOT EXISTS idx_leave_balance_tenant ON hr.leave_balance(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_leave_balance_employee ON hr.leave_balance(employee_id);
 
--- Trigger updated_at (fonction créée via pg_func_set)
-DROP TRIGGER IF EXISTS trg_employee_updated_at ON hr.employee;
-CREATE TRIGGER trg_employee_updated_at
-  BEFORE UPDATE ON hr.employee
-  FOR EACH ROW EXECUTE FUNCTION hr._set_updated_at();
+-- Triggers are in hr.func.sql (attached to their trigger functions by pg_pack)
 
 -- Row Level Security
 ALTER TABLE hr.employee ENABLE ROW LEVEL SECURITY;

@@ -139,6 +139,10 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION purchase._set_updated_at() IS 'Trigger function to auto-update updated_at timestamp';
+DROP TRIGGER IF EXISTS trg_commande_updated_at ON purchase.commande;
+CREATE TRIGGER trg_commande_updated_at BEFORE UPDATE ON purchase.commande FOR EACH ROW EXECUTE FUNCTION purchase._set_updated_at();
+DROP TRIGGER IF EXISTS trg_facture_fournisseur_updated_at ON purchase.facture_fournisseur;
+CREATE TRIGGER trg_facture_fournisseur_updated_at BEFORE UPDATE ON purchase.facture_fournisseur FOR EACH ROW EXECUTE FUNCTION purchase._set_updated_at();
 
 CREATE OR REPLACE FUNCTION purchase._statut_badge(p_statut text)
  RETURNS text

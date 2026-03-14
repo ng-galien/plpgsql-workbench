@@ -870,6 +870,8 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION workbench.on_issue_report_insert() IS 'Trigger: crée agent_message, lie issue↔message, passe en acknowledged';
+DROP TRIGGER IF EXISTS trg_issue_report_notify ON workbench.issue_report;
+CREATE TRIGGER trg_issue_report_notify BEFORE INSERT ON workbench.issue_report FOR EACH ROW EXECUTE FUNCTION workbench.on_issue_report_insert();
 
 CREATE OR REPLACE FUNCTION workbench.postgrest_pre_request()
  RETURNS void

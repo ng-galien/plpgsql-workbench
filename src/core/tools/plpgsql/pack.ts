@@ -201,12 +201,40 @@ export function createPackTool({ withClient, moduleRegistry }: {
           if (fns.length === 0) {
             sections.push(`-- (no functions)`);
           } else {
+            // Fetch triggers for this schema (to attach after their trigger functions)
+            const { rows: triggers } = await client.query(
+              `SELECT t.tgname, c.relname, n.nspname AS table_schema,
+                      pg_get_triggerdef(t.oid) AS triggerdef,
+                      p.proname AS func_name, pn.nspname AS func_schema
+               FROM pg_trigger t
+               JOIN pg_class c ON c.oid = t.tgrelid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+               JOIN pg_proc p ON p.oid = t.tgfoid
+               JOIN pg_namespace pn ON pn.oid = p.pronamespace
+               WHERE pn.nspname = $1 AND NOT t.tgisinternal`,
+              [schema],
+            );
+            const triggersByFunc = new Map<string, string[]>();
+            for (const trig of triggers) {
+              const key = `${trig.func_schema}.${trig.func_name}`;
+              if (!triggersByFunc.has(key)) triggersByFunc.set(key, []);
+              triggersByFunc.get(key)!.push(
+                `DROP TRIGGER IF EXISTS ${trig.tgname} ON ${trig.table_schema}.${trig.relname};\n${trig.triggerdef};`,
+              );
+            }
+
             for (const fn of fns) {
               const ddl = fn.ddl.trimEnd();
               sections.push(ddl.endsWith(";") ? ddl : ddl + ";");
               if (fn.description) {
                 const escaped = fn.description.replace(/'/g, "''");
                 sections.push(`COMMENT ON FUNCTION ${fn.ident} IS '${escaped}';`);
+              }
+              // Attach triggers that use this function
+              const fnKey = `${fn.schema}.${fn.name}`;
+              const trigs = triggersByFunc.get(fnKey);
+              if (trigs) {
+                for (const t of trigs) sections.push(t);
               }
               sections.push("");
             }

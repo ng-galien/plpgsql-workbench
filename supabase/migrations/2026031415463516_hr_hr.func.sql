@@ -58,6 +58,8 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION hr._set_updated_at() IS 'Trigger function: set updated_at to now() on UPDATE';
+DROP TRIGGER IF EXISTS trg_employee_updated_at ON hr.employee;
+CREATE TRIGGER trg_employee_updated_at BEFORE UPDATE ON hr.employee FOR EACH ROW EXECUTE FUNCTION hr._set_updated_at();
 
 CREATE OR REPLACE FUNCTION hr.absence_label(p_type text)
  RETURNS text

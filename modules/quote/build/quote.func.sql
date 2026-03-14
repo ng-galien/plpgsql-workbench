@@ -83,6 +83,10 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+DROP TRIGGER IF EXISTS trg_devis_updated_at ON quote.devis;
+CREATE TRIGGER trg_devis_updated_at BEFORE UPDATE ON quote.devis FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
+DROP TRIGGER IF EXISTS trg_facture_updated_at ON quote.facture;
+CREATE TRIGGER trg_facture_updated_at BEFORE UPDATE ON quote.facture FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
 
 CREATE OR REPLACE FUNCTION quote._statut_badge(p_statut text)
  RETURNS text

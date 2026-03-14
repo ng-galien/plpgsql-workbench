@@ -104,15 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_facture_fournisseur_statut ON purchase.facture_fo
 CREATE INDEX IF NOT EXISTS idx_facture_fournisseur_tenant ON purchase.facture_fournisseur(tenant_id);
 
 -- Triggers updated_at (function deployed via pg_func_set)
-DROP TRIGGER IF EXISTS trg_commande_updated_at ON purchase.commande;
-CREATE TRIGGER trg_commande_updated_at
-  BEFORE UPDATE ON purchase.commande
-  FOR EACH ROW EXECUTE FUNCTION purchase._set_updated_at();
 
-DROP TRIGGER IF EXISTS trg_facture_fournisseur_updated_at ON purchase.facture_fournisseur;
-CREATE TRIGGER trg_facture_fournisseur_updated_at
-  BEFORE UPDATE ON purchase.facture_fournisseur
-  FOR EACH ROW EXECUTE FUNCTION purchase._set_updated_at();
 
 -- RLS
 ALTER TABLE purchase.commande ENABLE ROW LEVEL SECURITY;

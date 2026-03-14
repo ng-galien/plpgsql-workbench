@@ -144,11 +144,6 @@ CREATE POLICY tenant_module_isolation ON workbench.tenant_module
 
 -- ── Triggers ──
 
-DROP TRIGGER IF EXISTS trg_issue_report_notify ON workbench.issue_report;
-CREATE TRIGGER trg_issue_report_notify
-  BEFORE INSERT ON workbench.issue_report
-  FOR EACH ROW
-  EXECUTE FUNCTION workbench.on_issue_report_insert();
 
 -- ── Grants ──
 

@@ -12,6 +12,8 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+DROP TRIGGER IF EXISTS trg_client_updated_at ON crm.client;
+CREATE TRIGGER trg_client_updated_at BEFORE UPDATE ON crm.client FOR EACH ROW EXECUTE FUNCTION crm._set_updated_at();
 
 CREATE OR REPLACE FUNCTION crm.brand()
  RETURNS text

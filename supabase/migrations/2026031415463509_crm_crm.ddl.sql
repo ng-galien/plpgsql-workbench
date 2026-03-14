@@ -79,10 +79,6 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_client_updated_at ON crm.client;
-CREATE TRIGGER trg_client_updated_at
-  BEFORE UPDATE ON crm.client
-  FOR EACH ROW EXECUTE FUNCTION crm._set_updated_at();
 
 -- Row Level Security
 ALTER TABLE crm.client ENABLE ROW LEVEL SECURITY;
