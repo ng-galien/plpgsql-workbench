@@ -267,6 +267,12 @@ build-illustrator: ## Bundle illustrator client (esbuild → dist/app.js)
 		--format=esm --target=es2022 --external:d3 --loader:.css=css --minify
 	@echo "  app.js + app.css → modules/document/frontend/illustrator/dist/"
 
+watch-illustrator: ## Live reload illustrator client (esbuild watch)
+	npx esbuild modules/document/frontend/illustrator/app.ts \
+		--bundle --outfile=modules/document/frontend/illustrator/dist/app.js \
+		--format=esm --target=es2022 --external:d3 --loader:.css=css \
+		--watch --sourcemap
+
 check: ## Type-check without emitting
 	npx tsc --noEmit
 

@@ -25,6 +25,7 @@ export function init(url: string, key: string, canvasId: string) {
   supabaseUrl = url;
   supabaseKey = key;
 
+  console.log("[sync] init", { url: supabaseUrl, canvasId });
   supabase = createClient(supabaseUrl, supabaseKey, {
     db: { schema: "document" },
   });
@@ -41,6 +42,7 @@ export function init(url: string, key: string, canvasId: string) {
       table: "element",
       filter: `canvas_id=eq.${canvasId}`,
     }, (payload: any) => {
+      console.log("[realtime] INSERT", payload.new.type, payload.new.name ?? payload.new.id?.slice(0,6));
       const el = rowToElement(payload.new);
       store.getState().addElement(el);
     })
@@ -50,8 +52,8 @@ export function init(url: string, key: string, canvasId: string) {
       table: "element",
       filter: `canvas_id=eq.${canvasId}`,
     }, (payload: any) => {
+      console.log("[realtime] UPDATE", payload.new.type, payload.new.name ?? payload.new.id?.slice(0,6));
       const el = rowToElement(payload.new);
-      // Don't update if we're dragging this element (optimistic local)
       const state = store.getState();
       if (state.phase === "dragging" && state.selectedIds.includes(el.id)) return;
       store.getState().updateElement(el.id, el);
@@ -62,6 +64,7 @@ export function init(url: string, key: string, canvasId: string) {
       table: "element",
       filter: `canvas_id=eq.${canvasId}`,
     }, (payload: any) => {
+      console.log("[realtime] DELETE", payload.old.id?.slice(0,6));
       store.getState().removeElement(payload.old.id);
     })
     .subscribe();
@@ -96,9 +99,10 @@ async function loadCanvas(canvasId: string) {
     .single();
 
   if (!canvas) {
-    console.error("Canvas not found:", canvasId);
+    console.error("[sync] Canvas not found:", canvasId);
     return;
   }
+  console.log("[sync] canvas loaded:", canvas.name, canvas.id);
 
   store.getState().setCanvas({
     id: canvas.id,
@@ -118,7 +122,17 @@ async function loadCanvas(canvasId: string) {
     .eq("canvas_id", canvasId)
     .order("sort_order");
 
-  store.getState().setElements((elements ?? []).map(rowToElement));
+  const mapped = (elements ?? []).map(rowToElement);
+  console.log("[sync] elements loaded:", mapped.length, mapped.map((e: any) => `${e.type}:${e.name ?? e.id?.slice(0,6)}`));
+  store.getState().setElements(mapped);
+
+  // Load doc list
+  const { data: docList } = await supabase
+    .from("canvas")
+    .select("id, name, category, format")
+    .order("updated_at", { ascending: false });
+  console.log("[sync] doc list:", (docList ?? []).length, "canvases");
+  store.getState().setDocList(docList ?? []);
 
   // Hide loader after first load
   const loader = document.getElementById("loader");
