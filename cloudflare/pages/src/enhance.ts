@@ -249,7 +249,7 @@ function _enhanceSelectSearch(el: HTMLElement, ctx: EnhanceContext): void {
     var inp = ss.querySelector(".pgv-ss-input") as HTMLInputElement;
     var hid = ss.querySelector('input[type="hidden"]') as HTMLInputElement;
     var box = ss.querySelector(".pgv-ss-results") as HTMLElement;
-    var timer: ReturnType<typeof setTimeout> | null = null;
+    var timer: ReturnType<typeof setTimeout> | undefined;
     var idx = -1;
 
     function doFetch(q: string) {
@@ -335,7 +335,7 @@ function _enhanceSelectSearch(el: HTMLElement, ctx: EnhanceContext): void {
         e.preventDefault();
         const items = box.querySelectorAll(".pgv-ss-item");
         if (idx >= 0 && idx < items.length)
-          pick((items[idx] as HTMLElement).dataset.value!, items[idx].textContent!.split("\n")[0]);
+          pick((items[idx] as HTMLElement).dataset.value ?? "", (items[idx].textContent ?? "").split("\n")[0]);
       } else if (e.key === "Escape") {
         ss.classList.remove("open");
         inp.blur();
@@ -372,7 +372,7 @@ function _enhanceFilterBar(el: HTMLElement, ctx: EnhanceContext): void {
       var displayVal = val;
       if (inp.tagName === "SELECT") {
         const opt = inp.querySelector(`option[value="${CSS.escape(val)}"]`);
-        if (opt) displayVal = opt.textContent!;
+        if (opt) displayVal = opt.textContent ?? val;
       }
       var chip = document.createElement("span");
       chip.className = "pgv-filter-chip";
@@ -402,7 +402,7 @@ function _enhanceFilterBar(el: HTMLElement, ctx: EnhanceContext): void {
     chips.addEventListener("click", (e: Event) => {
       var btn = (e.target as Element).closest("[data-filter-clear]") as HTMLElement | null;
       if (!btn) return;
-      var name = btn.dataset.filterClear!;
+      var name = btn.dataset.filterClear ?? "";
       var p = new URLSearchParams(location.search);
       p.delete(name);
       var qs = p.toString();
@@ -411,7 +411,7 @@ function _enhanceFilterBar(el: HTMLElement, ctx: EnhanceContext): void {
     // Auto-submit on select change
     form.querySelectorAll("select").forEach((sel: Element) => {
       sel.addEventListener("change", () => {
-        form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       });
     });
   });
