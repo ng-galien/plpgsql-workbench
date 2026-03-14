@@ -27,19 +27,22 @@ export function createShellComponent(): Record<string, unknown> {
     dlg: { title: "", target: "" },
     search: { open: false, query: "", idx: 0 },
     issue: { open: false, desc: "", type: "bug" },
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine timer ref
     _tt: null as any,
-    _modules: [] as any[],
+    _modules: [] as { schema: string; brand: string; items: { href?: string; icon?: string; label?: string }[] }[],
     _currentSchema: null as string | null,
     _fixedSchema: null as string | null,
-    _errors: [] as any[],
-    _actions: [] as any[],
+    _errors: [] as { msg: string; src?: string; line?: number; ts: number }[],
+    _actions: [] as { type: string; [key: string]: unknown }[],
 
     /* -- Delegated to pgv kernel -- */
     t: (key: string): string => t(key),
+    // biome-ignore lint/suspicious/noExplicitAny: pgListen handler signature varies per caller
     pgListen: (schema: string, table: string, handler: any) => pgListen(schema, table, handler),
     pgRpc: (fn: string, params?: Record<string, unknown>, schema?: string) => pgRpc(fn, params, schema),
 
     /* -- Bootstrap -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     boot: function (this: any) {
       var self = this;
 
@@ -133,7 +136,7 @@ export function createShellComponent(): Record<string, unknown> {
             body: "{}",
           })
             .then((r) => (r.ok ? r.json() : []))
-            .then((mods: any[]) => {
+            .then((mods: { schema: string; brand: string; items: { href?: string; icon?: string; label?: string }[] }[]) => {
               self._modules = Array.isArray(mods) ? mods : [];
               if (self._modules.length > 0) document.documentElement.style.setProperty("--pgv-app-bar-h", "2.5rem");
               self.go(location.pathname + location.search || "/");
@@ -152,8 +155,10 @@ export function createShellComponent(): Record<string, unknown> {
     },
 
     /* -- Event delegation on #app -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     _listen: function (this: any) {
-      var app = document.getElementById("app")!;
+      var app = document.getElementById("app");
+      if (!app) return;
 
       // Cmd+K / Ctrl+K -> toggle search overlay — store ref for cleanup
       this._onKeydown = (e: KeyboardEvent) => {
@@ -180,7 +185,7 @@ export function createShellComponent(): Record<string, unknown> {
           const params = btn.dataset.params ? JSON.parse(btn.dataset.params) : {};
           if (btn.dataset.confirm) {
             this._confirm(btn.dataset.confirm).then((ok: boolean) => {
-              if (ok) this.post(btn!.dataset.rpc, params);
+              if (ok && btn) this.post(btn.dataset.rpc, params);
             });
             return;
           }
@@ -251,6 +256,7 @@ export function createShellComponent(): Record<string, unknown> {
     },
 
     /* -- Cleanup -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     destroy: function (this: any) {
       if (this._onError) window.removeEventListener("error", this._onError);
       if (this._onRejection) window.removeEventListener("unhandledrejection", this._onRejection);
@@ -258,11 +264,13 @@ export function createShellComponent(): Record<string, unknown> {
     },
 
     /* -- Navigation (delegated to router) -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     go: function (this: any, path: string, push?: boolean) {
       return go(path, push);
     },
 
     /* -- POST action (delegated to router) -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     post: function (this: any, endpoint: string, data: Record<string, unknown>) {
       return post(endpoint, data);
     },
@@ -282,6 +290,7 @@ export function createShellComponent(): Record<string, unknown> {
     },
 
     /* -- Toast -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     showToast: function (this: any, msg: string, level?: string, detail?: string) {
       clearTimeout(this._tt);
       this.toast = { show: true, msg: msg, level: level || "success", detail: detail || "" };
@@ -298,6 +307,7 @@ export function createShellComponent(): Record<string, unknown> {
     _err: (r: Response) => handleError(r),
 
     /* -- Search Overlay -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     searchOpen: function (this: any) {
       this.search = { open: true, query: "", idx: 0 };
 
@@ -307,10 +317,12 @@ export function createShellComponent(): Record<string, unknown> {
       });
     },
 
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     searchClose: function (this: any) {
       this.search.open = false;
     },
 
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     searchExec: function (this: any) {
       var q = this.search.query.trim();
 
@@ -338,6 +350,7 @@ export function createShellComponent(): Record<string, unknown> {
         });
     },
 
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     searchNav: function (this: any, dir: number) {
       var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll(".pgv-search-item") : [];
       if (!items.length) return;
@@ -345,6 +358,7 @@ export function createShellComponent(): Record<string, unknown> {
       this._searchHighlight();
     },
 
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     searchSelect: function (this: any) {
       var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll(".pgv-search-item") : [];
       if (!items.length) return;
@@ -359,6 +373,7 @@ export function createShellComponent(): Record<string, unknown> {
       this.go(href);
     },
 
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     _searchHighlight: function (this: any) {
       var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll(".pgv-search-item") : [];
       items.forEach((el: Element, i: number) => {
@@ -367,6 +382,7 @@ export function createShellComponent(): Record<string, unknown> {
     },
 
     /* -- Dialog -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     openDialog: function (this: any, name: string, src: string, target: string) {
       this.dlg = { title: name === "folder-picker" ? t("dialog.folder") : name, target: target || "" };
       this.$refs.dlgBody.innerHTML = `<p aria-busy="true">${t("dialog.loading")}</p>`;
@@ -374,6 +390,7 @@ export function createShellComponent(): Record<string, unknown> {
       this._browse(src);
     },
 
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     _browse: function (this: any, pathOrUrl: string) {
       var url =
         pathOrUrl.indexOf("/") === 0 && pathOrUrl.indexOf("/api") !== 0
@@ -390,16 +407,18 @@ export function createShellComponent(): Record<string, unknown> {
         });
     },
 
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     dlgSelect: function (this: any) {
       var pathEl = this.$refs.dlgBody.querySelector(".folder-path");
       if (pathEl && this.dlg.target) {
         const input = document.getElementById(this.dlg.target) as HTMLInputElement | null;
-        if (input) input.value = pathEl.textContent!.trim();
+        if (input) input.value = (pathEl.textContent ?? "").trim();
       }
       this.$refs.dialog.close();
     },
 
     /* -- Confirm Dialog -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     _confirm: function (this: any, msg: string): Promise<boolean> {
       var dlg = this.$refs.confirmDialog as HTMLDialogElement;
       this.$refs.confirmMsg.textContent = msg;
@@ -427,15 +446,18 @@ export function createShellComponent(): Record<string, unknown> {
     },
 
     /* -- Form Dialog (delegated to router) -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     openFormDialog: function (this: any, id: string, src: string) {
       return openFormDialog(id, src);
     },
 
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     submitFormDialog: function (this: any, form: HTMLFormElement, data: Record<string, unknown>) {
       return submitFormDialog(form, data);
     },
 
     /* -- Issue Report -- */
+    // biome-ignore lint/suspicious/noExplicitAny: Alpine data component uses dynamic this
     issueFromError: function (this: any) {
       var desc = this.toast.msg || "";
       if (this.toast.detail) desc += `\n${this.toast.detail}`;
