@@ -30,7 +30,7 @@ function renderGuides(group: any, guides: Guide[]): void {
   }
 }
 import { toSVG, fitSVG } from "./zoom.js";
-import { r } from "./ui.js";
+import { r } from "./helpers.js";
 
 export function render(): void {
   const { doc: { currentDoc }, ui, ephemeral } = store.state;

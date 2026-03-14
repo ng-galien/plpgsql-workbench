@@ -4,6 +4,9 @@
 
 import type { Element } from "./types.js";
 
+/** Round to 1 decimal place (compact coordinates for SVG) */
+export function r(v: number): number { return Math.round(v * 10) / 10; }
+
 /** Find any element by ID, including groups (recursive) */
 export function findInElements(elements: Element[], id: string): Element | null {
   for (const el of elements) {

@@ -8,6 +8,9 @@ import "./styles/tokens.css";
 import "./styles/loader.css";
 import "./styles/menubar.css";
 
+import { registerAlpineComponent } from "./alpine-bridge.js";
+
+// Legacy imports — only used in standalone mode (no Alpine)
 import { store, guardMiddleware, subscribeToSlices } from "./store/index.js";
 import { initToast } from "./toast.js";
 import { initZoom } from "./zoom.js";
@@ -24,27 +27,40 @@ export interface MountConfig {
   canvasId?: string;
 }
 
+/**
+ * Mount in pgView shell — Alpine.js mode.
+ * Registers the Alpine component, Alpine.initTree() activates it.
+ */
 export function mount(config: MountConfig) {
-  // Register state machine guards (no-op in Zustand bridge)
-  store.use(guardMiddleware);
+  const Alpine = (window as any).Alpine;
+  if (Alpine) {
+    registerAlpineComponent(Alpine, config);
+    // Alpine.initTree is called by the shell's _enhance after DOM injection
+    return;
+  }
 
-  // Subscriptions — re-render on state changes
+  // Fallback: legacy mode (no Alpine available)
+  mountLegacy(config);
+}
+
+/**
+ * Legacy standalone mode — imperative DOM manipulation.
+ * Used when loaded directly (localhost:3333) without pgView shell.
+ */
+function mountLegacy(config: MountConfig) {
+  store.use(guardMiddleware);
   subscribeToSlices(["doc", "ui"], () => render());
   subscribeToSlices(["doc", "ui"], () => renderUI());
 
-  // Loader
   document.fonts.ready.then(() => {
     document.getElementById('loader')?.classList.add('fonts-ready');
   });
 
-  // Init
   initToast();
   initZoom();
   initEvents();
   initWs(config);
   initImageEditor();
-
-  // Load assets from Supabase
   sync.loadAssets();
 }
 
@@ -54,5 +70,5 @@ if (!(window as any).__PGV_CONFIG__) {
   const key = (window as any).__SUPABASE_KEY__ || "";
   const params = new URLSearchParams(window.location.search);
   const canvasId = params.get("canvas_id") || params.get("p_id") || undefined;
-  mount({ url, key, canvasId });
+  mountLegacy({ url, key, canvasId });
 }
