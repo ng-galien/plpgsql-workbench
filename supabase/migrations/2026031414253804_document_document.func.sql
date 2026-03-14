@@ -134,61 +134,6 @@ END;
 $function$;
 COMMENT ON FUNCTION document.canvas_duplicate(uuid,text) IS 'Deep copy canvas with all elements (new UUIDs, parent mapping)';
 
-CREATE OR REPLACE FUNCTION document.canvas_get_state(p_canvas_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_canvas jsonb;
-  v_elements jsonb;
-  v_gradients jsonb;
-BEGIN
-  -- Canvas metadata
-  SELECT jsonb_build_object(
-    'id', c.id, 'name', c.name, 'format', c.format,
-    'orientation', c.orientation, 'width', c.width, 'height', c.height,
-    'background', c.background, 'category', c.category, 'meta', c.meta
-  ) INTO v_canvas
-  FROM document.canvas c
-  WHERE c.id = p_canvas_id
-    AND c.tenant_id = current_setting('app.tenant_id', true);
-
-  IF v_canvas IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  -- Elements as flat list (frontend builds the tree via parent_id)
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'id', e.id, 'type', e.type, 'parent_id', e.parent_id,
-      'sort_order', e.sort_order, 'name', e.name,
-      'x', e.x, 'y', e.y, 'width', e.width, 'height', e.height,
-      'x1', e.x1, 'y1', e.y1, 'x2', e.x2, 'y2', e.y2,
-      'cx', e.cx, 'cy', e.cy, 'r', e.r, 'rx', e.rx_, 'ry', e.ry_,
-      'opacity', e.opacity, 'rotation', e.rotation,
-      'fill', e.fill, 'stroke', e.stroke,
-      'stroke_width', e.stroke_width, 'stroke_dasharray', e.stroke_dasharray,
-      'props', e.props, 'asset_id', e.asset_id
-    ) ORDER BY e.sort_order
-  ), '[]') INTO v_elements
-  FROM document.element e
-  WHERE e.canvas_id = p_canvas_id;
-
-  -- Gradients
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'id', g.id, 'type', g.type, 'angle', g.angle,
-      'cx', g.cx, 'cy', g.cy, 'r', g.gr, 'stops', g.stops
-    )
-  ), '[]') INTO v_gradients
-  FROM document.gradient g
-  WHERE g.canvas_id = p_canvas_id;
-
-  RETURN v_canvas || jsonb_build_object('elements', v_elements, 'gradients', v_gradients);
-END;
-$function$;
-COMMENT ON FUNCTION document.canvas_get_state(uuid) IS 'Return full canvas state: metadata + flat element list + gradients';
-
 CREATE OR REPLACE FUNCTION document.canvas_render_svg_mini(p_canvas_id uuid)
  RETURNS text
  LANGUAGE plpgsql
@@ -363,6 +308,19 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION document.company_info() IS 'Return company info for current tenant (internal utility)';
+
+CREATE OR REPLACE FUNCTION document.current_user_id()
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT CASE
+    WHEN NULLIF(current_setting('app.user_id', true), '') IS NOT NULL
+      THEN current_setting('app.user_id', true)
+    ELSE 'dev'
+  END;
+$function$;
+COMMENT ON FUNCTION document.current_user_id() IS 'Resolve current user ID: app.user_id or ''dev'' fallback';
 
 CREATE OR REPLACE FUNCTION document.data_canvases(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS jsonb
@@ -679,10 +637,8 @@ BEGIN
 
   SELECT count(*)::int INTO v_elem_cnt FROM document.element WHERE canvas_id = p_id;
 
-  -- Breadcrumb
   v_body := pgv.breadcrumb(VARIADIC ARRAY['Documents', '/', v_c.name]);
 
-  -- Info line
   v_body := v_body || '<p><small>'
     || v_c.format || ' ' || v_c.orientation
     || ' · ' || v_c.width::int::text || '×' || v_c.height::int::text || 'mm'
@@ -690,13 +646,11 @@ BEGIN
     || ' · ' || pgv.esc(v_c.category)
     || '</small></p>';
 
-  -- SVG canvas
   v_svg := document.canvas_render_svg_mini(p_id);
   IF v_svg IS NOT NULL THEN
     v_body := v_body || pgv.svg_canvas(v_svg, '{"height":"70vh"}'::jsonb);
   END IF;
 
-  -- Element table
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT e.sort_order, e.type, e.name, e.parent_id,
@@ -709,7 +663,6 @@ BEGIN
     ORDER BY e.sort_order
   LOOP
     v_indent := CASE WHEN r.parent_id IS NOT NULL THEN '└─ ' ELSE '' END;
-
     v_pos := CASE r.type
       WHEN 'text' THEN COALESCE(r.x::int::text, '') || ',' || COALESCE(r.y::int::text, '')
       WHEN 'rect' THEN COALESCE(r.x::int::text, '') || ',' || COALESCE(r.y::int::text, '')
@@ -719,7 +672,6 @@ BEGIN
       WHEN 'ellipse' THEN COALESCE(r.cx::int::text, '') || ',' || COALESCE(r.cy::int::text, '')
       ELSE '—'
     END;
-
     v_dims := CASE r.type
       WHEN 'rect' THEN COALESCE(r.width::int::text, '') || '×' || COALESCE(r.height::int::text, '')
       WHEN 'image' THEN COALESCE(r.width::int::text, '') || '×' || COALESCE(r.height::int::text, '')
@@ -727,7 +679,6 @@ BEGIN
       WHEN 'ellipse' THEN COALESCE(r.rx_::int::text, '') || '×' || COALESCE(r.ry_::int::text, '')
       ELSE '—'
     END;
-
     v_rows := v_rows || ARRAY[
       r.sort_order::text,
       v_indent || r.type,
@@ -753,7 +704,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION document.get_canvas(uuid) IS 'Canvas detail page: SVG view + element table + actions';
+COMMENT ON FUNCTION document.get_canvas(uuid) IS 'Canvas detail page: SVG view + element table + duplicate/delete actions';
 
 CREATE OR REPLACE FUNCTION document.get_company(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
@@ -1289,6 +1240,112 @@ END;
 $function$;
 COMMENT ON FUNCTION document.post_company_save(text,text,text,text,text,text,text,text,text,text) IS 'Save company info (POST action)';
 
+CREATE OR REPLACE FUNCTION document.session_get(p_canvas_id uuid, p_user_id text DEFAULT document.current_user_id())
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_row document.session;
+BEGIN
+  SELECT * INTO v_row FROM document.session WHERE canvas_id = p_canvas_id AND user_id = p_user_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('selected_ids', '[]'::jsonb, 'phase', 'idle', 'zoom', 1, 'toast', null);
+  END IF;
+  RETURN jsonb_build_object(
+    'selected_ids', v_row.selected_ids,
+    'phase', v_row.phase,
+    'zoom', v_row.zoom,
+    'toast', v_row.toast
+  );
+END;
+$function$;
+COMMENT ON FUNCTION document.session_get(uuid,text) IS 'Get ephemeral session state for a canvas+user';
+
+CREATE OR REPLACE FUNCTION document.canvas_get_state(p_canvas_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_canvas jsonb;
+  v_elements jsonb;
+  v_gradients jsonb;
+  v_session jsonb;
+BEGIN
+  SELECT jsonb_build_object(
+    'id', c.id, 'name', c.name, 'format', c.format,
+    'orientation', c.orientation, 'width', c.width, 'height', c.height,
+    'background', c.background, 'category', c.category, 'meta', c.meta
+  ) INTO v_canvas
+  FROM document.canvas c
+  WHERE c.id = p_canvas_id
+    AND c.tenant_id = current_setting('app.tenant_id', true);
+
+  IF v_canvas IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'id', e.id, 'type', e.type, 'parent_id', e.parent_id,
+      'sort_order', e.sort_order, 'name', e.name,
+      'x', e.x, 'y', e.y, 'width', e.width, 'height', e.height,
+      'x1', e.x1, 'y1', e.y1, 'x2', e.x2, 'y2', e.y2,
+      'cx', e.cx, 'cy', e.cy, 'r', e.r, 'rx', e.rx_, 'ry', e.ry_,
+      'opacity', e.opacity, 'rotation', e.rotation,
+      'fill', e.fill, 'stroke', e.stroke,
+      'stroke_width', e.stroke_width, 'stroke_dasharray', e.stroke_dasharray,
+      'props', e.props, 'asset_id', e.asset_id
+    ) ORDER BY e.sort_order
+  ), '[]') INTO v_elements
+  FROM document.element e
+  WHERE e.canvas_id = p_canvas_id;
+
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'id', g.id, 'type', g.type, 'angle', g.angle,
+      'cx', g.cx, 'cy', g.cy, 'r', g.gr, 'stops', g.stops
+    )
+  ), '[]') INTO v_gradients
+  FROM document.gradient g
+  WHERE g.canvas_id = p_canvas_id;
+
+  v_session := document.session_get(p_canvas_id);
+
+  RETURN v_canvas || jsonb_build_object('elements', v_elements, 'gradients', v_gradients, 'session', v_session);
+END;
+$function$;
+COMMENT ON FUNCTION document.canvas_get_state(uuid) IS 'Return full canvas state: metadata + elements + gradients + session';
+
+CREATE OR REPLACE FUNCTION document.session_sync(p_canvas_id uuid, p_selected_ids jsonb DEFAULT '[]'::jsonb, p_phase text DEFAULT 'idle'::text, p_zoom real DEFAULT 1, p_user_id text DEFAULT document.current_user_id())
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  INSERT INTO document.session (canvas_id, user_id, selected_ids, phase, zoom, updated_at)
+  VALUES (p_canvas_id, p_user_id, p_selected_ids, p_phase, p_zoom, now())
+  ON CONFLICT (canvas_id, user_id) DO UPDATE SET
+    selected_ids = EXCLUDED.selected_ids,
+    phase = EXCLUDED.phase,
+    zoom = EXCLUDED.zoom,
+    updated_at = now();
+END;
+$function$;
+COMMENT ON FUNCTION document.session_sync(uuid,jsonb,text,real,text) IS 'Upsert ephemeral session state for a canvas+user';
+
+CREATE OR REPLACE FUNCTION document.session_toast(p_canvas_id uuid, p_text text, p_level text DEFAULT 'info'::text, p_duration integer DEFAULT 3000, p_user_id text DEFAULT document.current_user_id())
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  INSERT INTO document.session (canvas_id, user_id, toast, updated_at)
+  VALUES (p_canvas_id, p_user_id, jsonb_build_object('text', p_text, 'level', p_level, 'duration', p_duration, 'at', now()), now())
+  ON CONFLICT (canvas_id, user_id) DO UPDATE SET
+    toast = jsonb_build_object('text', p_text, 'level', p_level, 'duration', p_duration, 'at', now()),
+    updated_at = now();
+END;
+$function$;
+COMMENT ON FUNCTION document.session_toast(uuid,text,text,integer,text) IS 'Set a toast message in the session for a canvas+user';
+
 CREATE OR REPLACE FUNCTION document.set_company(p_name text, p_siret text DEFAULT NULL::text, p_tva_intra text DEFAULT NULL::text, p_address text DEFAULT NULL::text, p_city text DEFAULT NULL::text, p_postal_code text DEFAULT NULL::text, p_phone text DEFAULT NULL::text, p_email text DEFAULT NULL::text, p_website text DEFAULT NULL::text, p_mentions text DEFAULT NULL::text)
  RETURNS document.company
  LANGUAGE plpgsql
@@ -1481,6 +1538,31 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION document_ut.test_company() IS 'Test company upsert and retrieval';
+
+CREATE OR REPLACE FUNCTION document_ut.test_current_user_id()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_uid text;
+BEGIN
+  -- Default (no app.user_id set): returns 'dev'
+  PERFORM set_config('app.user_id', '', true);
+  v_uid := document.current_user_id();
+  RETURN NEXT is(v_uid, 'dev', 'default returns dev');
+
+  -- With app.user_id set
+  PERFORM set_config('app.user_id', 'test-user-42', true);
+  v_uid := document.current_user_id();
+  RETURN NEXT is(v_uid, 'test-user-42', 'returns app.user_id when set');
+
+  -- Reset
+  PERFORM set_config('app.user_id', '', true);
+  v_uid := document.current_user_id();
+  RETURN NEXT is(v_uid, 'dev', 'back to dev after reset');
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_current_user_id() IS 'Test current_user_id resolution: app.user_id > ''dev''';
 
 CREATE OR REPLACE FUNCTION document_ut.test_data_documents()
  RETURNS SETOF text
@@ -1907,6 +1989,77 @@ END;
 $function$;
 COMMENT ON FUNCTION document_ut.test_group_nested() IS 'Test nested groups: group inside group, verify state tree';
 
+CREATE OR REPLACE FUNCTION document_ut.test_session_sync()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_canvas_id uuid;
+  v_state jsonb;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+  v_canvas_id := document.canvas_create('Session test');
+
+  -- Default state (no session row)
+  v_state := document.session_get(v_canvas_id);
+  RETURN NEXT is(v_state->>'phase', 'idle', 'default phase is idle');
+  RETURN NEXT ok((v_state->>'zoom')::real = 1, 'default zoom is 1');
+
+  -- Sync
+  PERFORM document.session_sync(v_canvas_id, '["id1","id2"]'::jsonb, 'selected', 1.5);
+  v_state := document.session_get(v_canvas_id);
+  RETURN NEXT is(v_state->>'phase', 'selected', 'phase updated to selected');
+  RETURN NEXT ok((v_state->>'zoom')::real = 1.5, 'zoom updated to 1.5');
+  RETURN NEXT ok(jsonb_array_length(v_state->'selected_ids') = 2, '2 selected ids');
+
+  -- Update sync
+  PERFORM document.session_sync(v_canvas_id, '[]'::jsonb, 'idle', 2.0);
+  v_state := document.session_get(v_canvas_id);
+  RETURN NEXT is(v_state->>'phase', 'idle', 'phase back to idle');
+  RETURN NEXT ok(jsonb_array_length(v_state->'selected_ids') = 0, '0 selected ids');
+
+  -- Cleanup
+  DELETE FROM document.session WHERE canvas_id = v_canvas_id;
+  DELETE FROM document.canvas WHERE id = v_canvas_id;
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_session_sync() IS 'Test session sync and get';
+
+CREATE OR REPLACE FUNCTION document_ut.test_session_toast()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_canvas_id uuid;
+  v_state jsonb;
+  v_toast jsonb;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+  v_canvas_id := document.canvas_create('Toast test');
+
+  -- Set toast
+  PERFORM document.session_toast(v_canvas_id, 'Element added', 'success', 2000);
+  v_state := document.session_get(v_canvas_id);
+  v_toast := v_state->'toast';
+
+  RETURN NEXT ok(v_toast IS NOT NULL, 'toast is set');
+  RETURN NEXT is(v_toast->>'text', 'Element added', 'toast text matches');
+  RETURN NEXT is(v_toast->>'level', 'success', 'toast level matches');
+  RETURN NEXT ok((v_toast->>'duration')::int = 2000, 'toast duration matches');
+  RETURN NEXT ok(v_toast ? 'at', 'toast has timestamp');
+
+  -- Canvas get_state includes session
+  v_state := document.canvas_get_state(v_canvas_id);
+  RETURN NEXT ok(v_state ? 'session', 'canvas_get_state has session key');
+  RETURN NEXT is(v_state->'session'->'toast'->>'text', 'Element added', 'session toast in canvas state');
+
+  -- Cleanup
+  DELETE FROM document.session WHERE canvas_id = v_canvas_id;
+  DELETE FROM document.canvas WHERE id = v_canvas_id;
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_session_toast() IS 'Test session toast and canvas_get_state integration';
+
 CREATE OR REPLACE FUNCTION document_ut.test_template()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -1999,9 +2152,10 @@ BEGIN
   PERFORM document_qa.seed_evjf();
   PERFORM document_qa.seed_confirmation_evjf();
   PERFORM document_qa.seed_confirmation_doe();
+  PERFORM document_qa.seed_confirmation_chang();
 END;
 $function$;
-COMMENT ON FUNCTION document_qa.seed() IS 'Seed global: brand guide + compose all canvas seeds (6 documents)';
+COMMENT ON FUNCTION document_qa.seed() IS 'Seed global: brand guide + compose all canvas seeds (7 documents)';
 
 CREATE OR REPLACE FUNCTION document_qa.seed_affiche()
  RETURNS uuid
@@ -2046,6 +2200,181 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION document_qa.seed_carte_visite() IS 'Seed Carte de visite canvas (CUSTOM 85x55mm)';
+
+CREATE OR REPLACE FUNCTION document_qa.seed_confirmation_chang()
+ RETURNS uuid
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_c uuid; v_g uuid;
+  v_w constant real := 210;
+  v_h constant real := 297;
+  v_primary constant text := '#033345';
+  v_red constant text := '#e53150';
+  v_cream constant text := '#f9f2e8';
+  v_grey constant text := '#636e72';
+  v_so int := 0;
+  v_logo uuid; v_automne uuid; v_machon uuid;
+  v_icon_est uuid; v_icon_deg uuid; v_icon_piq uuid;
+  v_bg_id uuid;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
+  SELECT id INTO v_logo FROM asset.asset WHERE filename = 'logo-mft.svg' LIMIT 1;
+  SELECT id INTO v_automne FROM asset.asset WHERE filename = 'automne-bourgogne.jpg' LIMIT 1;
+  SELECT id INTO v_machon FROM asset.asset WHERE filename = 'machon-bourguignon.jpg' LIMIT 1;
+  SELECT id INTO v_icon_est FROM asset.asset WHERE filename = 'icon-estafette.svg' LIMIT 1;
+  SELECT id INTO v_icon_deg FROM asset.asset WHERE filename = 'icon-degustation.svg' LIMIT 1;
+  SELECT id INTO v_icon_piq FROM asset.asset WHERE filename = 'icon-piquenique.svg' LIMIT 1;
+  SELECT id INTO v_bg_id FROM document.brand_guide WHERE name = 'My French Tour' AND tenant_id = 'dev';
+
+  v_c := document.canvas_create('Confirmation — John & Mei Chang', 'A4', 'portrait', v_w, v_h, v_cream, 'confirmation');
+
+  IF v_bg_id IS NOT NULL THEN
+    UPDATE document.canvas SET brand_guide_id = v_bg_id WHERE id = v_c;
+  END IF;
+
+  -- ================================================================
+  -- 1. HERO (0-85mm)
+  -- ================================================================
+  IF v_automne IS NOT NULL THEN
+    PERFORM document.element_add(v_c, 'image', v_so, jsonb_build_object(
+      'x',0,'y',0,'width',v_w,'height',85,'asset_id',v_automne,'objectFit','cover',
+      'naturalWidth',1600,'naturalHeight',1067,'cropY',0.35,'name','hero'));
+  ELSE
+    PERFORM document.element_add(v_c, 'rect', v_so, jsonb_build_object('x',0,'y',0,'width',v_w,'height',85,'fill','#c5e3d7','name','hero-placeholder'));
+  END IF;
+  v_so := v_so + 1;
+
+  IF v_logo IS NOT NULL THEN
+    PERFORM document.element_add(v_c, 'image', v_so, jsonb_build_object('x',10,'y',8,'width',35,'height',12,'asset_id',v_logo,'opacity',0.9,'naturalWidth',200,'naturalHeight',60,'name','logo'));
+  END IF;
+  v_so := v_so + 1;
+
+  PERFORM document.element_add(v_c, 'rect', v_so, jsonb_build_object('x',0,'y',55,'width',v_w,'height',30,'fill',v_primary,'opacity',0.75,'name','bandeau'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',v_w/2,'y',72,'fill','#ffffff','name','titre','fontSize',11,'fontWeight','bold','textAnchor','middle','content','Your Exclusive Wine Journey'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',v_w/2,'y',81,'fill','#ffffff','name','subtitle','fontSize',5,'fontStyle','italic','textAnchor','middle','content','Burgundy, France · 品味 Bourgogne'));
+  v_so := v_so + 1;
+
+  -- ================================================================
+  -- 2. MESSAGE PERSONNEL (90-140mm)
+  -- ================================================================
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',20,'y',98,'fill',v_primary,'name','salut','fontSize',7,'fontStyle','italic','content','Dear John & Mei,'));
+  v_so := v_so + 1;
+
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',20,'y',108,'fill',v_red,'name','welcome-cn','fontSize',5,'fontStyle','italic','content','欢迎 — Welcome to Burgundy.'));
+  v_so := v_so + 1;
+
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',20,'y',117,'fill',v_primary,'name','msg-1','fontSize',4.5,'content','We are honored to welcome you and your friends for an unforgettable'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',20,'y',123,'fill',v_primary,'name','msg-2','fontSize',4.5,'content','day exploring the legendary vineyards of Burgundy. This private'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',20,'y',129,'fill',v_primary,'name','msg-3','fontSize',4.5,'content','journey has been curated especially for your anniversary celebration'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',20,'y',135,'fill',v_primary,'name','msg-4','fontSize',4.5,'content','— ten beautiful years together.'));
+  v_so := v_so + 1;
+
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',20,'y',144,'fill',v_red,'name','msg-closing','fontSize',4.5,'fontStyle','italic','content','A journey of a lifetime — une expérience inoubliable.'));
+  v_so := v_so + 1;
+
+  -- Séparateur rouge (chance en Chine)
+  PERFORM document.element_add(v_c, 'rect', v_so, jsonb_build_object('x',85,'y',150,'width',40,'height',1.5,'fill',v_red,'name','sep-msg'));
+  v_so := v_so + 1;
+
+  -- ================================================================
+  -- 3. PROGRAMME (155-210mm)
+  -- ================================================================
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',v_w/2,'y',162,'fill',v_primary,'name','section-programme','fontSize',8,'fontWeight','bold','textAnchor','middle','content','Your Day · Votre Journée'));
+  v_so := v_so + 1;
+
+  -- Col 1: Departure (Estafette)
+  v_g := document.element_add(v_c, 'group', v_so, '{"name":"col-departure"}'::jsonb);
+  v_so := v_so + 1;
+  IF v_icon_est IS NOT NULL THEN
+    PERFORM document.element_add(v_c, 'image', v_so, jsonb_build_object('x',27,'y',168,'width',16,'height',12,'asset_id',v_icon_est,'name','icon-estafette','parent_id',v_g));
+    v_so := v_so + 1;
+  END IF;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',35,'y',188,'fill',v_primary,'name','col1-time','parent_id',v_g,'fontSize',4,'fontWeight','bold','textAnchor','middle','content','10:00 — Departure'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',35,'y',194,'fill',v_grey,'name','col1-desc1','parent_id',v_g,'fontSize',3,'textAnchor','middle','content','Private Estafette from'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',35,'y',199,'fill',v_grey,'name','col1-desc2','parent_id',v_g,'fontSize',3,'textAnchor','middle','content','your hotel'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',35,'y',206,'fill',v_primary,'name','col1-accent','parent_id',v_g,'fontSize',3.5,'fontStyle','italic','textAnchor','middle','content','La Route des Grands Crus'));
+  v_so := v_so + 1;
+
+  -- Col 2: Tastings
+  v_g := document.element_add(v_c, 'group', v_so, '{"name":"col-tastings"}'::jsonb);
+  v_so := v_so + 1;
+  IF v_icon_deg IS NOT NULL THEN
+    PERFORM document.element_add(v_c, 'image', v_so, jsonb_build_object('x',97,'y',168,'width',16,'height',12,'asset_id',v_icon_deg,'naturalWidth',113,'naturalHeight',113,'name','icon-tastings','parent_id',v_g));
+    v_so := v_so + 1;
+  END IF;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',105,'y',188,'fill',v_primary,'name','col2-time','parent_id',v_g,'fontSize',4,'fontWeight','bold','textAnchor','middle','content','12:00 — 干杯 Tastings'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',105,'y',194,'fill',v_grey,'name','col2-desc1','parent_id',v_g,'fontSize',3,'textAnchor','middle','content','12 to 15 prestigious'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',105,'y',199,'fill',v_grey,'name','col2-desc2','parent_id',v_g,'fontSize',3,'textAnchor','middle','content','wines'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',105,'y',206,'fill',v_primary,'name','col2-accent','parent_id',v_g,'fontSize',3.5,'fontStyle','italic','textAnchor','middle','content','Premiers & Grands Crus'));
+  v_so := v_so + 1;
+
+  -- Col 3: Lunch
+  v_g := document.element_add(v_c, 'group', v_so, '{"name":"col-lunch"}'::jsonb);
+  v_so := v_so + 1;
+  IF v_icon_piq IS NOT NULL THEN
+    PERFORM document.element_add(v_c, 'image', v_so, jsonb_build_object('x',167,'y',168,'width',16,'height',12,'asset_id',v_icon_piq,'naturalWidth',113,'naturalHeight',113,'name','icon-lunch','parent_id',v_g));
+    v_so := v_so + 1;
+  END IF;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',175,'y',188,'fill',v_primary,'name','col3-time','parent_id',v_g,'fontSize',4,'fontWeight','bold','textAnchor','middle','content','13:30 — Le Déjeuner'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',175,'y',194,'fill',v_grey,'name','col3-desc1','parent_id',v_g,'fontSize',3,'textAnchor','middle','content','Exclusive lunch at a'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',175,'y',199,'fill',v_grey,'name','col3-desc2','parent_id',v_g,'fontSize',3,'textAnchor','middle','content','private domaine'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',175,'y',206,'fill',v_primary,'name','col3-accent','parent_id',v_g,'fontSize',3.5,'fontStyle','italic','textAnchor','middle','content','Burgundian gastronomy'));
+  v_so := v_so + 1;
+
+  -- ================================================================
+  -- 4. PHOTO AMBIANCE (215-250mm)
+  -- ================================================================
+  IF v_machon IS NOT NULL THEN
+    PERFORM document.element_add(v_c, 'image', v_so, jsonb_build_object(
+      'x',15,'y',215,'width',180,'height',35,'asset_id',v_machon,'objectFit','cover',
+      'naturalWidth',1600,'naturalHeight',1312,'cropY',0.4,'borderRadius',4,'name','photo-ambiance'));
+  END IF;
+  v_so := v_so + 1;
+
+  -- ================================================================
+  -- 5. DÉTAILS (255-280mm)
+  -- ================================================================
+  PERFORM document.element_add(v_c, 'rect', v_so, jsonb_build_object('x',0,'y',255,'width',v_w,'height',24,'fill',v_primary,'name','details-bg'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',v_w/2,'y',263,'fill','#ffffff','name','details-formule','fontSize',5,'fontWeight','bold','textAnchor','middle','content','Formule Immersion — La Journée des Épicuriens'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',v_w/2,'y',269,'fill','#ffffff','name','details-info','fontSize',4,'textAnchor','middle','content','7 guests · Estafette Alouette 1974 · Saturday, October 18th 2026'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',v_w/2,'y',274,'fill','#ffffff','name','details-pickup','fontSize',3.5,'textAnchor','middle','content','Pickup: 10:00 from Hôtel Le Cep, Beaune'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',v_w/2,'y',279,'fill','#ffffff','name','details-price','fontSize',4,'fontStyle','italic','textAnchor','middle','content','190€ per person — 干杯 Cheers to ten years!'));
+  v_so := v_so + 1;
+
+  -- ================================================================
+  -- 6. FOOTER (282-297mm)
+  -- ================================================================
+  PERFORM document.element_add(v_c, 'rect', v_so, jsonb_build_object('x',60,'y',283,'width',90,'height',1,'fill',v_red,'name','footer-sep'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',v_w/2,'y',290,'fill',v_primary,'name','footer-contact','fontSize',3,'textAnchor','middle','content','Mélanie · +33 6 58 00 78 46 · hello@myfrenchtour.com'));
+  v_so := v_so + 1;
+  PERFORM document.element_add(v_c, 'text', v_so, jsonb_build_object('x',v_w/2,'y',295,'fill',v_red,'name','footer-farewell','fontSize',3,'fontStyle','italic','textAnchor','middle','content','À bientôt en Bourgogne! · 期待与您相见!'));
+  v_so := v_so + 1;
+
+  RETURN v_c;
+END;
+$function$;
+COMMENT ON FUNCTION document_qa.seed_confirmation_chang() IS 'Premium confirmation John & Mei Chang — EN/FR/CN trilingual, Estafette, anniversary 10 years';
 
 CREATE OR REPLACE FUNCTION document_qa.seed_confirmation_doe()
  RETURNS uuid

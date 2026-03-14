@@ -28,5 +28,6 @@ BEGIN
   PERFORM document_qa.seed_evjf();
   PERFORM document_qa.seed_confirmation_evjf();
   PERFORM document_qa.seed_confirmation_doe();
+  PERFORM document_qa.seed_confirmation_chang();
 END;
 $function$;

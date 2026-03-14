@@ -22,14 +22,20 @@ export async function initWs(): Promise<void> {
   canvasId = params.get("canvas_id") || params.get("p_id") || null;
 
   if (!canvasId) {
-    // Auto-load the most recent canvas
-    const { createClient } = await import("@supabase/supabase-js");
-    const sb = createClient(url, key, { db: { schema: "document" } });
-    const { data } = await sb.from("canvas").select("id").order("updated_at", { ascending: false }).limit(1);
-    if (data && data.length > 0) {
-      canvasId = data[0].id;
-    } else {
-      console.warn("No canvas found in database");
+    // Auto-load the most recent canvas via fetch (no extra client)
+    try {
+      const res = await fetch(`${url}/rest/v1/canvas?select=id&order=updated_at.desc&limit=1`, {
+        headers: { "apikey": key, "Accept-Profile": "document" },
+      });
+      const data = await res.json();
+      if (data && data.length > 0) {
+        canvasId = data[0].id;
+      } else {
+        console.warn("No canvas found in database");
+        return;
+      }
+    } catch (e) {
+      console.error("Failed to load canvas list", e);
       return;
     }
   }

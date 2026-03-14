@@ -15,8 +15,7 @@ import { store } from "./store.js";
 
 let supabaseUrl = "";
 let supabaseKey = "";
-let supabase: SupabaseClient | null = null;
-let supabaseAsset: SupabaseClient | null = null;
+let supabase: SupabaseClient | null = null;  // schema: document
 let channel: any = null;
 let sessionSyncTimer: any = null;
 let toastPollTimer: any = null;
@@ -28,9 +27,6 @@ export function init(url: string, key: string, canvasId: string) {
 
   supabase = createClient(supabaseUrl, supabaseKey, {
     db: { schema: "document" },
-  });
-  supabaseAsset = createClient(supabaseUrl, supabaseKey, {
-    db: { schema: "asset" },
   });
 
   // Load initial state
@@ -123,16 +119,27 @@ async function loadCanvas(canvasId: string) {
     .order("sort_order");
 
   store.getState().setElements((elements ?? []).map(rowToElement));
+
+  // Hide loader after first load
+  const loader = document.getElementById("loader");
+  if (loader && !loader.classList.contains("hidden")) {
+    setTimeout(() => loader.classList.add("hidden"), 2600);
+  }
 }
 
-/** Convert PG row to Element */
+/** Convert PG row to Element — flatten props into the element object.
+ * PG stores: { x, y, fill, props: { content, fontSize, fontFamily, ... } }
+ * Renderer expects: { x, y, fill, text, fontSize, fontFamily, ... } (flat)
+ */
 function rowToElement(row: any): any {
+  const props = row.props ?? {};
   return {
     id: row.id,
     type: row.type,
-    name: row.name,
+    name: row.name ?? props.name,
     parent_id: row.parent_id,
     sort_order: row.sort_order,
+    // Geometry from columns
     x: row.x,
     y: row.y,
     width: row.width,
@@ -144,44 +151,62 @@ function rowToElement(row: any): any {
     cx: row.cx,
     cy: row.cy,
     r: row.r,
+    // Visual from columns
     opacity: row.opacity ?? 1,
     rotation: row.rotation ?? 0,
     fill: row.fill,
     stroke: row.stroke,
-    stroke_width: row.stroke_width,
-    props: row.props ?? {},
-    asset_id: row.asset_id,
+    strokeWidth: row.stroke_width ?? props.stroke_width ?? 0,
+    // Text props (renderer expects .text not .content)
+    text: props.content ?? props.text ?? "",
+    fontSize: props.fontSize ?? 8,
+    fontFamily: props.fontFamily ?? "Libre Baskerville",
+    fontWeight: props.fontWeight ?? "bold",
+    fontStyle: props.fontStyle ?? "normal",
+    textAnchor: props.textAnchor ?? "start",
+    maxWidth: props.maxWidth ?? null,
+    // Rect
+    rx: props.rx ?? 0,
+    // Image
+    path: props.path ?? null,
+    asset_id: row.asset_id ?? props.asset_id ?? null,
+    objectFit: props.objectFit ?? "cover",
+    cropX: props.cropX ?? 0.5,
+    cropY: props.cropY ?? 0.5,
+    cropZoom: props.cropZoom ?? 1,
+    naturalWidth: props.naturalWidth ?? null,
+    naturalHeight: props.naturalHeight ?? null,
+    // All remaining props
+    ...props,
   };
 }
 
 /** Sync ephemeral state to PG UNLOGGED session */
 async function syncSession(canvasId: string, selectedIds: string[], phase: string, zoom: number) {
-  try {
-    await supabase!.rpc("session_sync", {
-      p_canvas_id: canvasId,
-      p_selected_ids: selectedIds,
-      p_phase: phase,
-      p_zoom: zoom,
-    });
-  } catch {} // silent fail — session is ephemeral
+  const { error } = await supabase!.from("session").upsert({
+    canvas_id: canvasId,
+    user_id: "dev",
+    tenant_id: "dev",
+    selected_ids: selectedIds,
+    phase,
+    zoom,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "canvas_id,user_id" });
+  if (error) console.warn("[sync:session]", error.message, error.details);
 }
 
 /** Poll toast from PG session */
 async function pollToast(canvasId: string) {
-  const { data } = await supabase
+  const { data, error } = await supabase!
     .from("session")
     .select("toast")
     .eq("canvas_id", canvasId)
     .limit(1)
-    .single();
-
+    .maybeSingle();
+  if (error) { console.warn("[sync:toast]", error.message); return; }
   if (data?.toast && data.toast.text) {
     store.getState().showToast(data.toast.text, data.toast.level, data.toast.duration);
-    // Clear toast in PG
-    await supabase
-      .from("session")
-      .update({ toast: null })
-      .eq("canvas_id", canvasId);
+    await supabase!.from("session").update({ toast: null }).eq("canvas_id", canvasId);
   }
 }
 
@@ -211,10 +236,21 @@ export async function deleteElement(elementId: string) {
 }
 
 export async function loadAssets() {
-  if (!supabaseAsset) return;
-  const { data } = await supabaseAsset
-    .from("asset")
-    .select("id, filename, path, thumb_path, title, description, tags, status")
-    .order("created_at", { ascending: false });
-  store.getState().setAssets(data ?? []);
+  if (!supabaseUrl) return;
+  // Use fetch with Accept-Profile header to query the asset schema
+  // without creating a second Supabase client
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/asset?select=id,filename,path,thumb_path,title,description,tags,status&order=created_at.desc`, {
+      headers: {
+        "apikey": supabaseKey,
+        "Accept-Profile": "asset",
+      },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      store.getState().setAssets(data ?? []);
+    }
+  } catch (e) {
+    console.warn("[sync:assets]", e);
+  }
 }
