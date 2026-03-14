@@ -7,7 +7,6 @@
 CREATE SCHEMA IF NOT EXISTS crm;
 CREATE SCHEMA IF NOT EXISTS crm_ut;
 CREATE SCHEMA IF NOT EXISTS crm_qa;
-GRANT USAGE ON SCHEMA crm TO anon;
 
 -- Clients (particuliers et entreprises)
 CREATE TABLE IF NOT EXISTS crm.client (
@@ -71,15 +70,6 @@ ALTER TABLE crm.interaction ALTER COLUMN tenant_id SET DEFAULT current_setting('
 CREATE INDEX IF NOT EXISTS idx_interaction_tenant ON crm.interaction(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_interaction_client_date ON crm.interaction(client_id, created_at DESC);
 
--- Trigger updated_at
-CREATE OR REPLACE FUNCTION crm._set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  NEW.updated_at := now();
-  RETURN NEW;
-END;
-$$;
-
-
 -- Row Level Security
 ALTER TABLE crm.client ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm.contact ENABLE ROW LEVEL SECURITY;
@@ -95,20 +85,3 @@ DROP POLICY IF EXISTS tenant_isolation ON crm.interaction;
 CREATE POLICY tenant_isolation ON crm.interaction
   USING (tenant_id = current_setting('app.tenant_id', true));
 
--- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON crm.client TO anon;
-GRANT USAGE ON SEQUENCE crm.client_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON crm.contact TO anon;
-GRANT USAGE ON SEQUENCE crm.contact_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON crm.interaction TO anon;
-GRANT USAGE ON SEQUENCE crm.interaction_id_seq TO anon;
-
-GRANT USAGE ON SCHEMA crm_ut TO anon;
-GRANT USAGE ON SCHEMA crm_qa TO anon;
-
--- Default privileges pour les fonctions créées après le DDL
-ALTER DEFAULT PRIVILEGES IN SCHEMA crm GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA crm_ut GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA crm_qa GRANT EXECUTE ON FUNCTIONS TO anon;

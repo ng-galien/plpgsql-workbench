@@ -44,6 +44,8 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock._set_updated_at() IS 'Trigger: set updated_at to clock_timestamp() on UPDATE';
+DROP TRIGGER IF EXISTS trg_article_updated_at ON stock.article;
+CREATE TRIGGER trg_article_updated_at BEFORE UPDATE ON stock.article FOR EACH ROW EXECUTE FUNCTION stock._set_updated_at();
 
 CREATE OR REPLACE FUNCTION stock._stock_actuel(p_article_id integer, p_depot_id integer DEFAULT NULL::integer)
  RETURNS numeric

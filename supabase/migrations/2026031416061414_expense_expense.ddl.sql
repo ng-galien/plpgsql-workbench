@@ -50,23 +50,3 @@ CREATE INDEX IF NOT EXISTS idx_note_auteur ON expense.note(auteur);
 CREATE INDEX IF NOT EXISTS idx_ligne_note ON expense.ligne(note_id);
 CREATE INDEX IF NOT EXISTS idx_ligne_date ON expense.ligne(date_depense);
 
--- Grants
-GRANT USAGE ON SCHEMA expense TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense TO anon;
-GRANT SELECT ON ALL TABLES IN SCHEMA expense TO anon;
-GRANT USAGE ON SCHEMA expense_ut TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_ut TO anon;
-GRANT USAGE ON SCHEMA expense_qa TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_qa TO anon;
-
--- Catégories par défaut
-INSERT INTO expense.categorie (nom, code_comptable) VALUES
-  ('Déplacement véhicule', '625100'),
-  ('Transport (train, avion)', '625200'),
-  ('Hébergement', '625600'),
-  ('Repas', '625700'),
-  ('Fournitures', '606400'),
-  ('Outillage', '606300'),
-  ('Téléphone/Internet', '626000'),
-  ('Divers', '625800')
-ON CONFLICT DO NOTHING;

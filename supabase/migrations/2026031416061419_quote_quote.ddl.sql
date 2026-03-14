@@ -3,11 +3,12 @@
 -- Source: modules/quote/build/quote.ddl.sql
 
 -- Quote — DDL (Devis & Factures)
+-- Structure only: tables, indexes, constraints, RLS policies.
+-- No GRANT (pg_pack), no CREATE FUNCTION (pg_func_set), no INSERT (quote.seed.sql).
 
 CREATE SCHEMA IF NOT EXISTS quote;
 CREATE SCHEMA IF NOT EXISTS quote_ut;
 CREATE SCHEMA IF NOT EXISTS quote_qa;
-GRANT USAGE ON SCHEMA quote TO anon;
 
 -- Devis
 CREATE TABLE IF NOT EXISTS quote.devis (
@@ -37,7 +38,7 @@ CREATE TABLE IF NOT EXISTS quote.facture (
   devis_id int REFERENCES quote.devis(id),        -- NULL = facture directe
   objet text NOT NULL,
   statut text NOT NULL DEFAULT 'brouillon'
-    CHECK (statut IN ('brouillon', 'envoyee', 'payee')),
+    CHECK (statut IN ('brouillon', 'envoyee', 'payee', 'relance')),
   notes text NOT NULL DEFAULT '',
   paid_at timestamptz,                             -- NULL = pas encore payee
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -71,15 +72,16 @@ CREATE INDEX IF NOT EXISTS idx_ligne_devis ON quote.ligne(devis_id);
 CREATE INDEX IF NOT EXISTS idx_ligne_facture ON quote.ligne(facture_id);
 CREATE INDEX IF NOT EXISTS idx_ligne_tenant ON quote.ligne(tenant_id);
 
--- Trigger updated_at
-CREATE OR REPLACE FUNCTION quote._set_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  NEW.updated_at := now();
-  RETURN NEW;
-END;
-$$;
+-- Mentions legales (conditions, penalites retard, etc.)
+CREATE TABLE IF NOT EXISTS quote.mention (
+  id serial PRIMARY KEY,
+  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  label text NOT NULL,
+  texte text NOT NULL,
+  active boolean NOT NULL DEFAULT true
+);
 
-
+CREATE INDEX IF NOT EXISTS idx_mention_tenant ON quote.mention(tenant_id);
 
 -- RLS
 ALTER TABLE quote.devis ENABLE ROW LEVEL SECURITY;
@@ -94,20 +96,6 @@ ALTER TABLE quote.ligne ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON quote.ligne
   USING (tenant_id = current_setting('app.tenant_id', true));
 
--- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON quote.devis TO anon;
-GRANT USAGE ON SEQUENCE quote.devis_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON quote.facture TO anon;
-GRANT USAGE ON SEQUENCE quote.facture_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON quote.ligne TO anon;
-GRANT USAGE ON SEQUENCE quote.ligne_id_seq TO anon;
-
-GRANT USAGE ON SCHEMA quote_ut TO anon;
-GRANT USAGE ON SCHEMA quote_qa TO anon;
-
--- Default privileges
-ALTER DEFAULT PRIVILEGES IN SCHEMA quote GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA quote_ut GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA quote_qa GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER TABLE quote.mention ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON quote.mention
+  USING (tenant_id = current_setting('app.tenant_id', true));

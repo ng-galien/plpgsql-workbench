@@ -23,10 +23,3 @@ CREATE TABLE IF NOT EXISTS workbench.test_run (
 ALTER TABLE workbench.toolbox_tool ADD COLUMN IF NOT EXISTS description text;
 ALTER TABLE workbench.toolbox_tool ADD COLUMN IF NOT EXISTS input_schema jsonb;
 
--- Grants
-GRANT USAGE ON SCHEMA ops TO anon;
-GRANT USAGE ON SCHEMA ops_ut TO anon;
-GRANT USAGE ON SCHEMA ops_qa TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops_ut TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops_qa TO anon;

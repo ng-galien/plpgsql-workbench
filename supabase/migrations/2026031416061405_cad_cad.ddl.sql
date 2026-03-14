@@ -7,7 +7,6 @@
 CREATE SCHEMA IF NOT EXISTS cad;
 CREATE SCHEMA IF NOT EXISTS cad_ut;
 CREATE SCHEMA IF NOT EXISTS cad_qa;
-GRANT USAGE ON SCHEMA cad TO anon;
 
 -- Dessins
 CREATE TABLE IF NOT EXISTS cad.drawing (
@@ -17,6 +16,7 @@ CREATE TABLE IF NOT EXISTS cad.drawing (
   unit text NOT NULL DEFAULT 'mm' CHECK (unit IN ('mm', 'cm', 'm')),
   width real NOT NULL DEFAULT 2000,
   height real NOT NULL DEFAULT 1500,
+  dimension text NOT NULL DEFAULT '2d' CHECK (dimension IN ('2d', '3d')),
   tenant_id text NOT NULL DEFAULT COALESCE(current_setting('app.tenant_id', true), 'dev'),
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
@@ -94,34 +94,6 @@ CREATE INDEX IF NOT EXISTS idx_piece_group_parent ON cad.piece_group(parent_id);
 ALTER TABLE cad.piece ADD COLUMN IF NOT EXISTS group_id int
   REFERENCES cad.piece_group(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_piece_group ON cad.piece(group_id);
-
--- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON cad.piece_group TO anon;
-GRANT USAGE ON SEQUENCE cad.piece_group_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON cad.piece TO anon;
-GRANT USAGE ON SEQUENCE cad.piece_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON cad.drawing TO anon;
-GRANT USAGE ON SEQUENCE cad.drawing_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON cad.layer TO anon;
-GRANT USAGE ON SEQUENCE cad.layer_id_seq TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON cad.shape TO anon;
-GRANT USAGE ON SEQUENCE cad.shape_id_seq TO anon;
-
-GRANT USAGE ON SCHEMA cad_ut TO anon;
-GRANT USAGE ON SCHEMA cad_qa TO anon;
-
--- Default privileges pour les fonctions créées après le DDL
-ALTER DEFAULT PRIVILEGES IN SCHEMA cad GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA cad_ut GRANT EXECUTE ON FUNCTIONS TO anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA cad_qa GRANT EXECUTE ON FUNCTIONS TO anon;
-
--- Dimension (2D/3D)
-ALTER TABLE cad.drawing ADD COLUMN IF NOT EXISTS dimension text
-  NOT NULL DEFAULT '2d' CHECK (dimension IN ('2d', '3d'));
 
 -- Tenant indexes
 CREATE INDEX IF NOT EXISTS idx_drawing_tenant ON cad.drawing(tenant_id);

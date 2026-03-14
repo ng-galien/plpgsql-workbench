@@ -142,12 +142,3 @@ DROP POLICY IF EXISTS tenant_module_isolation ON workbench.tenant_module;
 CREATE POLICY tenant_module_isolation ON workbench.tenant_module
   USING (tenant_id = coalesce(current_setting('app.tenant_id', true), tenant_id));
 
--- ── Triggers ──
-
-
--- ── Grants ──
-
-GRANT USAGE ON SCHEMA workbench TO anon;
-GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA workbench TO anon;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA workbench TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA workbench TO anon;
