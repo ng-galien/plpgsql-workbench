@@ -261,33 +261,30 @@ agent-attach: ## Attach to agent tmux session (M=name). Ex: make agent-attach M=
 build: ## Compile TypeScript (tsc → dist/)
 	npm run build
 
+ESBUILD_SHELL = npx esbuild cloudflare/pages/src/pgview.ts \
+	--bundle --outfile=cloudflare/pages/pgview.js \
+	--format=iife --global-name=pgv \
+	--target=es2022,chrome90,firefox90,safari15 \
+	--external:alpine --external:marked --external:panzoom --external:d3
+
 build-shell: ## Bundle pgView shell kernel (esbuild → cloudflare/pages/pgview.js)
-	@npx esbuild cloudflare/pages/src/pgview.ts \
-		--bundle --outfile=cloudflare/pages/pgview.js \
-		--format=iife --global-name=pgv --target=es2022 \
-		--external:alpine --external:marked --external:panzoom --external:d3 \
-		--minify
+	@$(ESBUILD_SHELL) --minify
 	@echo "  pgview.js → cloudflare/pages/"
 
 watch-shell: ## Live reload pgView shell (esbuild watch)
-	npx esbuild cloudflare/pages/src/pgview.ts \
-		--bundle --outfile=cloudflare/pages/pgview.js \
-		--format=iife --global-name=pgv --target=es2022 \
-		--external:alpine --external:marked --external:panzoom --external:d3 \
-		--watch --sourcemap
+	$(ESBUILD_SHELL) --watch --sourcemap
+
+ESBUILD_ILL = npx esbuild modules/document/frontend/illustrator/app.ts \
+	--bundle --format=esm --external:d3 --loader:.css=css \
+	--target=es2022,chrome90,firefox90,safari15
 
 build-illustrator: ## Bundle illustrator client (esbuild → dist/ + cloudflare/pages/)
-	@npx esbuild modules/document/frontend/illustrator/app.ts \
-		--bundle --outfile=modules/document/frontend/illustrator/dist/app.js \
-		--format=esm --target=es2022 --external:d3 --loader:.css=css --minify
+	@$(ESBUILD_ILL) --outfile=modules/document/frontend/illustrator/dist/app.js --minify
 	@cp modules/document/frontend/illustrator/dist/app.js modules/document/frontend/illustrator/dist/app.css cloudflare/pages/illustrator/
 	@echo "  app.js + app.css → dist/ + cloudflare/pages/illustrator/"
 
 watch-illustrator: ## Live reload illustrator client (esbuild watch → cloudflare/pages + dist/)
-	npx esbuild modules/document/frontend/illustrator/app.ts \
-		--bundle --outdir=cloudflare/pages/illustrator \
-		--format=esm --target=es2022 --external:d3 --loader:.css=css \
-		--watch --sourcemap
+	$(ESBUILD_ILL) --outdir=cloudflare/pages/illustrator --watch --sourcemap
 
 check: check-server check-shell check-lint check-css build-shell build-illustrator ## Full quality gate
 	@echo "✓ All checks passed"
