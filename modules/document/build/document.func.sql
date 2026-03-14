@@ -305,6 +305,19 @@ END;
 $function$;
 COMMENT ON FUNCTION document.company_info() IS 'Return company info for current tenant (internal utility)';
 
+CREATE OR REPLACE FUNCTION document.current_user_id()
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT CASE
+    WHEN NULLIF(current_setting('app.user_id', true), '') IS NOT NULL
+      THEN current_setting('app.user_id', true)
+    ELSE 'dev'
+  END;
+$function$;
+COMMENT ON FUNCTION document.current_user_id() IS 'Resolve current user ID: app.user_id or ''dev'' fallback';
+
 CREATE OR REPLACE FUNCTION document.data_canvases(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -620,10 +633,8 @@ BEGIN
 
   SELECT count(*)::int INTO v_elem_cnt FROM document.element WHERE canvas_id = p_id;
 
-  -- Breadcrumb
   v_body := pgv.breadcrumb(VARIADIC ARRAY['Documents', '/', v_c.name]);
 
-  -- Info line
   v_body := v_body || '<p><small>'
     || v_c.format || ' ' || v_c.orientation
     || ' · ' || v_c.width::int::text || '×' || v_c.height::int::text || 'mm'
@@ -631,13 +642,11 @@ BEGIN
     || ' · ' || pgv.esc(v_c.category)
     || '</small></p>';
 
-  -- SVG canvas
   v_svg := document.canvas_render_svg_mini(p_id);
   IF v_svg IS NOT NULL THEN
     v_body := v_body || pgv.svg_canvas(v_svg, '{"height":"70vh"}'::jsonb);
   END IF;
 
-  -- Element table
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT e.sort_order, e.type, e.name, e.parent_id,
@@ -650,7 +659,6 @@ BEGIN
     ORDER BY e.sort_order
   LOOP
     v_indent := CASE WHEN r.parent_id IS NOT NULL THEN '└─ ' ELSE '' END;
-
     v_pos := CASE r.type
       WHEN 'text' THEN COALESCE(r.x::int::text, '') || ',' || COALESCE(r.y::int::text, '')
       WHEN 'rect' THEN COALESCE(r.x::int::text, '') || ',' || COALESCE(r.y::int::text, '')
@@ -660,7 +668,6 @@ BEGIN
       WHEN 'ellipse' THEN COALESCE(r.cx::int::text, '') || ',' || COALESCE(r.cy::int::text, '')
       ELSE '—'
     END;
-
     v_dims := CASE r.type
       WHEN 'rect' THEN COALESCE(r.width::int::text, '') || '×' || COALESCE(r.height::int::text, '')
       WHEN 'image' THEN COALESCE(r.width::int::text, '') || '×' || COALESCE(r.height::int::text, '')
@@ -668,7 +675,6 @@ BEGIN
       WHEN 'ellipse' THEN COALESCE(r.rx_::int::text, '') || '×' || COALESCE(r.ry_::int::text, '')
       ELSE '—'
     END;
-
     v_rows := v_rows || ARRAY[
       r.sort_order::text,
       v_indent || r.type,
@@ -694,7 +700,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION document.get_canvas(uuid) IS 'Canvas detail page: SVG view + element table + actions';
+COMMENT ON FUNCTION document.get_canvas(uuid) IS 'Canvas detail page: SVG view + element table + duplicate/delete actions';
 
 CREATE OR REPLACE FUNCTION document.get_company(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
@@ -1230,7 +1236,7 @@ END;
 $function$;
 COMMENT ON FUNCTION document.post_company_save(text,text,text,text,text,text,text,text,text,text) IS 'Save company info (POST action)';
 
-CREATE OR REPLACE FUNCTION document.session_get(p_canvas_id uuid, p_user_id text DEFAULT 'dev'::text)
+CREATE OR REPLACE FUNCTION document.session_get(p_canvas_id uuid, p_user_id text DEFAULT document.current_user_id())
  RETURNS jsonb
  LANGUAGE plpgsql
 AS $function$
@@ -1306,7 +1312,7 @@ END;
 $function$;
 COMMENT ON FUNCTION document.canvas_get_state(uuid) IS 'Return full canvas state: metadata + elements + gradients + session';
 
-CREATE OR REPLACE FUNCTION document.session_sync(p_canvas_id uuid, p_selected_ids jsonb DEFAULT '[]'::jsonb, p_phase text DEFAULT 'idle'::text, p_zoom real DEFAULT 1, p_user_id text DEFAULT 'dev'::text)
+CREATE OR REPLACE FUNCTION document.session_sync(p_canvas_id uuid, p_selected_ids jsonb DEFAULT '[]'::jsonb, p_phase text DEFAULT 'idle'::text, p_zoom real DEFAULT 1, p_user_id text DEFAULT document.current_user_id())
  RETURNS void
  LANGUAGE plpgsql
 AS $function$
@@ -1322,7 +1328,7 @@ END;
 $function$;
 COMMENT ON FUNCTION document.session_sync(uuid,jsonb,text,real,text) IS 'Upsert ephemeral session state for a canvas+user';
 
-CREATE OR REPLACE FUNCTION document.session_toast(p_canvas_id uuid, p_text text, p_level text DEFAULT 'info'::text, p_duration integer DEFAULT 3000, p_user_id text DEFAULT 'dev'::text)
+CREATE OR REPLACE FUNCTION document.session_toast(p_canvas_id uuid, p_text text, p_level text DEFAULT 'info'::text, p_duration integer DEFAULT 3000, p_user_id text DEFAULT document.current_user_id())
  RETURNS void
  LANGUAGE plpgsql
 AS $function$
@@ -1528,6 +1534,31 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION document_ut.test_company() IS 'Test company upsert and retrieval';
+
+CREATE OR REPLACE FUNCTION document_ut.test_current_user_id()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_uid text;
+BEGIN
+  -- Default (no app.user_id set): returns 'dev'
+  PERFORM set_config('app.user_id', '', true);
+  v_uid := document.current_user_id();
+  RETURN NEXT is(v_uid, 'dev', 'default returns dev');
+
+  -- With app.user_id set
+  PERFORM set_config('app.user_id', 'test-user-42', true);
+  v_uid := document.current_user_id();
+  RETURN NEXT is(v_uid, 'test-user-42', 'returns app.user_id when set');
+
+  -- Reset
+  PERFORM set_config('app.user_id', '', true);
+  v_uid := document.current_user_id();
+  RETURN NEXT is(v_uid, 'dev', 'back to dev after reset');
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_current_user_id() IS 'Test current_user_id resolution: app.user_id > ''dev''';
 
 CREATE OR REPLACE FUNCTION document_ut.test_data_documents()
  RETURNS SETOF text

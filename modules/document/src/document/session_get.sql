@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION document.session_get(p_canvas_id uuid, p_user_id text DEFAULT 'dev'::text)
+CREATE OR REPLACE FUNCTION document.session_get(p_canvas_id uuid, p_user_id text DEFAULT document.current_user_id())
  RETURNS jsonb
  LANGUAGE plpgsql
 AS $function$

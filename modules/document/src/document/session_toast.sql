@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION document.session_toast(p_canvas_id uuid, p_text text, p_level text DEFAULT 'info'::text, p_duration integer DEFAULT 3000, p_user_id text DEFAULT 'dev'::text)
+CREATE OR REPLACE FUNCTION document.session_toast(p_canvas_id uuid, p_text text, p_level text DEFAULT 'info'::text, p_duration integer DEFAULT 3000, p_user_id text DEFAULT document.current_user_id())
  RETURNS void
  LANGUAGE plpgsql
 AS $function$

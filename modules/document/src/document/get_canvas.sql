@@ -20,10 +20,8 @@ BEGIN
 
   SELECT count(*)::int INTO v_elem_cnt FROM document.element WHERE canvas_id = p_id;
 
-  -- Breadcrumb
   v_body := pgv.breadcrumb(VARIADIC ARRAY['Documents', '/', v_c.name]);
 
-  -- Info line
   v_body := v_body || '<p><small>'
     || v_c.format || ' ' || v_c.orientation
     || ' · ' || v_c.width::int::text || '×' || v_c.height::int::text || 'mm'
@@ -31,13 +29,11 @@ BEGIN
     || ' · ' || pgv.esc(v_c.category)
     || '</small></p>';
 
-  -- SVG canvas
   v_svg := document.canvas_render_svg_mini(p_id);
   IF v_svg IS NOT NULL THEN
     v_body := v_body || pgv.svg_canvas(v_svg, '{"height":"70vh"}'::jsonb);
   END IF;
 
-  -- Element table
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT e.sort_order, e.type, e.name, e.parent_id,
@@ -50,7 +46,6 @@ BEGIN
     ORDER BY e.sort_order
   LOOP
     v_indent := CASE WHEN r.parent_id IS NOT NULL THEN '└─ ' ELSE '' END;
-
     v_pos := CASE r.type
       WHEN 'text' THEN COALESCE(r.x::int::text, '') || ',' || COALESCE(r.y::int::text, '')
       WHEN 'rect' THEN COALESCE(r.x::int::text, '') || ',' || COALESCE(r.y::int::text, '')
@@ -60,7 +55,6 @@ BEGIN
       WHEN 'ellipse' THEN COALESCE(r.cx::int::text, '') || ',' || COALESCE(r.cy::int::text, '')
       ELSE '—'
     END;
-
     v_dims := CASE r.type
       WHEN 'rect' THEN COALESCE(r.width::int::text, '') || '×' || COALESCE(r.height::int::text, '')
       WHEN 'image' THEN COALESCE(r.width::int::text, '') || '×' || COALESCE(r.height::int::text, '')
@@ -68,7 +62,6 @@ BEGIN
       WHEN 'ellipse' THEN COALESCE(r.rx_::int::text, '') || '×' || COALESCE(r.ry_::int::text, '')
       ELSE '—'
     END;
-
     v_rows := v_rows || ARRAY[
       r.sort_order::text,
       v_indent || r.type,

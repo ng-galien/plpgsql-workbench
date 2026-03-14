@@ -1458,3 +1458,25 @@ dialog article {
   color: var(--pgv-muted);
   margin-top: 0.1rem;
 }
+
+/* ── Print ───────────────────────────────────────────────────────── */
+.pgv-print-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(255,255,255,0.8);
+  border: 1px solid var(--pgv-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 16px;
+  z-index: 2;
+}
+.pgv-print-btn:hover { background: var(--pgv-surface); }
+@media print {
+  .pgv-app-bar, .pgv-issue-btn, .pgv-print-btn, nav, .pgv-search,
+  button[data-toggle-theme], footer { display: none !important; }
+  #app > main, main.container { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+  svg { width: 100% !important; height: auto !important; }
+  @page { margin: 10mm; }
+}

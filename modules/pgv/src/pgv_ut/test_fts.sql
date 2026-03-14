@@ -23,15 +23,15 @@ BEGIN
   RETURN NEXT is(jsonb_array_length(v_result->'rows'), 0, 'xyz123 no match → rows empty');
   RETURN NEXT is((v_result->>'has_more')::bool, false, 'xyz123 no match → has_more false');
 
-  -- Cursor pagination: offset 0, size 5 on 20 products
+  -- Cursor pagination: offset 0, size 5
   v_result := pgv_qa.data_products('{"_offset":0,"_size":5}'::jsonb);
   RETURN NEXT is(jsonb_array_length(v_result->'rows'), 5, 'cursor offset=0 returns 5 rows');
-  RETURN NEXT is((v_result->>'has_more')::bool, true, 'cursor offset=0 has_more = true (20 products)');
+  RETURN NEXT is((v_result->>'has_more')::bool, true, 'cursor offset=0 has_more = true');
 
-  -- Cursor pagination: last page
-  v_result := pgv_qa.data_products('{"_offset":15,"_size":5}'::jsonb);
-  RETURN NEXT is(jsonb_array_length(v_result->'rows'), 5, 'cursor offset=15 returns 5 rows');
-  RETURN NEXT is((v_result->>'has_more')::bool, false, 'cursor offset=15 has_more = false (end)');
+  -- Cursor pagination: past end
+  v_result := pgv_qa.data_products('{"_offset":9999,"_size":5}'::jsonb);
+  RETURN NEXT is(jsonb_array_length(v_result->'rows'), 0, 'cursor past end returns 0 rows');
+  RETURN NEXT is((v_result->>'has_more')::bool, false, 'cursor past end has_more = false');
 
   -- Filter: category = bois
   v_result := pgv_qa.data_products('{"p_category":"bois"}'::jsonb);

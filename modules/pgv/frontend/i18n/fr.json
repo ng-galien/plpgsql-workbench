@@ -40,5 +40,6 @@
   "table.prev": "Précédent",
   "table.empty": "Aucun résultat",
   "table.loading": "Chargement…",
-  "table.search": "Rechercher…"
+  "table.search": "Rechercher…",
+  "print": "Télécharger SVG"
 }

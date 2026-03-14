@@ -17,7 +17,8 @@ BEGIN
     ('fr', 'pgv.table_prev', 'Précédent'),
     ('fr', 'pgv.table_empty', 'Aucun résultat'),
     ('fr', 'pgv.table_loading', 'Chargement…'),
-    ('fr', 'pgv.table_search', 'Rechercher…')
+    ('fr', 'pgv.table_search', 'Rechercher…'),
+    ('fr', 'pgv.print', 'Télécharger SVG')
   ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
 END;
 $function$;

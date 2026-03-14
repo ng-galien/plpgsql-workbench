@@ -26,7 +26,14 @@ BEGIN
       || '<span class="pgv-canvas-sep"></span>'
       || '<button class="pgv-canvas-btn" id="' || v_id || '_fit" title="Ajuster">Fit</button>'
       || '<button class="pgv-canvas-btn" id="' || v_id || '_reset" title="1:1">1:1</button>'
+      || '<span class="pgv-canvas-sep"></span>'
+      || '<button class="pgv-canvas-btn" id="' || v_id || '_print" title="' || pgv.t('pgv.print') || '">&#x1F5B6;</button>'
       || '</div>';
+  END IF;
+
+  IF NOT v_toolbar THEN
+    v_html := v_html
+      || '<button class="pgv-print-btn" id="' || v_id || '_print2" title="' || pgv.t('pgv.print') || '">&#x1F5B6;</button>';
   END IF;
 
   v_html := v_html || '</div>';
@@ -58,6 +65,8 @@ BEGIN
     pz.zoomAbs(0,0,sc);pz.moveTo(ox,oy);upd();
   };
   if(fb){if(vp.clientWidth>0)fb.onclick();else{var io=new IntersectionObserver(function(es){if(es[0].isIntersecting&&vp.clientWidth>0){fb.onclick();io.disconnect();}});io.observe(vp);}}
+  var pb=document.getElementById(id+"_print")||document.getElementById(id+"_print2");
+  if(pb)pb.onclick=function(){var s=vp.querySelector("svg");if(!s)return;var c=s.cloneNode(true);c.removeAttribute("style");var bb=s.getBBox();var pad=10;c.setAttribute("viewBox",(bb.x-pad)+" "+(bb.y-pad)+" "+(bb.width+pad*2)+" "+(bb.height+pad*2));c.setAttribute("width",bb.width+pad*2);c.setAttribute("height",bb.height+pad*2);c.setAttribute("xmlns","http://www.w3.org/2000/svg");c.setAttribute("xmlns:xlink","http://www.w3.org/1999/xlink");var imgs=c.querySelectorAll("image");if(!imgs.length){var bl=new Blob([c.outerHTML],{type:"image/svg+xml"});var al=document.createElement("a");al.href=URL.createObjectURL(bl);al.download="export.svg";al.click();URL.revokeObjectURL(al.href);return;}var done=0;imgs.forEach(function(img){var url=img.getAttribute("href")||img.getAttributeNS("http://www.w3.org/1999/xlink","href");if(!url||url.startsWith("data:")){done++;if(done===imgs.length)dl();return;}fetch(url).then(function(r){return r.blob();}).then(function(blob){var rd=new FileReader();rd.onload=function(){img.setAttribute("href",rd.result);img.removeAttributeNS("http://www.w3.org/1999/xlink","href");done++;if(done===imgs.length)dl();};rd.readAsDataURL(blob);}).catch(function(){done++;if(done===imgs.length)dl();});});function dl(){var bl=new Blob([c.outerHTML],{type:"image/svg+xml"});var al=document.createElement("a");al.href=URL.createObjectURL(bl);al.download="export.svg";al.click();URL.revokeObjectURL(al.href);}};
 })();
 $JS$;
 

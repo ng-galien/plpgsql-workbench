@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION document.session_sync(p_canvas_id uuid, p_selected_ids jsonb DEFAULT '[]'::jsonb, p_phase text DEFAULT 'idle'::text, p_zoom real DEFAULT 1, p_user_id text DEFAULT 'dev'::text)
+CREATE OR REPLACE FUNCTION document.session_sync(p_canvas_id uuid, p_selected_ids jsonb DEFAULT '[]'::jsonb, p_phase text DEFAULT 'idle'::text, p_zoom real DEFAULT 1, p_user_id text DEFAULT document.current_user_id())
  RETURNS void
  LANGUAGE plpgsql
 AS $function$

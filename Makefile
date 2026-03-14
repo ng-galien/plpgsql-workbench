@@ -269,3 +269,29 @@ check: ## Type-check without emitting
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
 		awk -F ':.*## ' '{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+
+# --- Export ---
+
+.PHONY: export-svg
+
+export-svg: ## Export all canvas SVGs to tmp/
+	@mkdir -p tmp
+	@PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d postgres -t -A -c \
+		"SELECT c.id || '|' || c.name FROM document.canvas c" | \
+	while IFS='|' read -r id name; do \
+		safe=$$(echo "$$name" | tr ' /' '_-' | tr -cd 'a-zA-Z0-9_-'); \
+		PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d postgres -t -A -c \
+			"SELECT document.canvas_render_svg_mini('$$id'::uuid) FROM (SELECT set_config('app.tenant_id','dev',true)) _" \
+			> "tmp/$$safe.svg"; \
+		echo "  tmp/$$safe.svg"; \
+	done
+	@echo "Done"
+
+export-pdf: export-svg ## Export all canvas as PDF (SVG → PDF via rsvg-convert)
+	@for f in tmp/*.svg; do \
+		python3 scripts/svg-embed-images.py "$$f" dev/frontend; \
+		pdf="$${f%.svg}.pdf"; \
+		rsvg-convert -f pdf --keep-image-data "$$f" -o "$$pdf" 2>/dev/null; \
+		echo "  $$pdf"; \
+	done
+	@echo "Done"

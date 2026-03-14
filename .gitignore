@@ -6,3 +6,4 @@ dist/
 data/
 dev/frontend/
 .claude/worktrees/
+tmp/
