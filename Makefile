@@ -261,15 +261,16 @@ agent-attach: ## Attach to agent tmux session (M=name). Ex: make agent-attach M=
 build: ## Compile TypeScript (tsc → dist/)
 	npm run build
 
-build-illustrator: ## Bundle illustrator client (esbuild → dist/app.js)
+build-illustrator: ## Bundle illustrator client (esbuild → dist/ + cloudflare/pages/)
 	@npx esbuild modules/document/frontend/illustrator/app.ts \
 		--bundle --outfile=modules/document/frontend/illustrator/dist/app.js \
 		--format=esm --target=es2022 --external:d3 --loader:.css=css --minify
-	@echo "  app.js + app.css → modules/document/frontend/illustrator/dist/"
+	@cp modules/document/frontend/illustrator/dist/app.js modules/document/frontend/illustrator/dist/app.css cloudflare/pages/illustrator/
+	@echo "  app.js + app.css → dist/ + cloudflare/pages/illustrator/"
 
-watch-illustrator: ## Live reload illustrator client (esbuild watch)
+watch-illustrator: ## Live reload illustrator client (esbuild watch → cloudflare/pages + dist/)
 	npx esbuild modules/document/frontend/illustrator/app.ts \
-		--bundle --outfile=modules/document/frontend/illustrator/dist/app.js \
+		--bundle --outdir=cloudflare/pages/illustrator \
 		--format=esm --target=es2022 --external:d3 --loader:.css=css \
 		--watch --sourcemap
 

@@ -712,6 +712,12 @@
           else { s.textContent = old.textContent; }
           old.parentNode.replaceChild(s, old);
         });
+        // Illustrator: detect data-illustrator marker, load D3 + app bundle
+        var illEl = el.querySelector('[data-illustrator]');
+        if (illEl) {
+          self._loadIllustrator(illEl.dataset.illustrator);
+          return; // skip further enhance — illustrator takes over
+        }
         // Initialize Alpine.js on new DOM (module fragments with x-data)
         if (typeof Alpine !== 'undefined') Alpine.initTree(el);
         pgv.mount(el);
@@ -888,6 +894,45 @@
         .catch(function() {
           container.innerHTML = '<p>' + self.t('error.load') + '</p>';
         });
+      },
+
+      /* ── Illustrator loader ─────────────────────────── */
+      _illustratorLoaded: false,
+      _loadIllustrator: function(canvasId) {
+        var self = this;
+        var cfg = window.__PGV_CONFIG__;
+
+        // Hide pgView chrome, go fullscreen
+        var nav = document.querySelector('nav.container-fluid');
+        if (nav) nav.style.display = 'none';
+        var appBar = document.getElementById('appBar');
+        if (appBar) appBar.style.display = 'none';
+        var app = document.getElementById('app');
+        if (app) { app.style.padding = '0'; app.style.maxWidth = 'none'; }
+
+        function boot() {
+          import('/illustrator/app.js').then(function(m) {
+            m.mount({ url: cfg.supabaseUrl, key: cfg.supabaseKey, canvasId: canvasId });
+          });
+        }
+
+        if (self._illustratorLoaded) { boot(); return; }
+
+        // Load D3 + app.css first
+        var css = document.createElement('link');
+        css.rel = 'stylesheet';
+        css.href = '/illustrator/app.css';
+        document.head.appendChild(css);
+
+        if (typeof d3 === 'undefined') {
+          var d3s = document.createElement('script');
+          d3s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
+          d3s.onload = function() { self._illustratorLoaded = true; boot(); };
+          document.head.appendChild(d3s);
+        } else {
+          self._illustratorLoaded = true;
+          boot();
+        }
       },
 
       /* ── Home page (module cards) ──────────────────── */

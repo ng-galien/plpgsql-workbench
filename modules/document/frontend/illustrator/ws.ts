@@ -11,15 +11,16 @@ import { store, dispatch } from "./store/index.js";
 import * as sync from "./supabase-sync.js";
 
 let canvasId: string | null = null;
+let _config: { url: string; key: string } = { url: "", key: "" };
 
 /** Initialize Supabase sync (replaces WebSocket connection) */
-export async function initWs(): Promise<void> {
-  const url = (window as any).__SUPABASE_URL__ || "http://localhost:54321";
-  const key = (window as any).__SUPABASE_KEY__ || "";
+export async function initWs(config: { url: string; key: string; canvasId?: string }): Promise<void> {
+  _config = { url: config.url, key: config.key };
+  const url = config.url;
+  const key = config.key;
 
-  // Canvas ID from URL or load the most recent one
-  const params = new URLSearchParams(window.location.search);
-  canvasId = params.get("canvas_id") || params.get("p_id") || null;
+  // Canvas ID from config or URL
+  canvasId = config.canvasId || new URLSearchParams(window.location.search).get("canvas_id") || null;
 
   if (!canvasId) {
     // Auto-load the most recent canvas via fetch (no extra client)
@@ -69,9 +70,7 @@ export function wsSend(msg: any): void {
     case "load_document":
       sync.destroy();
       canvasId = msg.name;
-      const url2 = (window as any).__SUPABASE_URL__ || "http://localhost:54321";
-      const key2 = (window as any).__SUPABASE_KEY__ || "";
-      sync.init(url2, key2, canvasId);
+      sync.init(_config.url, _config.key, canvasId);
       break;
     case "reorder_element":
       break;
