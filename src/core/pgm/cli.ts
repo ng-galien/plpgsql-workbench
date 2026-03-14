@@ -29,6 +29,7 @@ import {
 import { installModules } from "./installer.js";
 import { checkModules, deployModules } from "./deployer.js";
 import { findNextPorts, scaffoldApp, scaffoldModule } from "./scaffold.js";
+import { syncToSupabase, cleanSupabaseMigrations } from "./supabase.js";
 
 const program = new Command();
 
@@ -368,6 +369,49 @@ mod
       const manifest = await loadManifest(modulesDir, name);
       console.log(`  ${manifest.name}@${manifest.version}  ${manifest.description}`);
     }
+  });
+
+// ── pgm supabase ────────────────────────────────────────────────
+
+const supa = program
+  .command("supabase")
+  .description("Supabase deployment (sync migrations)");
+
+// --- supabase sync ---
+
+supa
+  .command("sync")
+  .description("Generate Supabase migrations from module build files")
+  .argument("<modules...>", "Module names to include (dependencies resolved automatically)")
+  .option("--clean", "Remove previously generated migrations first")
+  .action(async (moduleNames: string[], opts: { clean?: boolean }) => {
+    const wsRoot = await findWorkspaceRoot(process.cwd());
+
+    if (opts.clean) {
+      const removed = await cleanSupabaseMigrations(wsRoot);
+      if (removed > 0) console.log(`Cleaned ${removed} previous migration(s)`);
+    }
+
+    console.log(`Syncing modules: ${moduleNames.join(", ")}\n`);
+    const result = await syncToSupabase(wsRoot, moduleNames);
+
+    console.log(`Modules (dependency order): ${result.modules.join(" → ")}\n`);
+    console.log(`Generated ${result.migrations.length} migration(s):`);
+    for (const m of result.migrations) {
+      console.log(`  supabase/migrations/${m}`);
+    }
+    console.log(`\nDeploy with: supabase db push`);
+  });
+
+// --- supabase clean ---
+
+supa
+  .command("clean")
+  .description("Remove auto-generated Supabase migrations")
+  .action(async () => {
+    const wsRoot = await findWorkspaceRoot(process.cwd());
+    const removed = await cleanSupabaseMigrations(wsRoot);
+    console.log(`Removed ${removed} migration(s)`);
   });
 
 program.parse();
