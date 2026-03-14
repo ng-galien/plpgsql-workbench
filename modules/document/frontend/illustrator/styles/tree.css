@@ -1,0 +1,161 @@
+/* ============================================================
+   TREE — unified collapsible structure
+   Nodes (doc, group): chevron + badge + name + meta
+   Leaves (text, image, rect, line): badge + name + id
+   ============================================================ */
+
+.tree {
+  list-style: none;
+  font-size: 0.78rem;
+  padding: 4px 0;
+}
+
+/* ---- Collapsible node row (doc + group) ---- */
+.tree-node {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background var(--duration);
+  margin-bottom: 1px;
+  user-select: none;
+}
+.tree-node:hover { background: var(--bg-hover); }
+.tree-node.selected {
+  background: var(--accent-soft);
+  box-shadow: inset 2.5px 0 0 var(--accent);
+}
+
+/* Chevron — shared for all collapsible nodes */
+.tree-chevron {
+  width: 14px; height: 14px;
+  flex-shrink: 0;
+  color: var(--text-3);
+  transition: transform 200ms var(--ease), color var(--duration);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+}
+.tree-chevron svg { width: 10px; height: 10px; }
+.tree-chevron.open { transform: rotate(90deg); }
+.tree-node:hover > .tree-chevron { color: var(--text-2); }
+
+/* Badge — type indicator, same for all */
+.tree-badge {
+  font-size: 0.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+  min-width: 24px;
+  flex-shrink: 0;
+  text-align: center;
+  background: var(--bg-hover);
+  border-radius: 3px;
+  padding: 1px 3px;
+  line-height: 1.4;
+  transition: all var(--duration);
+}
+.tree-node:hover > .tree-badge,
+.tree-leaf:hover > .tree-badge { background: var(--bg-active); }
+.tree-node.selected > .tree-badge,
+.tree-leaf.selected > .tree-badge {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* Doc badge — accent tint */
+.tree-badge.tree-badge--doc {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 800;
+}
+
+/* Name */
+.tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text-2);
+  transition: color var(--duration);
+}
+.tree-node.selected > .tree-name,
+.tree-leaf.selected > .tree-name { color: var(--text-1); font-weight: 500; }
+/* Node names (doc + group) — bolder than leaves */
+.tree-node > .tree-name {
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+/* Meta — secondary info */
+.tree-meta {
+  font-size: 0.54rem;
+  color: var(--text-3);
+  opacity: 0.55;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---- Children container ---- */
+.tree-children {
+  list-style: none;
+  padding-left: 20px;
+  position: relative;
+}
+.tree-children.collapsed { display: none; }
+
+/* Vertical guide line */
+.tree-children::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 0;
+  bottom: 8px;
+  width: 1px;
+  background: var(--border);
+  opacity: 0.5;
+}
+
+/* ---- Leaf row (non-collapsible) ---- */
+.tree-leaf {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  padding-left: 24px; /* align with node names (14px chevron + 5px gap + ~5px) */
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: all var(--duration);
+  margin-bottom: 1px;
+  position: relative;
+}
+/* Horizontal branch line */
+.tree-leaf::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  background: var(--border);
+  opacity: 0.5;
+}
+.tree-leaf:hover { background: var(--bg-hover); }
+.tree-leaf.selected {
+  background: var(--accent-soft);
+  box-shadow: inset 2.5px 0 0 var(--accent);
+}
+
+/* Leaf ID */
+.tree-id {
+  font-size: 0.52rem;
+  color: var(--text-3);
+  opacity: 0.35;
+  font-variant-numeric: tabular-nums;
+}

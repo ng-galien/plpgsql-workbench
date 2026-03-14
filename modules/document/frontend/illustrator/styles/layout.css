@@ -1,0 +1,278 @@
+/* ============================================================
+   LAYOUT — workspace grid, panels, resize handles
+   ============================================================ */
+
+/* ---- Workspace grid ---- */
+.workspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: var(--layers-w, 200px) 5px 1fr 5px var(--props-w, 220px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---- Panels (shared) ---- */
+.layers-panel,
+.properties-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  overflow: hidden;
+  min-width: 0;
+  transition: opacity 200ms var(--ease);
+  position: relative;
+  z-index: 2;
+}
+.layers-panel {
+  border-right: 1px solid var(--border);
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.05);
+}
+.properties-panel {
+  border-left: 1px solid var(--border);
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.05);
+}
+
+/* Collapsed panels — thin strip with rotated title */
+.layers-panel.collapsed .panel-body,
+.layers-panel.collapsed .layers-actions,
+.properties-panel.collapsed .panel-body {
+  display: none;
+}
+.layers-panel.collapsed .panel-header,
+.properties-panel.collapsed .panel-header {
+  flex-direction: column;
+  padding: 10px 4px;
+  border-bottom: none;
+  gap: 10px;
+}
+.layers-panel.collapsed .panel-title,
+.properties-panel.collapsed .panel-title {
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
+}
+.layers-panel.collapsed .panel-count {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+}
+.layers-panel.collapsed .panel-collapse-btn svg {
+  transform: rotate(180deg);
+}
+.properties-panel.collapsed .panel-collapse-btn svg {
+  transform: rotate(180deg);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, var(--bg-surface) 100%);
+}
+.panel-title {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  flex: 1;
+}
+.panel-count {
+  font-size: 0.56rem;
+  font-weight: 600;
+  color: var(--text-3);
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+.panel-collapse-btn {
+  width: 20px; height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: all var(--duration);
+  flex-shrink: 0;
+}
+.panel-collapse-btn svg { width: 12px; height: 12px; }
+.panel-collapse-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.panel-body::-webkit-scrollbar { width: 4px; }
+.panel-body::-webkit-scrollbar-track { background: transparent; }
+.panel-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+.panel-body::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+/* ---- Layers actions bar ---- */
+.layers-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: linear-gradient(0deg, rgba(255, 255, 255, 0.3) 0%, var(--bg-surface) 100%);
+}
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: all var(--duration);
+}
+.action-btn svg { width: 14px; height: 14px; }
+.action-btn:hover {
+  border-color: var(--border);
+  color: var(--text-1);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-sm);
+}
+.action-btn:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+.action-btn:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* ---- Resize handles (vertical between panels) ---- */
+.resize-handle-v {
+  width: 5px;
+  background: transparent;
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background var(--duration);
+  position: relative;
+}
+.resize-handle-v::before {
+  content: '· · ·';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(90deg);
+  font-size: 8px;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--border);
+  transition: color var(--duration);
+  pointer-events: none;
+}
+.resize-handle-v::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 2px;
+  width: 1px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity var(--duration);
+}
+.resize-handle-v:hover { background: var(--accent-soft); }
+.resize-handle-v:hover::before { color: var(--accent); }
+.resize-handle-v.active { background: var(--accent); }
+.resize-handle-v.active::before { color: #fff; }
+/* Disable resize handle when adjacent panel is collapsed */
+.layers-panel.collapsed + .resize-handle-v,
+.resize-handle-v:has(+ .properties-panel.collapsed) {
+  cursor: default;
+  pointer-events: none;
+}
+.layers-panel.collapsed + .resize-handle-v::before,
+.resize-handle-v:has(+ .properties-panel.collapsed)::before {
+  display: none;
+}
+
+/* ---- Horizontal resize handle ---- */
+.resize-handle-h {
+  height: 5px;
+  width: 100%;
+  background: transparent;
+  cursor: row-resize;
+  flex-shrink: 0;
+  transition: background var(--duration);
+  position: relative;
+}
+.resize-handle-h::before {
+  content: '· · ·';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 8px;
+  line-height: 1;
+  letter-spacing: 1px;
+  color: var(--border);
+  transition: color var(--duration);
+  pointer-events: none;
+}
+.resize-handle-h::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 2px;
+  height: 1px;
+  background: var(--border);
+  opacity: 0;
+  transition: opacity var(--duration);
+}
+.resize-handle-h:hover { background: var(--accent-soft); }
+.resize-handle-h:hover::before { color: var(--accent); }
+.resize-handle-h.active { background: var(--accent); }
+.resize-handle-h.active::before { color: #fff; }
+.resize-handle-h.disabled {
+  cursor: default;
+  pointer-events: none;
+}
+.resize-handle-h.disabled::after { opacity: 0; }
+
+/* ---- Canvas viewport ---- */
+.canvas-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--bg-workspace);
+  background-image:
+    radial-gradient(circle, rgba(0, 0, 0, 0.06) 0.5px, transparent 0.5px);
+  background-size: 14px 14px;
+  min-height: 0;
+  cursor: grab;
+}
+.canvas-viewport:active { cursor: grabbing; }
+/* Locked mode — pan everywhere, elements non-interactive */
+.canvas-viewport.locked,
+.canvas-viewport.locked #canvas { cursor: grab !important; }
+.canvas-viewport.locked:active,
+.canvas-viewport.locked:active #canvas { cursor: grabbing !important; }
+.canvas-viewport.locked .element { pointer-events: none !important; cursor: inherit !important; }
+/* Inner shadow from panels + vignette */
+.canvas-viewport::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 3px 0 12px rgba(0, 0, 0, 0.04), inset -3px 0 12px rgba(0, 0, 0, 0.04), inset 0 3px 8px rgba(0, 0, 0, 0.03);
+  background: radial-gradient(ellipse at center, transparent 35%, rgba(0, 0, 0, 0.06) 100%);
+  pointer-events: none;
+}

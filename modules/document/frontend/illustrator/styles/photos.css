@@ -1,0 +1,186 @@
+/* ============================================================
+   PHOTO LIBRARY — horizontal strip at bottom of canvas area
+   ============================================================ */
+
+.photo-library {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
+  height: 80px;
+  min-height: 40px;
+  max-height: 50vh;
+  overflow: hidden;
+  transition: height 200ms var(--ease);
+  position: relative;
+  z-index: 2;
+}
+
+/* Header bar */
+.photo-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  min-width: 28px;
+}
+.photo-collapse-btn {
+  width: 18px; height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: all var(--duration);
+  flex-shrink: 0;
+}
+.photo-collapse-btn svg { width: 10px; height: 10px; }
+.photo-collapse-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+.photo-title {
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.photo-count {
+  font-size: 0.5rem;
+  color: var(--text-3);
+  opacity: 0.5;
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+}
+
+/* Collapsed state */
+.photo-library.collapsed {
+  height: 28px !important;
+  min-height: 28px;
+}
+.photo-library.collapsed .photo-upload-zone,
+.photo-library.collapsed .photo-strip {
+  display: none;
+}
+.photo-library.collapsed .photo-header {
+  flex-direction: row;
+  padding: 4px 8px;
+  border-right: none;
+  gap: 8px;
+}
+.photo-library.collapsed .photo-title {
+  writing-mode: horizontal-tb;
+  transform: none;
+}
+.photo-library.collapsed .photo-count {
+  writing-mode: horizontal-tb;
+  transform: none;
+}
+.photo-library.collapsed .photo-collapse-btn svg {
+  transform: rotate(180deg);
+}
+
+/* Upload zone — fixed left square */
+.photo-upload-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  min-width: 52px;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 200ms var(--ease-out);
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.photo-upload-zone svg {
+  width: 20px; height: 20px;
+  transition: transform 150ms var(--ease);
+}
+.photo-upload-zone:hover,
+.photo-upload-zone.dragover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.photo-upload-zone:hover svg {
+  transform: scale(1.15);
+}
+.photo-upload-zone input { display: none; }
+
+/* Photo strip — scrollable thumbnails */
+.photo-strip {
+  flex: 1;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.photo-strip::-webkit-scrollbar { height: 3px; }
+.photo-strip::-webkit-scrollbar-track { background: transparent; }
+.photo-strip::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.photo-thumb {
+  position: relative;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  cursor: pointer;
+  height: calc(100% - 12px);
+  aspect-ratio: 4/3;
+  background: var(--bg-base);
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out), border-color var(--duration);
+}
+.photo-thumb:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent-border);
+}
+.photo-thumb img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 250ms var(--ease-out);
+}
+.photo-thumb:hover img { transform: scale(1.06); }
+/* Warm overlay on hover */
+.photo-thumb::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(143, 107, 26, 0.08), transparent 60%);
+  opacity: 0;
+  transition: opacity 200ms var(--ease);
+  pointer-events: none;
+}
+.photo-thumb:hover::after { opacity: 1; }
+.photo-thumb-label {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 10px 4px 2px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.55));
+  font-size: 0.48rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+}

@@ -1,0 +1,265 @@
+/* ---- Properties panel content ---- */
+.prop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+.prop-label {
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: var(--text-3);
+  width: 36px;
+  flex-shrink: 0;
+  text-align: right;
+  letter-spacing: 0.02em;
+}
+.prop-input {
+  flex: 1;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 5px 8px;
+  color: var(--text-1);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.8rem;
+  outline: none;
+  width: 0;
+  transition: border-color var(--duration), box-shadow var(--duration), background var(--duration);
+}
+.prop-input:hover { border-color: var(--border-hover); }
+.prop-input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+.prop-input[type="color"] {
+  width: 28px; height: 26px;
+  padding: 2px;
+  cursor: pointer;
+  flex: 0 0 28px;
+  border-radius: var(--r-sm);
+}
+.prop-input[type="color"]:hover {
+  box-shadow: var(--shadow-sm);
+}
+.prop-dim {
+  font-size: 0.74rem;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+.prop-select {
+  flex: 1;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 5px 8px;
+  color: var(--text-1);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+  width: 0;
+  transition: border-color var(--duration), box-shadow var(--duration);
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23928a7b' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 10px;
+  padding-right: 24px;
+}
+.prop-select:hover { border-color: var(--border-hover); }
+.prop-select:focus {
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+.prop-select option {
+  background: var(--bg-raised);
+  color: var(--text-1);
+}
+.prop-textarea {
+  flex: 1;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 5px 8px;
+  color: var(--text-1);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.8rem;
+  outline: none;
+  resize: vertical;
+  min-height: 44px;
+  transition: border-color var(--duration), box-shadow var(--duration);
+  line-height: 1.45;
+}
+.prop-textarea:hover { border-color: var(--border-hover); }
+.prop-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+
+/* Range sliders */
+.prop-range {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 14px;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+}
+.prop-range::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  transition: background var(--duration);
+}
+.prop-range:hover::-webkit-slider-runnable-track { background: var(--border-hover); }
+.prop-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--bg-surface);
+  margin-top: -4.5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: transform 100ms var(--ease-bounce);
+}
+.prop-range:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.prop-range-val {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-2);
+  width: 26px;
+  text-align: center;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Property section separator */
+.prop-separator {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 10px 0 8px;
+}
+.prop-section-label {
+  font-size: 0.54rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+
+/* Delete element button */
+.btn-delete-element {
+  width: 100%;
+  padding: 6px 0;
+  border: 1px solid rgba(184, 58, 58, 0.25);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--danger);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: all var(--duration);
+}
+.btn-delete-element:hover {
+  background: rgba(184, 58, 58, 0.06);
+  border-color: rgba(184, 58, 58, 0.4);
+}
+.btn-delete-element:active {
+  background: rgba(184, 58, 58, 0.12);
+}
+
+/* Inline confirm bar */
+.confirm-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-top: 4px;
+  border-radius: var(--r-md);
+  background: rgba(184, 58, 58, 0.06);
+  border: 1px solid rgba(184, 58, 58, 0.2);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+}
+.confirm-bar.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.confirm-msg {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-1);
+  flex: 1;
+}
+.confirm-yes, .confirm-no {
+  border: none;
+  border-radius: var(--r-sm);
+  padding: 3px 10px;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--duration);
+}
+.confirm-yes {
+  background: var(--danger);
+  color: #fff;
+}
+.confirm-yes:hover { filter: brightness(1.1); }
+.confirm-no {
+  background: var(--bg-raised);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.confirm-no:hover {
+  background: var(--bg-hover);
+}
+
+/* Column layout for notes */
+.prop-row-col {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.prop-label-full {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: 0.02em;
+}
+
+/* Star rating */
+.star-rating {
+  display: flex;
+  gap: 1px;
+}
+.star {
+  font-size: 1.05rem;
+  cursor: pointer;
+  color: var(--border);
+  transition: color 80ms, transform 120ms var(--ease-bounce);
+  line-height: 1;
+  padding: 0 1px;
+}
+.star:hover { transform: scale(1.25); }
+.star.active { color: var(--accent); }
+.star.hovered { color: var(--accent); opacity: 0.65; }
+
+/* Tree stars */
+.tree-stars {
+  color: var(--accent);
+  font-size: 0.55rem;
+  letter-spacing: -1px;
+}

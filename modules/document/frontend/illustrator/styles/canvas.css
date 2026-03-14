@@ -1,0 +1,25 @@
+/* ---- Canvas SVG ---- */
+.svg-wrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.08)) drop-shadow(0 4px 16px rgba(0, 0, 0, 0.08)) drop-shadow(0 12px 40px rgba(0, 0, 0, 0.06));
+  z-index: 0;
+}
+#canvas {
+  display: block;
+  background: white;
+  border-radius: 1px;
+  cursor: default;
+}
+
+/* Selection overlay */
+.selection-rect {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 0.5;
+  stroke-dasharray: 3 2;
+  pointer-events: none;
+}
+.element { cursor: move !important; }

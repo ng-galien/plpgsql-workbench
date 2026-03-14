@@ -1,0 +1,100 @@
+/* ---- Loader ---- */
+.loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 1.2s var(--ease), visibility 1.2s;
+}
+.loader.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.loader-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+/* Phase 1 — Title reveal (waits for .fonts-ready) */
+.loader-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 56px;
+  font-weight: 400;
+  letter-spacing: 0.25em;
+  color: var(--text-1);
+  font-feature-settings: "liga" 1, "dlig" 1, "calt" 1, "kern" 1;
+  opacity: 0;
+}
+.fonts-ready .loader-title {
+  animation: loaderTitleIn 1s var(--ease-out) 0.1s both;
+}
+.loader-title em {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--accent);
+}
+
+/* Phase 2 — Line pulse */
+.loader-line {
+  width: 200px;
+  height: 1.5px;
+  background: var(--border);
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+  transform: scaleX(0);
+  will-change: transform;
+}
+.loader-pulse {
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  border-radius: 1px;
+  will-change: transform;
+}
+.fonts-ready .loader-line {
+  animation: loaderLineIn 0.6s var(--ease-out) 0.35s both;
+}
+.fonts-ready .loader-pulse {
+  animation: loaderSlide 1.6s var(--ease) 0.35s infinite;
+}
+
+/* Phase 3 — Subtitle wipe left-to-right */
+.loader-subtitle {
+  font-family: 'Libre Baskerville', serif;
+  font-size: 15px;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  text-transform: uppercase;
+  clip-path: inset(0 100% 0 0);
+}
+.fonts-ready .loader-subtitle {
+  animation: loaderWipeIn 1s var(--ease) 1s both;
+}
+
+@keyframes loaderTitleIn {
+  from { opacity: 0; letter-spacing: 0.25em; }
+  to { opacity: 1; letter-spacing: 0.12em; }
+}
+@keyframes loaderLineIn {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes loaderSlide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(380%); }
+}
+@keyframes loaderWipeIn {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0% 0 0); }
+}
