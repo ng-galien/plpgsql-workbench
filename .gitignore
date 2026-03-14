@@ -10,5 +10,6 @@ tmp/
 
 # Build artifacts (regenerate with make build-shell / build-illustrator)
 cloudflare/pages/pgview.js
+cloudflare/pages/pgview.css
 cloudflare/pages/illustrator/app.js
 cloudflare/pages/illustrator/app.css

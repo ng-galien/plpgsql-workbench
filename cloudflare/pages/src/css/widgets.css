@@ -1,0 +1,80 @@
+/* ── Select-Search (pgv.select_search) ───────────────────────── */
+.pgv-ss { position: relative; }
+.pgv-ss-input {
+  width: 100%; cursor: text;
+}
+.pgv-ss-results {
+  display: none; position: absolute; z-index: 50;
+  top: 100%; left: 0; right: 0; max-height: 14rem;
+  overflow-y: auto; background: var(--pgv-surface);
+  border: 1px solid var(--pgv-border); border-radius: var(--pico-border-radius);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  margin-top: 0.15rem;
+}
+.pgv-ss.open .pgv-ss-results { display: block; }
+.pgv-ss-item {
+  padding: 0.4rem 0.6rem; cursor: pointer;
+  font-size: 0.875rem; transition: background 0.08s;
+}
+.pgv-ss-item:hover, .pgv-ss-item.active {
+  background: var(--pgv-accent); color: #fff;
+}
+.pgv-ss-item small { display: block; font-size: 0.75rem; color: var(--pgv-muted); }
+.pgv-ss-item:hover small, .pgv-ss-item.active small { color: rgba(255,255,255,0.7); }
+.pgv-ss-empty {
+  padding: 0.6rem; text-align: center; color: var(--pgv-muted); font-size: 0.8rem;
+}
+.pgv-ss-loading {
+  padding: 0.6rem; text-align: center; color: var(--pgv-muted); font-size: 0.8rem;
+}
+
+/* ── Workflow Progress Bar (pgv.workflow) ────────────────────── */
+.pgv-wf {
+  display: flex; align-items: center; gap: 0;
+  padding: 0.75rem 0; margin-bottom: 1rem;
+}
+.pgv-wf-step {
+  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+  flex-shrink: 0; min-width: 4rem;
+}
+.pgv-wf-dot {
+  width: 1.25rem; height: 1.25rem; border-radius: 50%;
+  border: 2px solid var(--pgv-border-strong);
+  background: var(--pgv-surface); transition: all 0.15s;
+}
+.pgv-wf-label {
+  font-size: 0.75rem; color: var(--pgv-muted);
+  text-align: center; white-space: nowrap;
+}
+.pgv-wf-line {
+  flex: 1; height: 2px; min-width: 1.5rem;
+  background: var(--pgv-border); margin-top: -1rem;
+}
+/* Done state */
+.pgv-wf-done .pgv-wf-dot {
+  background: var(--pgv-badge-success-bg); border-color: var(--pgv-badge-success-fg);
+}
+.pgv-wf-done .pgv-wf-label { color: var(--pgv-badge-success-fg); }
+.pgv-wf-line-done { background: var(--pgv-badge-success-fg); }
+/* Current state */
+.pgv-wf-current .pgv-wf-dot {
+  background: var(--pgv-accent); border-color: var(--pgv-accent);
+  box-shadow: 0 0 0 3px var(--pgv-accent-subtle);
+}
+.pgv-wf-current .pgv-wf-label { color: var(--pgv-accent); font-weight: 600; }
+/* Future state */
+.pgv-wf-future .pgv-wf-dot { background: var(--pgv-surface); border-color: var(--pgv-border); }
+.pgv-wf-future .pgv-wf-label { color: var(--pgv-muted); opacity: 0.6; }
+
+/* ── Link Button (aligned with <button> from pgv.action) ───── */
+.pgv-link-button {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ── Plugin Error Fallback ────────────────────────────────────── */
+.pgv-plugin-error { padding: 1rem; text-align: center; color: var(--pgv-badge-danger-fg); }
+.pgv-plugin-error small { display: block; margin-top: 0.5rem; opacity: 0.7; }

@@ -1,0 +1,72 @@
+/* ── SVG Canvas ────────────────────────────────────────────────── */
+.pgv-canvas {
+  border: 1px solid var(--pgv-border);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  background: var(--pgv-canvas-bg);
+  margin-bottom: 1rem;
+}
+
+.pgv-canvas-vp {
+  overflow: hidden;
+  cursor: grab;
+  position: relative;
+  background-image:
+    linear-gradient(var(--pgv-canvas-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--pgv-canvas-grid) 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: -1px -1px;
+}
+
+.pgv-canvas-vp:active { cursor: grabbing; }
+.pgv-canvas-vp svg { display: block; }
+
+[data-theme="dark"] .pgv-canvas-vp svg {
+  filter: invert(0.88) hue-rotate(180deg);
+}
+
+.pgv-canvas-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.5rem;
+  background: var(--pgv-surface);
+  border-top: 1px solid var(--pgv-border);
+  user-select: none;
+}
+
+.pgv-canvas-btn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.35rem;
+  border-radius: 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--pgv-muted);
+  transition: background 0.1s, color 0.1s;
+}
+
+.pgv-canvas-btn:hover {
+  background: var(--pgv-hover);
+  color: var(--pgv-text);
+}
+
+.pgv-canvas-zoom {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  min-width: 2.8rem;
+  text-align: center;
+  color: var(--pgv-muted);
+}
+
+.pgv-canvas-sep {
+  width: 1px;
+  height: 1rem;
+  background: var(--pgv-border);
+  margin: 0 0.2rem;
+}
