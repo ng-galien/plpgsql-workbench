@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pgView</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="/pgview.css?v=2">
+  <style>[x-cloak]{display:none!important}</style>
+  <script>
+    // Platform config — Cloudflare Pages → Supabase PostgREST
+    window.__PGV_CONFIG__ = {
+      rpcBase: "http://localhost:54321/rest/v1/rpc",  // Supabase PostgREST
+      restBase: "http://localhost:54321/rest/v1",
+      supabaseUrl: "http://localhost:54321",
+      supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0",
+      headers: function() {
+        return {
+          "apikey": this.supabaseKey,
+          "Content-Type": "application/json",
+        };
+      },
+      rpc: function(path) { return this.rpcBase + path; },
+    };
+  </script>
+  <!-- Stack: Alpine.js (UI), Zustand (state), D3.js (SVG canvas), PicoCSS (style), marked.js (tables) -->
+  <script src="/pgv-modules.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/panzoom@9/dist/panzoom.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/zustand@5/umd/vanilla.production.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+</head>
+<body x-data="pgview" x-init="boot()">
+
+  <!-- App bar (multi-module mode) -->
+  <div class="pgv-app-bar" x-show="_modules.length > 0" x-cloak>
+    <a href="/" @click.prevent="go('/')" class="pgv-app-home" :title="t('home')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    </a>
+    <div class="pgv-app-nav">
+      <template x-for="mod in _modules" :key="mod.module">
+        <a :href="'/' + mod.schema + '/'"
+           @click.prevent="go('/' + mod.schema + '/')"
+           :class="{'pgv-app-active': _currentSchema === mod.schema}"
+           x-text="mod.brand"></a>
+      </template>
+    </div>
+    <div class="pgv-app-end">
+      <button class="pgv-app-search-btn" @click="searchOpen()" :title="t('search')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="15" y2="15"/></svg>
+      </button>
+      <button class="pgv-theme-toggle" data-toggle-theme @click="_themeToggle()">&#x263E;</button>
+    </div>
+  </div>
+
+  <!-- Page content -->
+  <div id="app">
+    <main class="container" aria-busy="true"
+      style="min-height:50vh;display:flex;align-items:center;justify-content:center">
+      Chargement...
+    </main>
+  </div>
+
+  <!-- Issue Report Button -->
+  <button class="pgv-issue-btn" @click="issueOpen()" :title="t('issue.title')">&#x270F;&#xFE0F;</button>
+
+  <!-- Issue Report Overlay -->
+  <template x-if="issue.open">
+    <div>
+      <div class="pgv-issue-backdrop" @click="issueClose()"></div>
+      <div class="pgv-issue-panel" @keydown.escape.prevent="issueClose()">
+        <header class="pgv-issue-header">
+          <strong x-text="t('issue.title')"></strong>
+          <button class="pgv-issue-close" @click="issueClose()">&times;</button>
+        </header>
+        <div class="pgv-issue-body">
+          <select x-model="issue.type" class="pgv-issue-type">
+            <option value="bug" x-text="t('issue.type_bug')">Bug</option>
+            <option value="enhancement" x-text="t('issue.type_enhancement')">Amélioration</option>
+            <option value="question" x-text="t('issue.type_question')">Question</option>
+          </select>
+          <label for="issue-desc" x-text="t('issue.label')"></label>
+          <textarea id="issue-desc" x-model="issue.desc" rows="4" :placeholder="t('issue.placeholder')"></textarea>
+          <details>
+            <summary x-text="t('issue.context')"></summary>
+            <pre x-text="JSON.stringify(issueContext(), null, 2)"></pre>
+          </details>
+        </div>
+        <footer class="pgv-issue-footer">
+          <button class="secondary" @click="issueClose()" x-text="t('cancel')"></button>
+          <button @click="issueSubmit()" :disabled="!issue.desc.trim()" x-text="t('send')"></button>
+        </footer>
+      </div>
+    </div>
+  </template>
+
+  <!-- Toast -->
+  <div id="toast" role="alert" x-show="toast.show" x-transition>
+    <article :class="'toast-' + toast.level">
+      <button class="toast-close" @click="toast.show = false">&times;</button>
+      <div style="font-weight:600;margin-bottom:0.15rem" x-text="toast.msg"></div>
+      <div x-show="toast.detail" style="color:var(--pgv-muted);font-size:0.8rem"
+           x-text="toast.detail"></div>
+      <a x-show="toast.level === 'error'" class="pgv-toast-report" href="#"
+         @click.prevent="issueFromError()" x-text="t('issue.report')"></a>
+    </article>
+  </div>
+
+  <!-- Search Overlay (Cmd+K) -->
+  <template x-if="search.open">
+    <div>
+      <div class="pgv-search-backdrop" @click="searchClose()"></div>
+      <div class="pgv-search-palette" @keydown.escape.prevent="searchClose()" @keydown.arrow-down.prevent="searchNav(1)" @keydown.arrow-up.prevent="searchNav(-1)" @keydown.enter.prevent="searchSelect()">
+        <div class="pgv-search-input-row">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="15" y2="15"/></svg>
+          <input class="pgv-search-input" type="text" :placeholder="t('search.placeholder')" x-ref="searchInput" x-model="search.query" @input.debounce.200ms="searchExec()" autofocus>
+          <span class="pgv-search-hint">ESC</span>
+        </div>
+        <div x-ref="searchResults" @click="var it=event.target.closest('.pgv-search-item');if(it){search.idx=[].indexOf.call($refs.searchResults.querySelectorAll('.pgv-search-item'),it);searchSelect();}"></div>
+        <div class="pgv-search-footer">
+          <span><kbd>&uarr;</kbd><kbd>&darr;</kbd> <span x-text="t('search.nav')"></span></span>
+          <span><kbd>Enter</kbd> <span x-text="t('search.open')"></span></span>
+          <span><kbd>Esc</kbd> <span x-text="t('search.close')"></span></span>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- Dialog (shell-owned, reusable) -->
+  <dialog x-ref="dialog">
+    <article style="width:min(90vw,520px);margin:0">
+      <header>
+        <button :aria-label="t('close')" rel="prev" @click="$refs.dialog.close()"></button>
+        <strong x-text="dlg.title"></strong>
+      </header>
+      <div x-ref="dlgBody"></div>
+      <footer style="display:flex;justify-content:flex-end;gap:.5rem">
+        <button class="secondary" @click="$refs.dialog.close()" x-text="t('cancel')"></button>
+        <button @click="dlgSelect()" x-text="t('select')"></button>
+      </footer>
+    </article>
+  </dialog>
+
+  <!-- Confirm Dialog (replaces native confirm()) -->
+  <dialog x-ref="confirmDialog" class="pgv-confirm-dialog">
+    <article class="pgv-confirm-article">
+      <header class="pgv-confirm-header">
+        <strong x-text="t('confirm.title')"></strong>
+      </header>
+      <div class="pgv-confirm-body" x-ref="confirmMsg"></div>
+      <footer class="pgv-confirm-footer">
+        <button class="secondary" x-ref="confirmNo" x-text="t('cancel')"></button>
+        <button x-ref="confirmYes" x-text="t('confirm')"></button>
+      </footer>
+    </article>
+  </dialog>
+
+  <script>
+  // ── pgv.plugin runtime ──────────────────────────────────────
+  (function() {
+    var registry = {};
+    var instances = [];
+    var pending = [];
+
+    window.pgv = window.pgv || {};
+
+    pgv.plugin = function(name, def) {
+      registry[name] = def;
+      if (typeof Alpine !== 'undefined' && Alpine.data) {
+        _register(name, def);
+      } else {
+        pending.push({ name: name, def: def });
+      }
+    };
+
+    pgv._flushPlugins = function() {
+      for (var i = 0; i < pending.length; i++) {
+        _register(pending[i].name, pending[i].def);
+      }
+      pending = [];
+    };
+
+    function _register(name, def) {
+      Alpine.data(name, function() {
+        var comp = {};
+        if (def.data) {
+          var d = def.data();
+          var keys = Object.keys(d);
+          for (var i = 0; i < keys.length; i++) comp[keys[i]] = d[keys[i]];
+        }
+        var priv = def.priv ? def.priv() : {};
+        Object.defineProperty(comp, '_priv', {
+          get: function() { return priv; },
+          enumerable: false,
+          configurable: false
+        });
+        comp.init = function() {
+          this._rootEl = this.$el;
+          if (def.events && def.events.listen) {
+            this._cleanups = [];
+            var self = this;
+            var evts = Object.keys(def.events.listen);
+            for (var j = 0; j < evts.length; j++) {
+              (function(evt) {
+                var method = def.events.listen[evt];
+                var handler = function(e) { self[method](e.detail); };
+                window.addEventListener(evt, handler);
+                self._cleanups.push(function() {
+                  window.removeEventListener(evt, handler);
+                });
+              })(evts[j]);
+            }
+          }
+        };
+        if (def.methods) {
+          var mk = Object.keys(def.methods);
+          for (var i = 0; i < mk.length; i++) comp[mk[i]] = def.methods[mk[i]];
+        }
+        comp.$emit = function(evtName, detail) {
+          window.dispatchEvent(new CustomEvent(evtName, { detail: detail }));
+        };
+        return comp;
+      });
+    }
+
+    pgv.mount = function(el) {
+      var nodes = el.querySelectorAll('[x-data]');
+      for (var n = 0; n < nodes.length; n++) {
+        (function(node) {
+          var raw = node.getAttribute('x-data');
+          var name = raw.replace(/\(.*/, '').trim();
+          var def = registry[name];
+          if (!def) return;
+          for (var i = 0; i < instances.length; i++) {
+            if (instances[i].el === node) return;
+          }
+          var depsReady = !def.deps ? Promise.resolve() : _loadDeps(def.deps);
+          depsReady.then(function() {
+            var instance = Alpine.$data(node);
+            if (def.mount) def.mount.call(instance, node);
+            instances.push({ name: name, el: node, def: def, instance: instance });
+          }).catch(function(err) {
+            console.error('[pgv.plugin] ' + name + ' mount failed:', err);
+            node.innerHTML = '<div class="pgv-plugin-error">'
+              + '<p>Composant ' + name + ' indisponible</p>'
+              + '<small>' + (err && err.message || String(err)) + '</small>'
+              + '</div>';
+          });
+        })(nodes[n]);
+      }
+    };
+
+    pgv.unmount = function() {
+      for (var i = 0; i < instances.length; i++) {
+        try {
+          var inst = instances[i];
+          if (inst.instance._cleanups) {
+            for (var j = 0; j < inst.instance._cleanups.length; j++) {
+              inst.instance._cleanups[j]();
+            }
+          }
+          if (inst.def.unmount) inst.def.unmount.call(inst.instance);
+        } catch (e) {
+          console.warn('[pgv.plugin] unmount error ' + instances[i].name + ':', e);
+        }
+      }
+      instances = [];
+    };
+
+    var depCache = {};
+    function _loadDeps(deps) {
+      var promises = [];
+      for (var i = 0; i < deps.length; i++) {
+        (function(dep) {
+          if (dep.test && dep.test()) {
+            promises.push(Promise.resolve());
+            return;
+          }
+          if (depCache[dep.src]) {
+            promises.push(depCache[dep.src]);
+            return;
+          }
+          depCache[dep.src] = new Promise(function(resolve, reject) {
+            var el;
+            if (dep.type === 'script') {
+              el = document.createElement('script');
+              el.src = dep.src;
+            } else if (dep.type === 'style') {
+              el = document.createElement('link');
+              el.rel = 'stylesheet';
+              el.href = dep.src;
+            } else {
+              return resolve();
+            }
+            el.onload = resolve;
+            el.onerror = function() { reject(new Error('Failed to load ' + dep.src)); };
+            document.head.appendChild(el);
+          });
+          promises.push(depCache[dep.src]);
+        })(deps[i]);
+      }
+      return Promise.all(promises);
+    }
+  })();
+
+  document.addEventListener('alpine:init', function() {
+    pgv._flushPlugins();
+    Alpine.data('pgview', function() { return {
+      toast: { show: false, msg: '', level: 'success', detail: '' },
+      dlg:   { title: '', target: '' },
+      search: { open: false, query: '', idx: 0 },
+      issue: { open: false, desc: '', type: 'bug' },
+      _tt: null,
+      _modules: [],
+      _currentSchema: null,
+      _fixedSchema: null,
+      _errors: [],
+      _actions: [],
+      _i18n: {},
+
+      /* ── i18n ───────────────────────────────────────── */
+      t: function(key) { return this._i18n[key] || key; },
+
+      /* ── Bootstrap ─────────────────────────────────── */
+      boot: function() {
+        var self = this;
+        // Load i18n (non-blocking, fallback to keys)
+        var lang = document.documentElement.lang || 'fr';
+        fetch('/i18n/' + lang + '.json').then(function(r) {
+          return r.ok ? r.json() : {};
+        }).then(function(dict) {
+          self._i18n = dict;
+        }).catch(function() {});
+
+        // Error tracking (circular buffer, max 20)
+        window.addEventListener('error', function(e) {
+          self._errors.push({ msg: e.message, src: e.filename, line: e.lineno, ts: Date.now() });
+          if (self._errors.length > 20) self._errors.shift();
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+          self._errors.push({ msg: String(e.reason), ts: Date.now() });
+          if (self._errors.length > 20) self._errors.shift();
+        });
+
+        var saved = localStorage.getItem('pgv-theme');
+        if (saved) document.documentElement.setAttribute('data-theme', saved);
+        // App mode: <meta name="pgv-schema"> fixes the schema
+        // Dev mode: no meta → extract schema from URL /{schema}/path
+        var meta = document.querySelector('meta[name="pgv-schema"]');
+        this._fixedSchema = meta ? meta.getAttribute('content') : null;
+        this._listen();
+        var self = this;
+        // Multi-module: fetch app_nav before initial navigation
+        if (!this._fixedSchema) {
+          fetch(window.__PGV_CONFIG__.rpc('/app_nav'), {
+            method: 'POST',
+            headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
+            body: '{}'
+          })
+          .then(function(r) { return r.ok ? r.json() : []; })
+          .then(function(mods) {
+            self._modules = Array.isArray(mods) ? mods : [];
+            if (self._modules.length > 0)
+              document.documentElement.style.setProperty('--pgv-app-bar-h', '2.5rem');
+            self.go(location.pathname + location.search || '/');
+          })
+          .catch(function() {
+            self._modules = [];
+            self.go(location.pathname + location.search || '/');
+          });
+        } else {
+          this.go(location.pathname + location.search || '/');
+        }
+        window.onpopstate = function() { self.go(location.pathname + location.search || '/', false); };
+      },
+
+      /* ── Event delegation on #app ──────────────────── */
+      _listen: function() {
+        var self = this;
+        var app = document.getElementById('app');
+
+        // Cmd+K / Ctrl+K → toggle search overlay
+        document.addEventListener('keydown', function(e) {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            if (self.search.open) self.searchClose();
+            else self.searchOpen();
+          }
+        });
+
+        app.addEventListener('click', function(e) {
+          // Internal links
+          var a = e.target.closest('a[href^="/"]');
+          if (a) { e.preventDefault(); return self.go(a.getAttribute('href')); }
+
+          // data-rpc buttons
+          var btn = e.target.closest('button[data-rpc]');
+          if (btn) {
+            e.preventDefault();
+            var params = btn.dataset.params ? JSON.parse(btn.dataset.params) : {};
+            if (btn.dataset.confirm) {
+              self._confirm(btn.dataset.confirm).then(function(ok) {
+                if (ok) self.post(btn.dataset.rpc, params);
+              });
+              return;
+            }
+            return self.post(btn.dataset.rpc, params);
+          }
+
+          // Theme toggle
+          var thm = e.target.closest('[data-toggle-theme]');
+          if (thm) {
+            e.preventDefault();
+            return self._themeToggle();
+          }
+
+          // data-dialog buttons
+          var dlg = e.target.closest('[data-dialog]');
+          if (dlg) {
+            e.preventDefault();
+            return self.openDialog(dlg.dataset.dialog, dlg.dataset.src, dlg.dataset.target);
+          }
+
+          // data-form-dialog buttons (open modal form)
+          var fd = e.target.closest('[data-form-dialog]');
+          if (fd) {
+            e.preventDefault();
+            return self.openFormDialog(fd.dataset.formDialog, fd.dataset.src);
+          }
+        });
+
+        app.addEventListener('submit', function(e) {
+          var form = e.target.closest('form[data-rpc]');
+          if (form) {
+            e.preventDefault();
+            var data = {};
+            new FormData(form).forEach(function(v, k) { data[k] = v; });
+            if (form.hasAttribute('data-dialog-form')) {
+              self.submitFormDialog(form, data);
+            } else {
+              self.post(form.dataset.rpc, data);
+            }
+            return;
+          }
+          // Filter forms: GET with query params → SPA navigation
+          var filter = e.target.closest('form[data-filter]');
+          if (filter) {
+            e.preventDefault();
+            var parts = [];
+            new FormData(filter).forEach(function(v, k) {
+              if (v !== '') parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
+            });
+            var qs = parts.join('&');
+            self.go(location.pathname + (qs ? '?' + qs : ''));
+          }
+        });
+
+        // Dialog folder navigation
+        this.$refs.dlgBody.addEventListener('click', function(e) {
+          var a = e.target.closest('a[data-path]');
+          if (!a) return;
+          e.preventDefault();
+          self._browse(a.dataset.path);
+        });
+      },
+
+      /* ── Navigation ────────────────────────────────── */
+      go: function(path, push) {
+        if (push === undefined) push = true;
+        var self = this;
+        this._actions.push({ type: 'go', path: path, ts: Date.now() });
+        if (this._actions.length > 30) this._actions.shift();
+
+        // Home page: render module cards
+        if (!this._fixedSchema && this._modules.length > 0 && (path === '/' || path === '')) {
+          this._currentSchema = null;
+          this._renderHome();
+          if (push) history.pushState({}, '', '/');
+          window.scrollTo(0, 0);
+          return;
+        }
+
+        // Resolve schema + route path
+        var rpcUrl, body;
+        if (this._fixedSchema) {
+          // App mode: single schema, use page(p_path)
+          rpcUrl = window.__PGV_CONFIG__.rpc('/page');
+          body = { p_path: path };
+          this._currentSchema = this._fixedSchema;
+        } else {
+          // Route mode: /{schema}/path?params → pgv.route(schema, path, method, params)
+          var m = path.match(/^\/([a-z][a-z0-9_]*)(\/[^?]*)?\??(.*)$/);
+          if (m) {
+            rpcUrl = window.__PGV_CONFIG__.rpc('/route');
+            var params = {};
+            if (m[3]) new URLSearchParams(m[3]).forEach(function(v, k) { params[k] = v; });
+            body = { p_schema: m[1], p_path: m[2] || '/', p_method: 'GET', p_params: params };
+            this._currentSchema = m[1];
+          } else {
+            rpcUrl = window.__PGV_CONFIG__.rpc('/page');
+            body = { p_path: path };
+          }
+        }
+
+        return fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          body: JSON.stringify(body)
+        })
+        .then(function(r) {
+          if (!r.ok) return self._err(r);
+          return r.text().then(function(html) {
+            self._render(html);
+            if (push) history.pushState({}, '', path);
+            window.scrollTo(0, 0);
+          });
+        })
+        .catch(function() {
+          self.showToast(self.t('error.network'), 'error', self.t('error.unreachable'));
+        });
+      },
+
+      /* ── POST action ───────────────────────────────── */
+      post: function(endpoint, data) {
+        var self = this;
+        this._actions.push({ type: 'post', endpoint: endpoint, ts: Date.now() });
+        if (this._actions.length > 30) this._actions.shift();
+        var schema, fn;
+        if (endpoint.indexOf('.') !== -1) {
+          var parts = endpoint.split('.');
+          schema = parts[0];
+          fn = parts[1];
+        } else {
+          schema = this._currentSchema;
+          fn = endpoint;
+        }
+        // Route via pgv.route() — returns text/html domain
+        var path = '/' + fn.replace(/^post_/, '');
+        return fetch(window.__PGV_CONFIG__.rpc('/route'), {
+          method: 'POST',
+          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'POST', p_params: data })
+        })
+        .then(function(r) {
+          if (!r.ok) return self._err(r);
+          return r.text().then(function(html) { self._render(html); });
+        })
+        .catch(function() {
+          self.showToast(self.t('error.network'), 'error', self.t('error.unreachable'));
+        });
+      },
+
+      /* ── Render response ───────────────────────────── */
+      _render: function(html) {
+        // Extract <template data-toast="level">message</template>
+        var tm = html.match(/<template data-toast="([^"]*)">([\s\S]*?)<\/template>/);
+        if (tm) {
+          this.showToast(tm[2].trim(), tm[1]);
+          html = html.replace(tm[0], '');
+        }
+
+        // Extract <template data-redirect="/path"></template>
+        var rm = html.match(/<template data-redirect="([^"]+)"><\/template>/);
+        if (rm) {
+          var rpath = rm[1];
+          // Prefix with schema if path is relative (no schema segment)
+          if (this._currentSchema && !rpath.match(/^\/[a-z][a-z0-9_]*\//))
+            rpath = '/' + this._currentSchema + rpath;
+          this.go(rpath); return;
+        }
+
+        // Render page content
+        if (!html.trim()) return;
+        var app = document.getElementById('app');
+        pgv.unmount();
+        app.innerHTML = html;
+
+        // Post-process: markdown, scripts, clickable rows
+        var self = this;
+        this.$nextTick(function() { self._enhance(app); });
+      },
+
+      /* ── Table: sort + pagination ────────────────── */
+      _initTable: function(wrap, tbl, pageSize) {
+        var tbody = tbl.querySelector('tbody');
+        var allRows = Array.from(tbody.querySelectorAll('tr'));
+        var page = 0;
+        var pager = null;
+
+        function render() {
+          var rows = allRows;
+          if (pageSize > 0) {
+            var start = page * pageSize;
+            rows.forEach(function(r) { r.style.display = 'none'; });
+            rows.slice(start, start + pageSize).forEach(function(r) { r.style.display = ''; });
+            renderPager();
+          }
+        }
+
+        function renderPager() {
+          if (!pageSize || allRows.length <= pageSize) {
+            if (pager) pager.style.display = 'none';
+            return;
+          }
+          if (!pager) {
+            pager = document.createElement('div');
+            pager.className = 'pgv-pager';
+            wrap.appendChild(pager);
+          }
+          pager.style.display = '';
+          var total = allRows.length;
+          var pages = Math.ceil(total / pageSize);
+          var start = page * pageSize + 1;
+          var end = Math.min(start + pageSize - 1, total);
+
+          var h = '<span class="pgv-pager-info">' + start + '-' + end + ' / ' + total + '</span>';
+          h += '<span class="pgv-pager-btns">';
+          h += '<button ' + (page === 0 ? 'disabled' : 'data-page="' + (page - 1) + '"') + '>&lsaquo;</button>';
+          for (var i = 0; i < pages; i++) {
+            if (pages > 7 && i > 1 && i < pages - 2 && Math.abs(i - page) > 1) {
+              if (i === 2 || i === pages - 3) h += '<span class="pgv-pager-dots">&hellip;</span>';
+              continue;
+            }
+            h += '<button ' + (i === page ? 'class="active"' : 'data-page="' + i + '"') + '>' + (i + 1) + '</button>';
+          }
+          h += '<button ' + (page >= pages - 1 ? 'disabled' : 'data-page="' + (page + 1) + '"') + '>&rsaquo;</button>';
+          h += '</span>';
+          pager.innerHTML = h;
+
+          pager.querySelectorAll('[data-page]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              page = parseInt(btn.dataset.page);
+              render();
+            });
+          });
+        }
+
+        function compare(col, asc) {
+          return function(a, b) {
+            var av = (a.children[col] || {}).textContent || '';
+            var bv = (b.children[col] || {}).textContent || '';
+            var an = parseFloat(av.replace(/[^\d.,-]/g, '').replace(',', '.'));
+            var bn = parseFloat(bv.replace(/[^\d.,-]/g, '').replace(',', '.'));
+            if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+            var ad = av.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            var bd = bv.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (ad && bd) {
+              var da = ad[3] + ad[2] + ad[1], db = bd[3] + bd[2] + bd[1];
+              return asc ? da.localeCompare(db) : db.localeCompare(da);
+            }
+            return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+          };
+        }
+
+        var ths = tbl.querySelectorAll('thead th');
+        ths.forEach(function(th, col) {
+          th.classList.add('pgv-sortable');
+          th.addEventListener('click', function() {
+            var asc = th.dataset.sort !== 'asc';
+            ths.forEach(function(h) { h.dataset.sort = ''; });
+            th.dataset.sort = asc ? 'asc' : 'desc';
+            allRows.sort(compare(col, asc));
+            allRows.forEach(function(r) { tbody.appendChild(r); });
+            page = 0;
+            render();
+          });
+        });
+
+        render();
+      },
+
+      _enhance: function(el) {
+        var self = this;
+        // Sync all theme toggle icons
+        var icon = document.documentElement.getAttribute('data-theme') === 'dark' ? '&#x2600;' : '&#x263E;';
+        document.querySelectorAll('[data-toggle-theme]').forEach(function(b) { b.innerHTML = icon; });
+        // <md> → rendered markdown, tables wrapped in .pgv-table
+        el.querySelectorAll('md').forEach(function(md) {
+          var pageSize = parseInt(md.dataset.page) || 0;
+          var div = document.createElement('div');
+          div.innerHTML = marked.parse(md.innerHTML.trim());
+          div.querySelectorAll('table').forEach(function(tbl) {
+            var wrap = document.createElement('div');
+            wrap.className = 'pgv-table';
+            tbl.parentNode.insertBefore(wrap, tbl);
+            wrap.appendChild(tbl);
+            self._initTable(wrap, tbl, pageSize);
+          });
+          md.parentNode.replaceChild(div, md);
+        });
+        // Clickable table rows
+        el.querySelectorAll('tbody tr').forEach(function(tr) {
+          var a = tr.querySelector('a[href^="/"]');
+          if (!a) return;
+          tr.style.cursor = 'pointer';
+          tr.addEventListener('click', function(e) {
+            if (e.target.closest('a, button')) return;
+            self.go(a.getAttribute('href'));
+          });
+        });
+        // Execute <script> tags injected via innerHTML
+        el.querySelectorAll('script').forEach(function(old) {
+          var s = document.createElement('script');
+          if (old.src) { s.src = old.src; }
+          else { s.textContent = old.textContent; }
+          old.parentNode.replaceChild(s, old);
+        });
+        // Initialize Alpine.js on new DOM (module fragments with x-data)
+        if (typeof Alpine !== 'undefined') Alpine.initTree(el);
+        pgv.mount(el);
+        // Select-search: async combo input + dropdown from RPC
+        el.querySelectorAll('[data-ss-rpc]:not([data-ss-init])').forEach(function(ss) {
+          ss.setAttribute('data-ss-init', '');
+          var rpc = ss.dataset.ssRpc;
+          var parts = rpc.split('.');
+          var schema = parts.length > 1 ? parts[0] : self._currentSchema;
+          var fn = parts.length > 1 ? parts[1] : parts[0];
+          var inp = ss.querySelector('.pgv-ss-input');
+          var hid = ss.querySelector('input[type="hidden"]');
+          var box = ss.querySelector('.pgv-ss-results');
+          var timer = null;
+          var idx = -1;
+
+          function doFetch(q) {
+            box.innerHTML = '<div class="pgv-ss-loading">...</div>';
+            ss.classList.add('open');
+            var body = {};
+            if (q) body.p_search = q;
+            fetch(window.__PGV_CONFIG__.rpc('/') + fn, {
+              method: 'POST',
+              headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': schema },
+              body: JSON.stringify(body)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(rows) {
+              if (!rows || !rows.length) { box.innerHTML = '<div class="pgv-ss-empty">' + self.t('search.no_results') + '</div>'; return; }
+              idx = -1;
+              box.innerHTML = '';
+              rows.forEach(function(r, i) {
+                var d = document.createElement('div');
+                d.className = 'pgv-ss-item';
+                d.dataset.value = r.value;
+                d.textContent = r.label || r.value;
+                if (r.detail) { var s = document.createElement('small'); s.textContent = r.detail; d.appendChild(s); }
+                d.addEventListener('mousedown', function(e) {
+                  e.preventDefault();
+                  pick(r.value, r.label || r.value);
+                });
+                box.appendChild(d);
+              });
+            })
+            .catch(function() { box.innerHTML = '<div class="pgv-ss-empty">' + self.t('search.error') + '</div>'; });
+          }
+
+          function pick(val, label) {
+            hid.value = val;
+            inp.value = label;
+            ss.classList.remove('open');
+            hid.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+
+          function nav(dir) {
+            var items = box.querySelectorAll('.pgv-ss-item');
+            if (!items.length) return;
+            if (idx >= 0 && idx < items.length) items[idx].classList.remove('active');
+            idx = Math.max(0, Math.min(items.length - 1, idx + dir));
+            items[idx].classList.add('active');
+            items[idx].scrollIntoView({ block: 'nearest' });
+          }
+
+          inp.addEventListener('focus', function() { if (!box.children.length) doFetch(inp.value); else ss.classList.add('open'); });
+          inp.addEventListener('input', function() {
+            hid.value = '';
+            clearTimeout(timer);
+            timer = setTimeout(function() { doFetch(inp.value); }, 200);
+          });
+          inp.addEventListener('blur', function() { setTimeout(function() { ss.classList.remove('open'); }, 150); });
+          inp.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowDown') { e.preventDefault(); nav(1); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); nav(-1); }
+            else if (e.key === 'Enter') {
+              e.preventDefault();
+              var items = box.querySelectorAll('.pgv-ss-item');
+              if (idx >= 0 && idx < items.length) pick(items[idx].dataset.value, items[idx].textContent.split('\n')[0]);
+            }
+            else if (e.key === 'Escape') { ss.classList.remove('open'); inp.blur(); }
+          });
+        });
+        // Filter bar: chips for active filters + auto-submit selects
+        el.querySelectorAll('.pgv-filter').forEach(function(wrap) {
+          var form = wrap.querySelector('form[data-filter]');
+          var chips = wrap.querySelector('.pgv-filter-chips');
+          if (!form || !chips) return;
+          var params = new URLSearchParams(location.search);
+          var hasActive = false;
+          chips.innerHTML = '';
+          form.querySelectorAll('input, select').forEach(function(input) {
+            if (input.type === 'submit' || input.type === 'button' || input.type === 'hidden') return;
+            var val = params.get(input.name);
+            if (!val) return;
+            // Pre-fill input from URL
+            if (input.tagName === 'SELECT') {
+              input.value = val;
+            } else {
+              input.value = val;
+            }
+            hasActive = true;
+            var label = input.placeholder || input.dataset.label || input.name;
+            var displayVal = val;
+            if (input.tagName === 'SELECT') {
+              var opt = input.querySelector('option[value="' + CSS.escape(val) + '"]');
+              if (opt) displayVal = opt.textContent;
+            }
+            var chip = document.createElement('span');
+            chip.className = 'pgv-filter-chip';
+            chip.innerHTML = '<span>' + label + ': <strong>' + displayVal + '</strong></span>'
+              + '<button type="button" data-filter-clear="' + input.name + '">&times;</button>';
+            chips.appendChild(chip);
+          });
+          if (hasActive) {
+            var clear = document.createElement('a');
+            clear.href = '#';
+            clear.className = 'pgv-filter-clear';
+            clear.textContent = self.t('filter.clear');
+            clear.addEventListener('click', function(e) {
+              e.preventDefault();
+              self.go(location.pathname);
+            });
+            chips.appendChild(clear);
+          }
+          // Chip × click: clear individual filter
+          chips.addEventListener('click', function(e) {
+            var btn = e.target.closest('[data-filter-clear]');
+            if (!btn) return;
+            var name = btn.dataset.filterClear;
+            var p = new URLSearchParams(location.search);
+            p.delete(name);
+            var qs = p.toString();
+            self.go(location.pathname + (qs ? '?' + qs : ''));
+          });
+          // Auto-submit on select change
+          form.querySelectorAll('select').forEach(function(sel) {
+            sel.addEventListener('change', function() {
+              form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            });
+          });
+        });
+        // Lazy-load containers: fetch content when scrolled into view
+        el.querySelectorAll('[data-lazy]:not([data-loaded])').forEach(function(lazy) {
+          var obs = new IntersectionObserver(function(entries) {
+            if (entries[0].isIntersecting) {
+              obs.disconnect();
+              lazy.setAttribute('data-loaded', '');
+              self._loadLazy(lazy);
+            }
+          }, { rootMargin: '200px' });
+          obs.observe(lazy);
+        });
+      },
+
+      _loadLazy: function(container) {
+        var self = this;
+        var rpc = container.dataset.lazy;
+        var params = container.dataset.params ? JSON.parse(container.dataset.params) : {};
+        var schema = this._currentSchema;
+        // Route via pgv.route() — returns text/html domain
+        var path = '/' + rpc.replace(/^get_/, '');
+        fetch(window.__PGV_CONFIG__.rpc('/route'), {
+          method: 'POST',
+          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'GET', p_params: params })
+        })
+        .then(function(r) {
+          if (!r.ok) throw new Error(r.status);
+          return r.text();
+        })
+        .then(function(html) {
+          container.innerHTML = html;
+          self._enhance(container);
+        })
+        .catch(function() {
+          container.innerHTML = '<p>' + self.t('error.load') + '</p>';
+        });
+      },
+
+      /* ── Home page (module cards) ──────────────────── */
+      _renderHome: function() {
+        var h = '<main class="container"><hgroup><h2>' + this.t('apps') + '</h2></hgroup>';
+        h += '<div class="pgv-app-grid">';
+        for (var i = 0; i < this._modules.length; i++) {
+          var m = this._modules[i];
+          h += '<article class="pgv-app-card">';
+          h += '<header>' + m.brand + '</header>';
+          h += '<ul>';
+          for (var j = 0; j < m.items.length; j++) {
+            var it = m.items[j];
+            h += '<li><a href="/' + m.schema + (it.href || '/') + '">';
+            if (it.icon) h += '<span class="pgv-app-card-icon">' + it.icon + '</span> ';
+            h += (it.label || '') + '</a></li>';
+          }
+          h += '</ul>';
+          h += '<footer><a href="/' + m.schema + '/">' + this.t('open_module') + ' &rarr;</a></footer>';
+          h += '</article>';
+        }
+        h += '</div></main>';
+        var app = document.getElementById('app');
+        pgv.unmount();
+        app.innerHTML = h;
+        var self = this;
+        this.$nextTick(function() { self._enhance(app); });
+      },
+
+      /* ── Theme toggle ───────────────────────────────── */
+      _themeToggle: function() {
+        var html = document.documentElement;
+        var next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('pgv-theme', next);
+        document.querySelectorAll('[data-toggle-theme]').forEach(function(b) {
+          b.innerHTML = next === 'dark' ? '&#x2600;' : '&#x263E;';
+        });
+      },
+
+      /* ── Toast ─────────────────────────────────────── */
+      showToast: function(msg, level, detail) {
+        clearTimeout(this._tt);
+        this.toast = { show: true, msg: msg, level: level || 'success', detail: detail || '' };
+        var self = this;
+        this._tt = setTimeout(function() { self.toast.show = false; },
+          level === 'error' ? 8000 : 3000);
+      },
+
+      /* ── Error handling ────────────────────────────── */
+      _err: function(r) {
+        var self = this;
+        var status = r.status;
+        return r.json().then(function(e) {
+          if (e.message) {
+            var title = status + ' — ' + (e.code || self.t('error.prefix'));
+            var detail = e.message + (e.hint ? ' (' + e.hint + ')' : '');
+            self.showToast(title, 'error', detail);
+          } else {
+            self.showToast(self.t('error.prefix') + ' ' + status, 'error');
+          }
+        }).catch(function() {
+          self.showToast(self.t('error.prefix') + ' ' + status, 'error');
+        });
+      },
+
+      /* ── Search Overlay ────────────────────────────── */
+      searchOpen: function() {
+        this.search = { open: true, query: '', idx: 0 };
+        var self = this;
+        this.$nextTick(function() {
+          if (self.$refs.searchInput) self.$refs.searchInput.focus();
+          if (self.$refs.searchResults) self.$refs.searchResults.innerHTML = '';
+        });
+      },
+
+      searchClose: function() {
+        this.search.open = false;
+      },
+
+      searchExec: function() {
+        var q = this.search.query.trim();
+        var self = this;
+        if (!q) {
+          if (self.$refs.searchResults) self.$refs.searchResults.innerHTML = '';
+          return;
+        }
+        var schema = this._currentSchema || 'pgv_qa';
+        fetch(window.__PGV_CONFIG__.rpc('/search'), {
+          method: 'POST',
+          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
+          body: JSON.stringify({ p_query: q, p_schema: schema })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(html) {
+          if (!self.search.open) return;
+          self.$refs.searchResults.innerHTML = html;
+          self.search.idx = 0;
+          self._searchHighlight();
+        })
+        .catch(function() {
+          if (self.$refs.searchResults) self.$refs.searchResults.innerHTML = '<div class="pgv-empty"><h4>' + self.t('search.error') + '</h4></div>';
+        });
+      },
+
+      searchNav: function(dir) {
+        var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll('.pgv-search-item') : [];
+        if (!items.length) return;
+        this.search.idx = Math.max(0, Math.min(items.length - 1, this.search.idx + dir));
+        this._searchHighlight();
+      },
+
+      searchSelect: function() {
+        var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll('.pgv-search-item') : [];
+        if (!items.length) return;
+        var item = items[this.search.idx];
+        if (!item) return;
+        var href = item.dataset.href;
+        if (!href) return;
+        this.searchClose();
+        // Prefix with schema if needed
+        if (this._currentSchema && href.charAt(0) === '/' && !href.match(/^\/[a-z][a-z0-9_]*\//))
+          href = '/' + this._currentSchema + href;
+        this.go(href);
+      },
+
+      _searchHighlight: function() {
+        var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll('.pgv-search-item') : [];
+        items.forEach(function(el, i) {
+          el.classList.toggle('active', i === this.search.idx);
+        }.bind(this));
+      },
+
+      /* ── Dialog ────────────────────────────────────── */
+      openDialog: function(name, src, target) {
+        this.dlg = { title: name === 'folder-picker' ? this.t('dialog.folder') : name, target: target || '' };
+        this.$refs.dlgBody.innerHTML = '<p aria-busy="true">' + this.t('dialog.loading') + '</p>';
+        this.$refs.dialog.showModal();
+        this._browse(src);
+      },
+
+      _browse: function(pathOrUrl) {
+        var url = pathOrUrl.indexOf('/') === 0 && pathOrUrl.indexOf('/api') !== 0
+          ? '/api/browse?path=' + encodeURIComponent(pathOrUrl)
+          : pathOrUrl;
+        var self = this;
+        fetch(url).then(function(r) { return r.text(); })
+          .then(function(html) { self.$refs.dlgBody.innerHTML = html; })
+          .catch(function() { self.$refs.dlgBody.innerHTML = '<p>' + self.t('dialog.load_error') + '</p>'; });
+      },
+
+      dlgSelect: function() {
+        var pathEl = this.$refs.dlgBody.querySelector('.folder-path');
+        if (pathEl && this.dlg.target) {
+          var input = document.getElementById(this.dlg.target);
+          if (input) input.value = pathEl.textContent.trim();
+        }
+        this.$refs.dialog.close();
+      },
+
+      /* ── Confirm Dialog ────────────────────────────── */
+      _confirm: function(msg) {
+        var dlg = this.$refs.confirmDialog;
+        this.$refs.confirmMsg.textContent = msg;
+        dlg.showModal();
+        var self = this;
+        return new Promise(function(resolve) {
+          function cleanup() {
+            self.$refs.confirmYes.removeEventListener('click', onYes);
+            self.$refs.confirmNo.removeEventListener('click', onNo);
+            dlg.removeEventListener('cancel', onNo);
+          }
+          function onYes() { cleanup(); dlg.close(); resolve(true); }
+          function onNo()  { cleanup(); dlg.close(); resolve(false); }
+          self.$refs.confirmYes.addEventListener('click', onYes);
+          self.$refs.confirmNo.addEventListener('click', onNo);
+          dlg.addEventListener('cancel', onNo);
+        });
+      },
+
+      /* ── Form Dialog ──────────────────────────────────── */
+      openFormDialog: function(id, src) {
+        var dlg = document.getElementById(id);
+        if (!dlg) return;
+        if (src) {
+          var body = dlg.querySelector('.pgv-form-dialog-body');
+          var self = this;
+          body.innerHTML = '<p aria-busy="true">' + this.t('loading') + '</p>';
+          dlg.showModal();
+          var schema = this._currentSchema;
+          var raw = src.charAt(0) === '/' ? src : '/' + src;
+          var parts = raw.split('?');
+          var path = parts[0];
+          var params = {};
+          if (parts[1]) new URLSearchParams(parts[1]).forEach(function(v, k) { params[k] = v; });
+          fetch(window.__PGV_CONFIG__.rpc('/route'), {
+            method: 'POST',
+            headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+            body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'GET', p_params: params })
+          })
+          .then(function(r) { return r.ok ? r.text() : Promise.reject(r); })
+          .then(function(html) {
+            body.innerHTML = html;
+            self._enhance(body);
+          })
+          .catch(function() { body.innerHTML = '<p>' + self.t('error.load') + '</p>'; });
+        } else {
+          dlg.showModal();
+        }
+      },
+
+      submitFormDialog: function(form, data) {
+        var self = this;
+        var dlg = form.closest('dialog');
+        var rpc = form.dataset.rpc;
+        var schema = this._currentSchema;
+        var path = '/' + rpc.replace(/^post_/, '');
+        fetch(window.__PGV_CONFIG__.rpc('/route'), {
+          method: 'POST',
+          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'POST', p_params: data })
+        })
+        .then(function(r) {
+          if (!r.ok) return self._err(r);
+          return r.text().then(function(html) {
+            var tm = html.match(/<template data-toast="([^"]*)">([\s\S]*?)<\/template>/);
+            if (tm) self.showToast(tm[2].trim(), tm[1]);
+            if (dlg) dlg.close();
+            // Reload current page
+            self.go(location.pathname + location.search, false);
+          });
+        })
+        .catch(function() {
+          self.showToast(self.t('error.network'), 'error');
+        });
+      },
+
+      /* ── Issue Report ────────────────────────────────── */
+      issueFromError: function() {
+        var desc = this.toast.msg || '';
+        if (this.toast.detail) desc += '\n' + this.toast.detail;
+        this.toast.show = false;
+        this.issue = { open: true, desc: desc, type: 'bug' };
+      },
+
+      issueOpen: function() {
+        this.issue = { open: true, desc: '', type: 'bug' };
+      },
+
+      issueClose: function() {
+        this.issue.open = false;
+      },
+
+      issueContext: function() {
+        return {
+          path: location.pathname + location.search,
+          schema: this._currentSchema,
+          errors: this._errors.slice(-5),
+          actions: this._actions.slice(-10),
+          viewport: innerWidth + 'x' + innerHeight,
+          userAgent: navigator.userAgent,
+          timestamp: new Date().toISOString()
+        };
+      },
+
+      issueSubmit: function() {
+        var desc = this.issue.desc.trim();
+        if (!desc) return;
+        var self = this;
+        var data = this.issueContext();
+        data.description = desc;
+        data.issue_type = this.issue.type;
+        this.issue.open = false;
+        fetch(window.__PGV_CONFIG__.rpc('/post_issue_report'), {
+          method: 'POST',
+          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
+          body: JSON.stringify({ p: data })
+        })
+        .then(function(r) {
+          if (!r.ok) throw new Error(r.status);
+          self.showToast(self.t('issue.success'), 'success');
+        })
+        .catch(function() {
+          self.showToast(self.t('issue.error'), 'error');
+        });
+      }
+    }; });
+
+    // ── pgvTable: declarative table with filters, pagination, sorting ──
+    function _esc(s) {
+      if (s == null) return '';
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    Alpine.data('pgvTable', function() { return {
+      _cfg: null, _rows: [], _offset: 0, _size: 20, _hasMore: false,
+      _sort: null, _sortDir: 'asc', _filters: {}, _loading: true, _rootEl: null,
+
+      _t: function(key) {
+        var app = document.querySelector('[x-data="pgview"]');
+        if (app) { var d = Alpine.$data(app); if (d && d.t) return d.t(key); }
+        return key;
+      },
+
+      init: function() {
+        this._rootEl = this.$el;
+        this._cfg = JSON.parse(this._rootEl.dataset.config);
+        this._size = this._cfg.page_size || 20;
+        var self = this;
+        (this._cfg.filters || []).forEach(function(f) { self._filters[f.name] = ''; });
+        // Stable filter bar + dynamic data zone
+        this._rootEl.innerHTML = this._filtersHtml()
+          + '<div data-pgv-chips></div>'
+          + '<div data-pgv-data></div>';
+        this._bindFilters();
+        this._doFetch();
+      },
+
+      _doFetch: function() {
+        var self = this;
+        this._loading = true;
+        this._paintData();
+        var p = {};
+        Object.keys(this._filters).forEach(function(k) {
+          if (self._filters[k]) p[k] = self._filters[k];
+        });
+        p._offset = this._offset;
+        p._size = this._size;
+        fetch(window.__PGV_CONFIG__.rpc('/') + this._cfg.rpc, {
+          method: 'POST',
+          headers: { 'Content-Profile': this._cfg.schema, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ p_params: p })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          self._rows = data.rows || [];
+          self._hasMore = data.has_more || false;
+          self._sort = null;
+          self._loading = false;
+          self._paintData();
+        })
+        .catch(function() { self._loading = false; self._paintData(); });
+      },
+
+      _paintData: function() {
+        var dz = this._rootEl.querySelector('[data-pgv-data]');
+        if (dz) {
+          dz.innerHTML = this._tableHtml() + this._pagerHtml();
+          dz.style.minHeight = this._loading ? '' : '';
+        }
+        this._paintChips();
+        this._bindData();
+      },
+
+      _filtersHtml: function() {
+        var cfg = this._cfg;
+        if (!cfg.filters || !cfg.filters.length) return '';
+        var self = this;
+        var inputs = cfg.filters.map(function(f) {
+          if (f.type === 'select') {
+            var opts = f.options.map(function(o) {
+              return '<option value="' + _esc(o[0]) + '">' + _esc(o[1]) + '</option>';
+            }).join('');
+            return '<select name="' + _esc(f.name) + '" data-label="' + _esc(f.label) + '">' + opts + '</select>';
+          }
+          var ph = f.label || self._t('table.search');
+          return '<input type="search" name="' + _esc(f.name) + '" placeholder="' + _esc(ph) + '">';
+        }).join('');
+        return '<div class="pgv-filter"><div class="pgv-filter-bar"><div class="pgv-filter-inputs">' + inputs + '</div></div></div>';
+      },
+
+      _tableHtml: function() {
+        var cols = this._cfg.cols || [];
+        var rows = this._rows;
+        var self = this;
+        var thead = '<tr>' + cols.map(function(c, i) {
+          var arrow = self._sort === i ? (self._sortDir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+          return '<th class="pgv-sortable" data-sort-col="' + i + '">' + _esc(c.label) + arrow + '</th>';
+        }).join('') + '</tr>';
+        if (this._loading) {
+          return '<div class="pgv-table"><table aria-busy="true"><thead>' + thead + '</thead><tbody><tr><td colspan="' + cols.length + '">' + _esc(this._t('table.loading')) + '</td></tr></tbody></table></div>';
+        }
+        if (!rows.length) {
+          return '<div class="pgv-table"><table><thead>' + thead + '</thead></table></div><div class="pgv-empty">' + _esc(this._t('table.empty')) + '</div>';
+        }
+        var tbody = rows.map(function(row) {
+          return '<tr>' + cols.map(function(c, i) {
+            var val = row[i] != null ? row[i] : '';
+            var cls = c['class'] || '';
+            if (cls === 'pgv-col-link' && c.href) {
+              var href = c.href.replace(/\{(\w+)\}/g, function(_, key) {
+                var ci = cols.findIndex(function(cc) { return cc.key === key; });
+                return ci >= 0 && row[ci] != null ? encodeURIComponent(row[ci]) : '';
+              });
+              return '<td><a href="' + _esc(href) + '">' + _esc(val) + '</a></td>';
+            }
+            if (cls === 'pgv-col-badge') {
+              return '<td><span class="pgv-badge">' + _esc(val) + '</span></td>';
+            }
+            if (cls === 'pgv-col-date' && val) {
+              var d = new Date(val);
+              if (!isNaN(d)) val = ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+              return '<td>' + _esc(val) + '</td>';
+            }
+            return '<td>' + _esc(String(val)) + '</td>';
+          }).join('') + '</tr>';
+        }).join('');
+        return '<div class="pgv-table"><table><thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table></div>';
+      },
+
+      _pagerHtml: function() {
+        if (this._loading || (!this._rows.length && this._offset === 0)) return '';
+        var hasPrev = this._offset > 0;
+        var hasNext = this._hasMore;
+        if (!hasPrev && !hasNext) return '';
+        return '<div class="pgv-pager"><span class="pgv-pager-btns">'
+          + '<button data-prev' + (hasPrev ? '' : ' disabled') + '>&lsaquo; ' + _esc(this._t('table.prev')) + '</button>'
+          + '<button data-next' + (hasNext ? '' : ' disabled') + '>' + _esc(this._t('table.next')) + ' &rsaquo;</button>'
+          + '</span></div>';
+      },
+
+      _bindFilters: function() {
+        var self = this;
+        var el = this._rootEl;
+        el.querySelectorAll('.pgv-filter-inputs select').forEach(function(sel) {
+          sel.addEventListener('change', function() {
+            self._filters[sel.name] = sel.value; self._offset = 0; self._doFetch();
+          });
+        });
+        var _t;
+        el.querySelectorAll('.pgv-filter-inputs input[type="search"]').forEach(function(inp) {
+          inp.addEventListener('input', function() {
+            clearTimeout(_t);
+            _t = setTimeout(function() { self._filters[inp.name] = inp.value; self._offset = 0; self._doFetch(); }, 300);
+          });
+        });
+      },
+
+      _paintChips: function() {
+        var cz = this._rootEl.querySelector('[data-pgv-chips]');
+        if (!cz) return;
+        var self = this;
+        var cfg = this._cfg;
+        var chips = '';
+        var hasActive = false;
+        (cfg.filters || []).forEach(function(f) {
+          var val = self._filters[f.name];
+          if (!val) return;
+          hasActive = true;
+          var dv = val;
+          if (f.type === 'select') {
+            var opt = f.options.find(function(o) { return o[0] === val; });
+            if (opt) dv = opt[1];
+          }
+          chips += '<span class="pgv-filter-chip"><span>' + _esc(f.label) + ': <strong>' + _esc(dv) + '</strong></span><button type="button" data-clear="' + _esc(f.name) + '">&times;</button></span>';
+        });
+        if (hasActive) chips += '<a href="#" class="pgv-filter-clear" data-clear-all>' + _esc(self._t('filter.clear')) + '</a>';
+        cz.innerHTML = chips;
+        cz.querySelectorAll('[data-clear]').forEach(function(btn) {
+          btn.addEventListener('click', function(e) {
+            e.preventDefault(); self._filters[btn.dataset.clear] = ''; self._offset = 0;
+            var inp = self._rootEl.querySelector('[name="' + btn.dataset.clear + '"]');
+            if (inp) inp.value = '';
+            self._doFetch();
+          });
+        });
+        var ca = cz.querySelector('[data-clear-all]');
+        if (ca) ca.addEventListener('click', function(e) {
+          e.preventDefault();
+          Object.keys(self._filters).forEach(function(k) { self._filters[k] = ''; });
+          self._rootEl.querySelectorAll('.pgv-filter-inputs input, .pgv-filter-inputs select').forEach(function(inp) { inp.value = ''; });
+          self._offset = 0; self._doFetch();
+        });
+      },
+
+      _bindData: function() {
+        var self = this;
+        var dz = this._rootEl.querySelector('[data-pgv-data]');
+        if (!dz) return;
+        dz.querySelectorAll('[data-sort-col]').forEach(function(th) {
+          th.addEventListener('click', function() {
+            var idx = parseInt(th.dataset.sortCol);
+            if (self._sort === idx) { self._sortDir = self._sortDir === 'asc' ? 'desc' : 'asc'; }
+            else { self._sort = idx; self._sortDir = 'asc'; }
+            self._sortRows();
+            self._paintData();
+          });
+        });
+        var prevBtn = dz.querySelector('[data-prev]');
+        if (prevBtn) prevBtn.addEventListener('click', function() {
+          self._offset = Math.max(0, self._offset - self._size); self._doFetch();
+        });
+        var nextBtn = dz.querySelector('[data-next]');
+        if (nextBtn) nextBtn.addEventListener('click', function() {
+          self._offset += self._size; self._doFetch();
+        });
+        var app = document.querySelector('[x-data="pgview"]');
+        var pgv = app ? Alpine.$data(app) : null;
+        dz.querySelectorAll('tbody tr').forEach(function(tr) {
+          var a = tr.querySelector('a[href^="/"]');
+          if (!a) return;
+          tr.style.cursor = 'pointer';
+          tr.addEventListener('click', function(e) {
+            if (e.target.closest('a, button')) return;
+            if (pgv && pgv.go) pgv.go(a.getAttribute('href'));
+          });
+        });
+      },
+
+      _sortRows: function() {
+        var idx = this._sort, dir = this._sortDir === 'asc' ? 1 : -1;
+        this._rows.sort(function(a, b) {
+          var va = a[idx], vb = b[idx];
+          if (va == null) return dir;
+          if (vb == null) return -dir;
+          if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+          return String(va).localeCompare(String(vb)) * dir;
+        });
+      }
+    }; });
+  });
+  </script>
+</body>
+</html>

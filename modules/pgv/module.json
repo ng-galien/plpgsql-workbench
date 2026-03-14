@@ -15,7 +15,10 @@
   ],
   "sql": [
     "build/pgv.ddl.sql",
-    "build/pgv.func.sql"
+    "build/pgv_qa.ddl.sql",
+    "build/pgv.func.sql",
+    "build/pgv_qa.func.sql",
+    "build/pgv_ut.func.sql"
   ],
   "assets": {
     "frontend": [
@@ -24,6 +27,10 @@
     ]
   },
   "grants": {
-    "anon": ["pgv", "pgv_ut", "pgv_qa"]
+    "anon": [
+      "pgv",
+      "pgv_ut",
+      "pgv_qa"
+    ]
   }
 }

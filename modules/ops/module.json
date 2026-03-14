@@ -15,6 +15,7 @@
   "extensions": [],
   "sql": [
     "build/ops.ddl.sql",
+    "build/workbench_ops.ddl.sql",
     "build/ops.func.sql"
   ],
   "assets": {
