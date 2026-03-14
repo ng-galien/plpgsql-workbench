@@ -243,6 +243,7 @@ export function createPackTool({ withClient, moduleRegistry }: {
 
           sections.push(`GRANT USAGE ON SCHEMA ${schema} TO ${role};`);
           sections.push(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schema} TO ${role};`);
+          sections.push(`GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO ${role};`);
           sections.push("");
 
           // Output path: build/{schema}.func.sql

@@ -408,6 +408,11 @@ app.post("/hooks/:module/stop", async (req, res) => {
 
     if (rows.length > 0) {
       const msg = rows[0];
+      // Auto-ack: mark as acknowledged so we don't re-deliver on next stop
+      await pool.query(
+        `UPDATE workbench.agent_message SET status = 'acknowledged', acknowledged_at = now() WHERE id = $1 AND status = 'new'`,
+        [msg.id],
+      ).catch(() => {});
       const pri = msg.priority === "high" ? " [HIGH PRIORITY]" : "";
       stopBlockCount.set(mod, count + 1);
       const lines = [

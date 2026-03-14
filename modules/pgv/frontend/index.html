@@ -568,6 +568,7 @@
       /* ── Table: sort + pagination ────────────────── */
       _initTable: function(wrap, tbl, pageSize) {
         var tbody = tbl.querySelector('tbody');
+        if (!tbody) return;
         var allRows = Array.from(tbody.querySelectorAll('tr'));
         var page = 0;
         var pager = null;

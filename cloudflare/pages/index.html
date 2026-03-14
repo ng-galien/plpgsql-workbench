@@ -14,10 +14,12 @@
       restBase: "http://localhost:54321/rest/v1",
       supabaseUrl: "http://localhost:54321",
       supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0",
-      headers: function() {
+      headers: function(accept, schema) {
         return {
           "apikey": this.supabaseKey,
           "Content-Type": "application/json",
+          "Accept": accept || "application/json",
+          "Content-Profile": schema || "pgv",
         };
       },
       rpc: function(path) { return this.rpcBase + path; },
@@ -355,7 +357,7 @@
         if (!this._fixedSchema) {
           fetch(window.__PGV_CONFIG__.rpc('/app_nav'), {
             method: 'POST',
-            headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
+            headers: window.__PGV_CONFIG__.headers('application/json', 'pgv'),
             body: '{}'
           })
           .then(function(r) { return r.ok ? r.json() : []; })
@@ -498,14 +500,17 @@
             body = { p_schema: m[1], p_path: m[2] || '/', p_method: 'GET', p_params: params };
             this._currentSchema = m[1];
           } else {
-            rpcUrl = window.__PGV_CONFIG__.rpc('/page');
-            body = { p_path: path };
+            // Root path or no schema prefix → show home (module cards)
+            self._renderHome();
+            if (push) history.pushState({}, '', '/');
+            window.scrollTo(0, 0);
+            return;
           }
         }
 
         return fetch(rpcUrl, {
           method: 'POST',
-          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          headers: window.__PGV_CONFIG__.headers('text/html'),
           body: JSON.stringify(body)
         })
         .then(function(r) {
@@ -539,7 +544,7 @@
         var path = '/' + fn.replace(/^post_/, '');
         return fetch(window.__PGV_CONFIG__.rpc('/route'), {
           method: 'POST',
-          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          headers: window.__PGV_CONFIG__.headers('text/html'),
           body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'POST', p_params: data })
         })
         .then(function(r) {
@@ -584,6 +589,7 @@
       /* ── Table: sort + pagination ────────────────── */
       _initTable: function(wrap, tbl, pageSize) {
         var tbody = tbl.querySelector('tbody');
+        if (!tbody) return;
         var allRows = Array.from(tbody.querySelectorAll('tr'));
         var page = 0;
         var pager = null;
@@ -729,7 +735,7 @@
             if (q) body.p_search = q;
             fetch(window.__PGV_CONFIG__.rpc('/') + fn, {
               method: 'POST',
-              headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': schema },
+              headers: window.__PGV_CONFIG__.headers('application/json', schema),
               body: JSON.stringify(body)
             })
             .then(function(r) { return r.json(); })
@@ -868,7 +874,7 @@
         var path = '/' + rpc.replace(/^get_/, '');
         fetch(window.__PGV_CONFIG__.rpc('/route'), {
           method: 'POST',
-          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          headers: window.__PGV_CONFIG__.headers('text/html'),
           body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'GET', p_params: params })
         })
         .then(function(r) {
@@ -972,7 +978,7 @@
         var schema = this._currentSchema || 'pgv_qa';
         fetch(window.__PGV_CONFIG__.rpc('/search'), {
           method: 'POST',
-          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
+          headers: window.__PGV_CONFIG__.headers('application/json', 'pgv'),
           body: JSON.stringify({ p_query: q, p_schema: schema })
         })
         .then(function(r) { return r.json(); })
@@ -1079,7 +1085,7 @@
           if (parts[1]) new URLSearchParams(parts[1]).forEach(function(v, k) { params[k] = v; });
           fetch(window.__PGV_CONFIG__.rpc('/route'), {
             method: 'POST',
-            headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+            headers: window.__PGV_CONFIG__.headers('text/html'),
             body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'GET', p_params: params })
           })
           .then(function(r) { return r.ok ? r.text() : Promise.reject(r); })
@@ -1101,7 +1107,7 @@
         var path = '/' + rpc.replace(/^post_/, '');
         fetch(window.__PGV_CONFIG__.rpc('/route'), {
           method: 'POST',
-          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'text/html' },
+          headers: window.__PGV_CONFIG__.headers('text/html'),
           body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'POST', p_params: data })
         })
         .then(function(r) {
@@ -1157,7 +1163,7 @@
         this.issue.open = false;
         fetch(window.__PGV_CONFIG__.rpc('/post_issue_report'), {
           method: 'POST',
-          headers: { 'apikey': window.__PGV_CONFIG__.supabaseKey, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Profile': 'pgv' },
+          headers: window.__PGV_CONFIG__.headers('application/json', 'pgv'),
           body: JSON.stringify({ p: data })
         })
         .then(function(r) {
