@@ -8,9 +8,7 @@ import "./styles/tokens.css";
 import "./styles/loader.css";
 import "./styles/menubar.css";
 
-import { registerAlpineComponent } from "./alpine-bridge.js";
-
-// Legacy imports — only used in standalone mode (no Alpine)
+// Imperative mode — Zustand + D3 + legacy DOM
 import { store, guardMiddleware, subscribeToSlices } from "./store/index.js";
 import { initToast } from "./toast.js";
 import { initZoom } from "./zoom.js";
@@ -28,18 +26,10 @@ export interface MountConfig {
 }
 
 /**
- * Mount in pgView shell — Alpine.js mode.
- * Registers the Alpine component, Alpine.initTree() activates it.
+ * Mount illustrator — always uses imperative mode.
+ * Works both in pgView shell and standalone.
  */
 export function mount(config: MountConfig) {
-  const Alpine = (window as any).Alpine;
-  if (Alpine) {
-    registerAlpineComponent(Alpine, config);
-    // Alpine.initTree is called by the shell's _enhance after DOM injection
-    return;
-  }
-
-  // Fallback: legacy mode (no Alpine available)
   mountLegacy(config);
 }
 

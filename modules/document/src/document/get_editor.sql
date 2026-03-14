@@ -12,7 +12,7 @@ BEGIN
 
   -- data-illustrator triggers the shell to load D3 + app.js bundle
   -- x-data="illustrator" activates the Alpine bridge component
-  RETURN '<div data-illustrator="' || p_id::text || '" x-data="illustrator">'
+  RETURN '<div data-illustrator="' || p_id::text || '" x-data="illustrator" x-ignore>'
 
     -- Loader
     || '<div class="loader" id="loader" x-show="phase === ''loading''" x-transition.opacity><div class="loader-content">'

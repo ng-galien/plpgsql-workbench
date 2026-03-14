@@ -261,6 +261,21 @@ agent-attach: ## Attach to agent tmux session (M=name). Ex: make agent-attach M=
 build: ## Compile TypeScript (tsc → dist/)
 	npm run build
 
+build-shell: ## Bundle pgView shell kernel (esbuild → cloudflare/pages/pgview.js)
+	@npx esbuild cloudflare/pages/src/pgview.ts \
+		--bundle --outfile=cloudflare/pages/pgview.js \
+		--format=iife --global-name=pgv --target=es2022 \
+		--external:alpine --external:marked --external:panzoom --external:d3 \
+		--minify
+	@echo "  pgview.js → cloudflare/pages/"
+
+watch-shell: ## Live reload pgView shell (esbuild watch)
+	npx esbuild cloudflare/pages/src/pgview.ts \
+		--bundle --outfile=cloudflare/pages/pgview.js \
+		--format=iife --global-name=pgv --target=es2022 \
+		--external:alpine --external:marked --external:panzoom --external:d3 \
+		--watch --sourcemap
+
 build-illustrator: ## Bundle illustrator client (esbuild → dist/ + cloudflare/pages/)
 	@npx esbuild modules/document/frontend/illustrator/app.ts \
 		--bundle --outfile=modules/document/frontend/illustrator/dist/app.js \

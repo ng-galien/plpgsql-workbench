@@ -32,6 +32,7 @@
   <script src="https://cdn.jsdelivr.net/npm/panzoom@9/dist/panzoom.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/zustand@5/umd/vanilla.production.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="/pgview.js"></script>
 </head>
 <body x-data="pgview" x-init="boot()">
 
@@ -319,22 +320,14 @@
       _fixedSchema: null,
       _errors: [],
       _actions: [],
-      _i18n: {},
-
-      /* ── i18n ───────────────────────────────────────── */
-      t: function(key) { return this._i18n[key] || key; },
+      /* ── Delegated to pgv kernel ─────────────────────── */
+      t: function(key) { return pgv.t(key); },
+      pgListen: function(schema, table, handler) { return pgv.pgListen(schema, table, handler); },
+      pgRpc: function(fn, params, schema) { return pgv.pgRpc(fn, params, schema); },
 
       /* ── Bootstrap ─────────────────────────────────── */
       boot: function() {
         var self = this;
-        // Load i18n (non-blocking, fallback to keys)
-        var lang = document.documentElement.lang || 'fr';
-        fetch('/i18n/' + lang + '.json').then(function(r) {
-          return r.ok ? r.json() : {};
-        }).then(function(dict) {
-          self._i18n = dict;
-        }).catch(function() {});
-
         // Error tracking (circular buffer, max 20)
         window.addEventListener('error', function(e) {
           self._errors.push({ msg: e.message, src: e.filename, line: e.lineno, ts: Date.now() });
@@ -352,28 +345,32 @@
         var meta = document.querySelector('meta[name="pgv-schema"]');
         this._fixedSchema = meta ? meta.getAttribute('content') : null;
         this._listen();
-        var self = this;
-        // Multi-module: fetch app_nav before initial navigation
-        if (!this._fixedSchema) {
-          fetch(window.__PGV_CONFIG__.rpc('/app_nav'), {
-            method: 'POST',
-            headers: window.__PGV_CONFIG__.headers('application/json', 'pgv'),
-            body: '{}'
-          })
-          .then(function(r) { return r.ok ? r.json() : []; })
-          .then(function(mods) {
-            self._modules = Array.isArray(mods) ? mods : [];
-            if (self._modules.length > 0)
-              document.documentElement.style.setProperty('--pgv-app-bar-h', '2.5rem');
+
+        // Load i18n before first navigation so t() returns translated strings
+        var lang = document.documentElement.lang || 'fr';
+        pgv.loadI18n(lang).then(function() {
+          // Multi-module: fetch app_nav before initial navigation
+          if (!self._fixedSchema) {
+            fetch(window.__PGV_CONFIG__.rpc('/app_nav'), {
+              method: 'POST',
+              headers: window.__PGV_CONFIG__.headers('application/json', 'pgv'),
+              body: '{}'
+            })
+            .then(function(r) { return r.ok ? r.json() : []; })
+            .then(function(mods) {
+              self._modules = Array.isArray(mods) ? mods : [];
+              if (self._modules.length > 0)
+                document.documentElement.style.setProperty('--pgv-app-bar-h', '2.5rem');
+              self.go(location.pathname + location.search || '/');
+            })
+            .catch(function() {
+              self._modules = [];
+              self.go(location.pathname + location.search || '/');
+            });
+          } else {
             self.go(location.pathname + location.search || '/');
-          })
-          .catch(function() {
-            self._modules = [];
-            self.go(location.pathname + location.search || '/');
-          });
-        } else {
-          this.go(location.pathname + location.search || '/');
-        }
+          }
+        });
         window.onpopstate = function() { self.go(location.pathname + location.search || '/', false); };
       },
 
@@ -812,11 +809,7 @@
             var val = params.get(input.name);
             if (!val) return;
             // Pre-fill input from URL
-            if (input.tagName === 'SELECT') {
-              input.value = val;
-            } else {
-              input.value = val;
-            }
+            input.value = val;
             hasActive = true;
             var label = input.placeholder || input.dataset.label || input.name;
             var displayVal = val;
@@ -1230,15 +1223,15 @@
     Alpine.data('pgvTable', function() { return {
       _cfg: null, _rows: [], _offset: 0, _size: 20, _hasMore: false,
       _sort: null, _sortDir: 'asc', _filters: {}, _loading: true, _rootEl: null,
+      _pgview: null,
 
-      _t: function(key) {
-        var app = document.querySelector('[x-data="pgview"]');
-        if (app) { var d = Alpine.$data(app); if (d && d.t) return d.t(key); }
-        return key;
-      },
+      _t: function(key) { return pgv.t(key); },
 
       init: function() {
         this._rootEl = this.$el;
+        // Cache pgview Alpine instance for navigation delegation
+        var appEl = document.querySelector('[x-data="pgview"]');
+        this._pgview = appEl ? Alpine.$data(appEl) : null;
         this._cfg = JSON.parse(this._rootEl.dataset.config);
         this._size = this._cfg.page_size || 20;
         var self = this;
@@ -1263,7 +1256,7 @@
         p._size = this._size;
         fetch(window.__PGV_CONFIG__.rpc('/') + this._cfg.rpc, {
           method: 'POST',
-          headers: { 'Content-Profile': this._cfg.schema, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          headers: window.__PGV_CONFIG__.headers('application/json', this._cfg.schema),
           body: JSON.stringify({ p_params: p })
         })
         .then(function(r) { return r.json(); })
@@ -1281,7 +1274,6 @@
         var dz = this._rootEl.querySelector('[data-pgv-data]');
         if (dz) {
           dz.innerHTML = this._tableHtml() + this._pagerHtml();
-          dz.style.minHeight = this._loading ? '' : '';
         }
         this._paintChips();
         this._bindData();
@@ -1429,15 +1421,14 @@
         if (nextBtn) nextBtn.addEventListener('click', function() {
           self._offset += self._size; self._doFetch();
         });
-        var app = document.querySelector('[x-data="pgview"]');
-        var pgv = app ? Alpine.$data(app) : null;
+        var shell = self._pgview;
         dz.querySelectorAll('tbody tr').forEach(function(tr) {
           var a = tr.querySelector('a[href^="/"]');
           if (!a) return;
           tr.style.cursor = 'pointer';
           tr.addEventListener('click', function(e) {
             if (e.target.closest('a, button')) return;
-            if (pgv && pgv.go) pgv.go(a.getAttribute('href'));
+            if (shell && shell.go) shell.go(a.getAttribute('href'));
           });
         });
       },

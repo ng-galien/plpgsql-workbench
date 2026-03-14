@@ -7,3 +7,8 @@ data/
 dev/frontend/
 .claude/worktrees/
 tmp/
+
+# Build artifacts (regenerate with make build-shell / build-illustrator)
+cloudflare/pages/pgview.js
+cloudflare/pages/illustrator/app.js
+cloudflare/pages/illustrator/app.css
