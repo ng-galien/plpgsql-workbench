@@ -1,97 +1,48 @@
 /**
  * illustrator pack — DSL agent for visual document composition.
  *
- * 38 MCP tools for creating, editing, and exporting visual documents.
+ * 15 consolidated MCP tools (from 38 original).
  * Stores elements in document.canvas + document.element (PostgreSQL).
- * TypeScript handles positioning, font measurement, layout analysis, and export.
  */
 
 import { asFunction, type AwilixContainer } from "awilix";
 import type { ToolPack } from "../container.js";
 
-// Document CRUD
-import { createDocNewTool } from "../tools/illustrator/doc-new.js";
-import { createDocListTool, createDocLoadTool, createDocDeleteTool, createDocDuplicateTool, createDocRenameTool, createDocSaveTool, createCanvasSetupTool } from "../tools/illustrator/doc-crud.js";
+// Consolidated tools
+import { createIllDocTool } from "../tools/illustrator/ill-doc.js";
+import { createIllAddTool } from "../tools/illustrator/ill-add.js";
+import { createIllUpdateTool, createIllDeleteTool, createIllBatchTool } from "../tools/illustrator/ill-update.js";
+import { createIllGroupTool } from "../tools/illustrator/ill-group.js";
+import { createIllLayoutTool } from "../tools/illustrator/ill-layout.js";
 
-// Element creation
-import { createAddTextTool, createAddRectTool, createAddLineTool } from "../tools/illustrator/add-element.js";
-import { createAddImageTool } from "../tools/illustrator/add-image.js";
-
-// Element mutation
-import { createUpdateElementTool, createDeleteElementTool, createElementDuplicateTool, createReorderElementTool, createClearCanvasTool, createBatchUpdateTool, createBatchAddTool } from "../tools/illustrator/element-mutate.js";
-
-// Groups
-import { createGroupElementsTool, createUngroupTool, createAddToGroupTool, createRemoveFromGroupTool } from "../tools/illustrator/groups.js";
-
-// Align + Distribute
-import { createAlignTool, createDistributeTool } from "../tools/illustrator/align-distribute.js";
-
-// State
+// Kept as-is (read-only / unique behavior)
 import { createGetStateTool } from "../tools/illustrator/get-state.js";
-
-// Meta, Assets, Export, Layout
 import { createUpdateMetaTool, createListAssetsTool, createShowMessageTool, createExportSvgTool, createCheckLayoutTool, createMeasureTextTool } from "../tools/illustrator/meta-assets.js";
-
-// Collaboration (bidirectional introspection)
 import { createInspectStoreTool, createDispatchEventTool, createGetEventLogTool } from "../tools/illustrator/collaboration.js";
 
 export const illustratorPack: ToolPack = (container: AwilixContainer, _config: Record<string, unknown>) => {
   container.register({
-    // --- Document CRUD (8 tools) ---
-    illDocNewTool: asFunction(createDocNewTool).singleton(),
-    illDocListTool: asFunction(createDocListTool).singleton(),
-    illDocLoadTool: asFunction(createDocLoadTool).singleton(),
-    illDocDeleteTool: asFunction(createDocDeleteTool).singleton(),
-    illDocDuplicateTool: asFunction(createDocDuplicateTool).singleton(),
-    illDocRenameTool: asFunction(createDocRenameTool).singleton(),
-    illDocSaveTool: asFunction(createDocSaveTool).singleton(),
-    illCanvasSetupTool: asFunction(createCanvasSetupTool).singleton(),
+    // --- Consolidated (5 tools replace 26) ---
+    illDocTool: asFunction(createIllDocTool).singleton(),           // new/list/load/delete/duplicate/rename/setup/clear
+    illAddTool: asFunction(createIllAddTool).singleton(),           // text/rect/line/image/circle/ellipse/path
+    illUpdateTool: asFunction(createIllUpdateTool).singleton(),     // single or batch update
+    illDeleteTool: asFunction(createIllDeleteTool).singleton(),     // single or batch delete
+    illBatchTool: asFunction(createIllBatchTool).singleton(),       // mixed add/update/delete ops
+    illGroupTool: asFunction(createIllGroupTool).singleton(),       // create/dissolve/add/remove
+    illLayoutTool: asFunction(createIllLayoutTool).singleton(),     // align/distribute/reorder/duplicate/move
 
-    // --- Element creation (4 tools) ---
-    illAddTextTool: asFunction(createAddTextTool).singleton(),
-    illAddRectTool: asFunction(createAddRectTool).singleton(),
-    illAddLineTool: asFunction(createAddLineTool).singleton(),
-    illAddImageTool: asFunction(createAddImageTool).singleton(),
-
-    // --- Element mutation (7 tools) ---
-    illUpdateElementTool: asFunction(createUpdateElementTool).singleton(),
-    illDeleteElementTool: asFunction(createDeleteElementTool).singleton(),
-    illElementDuplicateTool: asFunction(createElementDuplicateTool).singleton(),
-    illReorderElementTool: asFunction(createReorderElementTool).singleton(),
-    illClearCanvasTool: asFunction(createClearCanvasTool).singleton(),
-    illBatchUpdateTool: asFunction(createBatchUpdateTool).singleton(),
-    illBatchAddTool: asFunction(createBatchAddTool).singleton(),
-
-    // --- Groups (4 tools) ---
-    illGroupElementsTool: asFunction(createGroupElementsTool).singleton(),
-    illUngroupTool: asFunction(createUngroupTool).singleton(),
-    illAddToGroupTool: asFunction(createAddToGroupTool).singleton(),
-    illRemoveFromGroupTool: asFunction(createRemoveFromGroupTool).singleton(),
-
-    // --- Align + Distribute (2 tools) ---
-    illAlignTool: asFunction(createAlignTool).singleton(),
-    illDistributeTool: asFunction(createDistributeTool).singleton(),
-
-    // --- State + Inspection (3 tools) ---
+    // --- Kept as-is (8 tools) ---
     illGetStateTool: asFunction(createGetStateTool).singleton(),
     illMeasureTextTool: asFunction(createMeasureTextTool).singleton(),
     illCheckLayoutTool: asFunction(createCheckLayoutTool).singleton(),
-
-    // --- Meta + Assets (2 tools) ---
     illUpdateMetaTool: asFunction(createUpdateMetaTool).singleton(),
     illListAssetsTool: asFunction(createListAssetsTool).singleton(),
-
-    // --- Export (1 tool) ---
     illExportSvgTool: asFunction(createExportSvgTool).singleton(),
-
-    // --- Communication + Collaboration (4 tools) ---
     illShowMessageTool: asFunction(createShowMessageTool).singleton(),
+
+    // --- Collaboration (3 tools) ---
     illInspectStoreTool: asFunction(createInspectStoreTool).singleton(),
     illDispatchEventTool: asFunction(createDispatchEventTool).singleton(),
     illGetEventLogTool: asFunction(createGetEventLogTool).singleton(),
-
-    // --- TODO: Phase 2 ---
-    // illSnapshotTool (resvg PNG)
-    // illExportPdfTool (pdf-lib)
   });
 };
