@@ -10,12 +10,12 @@
 
 // @ts-nocheck — browser globals
 
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { store } from "./store.js";
 
-// Config — set before calling init()
 let supabaseUrl = "";
 let supabaseKey = "";
-let supabase: any = null;
+let supabase: SupabaseClient | null = null;
 let channel: any = null;
 let sessionSyncTimer: any = null;
 let toastPollTimer: any = null;
@@ -24,13 +24,6 @@ let toastPollTimer: any = null;
 export function init(url: string, key: string, canvasId: string) {
   supabaseUrl = url;
   supabaseKey = key;
-
-  // @supabase/supabase-js loaded from CDN as global
-  const createClient = (window as any).supabase?.createClient;
-  if (!createClient) {
-    console.error("supabase-js not loaded. Add CDN script.");
-    return;
-  }
 
   supabase = createClient(supabaseUrl, supabaseKey);
 

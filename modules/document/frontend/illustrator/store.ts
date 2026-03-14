@@ -131,8 +131,7 @@ interface IllustratorState {
 
 /** ---- Store ---- */
 
-// zustand is loaded as UMD global from CDN
-const createStore = (window as any).zustand?.createStore ?? (window as any).zustandVanilla?.createStore;
+import { createStore } from "zustand/vanilla";
 
 export const store = createStore<IllustratorState>((set: any, get: any) => ({
   // ---- Initial state ----
