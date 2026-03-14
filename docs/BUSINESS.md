@@ -454,3 +454,142 @@ Le MCP workbench qu'on a construit EST l'interface AI ↔ ERP. Un LLM avec accè
 **Le modèle devient : pgView pour voir, AI pour agir.**
 
 Voir [AI-INTEGRATION.md](AI-INTEGRATION.md) pour l'architecture complète, le code, et la feuille de route.
+
+---
+
+## 13. Architecture de déploiement — Illustrator SaaS
+
+### Stack validée
+
+```
+Cloudflare Worker (un seul déploiement)
+├── POST /          ← MCP server Streamable HTTP (JWT Supabase + subscription active)
+├── HEAD /          ← MCP-Protocol-Version: 2025-06-18 (Claude Store requirement)
+├── POST /checkout  ← Stripe Checkout session (JWT Supabase requis)
+├── POST /portal    ← Stripe Portal session (JWT Supabase requis)
+└── POST /webhook   ← Stripe webhook (signature Stripe uniquement, pas de JWT)
+
+Cloudflare Pages
+└── Frontend illustrator (HTML/JS/CSS statique, CDN global)
+
+Supabase
+├── Auth            ← Google OAuth 1-click → JWT
+├── PostgreSQL      ← document.canvas, document.element, asset.asset, subscriptions
+├── Storage         ← bucket assets (images), bucket exports (PDF)
+└── Realtime        ← Postgres Changes + Broadcast (collaboration)
+```
+
+### Routing Worker
+
+```typescript
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    const url = new URL(req.url);
+
+    // HEAD / → Claude Store protocol version
+    if (req.method === 'HEAD' && url.pathname === '/') {
+      return new Response(null, {
+        headers: { 'MCP-Protocol-Version': '2025-06-18' },
+      });
+    }
+
+    // Webhook Stripe → signature only, pas de JWT
+    if (url.pathname === '/webhook') return handleWebhook(req, env);
+
+    // Tout le reste → JWT Supabase obligatoire
+    const user = await verifySupabaseJWT(req, env);
+    if (!user) return new Response('Unauthorized', { status: 401 });
+
+    // MCP server
+    if (url.pathname === '/') return handleMCP(req, env, user);
+
+    // Billing
+    if (url.pathname === '/checkout') return handleCheckout(req, env, user);
+    if (url.pathname === '/portal')   return handlePortal(req, env, user);
+
+    return new Response('Not found', { status: 404 });
+  }
+}
+```
+
+### Auth — Google OAuth via Supabase
+
+```typescript
+// Frontend — 1 clic
+const { error } = await supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: { redirectTo: 'https://illustrator.app/auth/callback' },
+});
+```
+
+Supabase gère callback, JWT, session, refresh token. Zéro code auth à écrire.
+
+### Billing — Stripe Subscriptions
+
+| Composant | Qui le code | Qui le gère |
+|-----------|-------------|-------------|
+| Formulaire paiement | Personne | Stripe Checkout |
+| Page factures | Personne | Stripe Portal |
+| Upgrade/downgrade | Personne | Stripe Portal |
+| Sync plan → DB | 1 webhook | Stripe → Worker → Supabase |
+| Vérif accès MCP | 1 query | `SELECT status FROM subscriptions WHERE user_id = $1` |
+
+### Plans illustrator
+
+| Feature | Free | Pro (9.99€/mois) | Team (29.99€/mois) |
+|---------|------|-------------------|---------------------|
+| Documents | 3 | Illimité | Illimité |
+| Exports PDF | 5/mois | Illimité | Illimité |
+| Assets storage | 50 MB | 2 GB | 10 GB |
+| Formats | A4 uniquement | Tous | Tous |
+| Templates | — | Bibliothèque premium | + custom |
+| Collaboration | — | — | Multi-utilisateur |
+
+### Secrets Worker (via `wrangler secret put`)
+
+```
+SUPABASE_URL
+SUPABASE_JWT_SECRET
+SUPABASE_SERVICE_ROLE_KEY
+STRIPE_SECRET_KEY
+STRIPE_WEBHOOK_SECRET
+STRIPE_PRICE_PRO
+STRIPE_PRICE_TEAM
+```
+
+Jamais en clair dans `wrangler.jsonc` — chiffrés au repos chez Cloudflare.
+
+### Checklist Claude Connector Store
+
+- [ ] Endpoint HEAD / → header MCP-Protocol-Version: 2025-06-18
+- [ ] Endpoint POST / à la racine (Streamable HTTP)
+- [ ] OAuth 2.0 authorization code flow (Supabase Auth + callbacks Claude)
+- [ ] Tous les tools annotés readOnlyHint ou destructiveHint
+- [ ] IP Anthropic whitelistées (Cloudflare — trivial)
+- [ ] HTTPS valide (Cloudflare — automatique)
+- [ ] CORS configuré pour les clients Claude
+- [ ] 3 exemples d'usage minimum (poster, flyer, confirmation commande)
+- [ ] Privacy policy publiée
+- [ ] Compte de test fourni pour review Anthropic
+
+### Coût infrastructure
+
+| Composant | Free tier | Avec ~500 users |
+|-----------|-----------|-----------------|
+| Cloudflare Worker | 100K req/jour gratuit | ~5$/mois |
+| Cloudflare Pages | Illimité | 0$ |
+| Supabase Pro | 25$/mois | 25$/mois |
+| Stripe fees | 0$ | ~3% du revenu |
+| **Total** | **25$/mois** | **~30$/mois** |
+
+### Flow utilisateur complet
+
+```
+1. Arrive sur illustrator.app (Cloudflare Pages)
+2. "Se connecter avec Google" → 1 clic → Supabase Auth → connecté
+3. Free tier : 3 documents, formats A4
+4. "S'abonner Pro" → Stripe Checkout → paiement → webhook → subscription active
+5. Accès complet : tous formats, exports illimités, templates
+6. Claude Desktop : connecte le MCP → crée des documents en langage naturel
+7. "Gérer mon abonnement" → Stripe Portal (factures, annulation)
+```
