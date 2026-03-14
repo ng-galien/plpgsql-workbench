@@ -14,7 +14,9 @@ import type { WithClient } from "../container.js";
 
 export interface PostgresWithClientOptions {
   tenantId?: string;
+  userId?: string;
   resolveTenantId?: () => string | undefined;
+  resolveUserId?: () => string | undefined;
 }
 
 /**
@@ -29,11 +31,14 @@ export interface PostgresWithClientOptions {
  */
 export function createPostgresWithClient(sql: any, opts?: PostgresWithClientOptions): WithClient {
   const defaultTenantId = opts?.tenantId ?? "dev";
+  const defaultUserId = opts?.userId ?? "dev";
   const resolveTenantId = opts?.resolveTenantId;
+  const resolveUserId = opts?.resolveUserId;
 
   return async <T>(cb: (client: DbClient) => Promise<T>): Promise<T> => {
     const tenantId = resolveTenantId?.() ?? defaultTenantId;
-    await sql.unsafe(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
+    const userId = resolveUserId?.() ?? defaultUserId;
+    await sql.unsafe(`SELECT set_config('app.tenant_id', $1, false), set_config('app.user_id', $2, false)`, [tenantId, userId]);
 
     const client: DbClient = {
       async query<R = any>(queryText: string, params?: unknown[]): Promise<QueryResult<R>> {

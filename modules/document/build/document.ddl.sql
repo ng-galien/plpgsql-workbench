@@ -209,7 +209,7 @@ END $$;
 DROP TABLE IF EXISTS document.session;
 CREATE UNLOGGED TABLE document.session (
   canvas_id    UUID REFERENCES document.canvas(id) ON DELETE CASCADE,
-  user_id      TEXT NOT NULL DEFAULT 'dev',
+  user_id      TEXT NOT NULL DEFAULT document.current_user_id(),
   tenant_id    TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
   selected_ids JSONB DEFAULT '[]',
   phase        TEXT DEFAULT 'idle' CHECK (phase IN ('idle', 'selected', 'dragging', 'editing_prop')),
