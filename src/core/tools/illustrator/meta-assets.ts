@@ -74,16 +74,23 @@ export function createShowMessageTool({ withClient }: { withClient: WithClient }
   return {
     metadata: {
       name: "ill_show_message",
-      description: "Display a toast notification in the Illustrator UI (via Supabase Realtime broadcast).",
+      description: "Display a toast notification in the Illustrator UI. Writes to PG session — browser polls.",
       schema: z.object({
+        canvas_id: z.string().describe("Canvas UUID"),
         text: z.string().describe("Message to display"),
         level: z.enum(["info", "success", "warning"]).optional().describe("Toast level. Default: info"),
         duration: z.number().optional().describe("Display duration in ms. Default: 3000"),
       }),
     },
     handler: async (args, _extra) => {
-      // TODO: Implement Supabase Realtime broadcast when client is connected
-      return text(`Toast sent: "${args.text}" (${args.level ?? "info"})`);
+      return withClient(async (client) => {
+        // Update toast on ALL sessions for this canvas (all connected users see it)
+        await client.query(
+          `UPDATE document.session SET toast = $2, updated_at = now() WHERE canvas_id = $1`,
+          [args.canvas_id, JSON.stringify({ text: args.text, level: args.level ?? "info", duration: args.duration ?? 3000, at: new Date().toISOString() })],
+        );
+        return text(`Toast sent: "${args.text}" (${args.level ?? "info"})`);
+      });
     },
   };
 }

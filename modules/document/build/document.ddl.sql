@@ -205,21 +205,28 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Session (active canvas per tenant)
-CREATE TABLE IF NOT EXISTS document.session (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id        TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  active_canvas_id UUID REFERENCES document.canvas(id) ON DELETE SET NULL,
-  updated_at       TIMESTAMPTZ DEFAULT now()
+-- Session (ephemeral state, UNLOGGED for performance)
+DROP TABLE IF EXISTS document.session;
+CREATE UNLOGGED TABLE document.session (
+  canvas_id    UUID REFERENCES document.canvas(id) ON DELETE CASCADE,
+  user_id      TEXT NOT NULL DEFAULT 'dev',
+  tenant_id    TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  selected_ids JSONB DEFAULT '[]',
+  phase        TEXT DEFAULT 'idle' CHECK (phase IN ('idle', 'selected', 'dragging', 'editing_prop')),
+  zoom         REAL DEFAULT 1,
+  toast        JSONB DEFAULT NULL,
+  updated_at   TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (canvas_id, user_id)
 );
 
 -- Grants
-GRANT USAGE ON SCHEMA document TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document TO anon;
-GRANT SELECT ON ALL TABLES IN SCHEMA document TO anon;
+GRANT USAGE ON SCHEMA document TO web_anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document TO web_anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA document TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON document.session TO web_anon;
 
-GRANT USAGE ON SCHEMA document_ut TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_ut TO anon;
+GRANT USAGE ON SCHEMA document_ut TO web_anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_ut TO web_anon;
 
-GRANT USAGE ON SCHEMA document_qa TO anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_qa TO anon;
+GRANT USAGE ON SCHEMA document_qa TO web_anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_qa TO web_anon;

@@ -130,61 +130,6 @@ END;
 $function$;
 COMMENT ON FUNCTION document.canvas_duplicate(uuid,text) IS 'Deep copy canvas with all elements (new UUIDs, parent mapping)';
 
-CREATE OR REPLACE FUNCTION document.canvas_get_state(p_canvas_id uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_canvas jsonb;
-  v_elements jsonb;
-  v_gradients jsonb;
-BEGIN
-  -- Canvas metadata
-  SELECT jsonb_build_object(
-    'id', c.id, 'name', c.name, 'format', c.format,
-    'orientation', c.orientation, 'width', c.width, 'height', c.height,
-    'background', c.background, 'category', c.category, 'meta', c.meta
-  ) INTO v_canvas
-  FROM document.canvas c
-  WHERE c.id = p_canvas_id
-    AND c.tenant_id = current_setting('app.tenant_id', true);
-
-  IF v_canvas IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  -- Elements as flat list (frontend builds the tree via parent_id)
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'id', e.id, 'type', e.type, 'parent_id', e.parent_id,
-      'sort_order', e.sort_order, 'name', e.name,
-      'x', e.x, 'y', e.y, 'width', e.width, 'height', e.height,
-      'x1', e.x1, 'y1', e.y1, 'x2', e.x2, 'y2', e.y2,
-      'cx', e.cx, 'cy', e.cy, 'r', e.r, 'rx', e.rx_, 'ry', e.ry_,
-      'opacity', e.opacity, 'rotation', e.rotation,
-      'fill', e.fill, 'stroke', e.stroke,
-      'stroke_width', e.stroke_width, 'stroke_dasharray', e.stroke_dasharray,
-      'props', e.props, 'asset_id', e.asset_id
-    ) ORDER BY e.sort_order
-  ), '[]') INTO v_elements
-  FROM document.element e
-  WHERE e.canvas_id = p_canvas_id;
-
-  -- Gradients
-  SELECT COALESCE(jsonb_agg(
-    jsonb_build_object(
-      'id', g.id, 'type', g.type, 'angle', g.angle,
-      'cx', g.cx, 'cy', g.cy, 'r', g.gr, 'stops', g.stops
-    )
-  ), '[]') INTO v_gradients
-  FROM document.gradient g
-  WHERE g.canvas_id = p_canvas_id;
-
-  RETURN v_canvas || jsonb_build_object('elements', v_elements, 'gradients', v_gradients);
-END;
-$function$;
-COMMENT ON FUNCTION document.canvas_get_state(uuid) IS 'Return full canvas state: metadata + flat element list + gradients';
-
 CREATE OR REPLACE FUNCTION document.canvas_render_svg_mini(p_canvas_id uuid)
  RETURNS text
  LANGUAGE plpgsql
@@ -1285,6 +1230,112 @@ END;
 $function$;
 COMMENT ON FUNCTION document.post_company_save(text,text,text,text,text,text,text,text,text,text) IS 'Save company info (POST action)';
 
+CREATE OR REPLACE FUNCTION document.session_get(p_canvas_id uuid, p_user_id text DEFAULT 'dev'::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_row document.session;
+BEGIN
+  SELECT * INTO v_row FROM document.session WHERE canvas_id = p_canvas_id AND user_id = p_user_id;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('selected_ids', '[]'::jsonb, 'phase', 'idle', 'zoom', 1, 'toast', null);
+  END IF;
+  RETURN jsonb_build_object(
+    'selected_ids', v_row.selected_ids,
+    'phase', v_row.phase,
+    'zoom', v_row.zoom,
+    'toast', v_row.toast
+  );
+END;
+$function$;
+COMMENT ON FUNCTION document.session_get(uuid,text) IS 'Get ephemeral session state for a canvas+user';
+
+CREATE OR REPLACE FUNCTION document.canvas_get_state(p_canvas_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_canvas jsonb;
+  v_elements jsonb;
+  v_gradients jsonb;
+  v_session jsonb;
+BEGIN
+  SELECT jsonb_build_object(
+    'id', c.id, 'name', c.name, 'format', c.format,
+    'orientation', c.orientation, 'width', c.width, 'height', c.height,
+    'background', c.background, 'category', c.category, 'meta', c.meta
+  ) INTO v_canvas
+  FROM document.canvas c
+  WHERE c.id = p_canvas_id
+    AND c.tenant_id = current_setting('app.tenant_id', true);
+
+  IF v_canvas IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'id', e.id, 'type', e.type, 'parent_id', e.parent_id,
+      'sort_order', e.sort_order, 'name', e.name,
+      'x', e.x, 'y', e.y, 'width', e.width, 'height', e.height,
+      'x1', e.x1, 'y1', e.y1, 'x2', e.x2, 'y2', e.y2,
+      'cx', e.cx, 'cy', e.cy, 'r', e.r, 'rx', e.rx_, 'ry', e.ry_,
+      'opacity', e.opacity, 'rotation', e.rotation,
+      'fill', e.fill, 'stroke', e.stroke,
+      'stroke_width', e.stroke_width, 'stroke_dasharray', e.stroke_dasharray,
+      'props', e.props, 'asset_id', e.asset_id
+    ) ORDER BY e.sort_order
+  ), '[]') INTO v_elements
+  FROM document.element e
+  WHERE e.canvas_id = p_canvas_id;
+
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'id', g.id, 'type', g.type, 'angle', g.angle,
+      'cx', g.cx, 'cy', g.cy, 'r', g.gr, 'stops', g.stops
+    )
+  ), '[]') INTO v_gradients
+  FROM document.gradient g
+  WHERE g.canvas_id = p_canvas_id;
+
+  v_session := document.session_get(p_canvas_id);
+
+  RETURN v_canvas || jsonb_build_object('elements', v_elements, 'gradients', v_gradients, 'session', v_session);
+END;
+$function$;
+COMMENT ON FUNCTION document.canvas_get_state(uuid) IS 'Return full canvas state: metadata + elements + gradients + session';
+
+CREATE OR REPLACE FUNCTION document.session_sync(p_canvas_id uuid, p_selected_ids jsonb DEFAULT '[]'::jsonb, p_phase text DEFAULT 'idle'::text, p_zoom real DEFAULT 1, p_user_id text DEFAULT 'dev'::text)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  INSERT INTO document.session (canvas_id, user_id, selected_ids, phase, zoom, updated_at)
+  VALUES (p_canvas_id, p_user_id, p_selected_ids, p_phase, p_zoom, now())
+  ON CONFLICT (canvas_id, user_id) DO UPDATE SET
+    selected_ids = EXCLUDED.selected_ids,
+    phase = EXCLUDED.phase,
+    zoom = EXCLUDED.zoom,
+    updated_at = now();
+END;
+$function$;
+COMMENT ON FUNCTION document.session_sync(uuid,jsonb,text,real,text) IS 'Upsert ephemeral session state for a canvas+user';
+
+CREATE OR REPLACE FUNCTION document.session_toast(p_canvas_id uuid, p_text text, p_level text DEFAULT 'info'::text, p_duration integer DEFAULT 3000, p_user_id text DEFAULT 'dev'::text)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  INSERT INTO document.session (canvas_id, user_id, toast, updated_at)
+  VALUES (p_canvas_id, p_user_id, jsonb_build_object('text', p_text, 'level', p_level, 'duration', p_duration, 'at', now()), now())
+  ON CONFLICT (canvas_id, user_id) DO UPDATE SET
+    toast = jsonb_build_object('text', p_text, 'level', p_level, 'duration', p_duration, 'at', now()),
+    updated_at = now();
+END;
+$function$;
+COMMENT ON FUNCTION document.session_toast(uuid,text,text,integer,text) IS 'Set a toast message in the session for a canvas+user';
+
 CREATE OR REPLACE FUNCTION document.set_company(p_name text, p_siret text DEFAULT NULL::text, p_tva_intra text DEFAULT NULL::text, p_address text DEFAULT NULL::text, p_city text DEFAULT NULL::text, p_postal_code text DEFAULT NULL::text, p_phone text DEFAULT NULL::text, p_email text DEFAULT NULL::text, p_website text DEFAULT NULL::text, p_mentions text DEFAULT NULL::text)
  RETURNS document.company
  LANGUAGE plpgsql
@@ -1902,6 +1953,77 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION document_ut.test_group_nested() IS 'Test nested groups: group inside group, verify state tree';
+
+CREATE OR REPLACE FUNCTION document_ut.test_session_sync()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_canvas_id uuid;
+  v_state jsonb;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+  v_canvas_id := document.canvas_create('Session test');
+
+  -- Default state (no session row)
+  v_state := document.session_get(v_canvas_id);
+  RETURN NEXT is(v_state->>'phase', 'idle', 'default phase is idle');
+  RETURN NEXT ok((v_state->>'zoom')::real = 1, 'default zoom is 1');
+
+  -- Sync
+  PERFORM document.session_sync(v_canvas_id, '["id1","id2"]'::jsonb, 'selected', 1.5);
+  v_state := document.session_get(v_canvas_id);
+  RETURN NEXT is(v_state->>'phase', 'selected', 'phase updated to selected');
+  RETURN NEXT ok((v_state->>'zoom')::real = 1.5, 'zoom updated to 1.5');
+  RETURN NEXT ok(jsonb_array_length(v_state->'selected_ids') = 2, '2 selected ids');
+
+  -- Update sync
+  PERFORM document.session_sync(v_canvas_id, '[]'::jsonb, 'idle', 2.0);
+  v_state := document.session_get(v_canvas_id);
+  RETURN NEXT is(v_state->>'phase', 'idle', 'phase back to idle');
+  RETURN NEXT ok(jsonb_array_length(v_state->'selected_ids') = 0, '0 selected ids');
+
+  -- Cleanup
+  DELETE FROM document.session WHERE canvas_id = v_canvas_id;
+  DELETE FROM document.canvas WHERE id = v_canvas_id;
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_session_sync() IS 'Test session sync and get';
+
+CREATE OR REPLACE FUNCTION document_ut.test_session_toast()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_canvas_id uuid;
+  v_state jsonb;
+  v_toast jsonb;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+  v_canvas_id := document.canvas_create('Toast test');
+
+  -- Set toast
+  PERFORM document.session_toast(v_canvas_id, 'Element added', 'success', 2000);
+  v_state := document.session_get(v_canvas_id);
+  v_toast := v_state->'toast';
+
+  RETURN NEXT ok(v_toast IS NOT NULL, 'toast is set');
+  RETURN NEXT is(v_toast->>'text', 'Element added', 'toast text matches');
+  RETURN NEXT is(v_toast->>'level', 'success', 'toast level matches');
+  RETURN NEXT ok((v_toast->>'duration')::int = 2000, 'toast duration matches');
+  RETURN NEXT ok(v_toast ? 'at', 'toast has timestamp');
+
+  -- Canvas get_state includes session
+  v_state := document.canvas_get_state(v_canvas_id);
+  RETURN NEXT ok(v_state ? 'session', 'canvas_get_state has session key');
+  RETURN NEXT is(v_state->'session'->'toast'->>'text', 'Element added', 'session toast in canvas state');
+
+  -- Cleanup
+  DELETE FROM document.session WHERE canvas_id = v_canvas_id;
+  DELETE FROM document.canvas WHERE id = v_canvas_id;
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_session_toast() IS 'Test session toast and canvas_get_state integration';
 
 CREATE OR REPLACE FUNCTION document_ut.test_template()
  RETURNS SETOF text

@@ -6,8 +6,8 @@ DECLARE
   v_canvas jsonb;
   v_elements jsonb;
   v_gradients jsonb;
+  v_session jsonb;
 BEGIN
-  -- Canvas metadata
   SELECT jsonb_build_object(
     'id', c.id, 'name', c.name, 'format', c.format,
     'orientation', c.orientation, 'width', c.width, 'height', c.height,
@@ -21,7 +21,6 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  -- Elements as flat list (frontend builds the tree via parent_id)
   SELECT COALESCE(jsonb_agg(
     jsonb_build_object(
       'id', e.id, 'type', e.type, 'parent_id', e.parent_id,
@@ -38,7 +37,6 @@ BEGIN
   FROM document.element e
   WHERE e.canvas_id = p_canvas_id;
 
-  -- Gradients
   SELECT COALESCE(jsonb_agg(
     jsonb_build_object(
       'id', g.id, 'type', g.type, 'angle', g.angle,
@@ -48,6 +46,8 @@ BEGIN
   FROM document.gradient g
   WHERE g.canvas_id = p_canvas_id;
 
-  RETURN v_canvas || jsonb_build_object('elements', v_elements, 'gradients', v_gradients);
+  v_session := document.session_get(p_canvas_id);
+
+  RETURN v_canvas || jsonb_build_object('elements', v_elements, 'gradients', v_gradients, 'session', v_session);
 END;
 $function$;
