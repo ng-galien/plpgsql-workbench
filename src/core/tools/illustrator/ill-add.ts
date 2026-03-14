@@ -6,6 +6,7 @@
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
+import { jsonb } from "../../connection.js";
 
 export function createIllAddTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
@@ -52,7 +53,7 @@ Common: name (semantic label), opacity (0-1), rotation (degrees), fill, stroke, 
       return withClient(async (client) => {
         const { rows } = await client.query(
           `SELECT document.element_add($1, $2, 0, $3) as id`,
-          [canvasId, type, JSON.stringify(props)],
+          [canvasId, type, jsonb(props)],
         );
         const id = rows[0]?.id;
         const shortId = String(id).slice(0, 8);

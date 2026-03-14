@@ -5,6 +5,7 @@
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
+import { jsonb } from "../../connection.js";
 import { loadCanvas } from "./state.js";
 import type { Element, GroupElement, BBox } from "./types.js";
 
@@ -111,7 +112,7 @@ Actions:
               }
             }
             if (updates.length === 0) return text("Already aligned.");
-            await client.query(`SELECT document.element_batch_update($1)`, [JSON.stringify(updates)]);
+            await client.query(`SELECT document.element_batch_update($1)`, [jsonb(updates)]);
             return text(`Aligned ${elements.length} on ${ax} (${updates.length} moved)`);
           }
 
@@ -143,7 +144,7 @@ Actions:
               pos += (ax === "x" ? bb.w : bb.h) + gap;
             }
             if (updates.length === 0) return text("Already distributed.");
-            await client.query(`SELECT document.element_batch_update($1)`, [JSON.stringify(updates)]);
+            await client.query(`SELECT document.element_batch_update($1)`, [jsonb(updates)]);
             return text(`Distributed ${items.length} on ${ax} (gap: ${gap.toFixed(1)}mm)`);
           }
 

@@ -12,7 +12,7 @@ BEGIN
     x1, y1, x2, y2,
     cx, cy, r, rx_, ry_,
     opacity, rotation, fill, stroke, stroke_width, stroke_dasharray,
-    asset_id, props
+    asset_id, props, tenant_id
   ) VALUES (
     p_canvas_id, p_type, p_sort_order,
     (p_props->>'parent_id')::uuid,
@@ -30,9 +30,9 @@ BEGIN
     (p_props->>'asset_id')::uuid,
     p_props - ARRAY['parent_id','name','x','y','width','height','x1','y1','x2','y2',
                      'cx','cy','r','rx','ry','opacity','rotation','fill','stroke',
-                     'stroke_width','stroke_dasharray','asset_id']
+                     'stroke_width','stroke_dasharray','asset_id'],
+    current_setting('app.tenant_id', true)
   ) RETURNING id INTO v_id;
-
   RETURN v_id;
 END;
 $function$;

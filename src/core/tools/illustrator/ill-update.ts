@@ -7,6 +7,7 @@
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
+import { jsonb } from "../../connection.js";
 
 function resolveElement(client: any, canvasId: string, idOrName: string) {
   return client.query(
@@ -46,7 +47,7 @@ export function createIllUpdateTool({ withClient }: { withClient: WithClient }):
           if (rows.length === 0) continue;
           await client.query(
             `SELECT document.element_update($1, $2)`,
-            [rows[0].id, JSON.stringify(u.props)],
+            [rows[0].id, jsonb(u.props)],
           );
           count++;
         }
@@ -116,7 +117,7 @@ Operations execute in order — later ops can reference elements added earlier b
             case "add": {
               const { rows } = await client.query(
                 `SELECT document.element_add($1, $2, 0, $3) as id`,
-                [canvasId, op.type, JSON.stringify(op.props ?? {})],
+                [canvasId, op.type, jsonb(op.props ?? {})],
               );
               results.push(`+ ${op.type} ${op.props?.name ?? rows[0]?.id?.slice(0, 8)}`);
               break;
@@ -126,7 +127,7 @@ Operations execute in order — later ops can reference elements added earlier b
               if (rows.length > 0) {
                 await client.query(
                   `SELECT document.element_update($1, $2)`,
-                  [rows[0].id, JSON.stringify(op.props ?? {})],
+                  [rows[0].id, jsonb(op.props ?? {})],
                 );
                 results.push(`~ ${op.id}`);
               } else {

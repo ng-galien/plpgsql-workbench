@@ -33,16 +33,12 @@ export interface Env {
 
 const app = new Hono<{ Bindings: Env }>();
 
-// --- Database + container (lazy init on first request) ---
-let containerReady: ReturnType<typeof buildContainer> | null = null;
-
+// --- Database + container (per-request — Cloudflare Workers can't share I/O across requests) ---
 function getContainer(env: Env) {
-	if (containerReady) return containerReady;
-
 	const sql = postgres(env.DATABASE_URL, {
-		idle_timeout: 20,
-		connect_timeout: 10,
-		max: 3,
+		idle_timeout: 10,
+		connect_timeout: 5,
+		max: 1,
 	});
 	const withClient = createPostgresWithClient(sql, { tenantId: "dev" });
 
@@ -53,11 +49,10 @@ function getContainer(env: Env) {
 		});
 	};
 
-	containerReady = buildContainer(
+	return buildContainer(
 		{ packs: { edge: {}, illustrator: {} } },
 		{ edge: edgePack, illustrator: illustratorPack },
 	);
-	return containerReady;
 }
 
 // --- CORS ---
