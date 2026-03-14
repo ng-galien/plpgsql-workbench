@@ -4,12 +4,21 @@
  * Single deployment: MCP server + Stripe billing endpoints.
  * Auth: Supabase JWT (all routes except /webhook).
  * MCP: Streamable HTTP via @modelcontextprotocol/sdk.
+ *
+ * Imports core pack from ../../src/core/ (compiled to ../../dist/core/).
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { asFunction, asValue } from "awilix";
+import type { ToolPack } from "../../../src/core/container.js";
+import { buildContainer, mountTools } from "../../../src/core/container.js";
+import { createPostgresWithClient } from "../../../src/core/drivers/supabase.js";
+import { illustratorPack } from "../../../src/core/packs/illustrator.js";
+import { createQueryTool } from "../../../src/core/tools/plpgsql/query.js";
+import postgres from "postgres";
 
 export interface Env {
 	SUPABASE_URL: string;
@@ -19,10 +28,37 @@ export interface Env {
 	STRIPE_WEBHOOK_SECRET: string;
 	STRIPE_PRICE_PRO: string;
 	STRIPE_PRICE_TEAM: string;
-	DATABASE_URL: string; // Supabase PG direct connection
+	DATABASE_URL: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+// --- Database + container (lazy init on first request) ---
+let containerReady: ReturnType<typeof buildContainer> | null = null;
+
+function getContainer(env: Env) {
+	if (containerReady) return containerReady;
+
+	const sql = postgres(env.DATABASE_URL, {
+		idle_timeout: 20,
+		connect_timeout: 10,
+		max: 3,
+	});
+	const withClient = createPostgresWithClient(sql, { tenantId: "dev" });
+
+	const edgePack: ToolPack = (container, _config) => {
+		container.register({
+			withClient: asValue(withClient),
+			queryTool: asFunction(createQueryTool).singleton(),
+		});
+	};
+
+	containerReady = buildContainer(
+		{ packs: { edge: {}, illustrator: {} } },
+		{ edge: edgePack, illustrator: illustratorPack },
+	);
+	return containerReady;
+}
 
 // --- CORS ---
 app.use("*", cors({
@@ -46,43 +82,28 @@ app.post("/webhook", async (c) => {
 
 // --- JWT verification middleware (all other routes) ---
 app.use("*", async (c, next) => {
-	// Skip for webhook and HEAD (already handled)
 	if (c.req.path === "/webhook") return next();
-	if (c.req.method === "HEAD") return next();
+	if (c.req.method === "HEAD" || c.req.method === "GET") return next();
 
 	const token = c.req.header("Authorization")?.replace("Bearer ", "");
 	if (!token) {
-		// In dev, allow unauthenticated access
 		if (!c.env.SUPABASE_JWT_SECRET) return next();
 		return c.json({ error: "Unauthorized" }, 401);
 	}
 
-	// TODO: Verify Supabase JWT
-	// For now, pass through (dev mode)
+	// TODO: Verify Supabase JWT (jose library)
 	await next();
 });
 
 // --- POST / → MCP Server ---
 app.post("/", async (c) => {
+	const container = getContainer(c.env);
+
 	const server = new McpServer({
 		name: "mcp-illustrator",
 		version: "1.0.0",
 	});
-
-	// Register tools from our core pack
-	// TODO: Import and mount illustrator tools from src/core/
-	// For now, a test tool
-	server.registerTool(
-		"ill_ping",
-		{
-			description: "Test tool — returns pong",
-			inputSchema: {},
-			annotations: { readOnlyHint: true },
-		},
-		async () => ({
-			content: [{ type: "text" as const, text: "pong from Cloudflare Worker" }],
-		}),
-	);
+	await mountTools(server, container);
 
 	const transport = new WebStandardStreamableHTTPServerTransport();
 	await server.connect(transport);
@@ -91,13 +112,11 @@ app.post("/", async (c) => {
 
 // --- POST /checkout → Stripe Checkout ---
 app.post("/checkout", async (c) => {
-	// TODO: Stripe checkout session
 	return c.json({ error: "Not implemented" }, 501);
 });
 
 // --- POST /portal → Stripe Customer Portal ---
 app.post("/portal", async (c) => {
-	// TODO: Stripe portal session
 	return c.json({ error: "Not implemented" }, 501);
 });
 
