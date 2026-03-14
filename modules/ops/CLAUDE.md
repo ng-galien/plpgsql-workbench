@@ -44,9 +44,9 @@ Ce module est un **module independant** du framework pgView. Ses dependances son
 ### Grants (DDL obligatoire)
 
 Chaque `build/{schema}.ddl.sql` DOIT inclure :
-- `GRANT USAGE ON SCHEMA {schema} TO web_anon;`
-- `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO web_anon;`
-- `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO web_anon;`
+- `GRANT USAGE ON SCHEMA {schema} TO anon;`
+- `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO anon;`
+- `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO anon;`
 
 ### Communication inter-modules
 

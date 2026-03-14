@@ -16,8 +16,8 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON quote.mention TO web_anon;
-GRANT USAGE ON SEQUENCE quote.mention_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON quote.mention TO anon;
+GRANT USAGE ON SEQUENCE quote.mention_id_seq TO anon;
 
 -- Mentions obligatoires artisan (pré-remplissage)
 INSERT INTO quote.mention (label, texte)

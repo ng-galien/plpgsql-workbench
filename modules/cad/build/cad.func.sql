@@ -3097,8 +3097,8 @@ END;
 $function$;
 COMMENT ON FUNCTION cad.view(integer,text,integer,integer) IS 'Rendu ASCII du modele. Projections: front (XZ), top (XY), side (YZ). Diagonales tracees, caracteres par role, ligne de sol.';
 
-GRANT USAGE ON SCHEMA cad TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad TO web_anon;
+GRANT USAGE ON SCHEMA cad TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad TO anon;
 
 -- Schema: cad_ut
 CREATE SCHEMA IF NOT EXISTS cad_ut;
@@ -3717,8 +3717,8 @@ END;
 $function$;
 COMMENT ON FUNCTION cad_ut.test_group_pieces() IS 'Test pgTAP pour le systeme de groupes de pieces 3D.';
 
-GRANT USAGE ON SCHEMA cad_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad_ut TO web_anon;
+GRANT USAGE ON SCHEMA cad_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad_ut TO anon;
 
 -- Schema: cad_qa
 CREATE SCHEMA IF NOT EXISTS cad_qa;
@@ -4082,5 +4082,5 @@ END;
 $function$;
 COMMENT ON FUNCTION cad_qa.seed() IS 'Seed QA: abri bois complet avec groupes (ossature, toiture, lisses) et sous-groupes (faces).';
 
-GRANT USAGE ON SCHEMA cad_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad_qa TO web_anon;
+GRANT USAGE ON SCHEMA cad_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad_qa TO anon;

@@ -30,7 +30,7 @@
     ]
   },
   "grants": {
-    "web_anon": [
+    "anon": [
       "ops"
     ]
   }

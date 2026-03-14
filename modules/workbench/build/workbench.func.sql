@@ -905,5 +905,5 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION workbench.session_end(integer,text) IS 'End an agent session with status';
 
-GRANT USAGE ON SCHEMA workbench TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA workbench TO web_anon;
+GRANT USAGE ON SCHEMA workbench TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA workbench TO anon;

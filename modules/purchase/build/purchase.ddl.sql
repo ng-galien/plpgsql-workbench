@@ -3,7 +3,7 @@
 CREATE SCHEMA IF NOT EXISTS purchase;
 CREATE SCHEMA IF NOT EXISTS purchase_ut;
 CREATE SCHEMA IF NOT EXISTS purchase_qa;
-GRANT USAGE ON SCHEMA purchase TO web_anon;
+GRANT USAGE ON SCHEMA purchase TO anon;
 
 -- Commandes fournisseur (bons de commande)
 CREATE TABLE IF NOT EXISTS purchase.commande (
@@ -137,25 +137,25 @@ CREATE POLICY tenant_isolation ON purchase.facture_fournisseur
   USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.commande TO web_anon;
-GRANT USAGE ON SEQUENCE purchase.commande_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.commande TO anon;
+GRANT USAGE ON SEQUENCE purchase.commande_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.ligne TO web_anon;
-GRANT USAGE ON SEQUENCE purchase.ligne_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.ligne TO anon;
+GRANT USAGE ON SEQUENCE purchase.ligne_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.reception TO web_anon;
-GRANT USAGE ON SEQUENCE purchase.reception_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.reception TO anon;
+GRANT USAGE ON SEQUENCE purchase.reception_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.reception_ligne TO web_anon;
-GRANT USAGE ON SEQUENCE purchase.reception_ligne_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.reception_ligne TO anon;
+GRANT USAGE ON SEQUENCE purchase.reception_ligne_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.facture_fournisseur TO web_anon;
-GRANT USAGE ON SEQUENCE purchase.facture_fournisseur_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON purchase.facture_fournisseur TO anon;
+GRANT USAGE ON SEQUENCE purchase.facture_fournisseur_id_seq TO anon;
 
-GRANT USAGE ON SCHEMA purchase_ut TO web_anon;
-GRANT USAGE ON SCHEMA purchase_qa TO web_anon;
+GRANT USAGE ON SCHEMA purchase_ut TO anon;
+GRANT USAGE ON SCHEMA purchase_qa TO anon;
 
 -- Default privileges
-ALTER DEFAULT PRIVILEGES IN SCHEMA purchase GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA purchase_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA purchase_qa GRANT EXECUTE ON FUNCTIONS TO web_anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA purchase GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA purchase_ut GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA purchase_qa GRANT EXECUTE ON FUNCTIONS TO anon;

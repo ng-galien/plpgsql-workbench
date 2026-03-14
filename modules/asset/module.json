@@ -21,7 +21,7 @@
     "styles": []
   },
   "grants": {
-    "web_anon": [
+    "anon": [
       "asset"
     ]
   }

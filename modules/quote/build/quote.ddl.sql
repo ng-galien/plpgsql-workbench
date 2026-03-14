@@ -3,7 +3,7 @@
 CREATE SCHEMA IF NOT EXISTS quote;
 CREATE SCHEMA IF NOT EXISTS quote_ut;
 CREATE SCHEMA IF NOT EXISTS quote_qa;
-GRANT USAGE ON SCHEMA quote TO web_anon;
+GRANT USAGE ON SCHEMA quote TO anon;
 
 -- Devis
 CREATE TABLE IF NOT EXISTS quote.devis (
@@ -99,19 +99,19 @@ CREATE POLICY tenant_isolation ON quote.ligne
   USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON quote.devis TO web_anon;
-GRANT USAGE ON SEQUENCE quote.devis_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON quote.devis TO anon;
+GRANT USAGE ON SEQUENCE quote.devis_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON quote.facture TO web_anon;
-GRANT USAGE ON SEQUENCE quote.facture_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON quote.facture TO anon;
+GRANT USAGE ON SEQUENCE quote.facture_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON quote.ligne TO web_anon;
-GRANT USAGE ON SEQUENCE quote.ligne_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON quote.ligne TO anon;
+GRANT USAGE ON SEQUENCE quote.ligne_id_seq TO anon;
 
-GRANT USAGE ON SCHEMA quote_ut TO web_anon;
-GRANT USAGE ON SCHEMA quote_qa TO web_anon;
+GRANT USAGE ON SCHEMA quote_ut TO anon;
+GRANT USAGE ON SCHEMA quote_qa TO anon;
 
 -- Default privileges
-ALTER DEFAULT PRIVILEGES IN SCHEMA quote GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA quote_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA quote_qa GRANT EXECUTE ON FUNCTIONS TO web_anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA quote GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA quote_ut GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA quote_qa GRANT EXECUTE ON FUNCTIONS TO anon;

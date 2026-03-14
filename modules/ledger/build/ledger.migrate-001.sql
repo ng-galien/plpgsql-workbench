@@ -22,5 +22,5 @@ CREATE POLICY tenant_isolation ON ledger.exercice
     USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Grants
-GRANT SELECT, INSERT, UPDATE, DELETE ON ledger.exercice TO web_anon;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ledger TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ledger.exercice TO anon;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ledger TO anon;

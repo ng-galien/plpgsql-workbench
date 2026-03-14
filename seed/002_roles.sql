@@ -1,4 +1,5 @@
 -- PostgREST roles + text/html domain for pgView
+-- Aligned with Supabase conventions (anon, authenticated)
 -- Run once on fresh DB (idempotent via DO blocks)
 
 -- Domain that makes PostgREST return raw HTML (Content-Type: text/html)
@@ -13,15 +14,21 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- Anonymous role (unauthenticated requests)
+-- Anonymous role (Supabase convention: anon)
 DO $$ BEGIN
-  CREATE ROLE web_anon NOLOGIN;
+  CREATE ROLE anon NOLOGIN;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
-GRANT web_anon TO authenticator;
+-- Authenticated role (Supabase convention: authenticated)
+DO $$ BEGIN
+  CREATE ROLE authenticated NOLOGIN;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+GRANT anon TO authenticator;
+GRANT authenticated TO authenticator;
 
 -- pgv schema (always needed — SSR framework)
 CREATE SCHEMA IF NOT EXISTS pgv;
-GRANT USAGE ON SCHEMA pgv TO web_anon;
-
+GRANT USAGE ON SCHEMA pgv TO anon, authenticated;

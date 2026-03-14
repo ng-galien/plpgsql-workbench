@@ -36,5 +36,5 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
-GRANT USAGE ON SCHEMA pgv TO web_anon;
-GRANT SELECT ON pgv.i18n TO web_anon;
+GRANT USAGE ON SCHEMA pgv TO anon;
+GRANT SELECT ON pgv.i18n TO anon;

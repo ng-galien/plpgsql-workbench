@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS workbench.agent_session (
 CREATE INDEX IF NOT EXISTS idx_agent_session_module
   ON workbench.agent_session (module, started_at DESC);
 
-GRANT SELECT, INSERT, UPDATE ON workbench.hook_log TO web_anon;
-GRANT SELECT, INSERT, UPDATE ON workbench.agent_session TO web_anon;
-GRANT USAGE, SELECT ON workbench.hook_log_id_seq TO web_anon;
-GRANT USAGE, SELECT ON workbench.agent_session_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE ON workbench.hook_log TO anon;
+GRANT SELECT, INSERT, UPDATE ON workbench.agent_session TO anon;
+GRANT USAGE, SELECT ON workbench.hook_log_id_seq TO anon;
+GRANT USAGE, SELECT ON workbench.agent_session_id_seq TO anon;

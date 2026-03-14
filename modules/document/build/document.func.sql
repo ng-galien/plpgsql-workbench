@@ -1313,8 +1313,8 @@ END;
 $function$;
 COMMENT ON FUNCTION document.set_company(text,text,text,text,text,text,text,text,text,text) IS 'Upsert company info for current tenant';
 
-GRANT USAGE ON SCHEMA document TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document TO web_anon;
+GRANT USAGE ON SCHEMA document TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document TO anon;
 
 -- Schema: document_ut
 CREATE SCHEMA IF NOT EXISTS document_ut;
@@ -1943,8 +1943,8 @@ END;
 $function$;
 COMMENT ON FUNCTION document_ut.test_template() IS 'Test template CRUD operations';
 
-GRANT USAGE ON SCHEMA document_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_ut TO web_anon;
+GRANT USAGE ON SCHEMA document_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_ut TO anon;
 
 -- Schema: document_qa
 CREATE SCHEMA IF NOT EXISTS document_qa;
@@ -2551,5 +2551,5 @@ END;
 $function$;
 COMMENT ON FUNCTION document_qa.seed_showcase() IS 'Seed Showcase Primitives canvas (A3 paysage, all element types)';
 
-GRANT USAGE ON SCHEMA document_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_qa TO web_anon;
+GRANT USAGE ON SCHEMA document_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_qa TO anon;

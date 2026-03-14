@@ -23,7 +23,7 @@
     "styles": []
   },
   "grants": {
-    "web_anon": [
+    "anon": [
       "ledger"
     ]
   }

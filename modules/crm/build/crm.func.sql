@@ -998,8 +998,8 @@ END;
 $function$;
 COMMENT ON FUNCTION crm.get_interactions(jsonb) IS 'All interactions page — filters by type, period, subject search (i18n)';
 
-GRANT USAGE ON SCHEMA crm TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm TO web_anon;
+GRANT USAGE ON SCHEMA crm TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm TO anon;
 
 -- Schema: crm_ut
 CREATE SCHEMA IF NOT EXISTS crm_ut;
@@ -1294,8 +1294,8 @@ END;
 $function$;
 COMMENT ON FUNCTION crm_ut.test_type_label() IS 'Test type_label helper';
 
-GRANT USAGE ON SCHEMA crm_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm_ut TO web_anon;
+GRANT USAGE ON SCHEMA crm_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm_ut TO anon;
 
 -- Schema: crm_qa
 CREATE SCHEMA IF NOT EXISTS crm_qa;
@@ -1393,5 +1393,5 @@ END;
 $function$;
 COMMENT ON FUNCTION crm_qa.seed() IS 'Seed 8 artisan clients with contacts and interactions for QA/demo';
 
-GRANT USAGE ON SCHEMA crm_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm_qa TO web_anon;
+GRANT USAGE ON SCHEMA crm_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm_qa TO anon;

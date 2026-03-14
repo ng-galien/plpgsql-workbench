@@ -16,7 +16,7 @@
   ],
   "assets": {},
   "grants": {
-    "web_anon": [
+    "anon": [
       "workbench"
     ]
   }

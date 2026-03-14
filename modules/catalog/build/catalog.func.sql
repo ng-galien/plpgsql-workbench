@@ -541,8 +541,8 @@ END;
 $function$;
 COMMENT ON FUNCTION catalog.post_categorie_creer(jsonb) IS 'Créer une catégorie';
 
-GRANT USAGE ON SCHEMA catalog TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog TO web_anon;
+GRANT USAGE ON SCHEMA catalog TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog TO anon;
 
 -- Schema: catalog_ut
 CREATE SCHEMA IF NOT EXISTS catalog_ut;
@@ -714,8 +714,8 @@ END;
 $function$;
 COMMENT ON FUNCTION catalog_ut.test_post_categorie_creer() IS 'Test création catégorie';
 
-GRANT USAGE ON SCHEMA catalog_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_ut TO web_anon;
+GRANT USAGE ON SCHEMA catalog_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_ut TO anon;
 
 -- Schema: catalog_qa
 CREATE SCHEMA IF NOT EXISTS catalog_qa;
@@ -792,5 +792,5 @@ END;
 $function$;
 COMMENT ON FUNCTION catalog_qa.seed() IS 'Seed données démo: 5 catégories, ~15 articles (matériaux BTP, prestations artisan)';
 
-GRANT USAGE ON SCHEMA catalog_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_qa TO web_anon;
+GRANT USAGE ON SCHEMA catalog_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_qa TO anon;

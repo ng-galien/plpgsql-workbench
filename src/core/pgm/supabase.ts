@@ -107,13 +107,9 @@ END $$;
         const content = await fs.readFile(srcPath, "utf-8");
         if (content.trim().length < 50) continue; // skip placeholder files
 
-        // Adapt grants: web_anon → anon, authenticated (Supabase roles)
-        let adapted = content
-          .replace(/\bweb_anon\b/g, "anon, authenticated")
-          .replace(/\bauthenticator\b/g, "anon");
-
+        // No role adaptation needed — dev and prod use same roles (anon, authenticated)
         // Remove dev-only extensions that may not exist on Supabase
-        adapted = adapted
+        let adapted = content
           .replace(/CREATE EXTENSION IF NOT EXISTS plpgsql_check[^;]*;/g, "-- plpgsql_check (dev only)")
           .replace(/CREATE EXTENSION IF NOT EXISTS pgtap[^;]*;/g, "-- pgtap (dev only)");
 

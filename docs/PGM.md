@@ -187,7 +187,7 @@ Manifeste déclaratif d'un module :
     "styles": ["frontend/cad.css"]
   },
   "grants": {
-    "web_anon": ["cad"]
+    "anon": ["cad"]
   },
   "docker": {
     "image": "postgis/postgis:17-3.5",
@@ -200,7 +200,7 @@ Manifeste déclaratif d'un module :
 |-------|-------------|
 | `name` | Identifiant unique du module |
 | `version` | Version semver |
-| `schemas.public` | Schema accessible via PostgREST (GRANT web_anon) |
+| `schemas.public` | Schema accessible via PostgREST (GRANT anon) |
 | `schemas.private` | Schema interne (pas de GRANT externe) |
 | `dependencies` | Modules requis (installés/déployés avant) |
 | `extensions` | Extensions PostgreSQL requises |

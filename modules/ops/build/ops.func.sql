@@ -694,8 +694,8 @@ END;
 $function$;
 COMMENT ON FUNCTION ops.post_test_run(text) IS 'Lance les tests pgTAP pour un schema _ut, enregistre le résultat dans workbench.test_run';
 
-GRANT USAGE ON SCHEMA ops TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops TO web_anon;
+GRANT USAGE ON SCHEMA ops TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops TO anon;
 
 -- Schema: ops_ut
 CREATE SCHEMA IF NOT EXISTS ops_ut;
@@ -960,5 +960,5 @@ END;
 $function$;
 COMMENT ON FUNCTION ops_ut.test_recent_events() IS 'Test _recent_events — vérifie que get_index est la vue agents';
 
-GRANT USAGE ON SCHEMA ops_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops_ut TO web_anon;
+GRANT USAGE ON SCHEMA ops_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops_ut TO anon;

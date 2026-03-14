@@ -47,13 +47,13 @@ CREATE INDEX IF NOT EXISTS idx_ligne_note ON expense.ligne(note_id);
 CREATE INDEX IF NOT EXISTS idx_ligne_date ON expense.ligne(date_depense);
 
 -- Grants
-GRANT USAGE ON SCHEMA expense TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense TO web_anon;
-GRANT SELECT ON ALL TABLES IN SCHEMA expense TO web_anon;
-GRANT USAGE ON SCHEMA expense_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_ut TO web_anon;
-GRANT USAGE ON SCHEMA expense_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_qa TO web_anon;
+GRANT USAGE ON SCHEMA expense TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA expense TO anon;
+GRANT USAGE ON SCHEMA expense_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_ut TO anon;
+GRANT USAGE ON SCHEMA expense_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_qa TO anon;
 
 -- Catégories par défaut
 INSERT INTO expense.categorie (nom, code_comptable) VALUES

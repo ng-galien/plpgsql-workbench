@@ -1814,8 +1814,8 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv.workflow(jsonb,text) IS 'Horizontal workflow progress bar with steps, current highlight, done/future states';
 
-GRANT USAGE ON SCHEMA pgv TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv TO web_anon;
+GRANT USAGE ON SCHEMA pgv TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv TO anon;
 
 -- Schema: pgv_ut
 CREATE SCHEMA IF NOT EXISTS pgv_ut;
@@ -3086,8 +3086,8 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_workflow() IS 'Unit tests for pgv.workflow() progress bar primitive';
 
-GRANT USAGE ON SCHEMA pgv_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv_ut TO web_anon;
+GRANT USAGE ON SCHEMA pgv_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv_ut TO anon;
 
 -- Schema: pgv_qa
 CREATE SCHEMA IF NOT EXISTS pgv_qa;
@@ -3914,5 +3914,5 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_qa.get_atoms() IS 'Component showcase: badges, stats, cards, dl, money, filesize, error';
 
-GRANT USAGE ON SCHEMA pgv_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv_qa TO web_anon;
+GRANT USAGE ON SCHEMA pgv_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv_qa TO anon;

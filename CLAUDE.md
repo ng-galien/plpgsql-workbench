@@ -74,7 +74,7 @@ make dev-sync            # Copy module frontend assets into dev/frontend/
 
 **Auto-initialized on first start** (via `seed/` at repo root):
 - Extensions: `plpgsql_check`, `pgtap`, `postgis`, `postgis_sfcgal`
-- Roles: `authenticator`, `web_anon`, domain `text/html`
+- Roles: `authenticator`, `anon`, domain `text/html`
 - `workbench` schema (toolbox, toolbox_tool, tenant tables)
 - Run `make dev-init` after fresh start to deploy all modules (pgv, cad, etc.)
 
@@ -325,7 +325,7 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 - **Zero inline SQL in app tools** — App tools (doc_*, etc.) MUST NOT contain raw SQL. Business logic lives in PL/pgSQL functions deployed in the app schema (e.g. `docman.import()`, `docman.classify()`). App MCP tools are thin orchestrators: they read config from DB, call platform primitives (fs_*, gmail_*), and call app PL/pgSQL functions via `withClient`. SQL in TypeScript = bug.
 - **Zero process.env for app config** — Only infra bootstrap uses env vars (PLPGSQL_CONNECTION, MCP_PORT, LOG_LEVEL, WORKBENCH_MODE). All app config lives in `workbench.config(app, key, value)` and is read from DB at request time. No defaults, no fallbacks.
 - **PostgREST `"text/html"` routing** — `pgv.route()` returns domain `"text/html"` which PostgREST negotiates. Individual `post_*()` functions return plain `text`. The Alpine.js shell MUST route POST actions through `pgv.route()` (via `/rpc/route`), NOT directly to `/rpc/<fn>`, otherwise PostgREST returns 406 PGRST107 (unsupported media type).
-- **PostgREST grants** — Each `build/{schema}.ddl.sql` MUST include `GRANT USAGE ON SCHEMA {schema} TO web_anon`, `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO web_anon`, `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO web_anon` — otherwise 500 in frontend via PostgREST
+- **PostgREST grants** — Each `build/{schema}.ddl.sql` MUST include `GRANT USAGE ON SCHEMA {schema} TO anon`, `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO anon`, `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO anon` — otherwise 500 in frontend via PostgREST
 
 ## Documentation Map
 

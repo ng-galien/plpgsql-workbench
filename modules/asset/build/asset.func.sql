@@ -408,8 +408,8 @@ END;
 $function$;
 COMMENT ON FUNCTION asset.search(jsonb) IS 'Search assets by status, tags (array overlap), FTS query, mime type — returns rows with cursor pagination';
 
-GRANT USAGE ON SCHEMA asset TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset TO web_anon;
+GRANT USAGE ON SCHEMA asset TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset TO anon;
 
 -- Schema: asset_ut
 CREATE SCHEMA IF NOT EXISTS asset_ut;
@@ -577,8 +577,8 @@ END;
 $function$;
 COMMENT ON FUNCTION asset_ut.test_search() IS 'Test search: insert multiple assets, test FTS, status filter, tags filter';
 
-GRANT USAGE ON SCHEMA asset_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_ut TO web_anon;
+GRANT USAGE ON SCHEMA asset_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_ut TO anon;
 
 -- Schema: asset_qa
 CREATE SCHEMA IF NOT EXISTS asset_qa;
@@ -756,5 +756,5 @@ END;
 $function$;
 COMMENT ON FUNCTION asset_qa.seed() IS 'Seed 22 real images from My French Tour — with thumb_path for thumbnails';
 
-GRANT USAGE ON SCHEMA asset_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_qa TO web_anon;
+GRANT USAGE ON SCHEMA asset_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_qa TO anon;

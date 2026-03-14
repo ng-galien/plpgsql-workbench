@@ -1572,8 +1572,8 @@ END;
 $function$;
 COMMENT ON FUNCTION ledger.post_line_delete(jsonb) IS 'Supprimer une ligne d''écriture brouillon';
 
-GRANT USAGE ON SCHEMA ledger TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger TO web_anon;
+GRANT USAGE ON SCHEMA ledger TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger TO anon;
 
 -- Schema: ledger_ut
 CREATE SCHEMA IF NOT EXISTS ledger_ut;
@@ -2134,8 +2134,8 @@ END;
 $function$;
 COMMENT ON FUNCTION ledger_ut.test_tva() IS 'Test déclaration TVA = 4457 - 4456';
 
-GRANT USAGE ON SCHEMA ledger_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger_ut TO web_anon;
+GRANT USAGE ON SCHEMA ledger_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger_ut TO anon;
 
 -- Schema: ledger_qa
 CREATE SCHEMA IF NOT EXISTS ledger_qa;
@@ -2321,5 +2321,5 @@ END;
 $function$;
 COMMENT ON FUNCTION ledger_qa.seed() IS 'Seed QA avec 13 écritures réalistes artisan carreleur';
 
-GRANT USAGE ON SCHEMA ledger_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger_qa TO web_anon;
+GRANT USAGE ON SCHEMA ledger_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger_qa TO anon;

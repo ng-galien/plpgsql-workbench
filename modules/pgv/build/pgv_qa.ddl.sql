@@ -16,10 +16,10 @@ CREATE TABLE IF NOT EXISTS pgv_qa.item (
   created_at timestamptz DEFAULT now()
 );
 
-GRANT USAGE ON SCHEMA pgv_qa TO web_anon;
-GRANT SELECT, INSERT, UPDATE ON pgv_qa.setting TO web_anon;
-GRANT SELECT, INSERT, UPDATE, DELETE ON pgv_qa.item TO web_anon;
-GRANT USAGE ON SEQUENCE pgv_qa.item_id_seq TO web_anon;
+GRANT USAGE ON SCHEMA pgv_qa TO anon;
+GRANT SELECT, INSERT, UPDATE ON pgv_qa.setting TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON pgv_qa.item TO anon;
+GRANT USAGE ON SEQUENCE pgv_qa.item_id_seq TO anon;
 
 INSERT INTO pgv_qa.item (name, status) VALUES
   ('Premier document', 'draft'),
@@ -43,8 +43,8 @@ CREATE TABLE IF NOT EXISTS pgv_qa.product (
 );
 CREATE INDEX IF NOT EXISTS idx_qa_product_search ON pgv_qa.product USING GIN(search_vec);
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON pgv_qa.product TO web_anon;
-GRANT USAGE ON SEQUENCE pgv_qa.product_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON pgv_qa.product TO anon;
+GRANT USAGE ON SEQUENCE pgv_qa.product_id_seq TO anon;
 
 INSERT INTO pgv_qa.product (name, description, category, price, status) VALUES
   ('Poutre chêne massif 200x80', 'Structure bois pour charpente traditionnelle', 'bois', 89.90, 'active'),

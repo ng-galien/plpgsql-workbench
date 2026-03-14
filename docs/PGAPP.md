@@ -134,12 +134,12 @@ POST /rpc/api  { "p_method": "GET", "p_path": "/clients", "p_body": {} }
 Config PostgREST :
 ```
 PGRST_DB_SCHEMAS=app          # schéma applicatif
-PGRST_DB_ANON_ROLE=web_anon   # rôle anonyme
+PGRST_DB_ANON_ROLE=anon   # rôle anonyme
 ```
 
 Grants :
 ```sql
-GRANT EXECUTE ON FUNCTION app.api TO web_anon;
+GRANT EXECUTE ON FUNCTION app.api TO anon;
 -- Les fonctions internes ne sont PAS exposées
 ```
 

@@ -482,15 +482,15 @@ postgrest:
   environment:
     PGRST_DB_URI: postgres://authenticator:authenticator@postgres:5432/postgres
     PGRST_DB_SCHEMAS: pgv,cad,cad_ut          # schemas exposes
-    PGRST_DB_ANON_ROLE: web_anon
+    PGRST_DB_ANON_ROLE: anon
 ```
 
 ### Grants
 
 ```sql
 -- Le routeur est le seul point d'entree expose
-GRANT USAGE ON SCHEMA pgv TO web_anon;
-GRANT EXECUTE ON FUNCTION pgv.route(text, text, text, jsonb) TO web_anon;
+GRANT USAGE ON SCHEMA pgv TO anon;
+GRANT EXECUTE ON FUNCTION pgv.route(text, text, text, jsonb) TO anon;
 
 -- Les fonctions internes (get_*, post_*, nav_items, etc.) ne sont PAS exposees directement
 -- Le routeur les appelle via EXECUTE format()

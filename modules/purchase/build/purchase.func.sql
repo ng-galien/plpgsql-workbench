@@ -1693,8 +1693,8 @@ END;
 $function$;
 COMMENT ON FUNCTION purchase.post_reception_creer(jsonb) IS 'Create a reception for all remaining quantities of a purchase order';
 
-GRANT USAGE ON SCHEMA purchase TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase TO web_anon;
+GRANT USAGE ON SCHEMA purchase TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase TO anon;
 
 -- Schema: purchase_ut
 CREATE SCHEMA IF NOT EXISTS purchase_ut;
@@ -2271,8 +2271,8 @@ END;
 $function$;
 COMMENT ON FUNCTION purchase_ut.test_totaux() IS 'Test HT/TVA/TTC calculations';
 
-GRANT USAGE ON SCHEMA purchase_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase_ut TO web_anon;
+GRANT USAGE ON SCHEMA purchase_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase_ut TO anon;
 
 -- Schema: purchase_qa
 CREATE SCHEMA IF NOT EXISTS purchase_qa;
@@ -2403,5 +2403,5 @@ END;
 $function$;
 COMMENT ON FUNCTION purchase_qa.seed() IS 'Seed realistic demo data for purchase module';
 
-GRANT USAGE ON SCHEMA purchase_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase_qa TO web_anon;
+GRANT USAGE ON SCHEMA purchase_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase_qa TO anon;

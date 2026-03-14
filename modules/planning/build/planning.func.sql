@@ -793,15 +793,15 @@ END;
 $function$;
 COMMENT ON FUNCTION planning.post_intervenant_supprimer(integer) IS 'Delete intervenant avec i18n';
 
-GRANT USAGE ON SCHEMA planning TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning TO web_anon;
+GRANT USAGE ON SCHEMA planning TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning TO anon;
 
 -- Schema: planning_ut
 CREATE SCHEMA IF NOT EXISTS planning_ut;
 
 -- (no functions)
-GRANT USAGE ON SCHEMA planning_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning_ut TO web_anon;
+GRANT USAGE ON SCHEMA planning_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning_ut TO anon;
 
 -- Schema: planning_qa
 CREATE SCHEMA IF NOT EXISTS planning_qa;
@@ -901,5 +901,5 @@ END;
 $function$;
 COMMENT ON FUNCTION planning_qa.seed() IS 'Seed données démo réalistes pour planning';
 
-GRANT USAGE ON SCHEMA planning_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning_qa TO web_anon;
+GRANT USAGE ON SCHEMA planning_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning_qa TO anon;

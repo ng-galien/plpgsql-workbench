@@ -131,12 +131,12 @@ export function createPackTool({ withClient, moduleRegistry }: {
         "Output path is auto-resolved from module registry (schema → module → file).",
       schema: z.object({
         schemas: z.string().describe("Comma-separated schema names. Ex: cad,cad_ut"),
-        role: z.string().optional().describe("Role for GRANT EXECUTE (default: web_anon)"),
+        role: z.string().optional().describe("Role for GRANT EXECUTE (default: anon)"),
       }),
     },
     handler: async (args) => {
       const schemas = (args.schemas as string).split(",").map((s) => s.trim()).filter(Boolean);
-      const role = (args.role as string) ?? "web_anon";
+      const role = (args.role as string) ?? "anon";
 
       if (schemas.length === 0) return text("problem: no schemas specified");
 

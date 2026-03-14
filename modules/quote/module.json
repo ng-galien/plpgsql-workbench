@@ -22,7 +22,7 @@
     "styles": []
   },
   "grants": {
-    "web_anon": [
+    "anon": [
       "quote"
     ]
   }

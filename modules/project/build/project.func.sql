@@ -1280,8 +1280,8 @@ END;
 $function$;
 COMMENT ON FUNCTION project.post_pointage_supprimer(integer) IS 'Supprimer un pointage';
 
-GRANT USAGE ON SCHEMA project TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project TO web_anon;
+GRANT USAGE ON SCHEMA project TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project TO anon;
 
 -- Schema: project_ut
 CREATE SCHEMA IF NOT EXISTS project_ut;
@@ -1770,8 +1770,8 @@ END;
 $function$;
 COMMENT ON FUNCTION project_ut.test_post_pointage_note() IS 'Test pointage et note CRUD';
 
-GRANT USAGE ON SCHEMA project_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project_ut TO web_anon;
+GRANT USAGE ON SCHEMA project_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project_ut TO anon;
 
 -- Schema: project_qa
 CREATE SCHEMA IF NOT EXISTS project_qa;
@@ -1971,5 +1971,5 @@ END;
 $function$;
 COMMENT ON FUNCTION project_qa.seed() IS 'QA seed : donnees de demonstration chantiers multi-statuts avec affectations';
 
-GRANT USAGE ON SCHEMA project_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project_qa TO web_anon;
+GRANT USAGE ON SCHEMA project_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project_qa TO anon;

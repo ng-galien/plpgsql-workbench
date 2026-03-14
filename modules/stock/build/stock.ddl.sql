@@ -3,7 +3,7 @@
 CREATE SCHEMA IF NOT EXISTS stock;
 CREATE SCHEMA IF NOT EXISTS stock_ut;
 CREATE SCHEMA IF NOT EXISTS stock_qa;
-GRANT USAGE ON SCHEMA stock TO web_anon;
+GRANT USAGE ON SCHEMA stock TO anon;
 
 -- Articles (catalogue matériaux/fournitures)
 CREATE TABLE IF NOT EXISTS stock.article (
@@ -94,23 +94,23 @@ CREATE POLICY tenant_isolation ON stock.mouvement
   USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON stock.article TO web_anon;
-GRANT USAGE ON SEQUENCE stock.article_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON stock.article TO anon;
+GRANT USAGE ON SEQUENCE stock.article_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON stock.depot TO web_anon;
-GRANT USAGE ON SEQUENCE stock.depot_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON stock.depot TO anon;
+GRANT USAGE ON SEQUENCE stock.depot_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON stock.mouvement TO web_anon;
-GRANT USAGE ON SEQUENCE stock.mouvement_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON stock.mouvement TO anon;
+GRANT USAGE ON SEQUENCE stock.mouvement_id_seq TO anon;
 
-GRANT USAGE ON SCHEMA stock_ut TO web_anon;
-GRANT USAGE ON SCHEMA stock_qa TO web_anon;
+GRANT USAGE ON SCHEMA stock_ut TO anon;
+GRANT USAGE ON SCHEMA stock_qa TO anon;
 
 -- Lien vers catalog (soft FK — catalog peut ne pas être déployé)
 ALTER TABLE stock.article ADD COLUMN IF NOT EXISTS catalog_article_id integer;
 CREATE INDEX IF NOT EXISTS idx_article_catalog ON stock.article(catalog_article_id);
 
 -- Default privileges pour fonctions créées après DDL
-ALTER DEFAULT PRIVILEGES IN SCHEMA stock GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA stock_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA stock_qa GRANT EXECUTE ON FUNCTIONS TO web_anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA stock GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA stock_ut GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA stock_qa GRANT EXECUTE ON FUNCTIONS TO anon;

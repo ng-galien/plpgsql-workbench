@@ -75,10 +75,10 @@ Ce module est un **module independant** du framework pgView. Ses dependances son
 ### Grants (DDL obligatoire)
 
 `build/workbench.ddl.sql` DOIT inclure :
-- `GRANT USAGE ON SCHEMA workbench TO web_anon;`
-- `GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA workbench TO web_anon;`
-- `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA workbench TO web_anon;`
-- `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA workbench TO web_anon;`
+- `GRANT USAGE ON SCHEMA workbench TO anon;`
+- `GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA workbench TO anon;`
+- `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA workbench TO anon;`
+- `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA workbench TO anon;`
 
 ### Communication inter-modules
 

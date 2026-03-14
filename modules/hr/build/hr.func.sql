@@ -1054,8 +1054,8 @@ END;
 $function$;
 COMMENT ON FUNCTION hr.get_index(jsonb) IS 'HR dashboard — stats, search/filters, employee list';
 
-GRANT USAGE ON SCHEMA hr TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hr TO web_anon;
+GRANT USAGE ON SCHEMA hr TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hr TO anon;
 
 -- Schema: hr_ut
 CREATE SCHEMA IF NOT EXISTS hr_ut;
@@ -1235,8 +1235,8 @@ END;
 $function$;
 COMMENT ON FUNCTION hr_ut.test_timesheet() IS 'Unit test: timesheet save and upsert';
 
-GRANT USAGE ON SCHEMA hr_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hr_ut TO web_anon;
+GRANT USAGE ON SCHEMA hr_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hr_ut TO anon;
 
 -- Schema: hr_qa
 CREATE SCHEMA IF NOT EXISTS hr_qa;
@@ -1351,5 +1351,5 @@ END;
 $function$;
 COMMENT ON FUNCTION hr_qa.seed() IS 'Seed 6 realistic employees with leave balances, absences and timesheet for QA/demo';
 
-GRANT USAGE ON SCHEMA hr_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hr_qa TO web_anon;
+GRANT USAGE ON SCHEMA hr_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hr_qa TO anon;

@@ -154,7 +154,7 @@ data_* functions are called directly, NOT through pgv.route():
 
 Same as get_*/post_*:
 
-  GRANT EXECUTE ON FUNCTION {schema}.data_{resource}(jsonb) TO web_anon;
+  GRANT EXECUTE ON FUNCTION {schema}.data_{resource}(jsonb) TO anon;
 
 ## pgv.table() integration
 

@@ -1500,8 +1500,8 @@ END;
 $function$;
 COMMENT ON FUNCTION stock.post_mouvement_save(jsonb) IS 'Enregistrer un mouvement de stock avec recalcul PMP (i18n)';
 
-GRANT USAGE ON SCHEMA stock TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock TO web_anon;
+GRANT USAGE ON SCHEMA stock TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock TO anon;
 
 -- Schema: stock_ut
 CREATE SCHEMA IF NOT EXISTS stock_ut;
@@ -2091,8 +2091,8 @@ END;
 $function$;
 COMMENT ON FUNCTION stock_ut.test_post_inventaire_valider() IS 'Test post_inventaire_valider — batch inventory adjustments';
 
-GRANT USAGE ON SCHEMA stock_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock_ut TO web_anon;
+GRANT USAGE ON SCHEMA stock_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock_ut TO anon;
 
 -- Schema: stock_qa
 CREATE SCHEMA IF NOT EXISTS stock_qa;
@@ -2218,5 +2218,5 @@ END;
 $function$;
 COMMENT ON FUNCTION stock_qa.seed() IS 'Seed données démo artisan charpentier: 3 dépôts, 10 articles, ~18 mouvements (entrées, sorties, transfert, inventaire), 1 alerte';
 
-GRANT USAGE ON SCHEMA stock_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock_qa TO web_anon;
+GRANT USAGE ON SCHEMA stock_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock_qa TO anon;

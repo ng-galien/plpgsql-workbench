@@ -3,7 +3,7 @@
 CREATE SCHEMA IF NOT EXISTS planning;
 CREATE SCHEMA IF NOT EXISTS planning_ut;
 CREATE SCHEMA IF NOT EXISTS planning_qa;
-GRANT USAGE ON SCHEMA planning TO web_anon;
+GRANT USAGE ON SCHEMA planning TO anon;
 
 -- Intervenants (equipe : ouvriers, sous-traitants, chefs d'equipe)
 CREATE TABLE IF NOT EXISTS planning.intervenant (
@@ -70,19 +70,19 @@ CREATE POLICY tenant_isolation ON planning.affectation
   USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON planning.intervenant TO web_anon;
-GRANT USAGE ON SEQUENCE planning.intervenant_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON planning.intervenant TO anon;
+GRANT USAGE ON SEQUENCE planning.intervenant_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON planning.evenement TO web_anon;
-GRANT USAGE ON SEQUENCE planning.evenement_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON planning.evenement TO anon;
+GRANT USAGE ON SEQUENCE planning.evenement_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON planning.affectation TO web_anon;
-GRANT USAGE ON SEQUENCE planning.affectation_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON planning.affectation TO anon;
+GRANT USAGE ON SEQUENCE planning.affectation_id_seq TO anon;
 
-GRANT USAGE ON SCHEMA planning_ut TO web_anon;
-GRANT USAGE ON SCHEMA planning_qa TO web_anon;
+GRANT USAGE ON SCHEMA planning_ut TO anon;
+GRANT USAGE ON SCHEMA planning_qa TO anon;
 
 -- Default privileges
-ALTER DEFAULT PRIVILEGES IN SCHEMA planning GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA planning_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA planning_qa GRANT EXECUTE ON FUNCTIONS TO web_anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA planning GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA planning_ut GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA planning_qa GRANT EXECUTE ON FUNCTIONS TO anon;

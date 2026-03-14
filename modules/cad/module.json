@@ -29,7 +29,7 @@
     ]
   },
   "grants": {
-    "web_anon": ["cad"]
+    "anon": ["cad"]
   },
   "docker": {
     "image": "postgis/postgis:17-3.5",

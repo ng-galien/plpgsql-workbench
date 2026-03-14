@@ -786,8 +786,8 @@ END;
 $function$;
 COMMENT ON FUNCTION expense.post_note_valider(jsonb) IS 'Passer une note soumise -> validée';
 
-GRANT USAGE ON SCHEMA expense TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense TO web_anon;
+GRANT USAGE ON SCHEMA expense TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense TO anon;
 
 -- Schema: expense_ut
 CREATE SCHEMA IF NOT EXISTS expense_ut;
@@ -923,8 +923,8 @@ END;
 $function$;
 COMMENT ON FUNCTION expense_ut.test_workflow() IS 'Test workflow complet : brouillon -> soumise -> validée -> remboursée';
 
-GRANT USAGE ON SCHEMA expense_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_ut TO web_anon;
+GRANT USAGE ON SCHEMA expense_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_ut TO anon;
 
 -- Schema: expense_qa
 CREATE SCHEMA IF NOT EXISTS expense_qa;
@@ -997,5 +997,5 @@ END;
 $function$;
 COMMENT ON FUNCTION expense_qa.seed() IS 'Seed QA : 4 notes de frais avec différents statuts et catégories';
 
-GRANT USAGE ON SCHEMA expense_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_qa TO web_anon;
+GRANT USAGE ON SCHEMA expense_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_qa TO anon;

@@ -3,7 +3,7 @@
 CREATE SCHEMA IF NOT EXISTS hr;
 CREATE SCHEMA IF NOT EXISTS hr_ut;
 CREATE SCHEMA IF NOT EXISTS hr_qa;
-GRANT USAGE ON SCHEMA hr TO web_anon;
+GRANT USAGE ON SCHEMA hr TO anon;
 
 -- Salariés (registre du personnel)
 CREATE TABLE IF NOT EXISTS hr.employee (
@@ -115,21 +115,21 @@ CREATE POLICY tenant_isolation ON hr.leave_balance
   USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON hr.employee TO web_anon;
-GRANT USAGE ON SEQUENCE hr.employee_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON hr.employee TO anon;
+GRANT USAGE ON SEQUENCE hr.employee_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON hr.absence TO web_anon;
-GRANT USAGE ON SEQUENCE hr.absence_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON hr.absence TO anon;
+GRANT USAGE ON SEQUENCE hr.absence_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON hr.timesheet TO web_anon;
-GRANT USAGE ON SEQUENCE hr.timesheet_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON hr.timesheet TO anon;
+GRANT USAGE ON SEQUENCE hr.timesheet_id_seq TO anon;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON hr.leave_balance TO web_anon;
-GRANT USAGE ON SEQUENCE hr.leave_balance_id_seq TO web_anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON hr.leave_balance TO anon;
+GRANT USAGE ON SEQUENCE hr.leave_balance_id_seq TO anon;
 
-GRANT USAGE ON SCHEMA hr_ut TO web_anon;
-GRANT USAGE ON SCHEMA hr_qa TO web_anon;
+GRANT USAGE ON SCHEMA hr_ut TO anon;
+GRANT USAGE ON SCHEMA hr_qa TO anon;
 
-ALTER DEFAULT PRIVILEGES IN SCHEMA hr GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA hr_ut GRANT EXECUTE ON FUNCTIONS TO web_anon;
-ALTER DEFAULT PRIVILEGES IN SCHEMA hr_qa GRANT EXECUTE ON FUNCTIONS TO web_anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA hr GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA hr_ut GRANT EXECUTE ON FUNCTIONS TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA hr_qa GRANT EXECUTE ON FUNCTIONS TO anon;

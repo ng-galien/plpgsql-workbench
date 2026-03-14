@@ -153,7 +153,7 @@ services:
     env_file: .env
     environment:
       PGRST_DB_URI: postgres://authenticator:authenticator@postgres:5432/postgres
-      PGRST_DB_ANON_ROLE: web_anon
+      PGRST_DB_ANON_ROLE: anon
       PGRST_DB_EXTRA_SEARCH_PATH: public,pgv
       PGRST_DB_CHANNEL_ENABLED: "true"
     depends_on:
@@ -225,8 +225,8 @@ function rolesSql(_name: string): string {
   return `-- Roles and domain (module schemas are created by their own DDL files)
 DO $$ BEGIN CREATE DOMAIN "text/html" AS TEXT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'authenticator'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-DO $$ BEGIN CREATE ROLE web_anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-GRANT web_anon TO authenticator;
+DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+GRANT anon TO authenticator;
 `;
 }
 
@@ -362,7 +362,7 @@ export async function scaffoldModule(
     extensions: [],
     sql: [`build/${schemaName}.ddl.sql`, `build/${schemaName}.func.sql`],
     assets: { frontend: [], scripts: [], styles: [] },
-    grants: { web_anon: [schemaName] },
+    grants: { anon: [schemaName] },
   };
   await fs.writeFile(
     path.join(moduleDir, "module.json"),
@@ -461,9 +461,9 @@ Ce module est un **module independant** du framework pgView. Ses dependances son
 ### Grants (DDL obligatoire)
 
 Chaque \`build/{schema}.ddl.sql\` DOIT inclure :
-- \`GRANT USAGE ON SCHEMA {schema} TO web_anon;\`
-- \`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO web_anon;\`
-- \`GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO web_anon;\`
+- \`GRANT USAGE ON SCHEMA {schema} TO anon;\`
+- \`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO anon;\`
+- \`GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO anon;\`
 
 ### Communication inter-modules
 

@@ -41,13 +41,13 @@ CREATE INDEX IF NOT EXISTS idx_article_categorie ON catalog.article(categorie_id
 CREATE INDEX IF NOT EXISTS idx_article_reference ON catalog.article(reference);
 
 -- Grants
-GRANT USAGE ON SCHEMA catalog TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog TO web_anon;
-GRANT SELECT ON ALL TABLES IN SCHEMA catalog TO web_anon;
-GRANT USAGE ON SCHEMA catalog_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_ut TO web_anon;
-GRANT USAGE ON SCHEMA catalog_qa TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_qa TO web_anon;
+GRANT USAGE ON SCHEMA catalog TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA catalog TO anon;
+GRANT USAGE ON SCHEMA catalog_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_ut TO anon;
+GRANT USAGE ON SCHEMA catalog_qa TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_qa TO anon;
 
 -- Unités par défaut
 INSERT INTO catalog.unite (code, label) VALUES

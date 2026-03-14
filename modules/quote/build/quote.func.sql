@@ -1411,8 +1411,8 @@ END;
 $function$;
 COMMENT ON FUNCTION quote.post_ligne_supprimer(jsonb) IS 'Supprimer une ligne (parent brouillon uniquement)';
 
-GRANT USAGE ON SCHEMA quote TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA quote TO web_anon;
+GRANT USAGE ON SCHEMA quote TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA quote TO anon;
 
 -- Schema: quote_ut
 CREATE SCHEMA IF NOT EXISTS quote_ut;
@@ -2034,5 +2034,5 @@ END;
 $function$;
 COMMENT ON FUNCTION quote_ut.test_post_ligne_ajouter() IS 'Test ajout de lignes sur devis et facture + branches erreur';
 
-GRANT USAGE ON SCHEMA quote_ut TO web_anon;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA quote_ut TO web_anon;
+GRANT USAGE ON SCHEMA quote_ut TO anon;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA quote_ut TO anon;
