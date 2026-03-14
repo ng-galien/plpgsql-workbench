@@ -2,12 +2,6 @@
 .branches
 .temp
 
-# Build output (npm run build:edge)
-functions/_shared/core/
-
-# Secrets
-functions/.env
-
 # dotenvx
 .env.keys
 .env.local
