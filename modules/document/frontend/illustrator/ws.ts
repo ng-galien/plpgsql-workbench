@@ -13,17 +13,26 @@ import * as sync from "./supabase-sync.js";
 let canvasId: string | null = null;
 
 /** Initialize Supabase sync (replaces WebSocket connection) */
-export function initWs(): void {
-  const params = new URLSearchParams(window.location.search);
-  canvasId = params.get("canvas_id") || params.get("p_id");
-
-  if (!canvasId) {
-    console.warn("No canvas_id in URL — waiting for doc load");
-    return;
-  }
-
+export async function initWs(): Promise<void> {
   const url = (window as any).__SUPABASE_URL__ || "http://localhost:54321";
   const key = (window as any).__SUPABASE_KEY__ || "";
+
+  // Canvas ID from URL or load the most recent one
+  const params = new URLSearchParams(window.location.search);
+  canvasId = params.get("canvas_id") || params.get("p_id") || null;
+
+  if (!canvasId) {
+    // Auto-load the most recent canvas
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(url, key, { db: { schema: "document" } });
+    const { data } = await sb.from("canvas").select("id").order("updated_at", { ascending: false }).limit(1);
+    if (data && data.length > 0) {
+      canvasId = data[0].id;
+    } else {
+      console.warn("No canvas found in database");
+      return;
+    }
+  }
 
   sync.init(url, key, canvasId);
 }

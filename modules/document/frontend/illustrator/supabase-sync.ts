@@ -16,6 +16,7 @@ import { store } from "./store.js";
 let supabaseUrl = "";
 let supabaseKey = "";
 let supabase: SupabaseClient | null = null;
+let supabaseAsset: SupabaseClient | null = null;
 let channel: any = null;
 let sessionSyncTimer: any = null;
 let toastPollTimer: any = null;
@@ -25,7 +26,12 @@ export function init(url: string, key: string, canvasId: string) {
   supabaseUrl = url;
   supabaseKey = key;
 
-  supabase = createClient(supabaseUrl, supabaseKey);
+  supabase = createClient(supabaseUrl, supabaseKey, {
+    db: { schema: "document" },
+  });
+  supabaseAsset = createClient(supabaseUrl, supabaseKey, {
+    db: { schema: "asset" },
+  });
 
   // Load initial state
   loadCanvas(canvasId);
@@ -150,12 +156,14 @@ function rowToElement(row: any): any {
 
 /** Sync ephemeral state to PG UNLOGGED session */
 async function syncSession(canvasId: string, selectedIds: string[], phase: string, zoom: number) {
-  await supabase.rpc("session_sync", {
-    p_canvas_id: canvasId,
-    p_selected_ids: selectedIds,
-    p_phase: phase,
-    p_zoom: zoom,
-  }).catch(() => {}); // silent fail — session is ephemeral
+  try {
+    await supabase!.rpc("session_sync", {
+      p_canvas_id: canvasId,
+      p_selected_ids: selectedIds,
+      p_phase: phase,
+      p_zoom: zoom,
+    });
+  } catch {} // silent fail — session is ephemeral
 }
 
 /** Poll toast from PG session */
@@ -203,7 +211,8 @@ export async function deleteElement(elementId: string) {
 }
 
 export async function loadAssets() {
-  const { data } = await supabase
+  if (!supabaseAsset) return;
+  const { data } = await supabaseAsset
     .from("asset")
     .select("id, filename, path, thumb_path, title, description, tags, status")
     .order("created_at", { ascending: false });
