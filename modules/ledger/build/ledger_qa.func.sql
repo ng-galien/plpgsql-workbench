@@ -186,3 +186,4 @@ COMMENT ON FUNCTION ledger_qa.seed() IS 'Seed QA avec 13 écritures réalistes a
 
 GRANT USAGE ON SCHEMA ledger_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA ledger_qa TO anon;

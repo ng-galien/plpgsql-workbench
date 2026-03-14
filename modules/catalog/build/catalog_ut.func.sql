@@ -172,3 +172,4 @@ COMMENT ON FUNCTION catalog_ut.test_post_categorie_creer() IS 'Test création ca
 
 GRANT USAGE ON SCHEMA catalog_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA catalog_ut TO anon;

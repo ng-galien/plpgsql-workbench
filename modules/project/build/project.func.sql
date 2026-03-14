@@ -1281,3 +1281,4 @@ COMMENT ON FUNCTION project.post_pointage_supprimer(integer) IS 'Supprimer un po
 
 GRANT USAGE ON SCHEMA project TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA project TO anon;

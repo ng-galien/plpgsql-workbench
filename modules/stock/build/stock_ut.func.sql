@@ -590,3 +590,4 @@ COMMENT ON FUNCTION stock_ut.test_post_inventaire_valider() IS 'Test post_invent
 
 GRANT USAGE ON SCHEMA stock_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA stock_ut TO anon;

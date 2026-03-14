@@ -546,3 +546,4 @@ COMMENT ON FUNCTION catalog.post_categorie_creer(jsonb) IS 'Créer une catégori
 
 GRANT USAGE ON SCHEMA catalog TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA catalog TO anon;

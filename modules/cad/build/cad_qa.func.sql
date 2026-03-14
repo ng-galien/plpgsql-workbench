@@ -364,3 +364,4 @@ COMMENT ON FUNCTION cad_qa.seed() IS 'Seed QA: abri bois complet avec groupes (o
 
 GRANT USAGE ON SCHEMA cad_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA cad_qa TO anon;

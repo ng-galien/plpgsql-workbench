@@ -1005,3 +1005,4 @@ COMMENT ON FUNCTION crm.get_interactions(jsonb) IS 'All interactions page — fi
 
 GRANT USAGE ON SCHEMA crm TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA crm TO anon;

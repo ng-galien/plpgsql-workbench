@@ -794,3 +794,4 @@ COMMENT ON FUNCTION planning.post_intervenant_supprimer(integer) IS 'Delete inte
 
 GRANT USAGE ON SCHEMA planning TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA planning TO anon;

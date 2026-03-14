@@ -489,3 +489,4 @@ COMMENT ON FUNCTION project_ut.test_post_pointage_note() IS 'Test pointage et no
 
 GRANT USAGE ON SCHEMA project_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA project_ut TO anon;

@@ -1271,3 +1271,4 @@ COMMENT ON FUNCTION pgv_ut.test_workflow() IS 'Unit tests for pgv.workflow() pro
 
 GRANT USAGE ON SCHEMA pgv_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA pgv_ut TO anon;

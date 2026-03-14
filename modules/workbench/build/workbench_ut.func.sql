@@ -6,3 +6,4 @@ CREATE SCHEMA IF NOT EXISTS workbench_ut;
 -- (no functions)
 GRANT USAGE ON SCHEMA workbench_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA workbench_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA workbench_ut TO anon;

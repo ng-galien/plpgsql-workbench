@@ -3098,3 +3098,4 @@ COMMENT ON FUNCTION cad.view(integer,text,integer,integer) IS 'Rendu ASCII du mo
 
 GRANT USAGE ON SCHEMA cad TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA cad TO anon;

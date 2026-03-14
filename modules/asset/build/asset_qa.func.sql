@@ -178,3 +178,4 @@ COMMENT ON FUNCTION asset_qa.seed() IS 'Seed 22 real images from My French Tour 
 
 GRANT USAGE ON SCHEMA asset_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA asset_qa TO anon;

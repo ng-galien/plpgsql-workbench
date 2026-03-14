@@ -725,3 +725,4 @@ COMMENT ON FUNCTION document_ut.test_template() IS 'Test template CRUD operation
 
 GRANT USAGE ON SCHEMA document_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA document_ut TO anon;

@@ -1830,3 +1830,4 @@ COMMENT ON FUNCTION pgv.workflow(jsonb,text) IS 'Horizontal workflow progress ba
 
 GRANT USAGE ON SCHEMA pgv TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA pgv TO anon;

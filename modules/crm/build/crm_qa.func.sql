@@ -98,3 +98,4 @@ COMMENT ON FUNCTION crm_qa.seed() IS 'Seed 8 artisan clients with contacts and i
 
 GRANT USAGE ON SCHEMA crm_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA crm_qa TO anon;

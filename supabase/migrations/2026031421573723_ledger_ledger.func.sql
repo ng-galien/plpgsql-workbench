@@ -1581,3 +1581,4 @@ COMMENT ON FUNCTION ledger.post_line_delete(jsonb) IS 'Supprimer une ligne d''é
 
 GRANT USAGE ON SCHEMA ledger TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA ledger TO anon;

@@ -168,3 +168,4 @@ COMMENT ON FUNCTION asset_ut.test_search() IS 'Test search: insert multiple asse
 
 GRANT USAGE ON SCHEMA asset_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA asset_ut TO anon;

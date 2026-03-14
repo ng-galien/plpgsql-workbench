@@ -695,3 +695,4 @@ COMMENT ON FUNCTION ops.post_test_run(text) IS 'Lance les tests pgTAP pour un sc
 
 GRANT USAGE ON SCHEMA ops TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA ops TO anon;

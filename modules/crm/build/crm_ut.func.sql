@@ -295,3 +295,4 @@ COMMENT ON FUNCTION crm_ut.test_type_label() IS 'Test type_label helper';
 
 GRANT USAGE ON SCHEMA crm_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA crm_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA crm_ut TO anon;

@@ -6,3 +6,4 @@ CREATE SCHEMA IF NOT EXISTS planning_ut;
 -- (no functions)
 GRANT USAGE ON SCHEMA planning_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA planning_ut TO anon;

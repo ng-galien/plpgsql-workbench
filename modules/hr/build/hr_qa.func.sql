@@ -115,3 +115,4 @@ COMMENT ON FUNCTION hr_qa.seed() IS 'Seed 6 realistic employees with leave balan
 
 GRANT USAGE ON SCHEMA hr_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hr_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA hr_qa TO anon;

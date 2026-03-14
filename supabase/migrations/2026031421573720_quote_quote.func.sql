@@ -1420,3 +1420,4 @@ COMMENT ON FUNCTION quote.post_ligne_supprimer(jsonb) IS 'Supprimer une ligne (p
 
 GRANT USAGE ON SCHEMA quote TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA quote TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA quote TO anon;

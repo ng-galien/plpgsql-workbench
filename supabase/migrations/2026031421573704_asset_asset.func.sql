@@ -413,3 +413,4 @@ COMMENT ON FUNCTION asset.search(jsonb) IS 'Search assets by status, tags (array
 
 GRANT USAGE ON SCHEMA asset TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA asset TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA asset TO anon;

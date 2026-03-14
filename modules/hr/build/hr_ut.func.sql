@@ -180,3 +180,4 @@ COMMENT ON FUNCTION hr_ut.test_timesheet() IS 'Unit test: timesheet save and ups
 
 GRANT USAGE ON SCHEMA hr_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hr_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA hr_ut TO anon;

@@ -622,3 +622,4 @@ COMMENT ON FUNCTION quote_ut.test_post_ligne_ajouter() IS 'Test ajout de lignes 
 
 GRANT USAGE ON SCHEMA quote_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA quote_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA quote_ut TO anon;

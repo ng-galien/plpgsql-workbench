@@ -619,3 +619,4 @@ COMMENT ON FUNCTION cad_ut.test_group_pieces() IS 'Test pgTAP pour le systeme de
 
 GRANT USAGE ON SCHEMA cad_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cad_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA cad_ut TO anon;

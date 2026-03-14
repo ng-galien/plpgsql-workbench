@@ -200,3 +200,4 @@ COMMENT ON FUNCTION project_qa.seed() IS 'QA seed : donnees de demonstration cha
 
 GRANT USAGE ON SCHEMA project_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA project_qa TO anon;

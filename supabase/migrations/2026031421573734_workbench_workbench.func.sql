@@ -912,3 +912,4 @@ COMMENT ON FUNCTION workbench.session_end(integer,text) IS 'End an agent session
 
 GRANT USAGE ON SCHEMA workbench TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA workbench TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA workbench TO anon;

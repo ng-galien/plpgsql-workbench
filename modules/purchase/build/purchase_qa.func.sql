@@ -131,3 +131,4 @@ COMMENT ON FUNCTION purchase_qa.seed() IS 'Seed realistic demo data for purchase
 
 GRANT USAGE ON SCHEMA purchase_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA purchase_qa TO anon;

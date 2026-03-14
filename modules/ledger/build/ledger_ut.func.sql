@@ -561,3 +561,4 @@ COMMENT ON FUNCTION ledger_ut.test_tva() IS 'Test déclaration TVA = 4457 - 4456
 
 GRANT USAGE ON SCHEMA ledger_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ledger_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA ledger_ut TO anon;

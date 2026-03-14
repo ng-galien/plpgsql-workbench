@@ -100,3 +100,4 @@ COMMENT ON FUNCTION planning_qa.seed() IS 'Seed données démo réalistes pour p
 
 GRANT USAGE ON SCHEMA planning_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA planning_qa TO anon;

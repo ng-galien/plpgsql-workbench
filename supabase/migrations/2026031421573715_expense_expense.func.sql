@@ -791,3 +791,4 @@ COMMENT ON FUNCTION expense.post_note_valider(jsonb) IS 'Passer une note soumise
 
 GRANT USAGE ON SCHEMA expense TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA expense TO anon;

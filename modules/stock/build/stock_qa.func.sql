@@ -126,3 +126,4 @@ COMMENT ON FUNCTION stock_qa.seed() IS 'Seed données démo artisan charpentier:
 
 GRANT USAGE ON SCHEMA stock_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA stock_qa TO anon;

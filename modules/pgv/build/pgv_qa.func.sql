@@ -827,3 +827,4 @@ COMMENT ON FUNCTION pgv_qa.get_atoms() IS 'Component showcase: badges, stats, ca
 
 GRANT USAGE ON SCHEMA pgv_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgv_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA pgv_qa TO anon;

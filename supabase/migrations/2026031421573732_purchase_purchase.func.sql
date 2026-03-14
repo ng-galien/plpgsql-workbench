@@ -1702,3 +1702,4 @@ COMMENT ON FUNCTION purchase.post_reception_creer(jsonb) IS 'Create a reception 
 
 GRANT USAGE ON SCHEMA purchase TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA purchase TO anon;

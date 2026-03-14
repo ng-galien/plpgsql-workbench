@@ -73,3 +73,4 @@ COMMENT ON FUNCTION expense_qa.seed() IS 'Seed QA : 4 notes de frais avec diffé
 
 GRANT USAGE ON SCHEMA expense_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA expense_qa TO anon;

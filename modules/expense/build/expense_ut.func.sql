@@ -136,3 +136,4 @@ COMMENT ON FUNCTION expense_ut.test_workflow() IS 'Test workflow complet : broui
 
 GRANT USAGE ON SCHEMA expense_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA expense_ut TO anon;

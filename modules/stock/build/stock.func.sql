@@ -1503,3 +1503,4 @@ COMMENT ON FUNCTION stock.post_mouvement_save(jsonb) IS 'Enregistrer un mouvemen
 
 GRANT USAGE ON SCHEMA stock TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA stock TO anon;

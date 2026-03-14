@@ -110,3 +110,4 @@ COMMENT ON FUNCTION quote_qa.seed() IS 'QA seed : données de démonstration ré
 
 GRANT USAGE ON SCHEMA quote_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA quote_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA quote_qa TO anon;

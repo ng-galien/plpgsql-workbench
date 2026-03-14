@@ -577,3 +577,4 @@ COMMENT ON FUNCTION purchase_ut.test_totaux() IS 'Test HT/TVA/TTC calculations';
 
 GRANT USAGE ON SCHEMA purchase_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA purchase_ut TO anon;

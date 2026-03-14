@@ -1057,3 +1057,4 @@ COMMENT ON FUNCTION hr.get_index(jsonb) IS 'HR dashboard — stats, search/filte
 
 GRANT USAGE ON SCHEMA hr TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA hr TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA hr TO anon;

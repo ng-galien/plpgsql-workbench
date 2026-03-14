@@ -783,3 +783,4 @@ COMMENT ON FUNCTION document_qa.seed_showcase() IS 'Seed Showcase Primitives can
 
 GRANT USAGE ON SCHEMA document_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA document_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA document_qa TO anon;

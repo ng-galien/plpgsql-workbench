@@ -265,3 +265,4 @@ COMMENT ON FUNCTION ops_ut.test_recent_events() IS 'Test _recent_events — vér
 
 GRANT USAGE ON SCHEMA ops_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ops_ut TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA ops_ut TO anon;

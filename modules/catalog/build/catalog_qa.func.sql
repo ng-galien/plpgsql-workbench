@@ -77,3 +77,4 @@ COMMENT ON FUNCTION catalog_qa.seed() IS 'Seed données démo: 5 catégories, ~1
 
 GRANT USAGE ON SCHEMA catalog_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA catalog_qa TO anon;
