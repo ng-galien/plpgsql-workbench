@@ -1,8 +1,7 @@
 /**
  * MCP Edge Function — Supabase deployment endpoint.
  *
- * McpServer is a singleton (tools registered once at boot).
- * Transport is per-request (stateless, as required by the SDK).
+ * Container is singleton (tools registered once). McpServer + transport are per-request.
  * Uses postgres.js driver for direct SQL via SUPABASE_DB_URL.
  */
 import "@supabase/functions-js/edge-runtime.d.ts";
@@ -22,9 +21,9 @@ const dbUrl = Deno.env.get("SUPABASE_DB_URL")
   ?? "postgresql://postgres:postgres@localhost:54322/postgres";
 
 const sql = postgres(dbUrl, {
-  idle_timeout: 20,       // close idle connections after 20s
-  connect_timeout: 10,    // fail fast if PG unreachable
-  max: 5,                 // connection pool size
+  idle_timeout: 20,
+  connect_timeout: 10,
+  max: 5,
 });
 const withClient = createPostgresWithClient(sql);
 
@@ -36,14 +35,11 @@ const edgePack: ToolPack = (container, _config) => {
   });
 };
 
-// -- Singleton: container + server built once at boot --
+// -- Singleton: container built once at boot --
 const container = buildContainer(
   { packs: { edge: {}, illustrator: {} } },
   { edge: edgePack, illustrator: illustratorPack },
 );
-
-const server = new McpServer({ name: "plpgsql-workbench-edge", version: "0.1.0" });
-await mountTools(server, container);
 
 // -- CORS headers --
 const CORS = {
@@ -57,18 +53,18 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: CORS });
   }
 
-  // Per-request: fresh transport only (server is singleton)
+  // Per-request: fresh server + transport (avoids "Already connected" error)
   try {
+    const server = new McpServer({ name: "plpgsql-workbench-edge", version: "0.1.0" });
+    await mountTools(server, container);
     const transport = new WebStandardStreamableHTTPServerTransport();
     await server.connect(transport);
     return await transport.handleRequest(req);
   } catch (err) {
-    // Client disconnect (EOF), timeout, or transport error — log and return clean error
     const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("EOF") || msg.includes("connection")) {
-      // Client disconnected mid-stream — not a real error
+    if (msg.includes("EOF") || msg.includes("connection") || msg.includes("Already connected")) {
       console.warn("Client disconnected:", msg);
-      return new Response(null, { status: 499 }); // nginx-style "client closed"
+      return new Response(null, { status: 499 });
     }
     console.error("MCP error:", err);
     return new Response(
