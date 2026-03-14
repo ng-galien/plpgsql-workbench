@@ -5,25 +5,62 @@ AS $function$
 DECLARE
   v_total_tpl  int;
   v_total_doc  int;
+  v_total_cvs  int;
   v_draft      int;
-  v_generated  int;
   v_body       text;
+  v_cards      text[];
+  v_svg        text;
+  v_elem_cnt   int;
+  v_href       text;
+  r            record;
 BEGIN
   SELECT count(*)::int INTO v_total_tpl FROM document.template WHERE tenant_id = current_setting('app.tenant_id', true);
   SELECT count(*)::int INTO v_total_doc FROM document.document WHERE tenant_id = current_setting('app.tenant_id', true);
+  SELECT count(*)::int INTO v_total_cvs FROM document.canvas WHERE tenant_id = current_setting('app.tenant_id', true);
   SELECT count(*)::int INTO v_draft FROM document.document WHERE tenant_id = current_setting('app.tenant_id', true) AND status = 'draft';
-  SELECT count(*)::int INTO v_generated FROM document.document WHERE tenant_id = current_setting('app.tenant_id', true) AND status = 'generated';
 
   v_body := pgv.grid(VARIADIC ARRAY[
+    pgv.stat(pgv.t('document.stat_canvases'), v_total_cvs::text),
     pgv.stat(pgv.t('document.stat_templates'), v_total_tpl::text),
     pgv.stat(pgv.t('document.stat_documents'), v_total_doc::text),
-    pgv.stat(pgv.t('document.stat_draft'), v_draft::text),
-    pgv.stat(pgv.t('document.stat_generated'), v_generated::text)
+    pgv.stat(pgv.t('document.stat_draft'), v_draft::text)
   ]);
 
-  IF v_total_doc = 0 THEN
-    v_body := v_body || pgv.empty(pgv.t('document.empty_no_document'), pgv.t('document.empty_first_document'));
+  -- Canvas section: grid of clickable cards with SVG miniature
+  v_body := v_body || '<h3>' || pgv.t('document.title_canvases') || '</h3>';
+  IF v_total_cvs = 0 THEN
+    v_body := v_body || pgv.empty(pgv.t('document.empty_no_canvas'), pgv.t('document.empty_first_canvas'));
   ELSE
+    v_cards := ARRAY[]::text[];
+    FOR r IN
+      SELECT c.id, c.name, c.format, c.orientation, c.category
+      FROM document.canvas c
+      WHERE c.tenant_id = current_setting('app.tenant_id', true)
+      ORDER BY c.updated_at DESC
+    LOOP
+      v_svg := document.canvas_render_svg_mini(r.id);
+      SELECT count(*)::int INTO v_elem_cnt FROM document.element WHERE canvas_id = r.id;
+      v_href := pgv.call_ref('get_canvas', jsonb_build_object('p_id', r.id));
+
+      v_cards := v_cards || (
+        '<a href="' || v_href || '">'
+        || pgv.card(
+          r.name,
+          CASE WHEN v_elem_cnt = 0
+            THEN pgv.empty(pgv.t('document.empty_no_canvas'))
+            ELSE pgv.svg_canvas(v_svg, '{"height":"200px","toolbar":false}'::jsonb)
+          END,
+          r.format || ' ' || r.orientation || ' · ' || v_elem_cnt || ' éléments'
+        )
+        || '</a>'
+      );
+    END LOOP;
+    v_body := v_body || pgv.grid(VARIADIC v_cards);
+  END IF;
+
+  -- Documents section
+  IF v_total_doc > 0 THEN
+    v_body := v_body || '<h3>' || pgv.t('document.stat_documents') || '</h3>';
     v_body := v_body || pgv.table(jsonb_build_object(
       'rpc',     'data_documents',
       'schema',  'document',

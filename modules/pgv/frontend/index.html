@@ -7,10 +7,13 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <link rel="stylesheet" href="/pgview.css?v=2">
   <style>[x-cloak]{display:none!important}</style>
+  <!-- Stack: Alpine.js (UI), Zustand (state), D3.js (SVG canvas), PicoCSS (style), marked.js (tables) -->
   <script src="/pgv-modules.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/panzoom@9/dist/panzoom.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/zustand@5/umd/vanilla.production.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 </head>
 <body x-data="pgview" x-init="boot()">
 

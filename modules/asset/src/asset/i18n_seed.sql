@@ -6,7 +6,8 @@ BEGIN
   INSERT INTO pgv.i18n (lang, key, value) VALUES
     -- Brand / Navigation
     ('fr', 'asset.brand', 'Assets'),
-    ('fr', 'asset.nav_assets', 'Bibliothèque'),
+    ('fr', 'asset.nav_assets', 'Photothèque'),
+    ('fr', 'asset.nav_upload', 'Upload'),
 
     -- Status
     ('fr', 'asset.status_to_classify', 'À classifier'),
@@ -20,17 +21,21 @@ BEGIN
     ('fr', 'asset.field_mime', 'Type MIME'),
     ('fr', 'asset.field_title', 'Titre'),
     ('fr', 'asset.field_description', 'Description'),
+    ('fr', 'asset.field_filename', 'Fichier'),
+    ('fr', 'asset.field_dimensions', 'Dimensions'),
     ('fr', 'asset.field_credit', 'Crédit'),
     ('fr', 'asset.field_saison', 'Saison'),
     ('fr', 'asset.field_usage_hint', 'Usage recommandé'),
     ('fr', 'asset.field_colors', 'Couleurs dominantes'),
-    ('fr', 'asset.field_width', 'Largeur'),
-    ('fr', 'asset.field_height', 'Hauteur'),
     ('fr', 'asset.field_orientation', 'Orientation'),
+    ('fr', 'asset.field_created', 'Créé le'),
+    ('fr', 'asset.field_classified', 'Classifié le'),
 
     -- Common
     ('fr', 'asset.filter_all', 'Tous'),
     ('fr', 'asset.btn_filter', 'Filtrer'),
+    ('fr', 'asset.btn_delete', 'Supprimer'),
+    ('fr', 'asset.btn_classify', 'Classifier'),
 
     -- Table headers
     ('fr', 'asset.col_filename', 'Fichier'),
@@ -52,8 +57,12 @@ BEGIN
 
     -- Toast / errors
     ('fr', 'asset.toast_classified', 'Asset classifié.'),
+    ('fr', 'asset.toast_deleted', 'Asset supprimé.'),
     ('fr', 'asset.err_not_found', 'Asset introuvable.'),
-    ('fr', 'asset.err_title_required', 'Le titre est obligatoire.')
+    ('fr', 'asset.err_title_required', 'Le titre est obligatoire.'),
+
+    -- Confirm
+    ('fr', 'asset.confirm_delete', 'Supprimer définitivement cet asset ?')
 
   ON CONFLICT DO NOTHING;
 END;

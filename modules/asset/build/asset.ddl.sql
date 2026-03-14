@@ -1,4 +1,4 @@
--- asset — DDL (v2: re-grant after function creation)
+-- asset — DDL (v5: add thumb_path migration)
 
 CREATE SCHEMA IF NOT EXISTS asset;
 CREATE SCHEMA IF NOT EXISTS asset_ut;
@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS asset.asset (
   saison        TEXT,
   usage_hint    TEXT,
   colors        TEXT[] DEFAULT '{}',
+  -- Thumbnail
+  thumb_path    TEXT,
   -- Timestamps
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   classified_at TIMESTAMPTZ,
@@ -33,6 +35,13 @@ CREATE TABLE IF NOT EXISTS asset.asset (
     setweight(to_tsvector('pgv_search', coalesce(description,'')), 'B')
   ) STORED
 );
+
+-- Migration: add thumb_path if missing (CREATE TABLE IF NOT EXISTS doesn't alter)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'asset' AND table_name = 'asset' AND column_name = 'thumb_path') THEN
+    ALTER TABLE asset.asset ADD COLUMN thumb_path TEXT;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_asset_search ON asset.asset USING GIN(search_vec);
 CREATE INDEX IF NOT EXISTS idx_asset_tenant ON asset.asset(tenant_id);

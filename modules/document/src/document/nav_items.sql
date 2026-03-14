@@ -6,6 +6,7 @@ BEGIN
   RETURN jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('document.nav_documents'), 'icon', 'file-text'),
     jsonb_build_object('href', '/templates', 'label', pgv.t('document.nav_templates'), 'icon', 'layout'),
+    jsonb_build_object('href', '/brand_guides', 'label', pgv.t('document.nav_brand_guides'), 'icon', 'palette'),
     jsonb_build_object('href', '/company', 'label', pgv.t('document.nav_company'), 'icon', 'building')
   );
 END;
