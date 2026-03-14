@@ -32,6 +32,9 @@ import { createGetStateTool } from "../tools/illustrator/get-state.js";
 // Meta, Assets, Export, Layout
 import { createUpdateMetaTool, createListAssetsTool, createShowMessageTool, createExportSvgTool, createCheckLayoutTool, createMeasureTextTool } from "../tools/illustrator/meta-assets.js";
 
+// Collaboration (bidirectional introspection)
+import { createInspectStoreTool, createDispatchEventTool, createGetEventLogTool } from "../tools/illustrator/collaboration.js";
+
 export const illustratorPack: ToolPack = (container: AwilixContainer, _config: Record<string, unknown>) => {
   container.register({
     // --- Document CRUD (8 tools) ---
@@ -81,14 +84,14 @@ export const illustratorPack: ToolPack = (container: AwilixContainer, _config: R
     // --- Export (1 tool) ---
     illExportSvgTool: asFunction(createExportSvgTool).singleton(),
 
-    // --- Communication (1 tool) ---
+    // --- Communication + Collaboration (4 tools) ---
     illShowMessageTool: asFunction(createShowMessageTool).singleton(),
+    illInspectStoreTool: asFunction(createInspectStoreTool).singleton(),
+    illDispatchEventTool: asFunction(createDispatchEventTool).singleton(),
+    illGetEventLogTool: asFunction(createGetEventLogTool).singleton(),
 
     // --- TODO: Phase 2 ---
     // illSnapshotTool (resvg PNG)
     // illExportPdfTool (pdf-lib)
-    // illInspectStoreTool (Supabase Realtime)
-    // illDispatchEventTool (Supabase Realtime)
-    // illGetEventLogTool (Supabase Realtime)
   });
 };
