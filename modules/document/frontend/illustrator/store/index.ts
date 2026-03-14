@@ -143,3 +143,12 @@ export function activeDocName() {
 }
 
 export function getEventLog() { return []; }
+
+/** subscribeToSelector compatibility */
+export function subscribeToSelector(selector, fn) {
+  let prev = selector(store.state);
+  return zustandStore.subscribe(() => {
+    const next = selector(store.state);
+    if (next !== prev) { prev = next; fn(next, prev); }
+  });
+}

@@ -261,6 +261,12 @@ agent-attach: ## Attach to agent tmux session (M=name). Ex: make agent-attach M=
 build: ## Compile TypeScript (tsc → dist/)
 	npm run build
 
+build-illustrator: ## Bundle illustrator client (esbuild → dist/app.js)
+	@npx esbuild modules/document/frontend/illustrator/app.ts \
+		--bundle --outfile=modules/document/frontend/illustrator/dist/app.js \
+		--format=esm --target=es2022 --external:d3 --loader:.css=css --minify
+	@echo "  app.js + app.css → modules/document/frontend/illustrator/dist/"
+
 check: ## Type-check without emitting
 	npx tsc --noEmit
 
