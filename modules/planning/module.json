@@ -14,7 +14,9 @@
   "extensions": [],
   "sql": [
     "build/planning.ddl.sql",
-    "build/planning.func.sql"
+    "build/planning.func.sql",
+    "build/planning_qa.func.sql",
+    "build/planning_ut.func.sql"
   ],
   "assets": {
     "frontend": [],

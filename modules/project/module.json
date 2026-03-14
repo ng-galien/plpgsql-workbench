@@ -16,7 +16,9 @@
   "extensions": [],
   "sql": [
     "build/project.ddl.sql",
-    "build/project.func.sql"
+    "build/project.func.sql",
+    "build/project_qa.func.sql",
+    "build/project_ut.func.sql"
   ],
   "assets": {
     "frontend": [],

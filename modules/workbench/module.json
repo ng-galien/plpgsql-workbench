@@ -8,11 +8,15 @@
     "test": null,
     "qa": null
   },
-  "dependencies": ["pgv"],
+  "dependencies": [
+    "pgv"
+  ],
   "extensions": [],
   "sql": [
     "build/workbench.ddl.sql",
-    "build/workbench.func.sql"
+    "build/workbench.func.sql",
+    "build/workbench_qa.func.sql",
+    "build/workbench_ut.func.sql"
   ],
   "assets": {},
   "grants": {

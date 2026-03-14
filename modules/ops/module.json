@@ -16,7 +16,9 @@
   "sql": [
     "build/ops.ddl.sql",
     "build/workbench_ops.ddl.sql",
-    "build/ops.func.sql"
+    "build/ops.func.sql",
+    "build/ops_qa.func.sql",
+    "build/ops_ut.func.sql"
   ],
   "assets": {
     "frontend": [

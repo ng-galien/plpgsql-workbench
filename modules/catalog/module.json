@@ -13,7 +13,9 @@
   "extensions": [],
   "sql": [
     "build/catalog.ddl.sql",
-    "build/catalog.func.sql"
+    "build/catalog.func.sql",
+    "build/catalog_qa.func.sql",
+    "build/catalog_ut.func.sql"
   ],
   "assets": {
     "frontend": [],

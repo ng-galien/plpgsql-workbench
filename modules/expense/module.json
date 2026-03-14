@@ -13,7 +13,9 @@
   "extensions": [],
   "sql": [
     "build/expense.ddl.sql",
-    "build/expense.func.sql"
+    "build/expense.func.sql",
+    "build/expense_qa.func.sql",
+    "build/expense_ut.func.sql"
   ],
   "assets": {
     "frontend": [],

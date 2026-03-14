@@ -15,7 +15,9 @@
   "extensions": [],
   "sql": [
     "build/ledger.ddl.sql",
-    "build/ledger.func.sql"
+    "build/ledger.func.sql",
+    "build/ledger_qa.func.sql",
+    "build/ledger_ut.func.sql"
   ],
   "assets": {
     "frontend": [],

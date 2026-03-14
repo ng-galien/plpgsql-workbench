@@ -15,7 +15,9 @@
   "extensions": [],
   "sql": [
     "build/stock.ddl.sql",
-    "build/stock.func.sql"
+    "build/stock.func.sql",
+    "build/stock_qa.func.sql",
+    "build/stock_ut.func.sql"
   ],
   "assets": {
     "frontend": [],

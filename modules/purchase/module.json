@@ -16,7 +16,9 @@
   "extensions": [],
   "sql": [
     "build/purchase.ddl.sql",
-    "build/purchase.func.sql"
+    "build/purchase.func.sql",
+    "build/purchase_qa.func.sql",
+    "build/purchase_ut.func.sql"
   ],
   "assets": {
     "frontend": [],

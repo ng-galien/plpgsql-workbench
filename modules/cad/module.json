@@ -16,7 +16,9 @@
   ],
   "sql": [
     "build/cad.ddl.sql",
-    "build/cad.func.sql"
+    "build/cad.func.sql",
+    "build/cad_qa.func.sql",
+    "build/cad_ut.func.sql"
   ],
   "assets": {
     "frontend": [],
@@ -29,7 +31,9 @@
     ]
   },
   "grants": {
-    "anon": ["cad"]
+    "anon": [
+      "cad"
+    ]
   },
   "docker": {
     "image": "postgis/postgis:17-3.5",

@@ -14,7 +14,9 @@
   "extensions": [],
   "sql": [
     "build/quote.ddl.sql",
-    "build/quote.func.sql"
+    "build/quote.func.sql",
+    "build/quote_qa.func.sql",
+    "build/quote_ut.func.sql"
   ],
   "assets": {
     "frontend": [],
