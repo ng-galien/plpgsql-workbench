@@ -39,12 +39,17 @@ Ce module est un **module independant** du framework pgView. Ses dependances son
 - `_ut` schemas → tests pgTAP (`test_*()`)
 - `_qa` schemas → seed data uniquement (`seed()`, `clean()`), PAS de pages
 
-### Grants (DDL obligatoire)
+### Contenu du DDL — STRICT
 
-Chaque `build/{schema}.ddl.sql` DOIT inclure :
-- `GRANT USAGE ON SCHEMA {schema} TO anon;`
-- `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO anon;`
-- `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO anon;`
+Le DDL (`build/{schema}.ddl.sql`) contient **uniquement de la structure** :
+
+**DOIT contenir :** CREATE SCHEMA, CREATE TABLE, CREATE INDEX, constraints, RLS policies
+
+**NE DOIT PAS contenir :**
+- `CREATE FUNCTION` → pg_func_set puis pg_pack
+- `CREATE TRIGGER` → pg_pack attache les triggers aux fonctions
+- `GRANT` → pg_pack les ajoute dans .func.sql
+- `INSERT INTO` (seed data) → `build/{schema}.seed.sql` ou `{schema}_qa.seed()`
 
 ### Communication inter-modules
 

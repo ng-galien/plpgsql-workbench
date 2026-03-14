@@ -72,55 +72,14 @@ Ce module est un **module independant** du framework pgView. Ses dependances son
 - `build/` -> artefacts de deploiement (DDL + fonctions packees)
 - `src/` -> sources individuelles versionnees (pg_func_save)
 
-### Grants (DDL obligatoire)
+### Contenu du DDL — STRICT
 
-`build/workbench.ddl.sql` DOIT inclure :
-- `GRANT USAGE ON SCHEMA workbench TO anon;`
-- `GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA workbench TO anon;`
-- `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA workbench TO anon;`
-- `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA workbench TO anon;`
+Le DDL (`build/{schema}.ddl.sql`) contient **uniquement de la structure** :
 
-### Communication inter-modules
+**DOIT contenir :** CREATE SCHEMA, CREATE TABLE, CREATE INDEX, constraints, RLS policies
 
-- `pg_msg_inbox module:workbench` -> lire les messages entrants
-- `pg_msg` -> envoyer un message a un autre module
-- **feature_request / bug_report -> TOUJOURS via issue_report** : ne jamais envoyer de feature_request ou bug_report directement a un autre module
-- Chaque module est autonome — ne jamais modifier les fonctions d'un autre module
-
-## i18n
-
-Le framework utilise `pgv.t(key)` pour l'internationalisation :
-1. `workbench.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value)
-2. Cles namespaced : `workbench.nav_xxx`, `workbench.title_xxx`, `workbench.stat_xxx`, etc.
-3. `ON CONFLICT DO NOTHING` dans le seed
-
-## Workflow agent
-
-1. Au demarrage ou quand on te dit "go" : **toujours lire `pg_msg_inbox module:workbench`**
-2. Traiter les messages par priorite (HIGH d'abord)
-3. Ne pas resoudre un message tant que la tache n'est pas verifiee
-4. Apres chaque tache : `pg_pack schemas:workbench` + `pg_func_save target:plpgsql://workbench`
-
-## Relation avec seed/003_workbench.sql
-
-Le seed est le **bootstrap minimal** — il cree le schema + les tables de base + insere les donnees dev (tenant, tenant_module). Les fonctions sont dans le module (`build/workbench.func.sql`), PAS dans le seed.
-
-
-## Documentation intégrée
-
-Le workbench embarque de la documentation accessible via `pg_doc` :
-- `pg_doc topic:testing` — Guide pgTAP : conventions test_*(), assertions, patterns
-- `pg_doc topic:data-convention` — Convention data_*() : cursor pagination, FTS, pgv.table()
-- `pg_doc topic:coverage` — Guide couverture de code
-
-## Gotchas
-
-- **tenant_id** : toujours `PERFORM set_config('app.tenant_id', 'test', true)` au début de chaque test
-- **pg_test** : découvre les fonctions `test_*()` dans le schema `_ut`
-
-- **Tu es l'agent workbench, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:workbench` pour lire TES messages. Ne traiter que les messages adressés à `workbench`.
-- workbench ne possede PAS de schema _ut ni _qa — les tests sont dans ops_ut
-- `get_primitives()` switch le `pgv.route_prefix` vers `/pgv_qa` pour que les `call_ref()` internes des fonctions pgv_qa resolvent correctement
-- `pgv.md_esc()` est obligatoire pour tout contenu texte libre dans les cellules markdown (subject, body, resolution, description) — sinon les pipes et newlines cassent le tableau
-- Les messages inter-modules sont dans `workbench.agent_message` — ops lit cette table aussi (lecture croisee)
-- `tenant_module.sort_order` controle l'ordre du menu top-level dans le shell
+**NE DOIT PAS contenir :**
+- `CREATE FUNCTION` → pg_func_set puis pg_pack
+- `CREATE TRIGGER` → pg_pack attache les triggers aux fonctions
+- `GRANT` → pg_pack les ajoute dans .func.sql
+- `INSERT INTO` (seed data) → `build/{schema}.seed.sql` ou `{schema}_qa.seed()`

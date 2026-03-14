@@ -458,12 +458,37 @@ Ce module est un **module independant** du framework pgView. Ses dependances son
 - \`_ut\` schemas → tests pgTAP (\`test_*()\`)
 - \`_qa\` schemas → seed data uniquement (\`seed()\`, \`clean()\`), PAS de pages
 
-### Grants (DDL obligatoire)
+### Contenu du DDL (\`build/{schema}.ddl.sql\`) — STRICT
 
-Chaque \`build/{schema}.ddl.sql\` DOIT inclure :
-- \`GRANT USAGE ON SCHEMA {schema} TO anon;\`
-- \`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO anon;\`
-- \`GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO anon;\`
+Le DDL contient **uniquement de la structure**. Ordre d'application des migrations :
+\`\`\`
+1. Extensions     → dans la migration globale, PAS dans le DDL module
+2. DDL            → CREATE SCHEMA, CREATE TABLE, indexes, constraints, RLS policies
+3. Functions      → pg_pack genere build/{schema}.func.sql (+ triggers attaches)
+4. Grants         → pg_pack les ajoute a la fin de chaque .func.sql
+5. Seed referentiel → donnees de reference dans build/{schema}.seed.sql (optionnel)
+\`\`\`
+
+**Le DDL DOIT contenir :**
+- \`CREATE SCHEMA IF NOT EXISTS {schema};\`
+- \`CREATE TABLE\`, \`CREATE INDEX\`, \`ALTER TABLE ... ADD CONSTRAINT\`
+- \`ALTER TABLE ... ENABLE ROW LEVEL SECURITY\` + \`CREATE POLICY\`
+
+**Le DDL NE DOIT PAS contenir :**
+- \`CREATE FUNCTION\` → va dans les fonctions (pg_func_set → pg_pack)
+- \`CREATE TRIGGER\` → pg_pack l'attache apres la fonction trigger dans .func.sql
+- \`GRANT\` → pg_pack les ajoute a la fin de chaque .func.sql
+- \`INSERT INTO\` → les donnees de reference vont dans \`build/{schema}.seed.sql\`
+- Donnees de demo → vont dans \`{schema}_qa.seed()\`
+
+### Donnees de reference (\`build/{schema}.seed.sql\`)
+
+Certains modules ont des donnees de reference necessaires au fonctionnement :
+- Plan comptable (ledger), categories par defaut (catalog), cles i18n (pgv)
+- Ces donnees sont **partagees entre tous les tenants** (\`tenant_id IS NULL\` ou omis)
+- Elles vivent dans \`build/{schema}.seed.sql\`, PAS dans le DDL
+- Convention : \`INSERT ... ON CONFLICT DO NOTHING\` (idempotent)
+- Ce fichier est reference dans \`module.json\` sql array, APRES le .func.sql
 
 ### Communication inter-modules
 
