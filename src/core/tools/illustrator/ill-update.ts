@@ -5,15 +5,15 @@
  */
 
 import { z } from "zod";
+import { jsonb } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import { jsonb } from "../../connection.js";
 
 function resolveElement(client: any, canvasId: string, idOrName: string) {
-  return client.query(
-    `SELECT id FROM document.element WHERE canvas_id = $1 AND (id::text = $2 OR name = $2) LIMIT 1`,
-    [canvasId, idOrName],
-  );
+  return client.query(`SELECT id FROM document.element WHERE canvas_id = $1 AND (id::text = $2 OR name = $2) LIMIT 1`, [
+    canvasId,
+    idOrName,
+  ]);
 }
 
 export function createIllUpdateTool({ withClient }: { withClient: WithClient }): ToolHandler {
@@ -23,16 +23,20 @@ export function createIllUpdateTool({ withClient }: { withClient: WithClient }):
       description: "Update element(s). Pass a single {id, props} or an array for batch update.",
       schema: z.object({
         canvas_id: z.string().describe("Canvas UUID"),
-        updates: z.union([
-          z.object({
-            id: z.string().describe("Element UUID or name"),
-            props: z.record(z.string(), z.unknown()).describe("Properties to merge"),
-          }),
-          z.array(z.object({
-            id: z.string().describe("Element UUID or name"),
-            props: z.record(z.string(), z.unknown()).describe("Properties to merge"),
-          })),
-        ]).describe("Single update or array of updates"),
+        updates: z
+          .union([
+            z.object({
+              id: z.string().describe("Element UUID or name"),
+              props: z.record(z.string(), z.unknown()).describe("Properties to merge"),
+            }),
+            z.array(
+              z.object({
+                id: z.string().describe("Element UUID or name"),
+                props: z.record(z.string(), z.unknown()).describe("Properties to merge"),
+              }),
+            ),
+          ])
+          .describe("Single update or array of updates"),
       }),
     },
     handler: async (args, _extra) => {
@@ -45,10 +49,7 @@ export function createIllUpdateTool({ withClient }: { withClient: WithClient }):
         for (const u of updates as any[]) {
           const { rows } = await resolveElement(client, canvasId, u.id);
           if (rows.length === 0) continue;
-          await client.query(
-            `SELECT document.element_update($1, $2)`,
-            [rows[0].id, jsonb(u.props)],
-          );
+          await client.query(`SELECT document.element_update($1, $2)`, [rows[0].id, jsonb(u.props)]);
           count++;
         }
         return text(`Updated ${count}/${updates.length} element(s)`);
@@ -64,10 +65,12 @@ export function createIllDeleteTool({ withClient }: { withClient: WithClient }):
       description: "Delete element(s). Pass a single ID/name or array. Groups cascade to children.",
       schema: z.object({
         canvas_id: z.string().describe("Canvas UUID"),
-        ids: z.union([
-          z.string().describe("Element UUID or name"),
-          z.array(z.string()).describe("Array of element UUIDs or names"),
-        ]).describe("Element(s) to delete"),
+        ids: z
+          .union([
+            z.string().describe("Element UUID or name"),
+            z.array(z.string()).describe("Array of element UUIDs or names"),
+          ])
+          .describe("Element(s) to delete"),
       }),
     },
     handler: async (args, _extra) => {
@@ -115,20 +118,18 @@ Operations execute in order — later ops can reference elements added earlier b
         for (const op of ops) {
           switch (op.action) {
             case "add": {
-              const { rows } = await client.query(
-                `SELECT document.element_add($1, $2, 0, $3) as id`,
-                [canvasId, op.type, jsonb(op.props ?? {})],
-              );
+              const { rows } = await client.query(`SELECT document.element_add($1, $2, 0, $3) as id`, [
+                canvasId,
+                op.type,
+                jsonb(op.props ?? {}),
+              ]);
               results.push(`+ ${op.type} ${op.props?.name ?? rows[0]?.id?.slice(0, 8)}`);
               break;
             }
             case "update": {
               const { rows } = await resolveElement(client, canvasId, op.id);
               if (rows.length > 0) {
-                await client.query(
-                  `SELECT document.element_update($1, $2)`,
-                  [rows[0].id, jsonb(op.props ?? {})],
-                );
+                await client.query(`SELECT document.element_update($1, $2)`, [rows[0].id, jsonb(op.props ?? {})]);
                 results.push(`~ ${op.id}`);
               } else {
                 results.push(`? ${op.id} (not found)`);

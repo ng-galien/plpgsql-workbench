@@ -9,7 +9,7 @@ export interface PgvConfig {
 }
 
 export function getConfig(): PgvConfig {
-  const cfg = (window as any).__PGV_CONFIG__;
+  const cfg = window.__PGV_CONFIG__;
   if (!cfg) throw new Error("__PGV_CONFIG__ not set — inject it before loading pgview.js");
   return cfg;
 }

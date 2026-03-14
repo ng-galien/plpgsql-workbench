@@ -3,7 +3,7 @@
  * Uses @libpg-query/parser to parse function bodies and find
  * schema-qualified function calls (e.g. pgv.esc).
  */
-import { parse, parsePlPgSQL, loadModule } from "@libpg-query/parser";
+import { loadModule, parse, parsePlPgSQL } from "@libpg-query/parser";
 
 let moduleLoaded = false;
 export async function ensureParserModule(): Promise<void> {
@@ -88,7 +88,9 @@ export async function extractFuncDeps(fn: FuncInfo): Promise<Set<string>> {
     try {
       const ast = await parse(body);
       collectFuncCalls(ast, calls);
-    } catch { /* unparseable SQL — skip */ }
+    } catch {
+      /* unparseable SQL — skip */
+    }
   } else if (fn.lang === "plpgsql") {
     try {
       const ast = await parsePlPgSQL(fn.ddl);
@@ -99,9 +101,13 @@ export async function extractFuncDeps(fn: FuncInfo): Promise<Set<string>> {
         try {
           const sqlAst = await parse(`SELECT ${normalized}`);
           collectFuncCalls(sqlAst, calls);
-        } catch { /* unparseable expression — skip */ }
+        } catch {
+          /* unparseable expression — skip */
+        }
       }
-    } catch { /* unparseable PL/pgSQL — skip */ }
+    } catch {
+      /* unparseable PL/pgSQL — skip */
+    }
   }
 
   // Remove self-reference

@@ -3,6 +3,7 @@ button, [type="submit"], [type="button"], [role="button"],
 input[type="submit"], input[type="button"] {
   --pico-form-element-spacing-vertical: 0.35rem;
   --pico-form-element-spacing-horizontal: 0.75rem;
+
   font-size: 0.8125rem;
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -12,11 +13,13 @@ input[type="submit"], input[type="button"] {
 button.outline, [role="button"].outline {
   --pico-form-element-spacing-vertical: 0.3rem;
   --pico-form-element-spacing-horizontal: 0.6rem;
+
   font-size: 0.75rem;
 }
 
 button.secondary[data-rpc] {
   font-size: 0.75rem;
+
   --pico-form-element-spacing-vertical: 0.2rem;
   --pico-form-element-spacing-horizontal: 0.5rem;
 }
@@ -36,6 +39,7 @@ label {
 input, select, textarea {
   --pico-form-element-spacing-vertical: 0.4rem;
   --pico-form-element-spacing-horizontal: 0.6rem;
+
   font-size: 0.875rem;
   border-radius: 0.25rem;
 }
@@ -76,9 +80,11 @@ details > *:not(summary) {
 article {
   border: 1px solid var(--pgv-border);
   border-radius: 0.375rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
+
   --pico-block-spacing-vertical: 0.75rem;
   --pico-block-spacing-horizontal: 0.85rem;
+
   margin-bottom: 0.75rem;
 }
 
@@ -140,9 +146,11 @@ section > h4:first-child {
 /* ── Stat ──────────────────────────────────────────────────────── */
 .pgv-stat {
   text-align: center;
+
   --pico-block-spacing-vertical: 0.6rem;
   --pico-block-spacing-horizontal: 0.5rem;
 }
+
 .pgv-stat small {
   color: var(--pgv-muted);
   font-size: 0.7rem;
@@ -150,6 +158,7 @@ section > h4:first-child {
   letter-spacing: 0.05em;
   font-weight: 500;
 }
+
 .pgv-stat-value {
   font-size: 1.5rem;
   margin: 0.15rem 0;
@@ -165,11 +174,13 @@ section > h4:first-child {
   gap: 0.15rem 0.75rem;
   font-size: 0.875rem;
 }
+
 .pgv-dl dt {
   font-weight: 500;
   color: var(--pgv-muted);
   font-size: 0.8rem;
 }
+
 .pgv-dl dd {
   margin: 0;
 }
@@ -197,10 +208,30 @@ section > h4:first-child {
   margin-bottom: 0.75rem;
   background: var(--pgv-hover);
 }
-.pgv-alert-success { border-left-color: #16a34a; background: var(--pgv-badge-success-bg); color: var(--pgv-badge-success-fg); }
-.pgv-alert-danger  { border-left-color: #dc2626; background: var(--pgv-badge-danger-bg);  color: var(--pgv-badge-danger-fg); }
-.pgv-alert-warning { border-left-color: #d97706; background: var(--pgv-badge-warning-bg); color: var(--pgv-badge-warning-fg); }
-.pgv-alert-info    { border-left-color: #2563eb; background: var(--pgv-badge-info-bg);    color: var(--pgv-badge-info-fg); }
+
+.pgv-alert-success {
+  border-left-color: #16a34a;
+  background: var(--pgv-badge-success-bg);
+  color: var(--pgv-badge-success-fg);
+}
+
+.pgv-alert-danger {
+  border-left-color: #dc2626;
+  background: var(--pgv-badge-danger-bg);
+  color: var(--pgv-badge-danger-fg);
+}
+
+.pgv-alert-warning {
+  border-left-color: #d97706;
+  background: var(--pgv-badge-warning-bg);
+  color: var(--pgv-badge-warning-fg);
+}
+
+.pgv-alert-info {
+  border-left-color: #2563eb;
+  background: var(--pgv-badge-info-bg);
+  color: var(--pgv-badge-info-fg);
+}
 
 /* ── Empty State ──────────────────────────────────────────────── */
 .pgv-empty {
@@ -208,7 +239,14 @@ section > h4:first-child {
   padding: 2rem 1rem;
   color: var(--pgv-muted);
 }
-.pgv-empty h4 { color: var(--pgv-muted); border: none; text-transform: none; letter-spacing: normal; font-size: 1rem; }
+
+.pgv-empty h4 {
+  color: var(--pgv-muted);
+  border: none;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 1rem;
+}
 .pgv-empty p { font-size: 0.8125rem; }
 
 /* ── Progress ─────────────────────────────────────────────────── */
@@ -239,6 +277,7 @@ section > h4:first-child {
   border-bottom: 1px solid var(--pgv-border);
   margin-bottom: 0.75rem;
 }
+
 .pgv-tabs-nav button {
   all: unset;
   cursor: pointer;
@@ -250,6 +289,7 @@ section > h4:first-child {
   transition: color 0.15s, border-color 0.15s;
 }
 .pgv-tabs-nav button:hover { color: var(--pgv-text); }
+
 .pgv-tabs-nav button.active {
   color: var(--pgv-accent);
   border-bottom-color: var(--pgv-accent);
@@ -261,26 +301,50 @@ nav.pgv-breadcrumb[aria-label] ul {
   display: flex;
   list-style: none;
   padding: 0;
-  margin: 0 0 0.75rem 0;
+  margin: 0 0 0.75rem;
   font-size: 0.8125rem;
   gap: 0;
   align-items: center;
 }
 nav.pgv-breadcrumb[aria-label] ul li { display: inline; padding: 0; }
-nav.pgv-breadcrumb[aria-label] ul li::after { content: '/'; color: var(--pgv-muted); margin: 0 0.4rem; display: inline; position: static; }
+
+nav.pgv-breadcrumb[aria-label] ul li::after {
+  content: '/';
+  color: var(--pgv-muted);
+  margin: 0 0.4rem;
+  display: inline;
+  position: static;
+}
 nav.pgv-breadcrumb[aria-label] ul li:last-child::after { content: ''; margin: 0; }
 nav.pgv-breadcrumb[aria-label] ul li:last-child { color: var(--pgv-muted); font-weight: 500; }
 nav.pgv-breadcrumb[aria-label] ul li a { display: inline; }
 
 /* ── Tree ────────────────────────────────────────────────────────── */
-.pgv-tree { list-style: none; padding-left: 0; font-size: 0.8125rem; margin-bottom: 0.75rem; }
-.pgv-tree ul { list-style: none; padding-left: 1.25rem; margin: 0; }
+.pgv-tree {
+  list-style: none;
+  padding-left: 0;
+  font-size: 0.8125rem;
+  margin-bottom: 0.75rem;
+}
+
+.pgv-tree ul {
+  list-style: none;
+  padding-left: 1.25rem;
+  margin: 0;
+}
 .pgv-tree li { padding: 0.15rem 0; }
 .pgv-tree summary { cursor: pointer; font-weight: 500; }
 .pgv-tree summary:hover { color: var(--pgv-accent); }
 .pgv-tree a { color: var(--pgv-text); text-decoration: none; }
 .pgv-tree a:hover { color: var(--pgv-accent); }
-.pgv-tree-icon { display: inline-block; width: 1.2em; text-align: center; margin-right: 0.2em; flex-shrink: 0; }
+
+.pgv-tree-icon {
+  display: inline-block;
+  width: 1.2em;
+  text-align: center;
+  margin-right: 0.2em;
+  flex-shrink: 0;
+}
 
 /* ── Theme Toggle ──────────────────────────────────────────────── */
 .pgv-theme-toggle {
@@ -293,6 +357,7 @@ nav.pgv-breadcrumb[aria-label] ul li a { display: inline; }
   opacity: 0.6;
   transition: opacity 0.15s;
 }
+
 .pgv-theme-toggle:hover {
   opacity: 1;
 }

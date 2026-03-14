@@ -34,10 +34,7 @@ export function createDocPeekTool({
       }
 
       // 2. Read file content via fs_peek
-      const contentResult = await peekTool.handler(
-        { path: doc.file_path, page: page ?? 1 },
-        extra,
-      );
+      const contentResult = await peekTool.handler({ path: doc.file_path, page: page ?? 1 }, extra);
       const contentText = contentResult.content
         .filter((c: any) => c.type === "text")
         .map((c: any) => c.text)
@@ -57,8 +54,8 @@ export function createDocPeekTool({
 
       // Labels
       if (doc.labels?.length > 0) {
-        const lbls = doc.labels.map((l: any) =>
-          `${l.name} (${l.kind}) [${l.confidence}${l.assigned_by === "user" ? " user" : ""}]`
+        const lbls = doc.labels.map(
+          (l: any) => `${l.name} (${l.kind}) [${l.confidence}${l.assigned_by === "user" ? " user" : ""}]`,
         );
         lines.push(`labels: ${lbls.join(", ")}`);
       } else {
@@ -67,9 +64,7 @@ export function createDocPeekTool({
 
       // Entities
       if (doc.entities?.length > 0) {
-        const ents = doc.entities.map((e: any) =>
-          `${e.name} (${e.kind}:${e.role}) [${e.confidence}]`
-        );
+        const ents = doc.entities.map((e: any) => `${e.name} (${e.kind}:${e.role}) [${e.confidence}]`);
         lines.push(`entities: ${ents.join(", ")}`);
       } else {
         lines.push("entities: none");
@@ -77,18 +72,13 @@ export function createDocPeekTool({
 
       // Relations
       if (doc.relations?.length > 0) {
-        const rels = doc.relations.map((r: any) =>
-          `${r.direction} ${r.kind} -> ${r.related_file} [${r.confidence}]`
-        );
+        const rels = doc.relations.map((r: any) => `${r.direction} ${r.kind} -> ${r.related_file} [${r.confidence}]`);
         lines.push(`relations: ${rels.join(", ")}`);
       } else {
         lines.push("relations: none");
       }
 
-      return text(
-        lines.join("\n") +
-        `\n---\n${contentText}`
-      );
+      return text(`${lines.join("\n")}\n---\n${contentText}`);
     },
   };
 }

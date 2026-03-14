@@ -1,12 +1,10 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
-import path from "path";
-import fs from "fs/promises";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
 
-export function createVisualTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createVisualTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "pg_visual",
@@ -38,7 +36,7 @@ export function createVisualTool({ withClient }: {
                  WHERE p.proname = 'nav_items'
                    AND n.nspname NOT LIKE '%\\_ut' AND n.nspname NOT LIKE '%\\_qa'
                    AND n.nspname != 'pgv'
-                 ORDER BY 1`
+                 ORDER BY 1`,
               );
               return r.rows.map((r) => r.s);
             })
@@ -51,18 +49,14 @@ export function createVisualTool({ withClient }: {
       try {
         pw = await import("playwright");
       } catch {
-        return text(
-          "playwright not available.\nInstall: npm install -D playwright && npx playwright install chromium"
-        );
+        return text("playwright not available.\nInstall: npm install -D playwright && npx playwright install chromium");
       }
 
       let browser: any;
       try {
         browser = await pw.chromium.launch({ headless: true });
       } catch {
-        return text(
-          "chromium not installed.\nRun: npx playwright install chromium"
-        );
+        return text("chromium not installed.\nRun: npx playwright install chromium");
       }
 
       const reports: string[] = [];
@@ -73,7 +67,9 @@ export function createVisualTool({ withClient }: {
           const page = await ctx.newPage();
 
           // Auto-dismiss confirm dialogs
-          page.on("dialog", async (d: any) => { await d.accept(); });
+          page.on("dialog", async (d: any) => {
+            await d.accept();
+          });
 
           // Track console errors
           let consoleErrs: string[] = [];
@@ -87,7 +83,9 @@ export function createVisualTool({ withClient }: {
           const visited = new Set<string>();
           const pageRows: string[] = [];
           const postRows: string[] = [];
-          let errors = 0, warns = 0, oks = 0;
+          let errors = 0,
+            warns = 0,
+            oks = 0;
 
           // Wait for SPA content to render
           async function waitSPA() {
@@ -97,7 +95,7 @@ export function createVisualTool({ withClient }: {
                   const app = document.getElementById("app");
                   return app && !(app.textContent || "").includes("Chargement");
                 },
-                { timeout: 8000 }
+                { timeout: 8000 },
               )
               .catch(() => {});
             await page.waitForTimeout(300);
@@ -105,7 +103,7 @@ export function createVisualTool({ withClient }: {
 
           // Screenshot filename from URL path
           function ssFile(p: string) {
-            return (p.replace(/^\//, "").replace(/[\/\?=&]/g, "_") || "index") + ".png";
+            return `${p.replace(/^\//, "").replace(/[/?=&]/g, "_") || "index"}.png`;
           }
 
           // Crawl a page
@@ -137,14 +135,25 @@ export function createVisualTool({ withClient }: {
               // Classify
               const errs = [...consoleErrs];
               let badge: string;
-              if (st >= 400) { badge = "ERR"; errors++; }
-              else if (empty) { badge = "WARN"; warns++; }
-              else if (errs.length) { badge = "WARN"; warns++; }
-              else if (ms > 500) { badge = "SLOW"; warns++; }
-              else { badge = "OK"; oks++; }
+              if (st >= 400) {
+                badge = "ERR";
+                errors++;
+              } else if (empty) {
+                badge = "WARN";
+                warns++;
+              } else if (errs.length) {
+                badge = "WARN";
+                warns++;
+              } else if (ms > 500) {
+                badge = "SLOW";
+                warns++;
+              } else {
+                badge = "OK";
+                oks++;
+              }
 
               pageRows.push(
-                `| ${badge} | \`${urlPath}\` | ${st} | ${ms}ms | ${errs.length ? errs.length + " err" : "clean"} | ${file} |`
+                `| ${badge} | \`${urlPath}\` | ${st} | ${ms}ms | ${errs.length ? `${errs.length} err` : "clean"} | ${file} |`,
               );
 
               // POST testing on pages at depth <= 1
@@ -155,10 +164,9 @@ export function createVisualTool({ withClient }: {
               // Collect links for deeper crawl
               if (depth < maxDepth) {
                 const links: string[] = await page
-                  .$$eval(
-                    `a[href^="/${schema}/"], a[href^="/${schema}?"]`,
-                    (els: any[]) => [...new Set(els.map((a: any) => a.getAttribute("href")).filter(Boolean))]
-                  )
+                  .$$eval(`a[href^="/${schema}/"], a[href^="/${schema}?"]`, (els: any[]) => [
+                    ...new Set(els.map((a: any) => a.getAttribute("href")).filter(Boolean)),
+                  ])
                   .catch(() => []);
 
                 for (const link of links) {
@@ -174,9 +182,7 @@ export function createVisualTool({ withClient }: {
           // Test POST actions on current page
           async function testPosts(currentPath: string) {
             // Reveal hidden forms inside <details>
-            await page
-              .$$eval("details", (els: any[]) => els.forEach((d: any) => (d.open = true)))
-              .catch(() => {});
+            await page.$$eval("details", (els: any[]) => { for (const d of els) d.open = true; }).catch(() => {});
             await page.waitForTimeout(200);
 
             // --- Forms with data-rpc ---
@@ -193,10 +199,13 @@ export function createVisualTool({ withClient }: {
                 for (const input of await form.$$('input:not([type="hidden"]):not([type="checkbox"]), textarea')) {
                   const type = (await input.getAttribute("type")) || "text";
                   await input.fill(
-                    type === "email" ? "test@visual.test"
-                      : type === "tel" ? "0600000000"
-                      : type === "number" ? "1"
-                      : "Test visual"
+                    type === "email"
+                      ? "test@visual.test"
+                      : type === "tel"
+                        ? "0600000000"
+                        : type === "number"
+                          ? "1"
+                          : "Test visual",
                   );
                 }
 
@@ -205,10 +214,11 @@ export function createVisualTool({ withClient }: {
                 if (!btn) continue;
 
                 const [resp] = await Promise.all([
-                  page.waitForResponse(
-                    (r: any) => r.url().includes("/rpc/") && r.request().method() === "POST",
-                    { timeout: 5000 }
-                  ).catch(() => null),
+                  page
+                    .waitForResponse((r: any) => r.url().includes("/rpc/") && r.request().method() === "POST", {
+                      timeout: 5000,
+                    })
+                    .catch(() => null),
                   btn.click(),
                 ]);
 
@@ -216,9 +226,9 @@ export function createVisualTool({ withClient }: {
                   const st = (resp as any).status();
                   if (st >= 400) {
                     errors++;
-                    const body = await (resp as any).json().catch(() => ({} as any));
+                    const body = await (resp as any).json().catch(() => ({}) as any);
                     postRows.push(
-                      `| ERR | \`${currentPath}\` | form | \`${rpc}\` | ${st} | ${body?.code || body?.message || "error"} |`
+                      `| ERR | \`${currentPath}\` | form | \`${rpc}\` | ${st} | ${body?.code || body?.message || "error"} |`,
                     );
                   } else {
                     oks++;
@@ -232,9 +242,7 @@ export function createVisualTool({ withClient }: {
                 // Re-navigate for next test
                 await page.goto(baseUrl + currentPath, { waitUntil: "networkidle", timeout: 10000 });
                 await waitSPA();
-                await page
-                  .$$eval("details", (els: any[]) => els.forEach((d: any) => (d.open = true)))
-                  .catch(() => {});
+                await page.$$eval("details", (els: any[]) => { for (const d of els) d.open = true; }).catch(() => {});
                 await page.waitForTimeout(200);
               } catch (err: any) {
                 warns++;
@@ -244,10 +252,8 @@ export function createVisualTool({ withClient }: {
 
             // --- Buttons with data-rpc (non-confirm, not inside forms) ---
             const btnRpcs: string[] = await page
-              .$$eval(
-                "button[data-rpc]:not([data-confirm])",
-                (els: any[]) =>
-                  els.filter((b: any) => !b.closest("form[data-rpc]")).map((b: any) => b.dataset.rpc)
+              .$$eval("button[data-rpc]:not([data-confirm])", (els: any[]) =>
+                els.filter((b: any) => !b.closest("form[data-rpc]")).map((b: any) => b.dataset.rpc),
               )
               .catch(() => []);
 
@@ -257,10 +263,11 @@ export function createVisualTool({ withClient }: {
                 if (!btn) continue;
 
                 const [resp] = await Promise.all([
-                  page.waitForResponse(
-                    (r: any) => r.url().includes("/rpc/") && r.request().method() === "POST",
-                    { timeout: 5000 }
-                  ).catch(() => null),
+                  page
+                    .waitForResponse((r: any) => r.url().includes("/rpc/") && r.request().method() === "POST", {
+                      timeout: 5000,
+                    })
+                    .catch(() => null),
                   btn.click(),
                 ]);
 
@@ -297,9 +304,7 @@ export function createVisualTool({ withClient }: {
           parts.push(`completeness: full`);
           parts.push(`pages: ${visited.size} crawled`);
           parts.push(`screenshots: data/screenshots/${schema}/`);
-          parts.push(
-            `bilan: ${errors ? errors + " error(s) " : ""}${warns ? warns + " warning(s) " : ""}${oks} ok`
-          );
+          parts.push(`bilan: ${errors ? `${errors} error(s) ` : ""}${warns ? `${warns} warning(s) ` : ""}${oks} ok`);
           parts.push("");
           parts.push("## Pages");
           parts.push("| Status | Path | HTTP | Rendu | Console | Screenshot |");

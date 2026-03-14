@@ -1,11 +1,14 @@
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import { PlUri } from "../../uri.js";
 import { queryFunctionDdl } from "../../resources/function.js";
+import { PlUri } from "../../uri.js";
 import type { SetFunctionFn } from "./func-set.js";
 
-export function createFuncEditTool({ withClient, setFunction }: {
+export function createFuncEditTool({
+  withClient,
+  setFunction,
+}: {
   withClient: WithClient;
   setFunction: SetFunctionFn;
 }): ToolHandler {
@@ -18,11 +21,18 @@ export function createFuncEditTool({ withClient, setFunction }: {
         "Each edit must match exactly once in the source (like a surgical patch).",
       schema: z.object({
         uri: z.string().describe("Function URI. Ex: plpgsql://public/function/transfer"),
-        edits: z.array(z.object({
-          old: z.string().describe("Exact text to find in the function source"),
-          new: z.string().describe("Replacement text"),
-        })).describe("List of old->new replacements, applied sequentially"),
-        context_token: z.string().optional().describe("Context token from pg_get. Required for modifying existing functions."),
+        edits: z
+          .array(
+            z.object({
+              old: z.string().describe("Exact text to find in the function source"),
+              new: z.string().describe("Replacement text"),
+            }),
+          )
+          .describe("List of old->new replacements, applied sequentially"),
+        context_token: z
+          .string()
+          .optional()
+          .describe("Context token from pg_get. Required for modifying existing functions."),
       }),
     },
     handler: async (args, _extra) => {
@@ -30,22 +40,31 @@ export function createFuncEditTool({ withClient, setFunction }: {
       const edits = args.edits as { old: string; new: string }[];
       const parsed = PlUri.parse(uri);
       if (!parsed || parsed.kind !== "function" || !parsed.name) {
-        return text("problem: edit only works on functions\nwhere: pg_func_edit\nfix_hint: URI must be plpgsql://schema/function/name");
+        return text(
+          "problem: edit only works on functions\nwhere: pg_func_edit\nfix_hint: URI must be plpgsql://schema/function/name",
+        );
       }
 
       return withClient(async (client) => {
         const ddl = await queryFunctionDdl(client, parsed.schema, parsed.name!);
-        if (!ddl) return text(`problem: function ${parsed.schema}.${parsed.name} not found\nwhere: pg_func_edit\nfix_hint: check the URI`);
+        if (!ddl)
+          return text(
+            `problem: function ${parsed.schema}.${parsed.name} not found\nwhere: pg_func_edit\nfix_hint: check the URI`,
+          );
 
         let patched = ddl;
         for (let i = 0; i < edits.length; i++) {
           const { old: oldStr, new: newStr } = edits[i];
           const count = patched.split(oldStr).length - 1;
           if (count === 0) {
-            return text(`✗ edit ${i + 1} failed\nproblem: old string not found\nwhere: ${parsed.schema}.${parsed.name}`);
+            return text(
+              `✗ edit ${i + 1} failed\nproblem: old string not found\nwhere: ${parsed.schema}.${parsed.name}`,
+            );
           }
           if (count > 1) {
-            return text(`✗ edit ${i + 1} failed\nproblem: old string matches ${count} times (must be unique)\nwhere: ${parsed.schema}.${parsed.name}`);
+            return text(
+              `✗ edit ${i + 1} failed\nproblem: old string matches ${count} times (must be unique)\nwhere: ${parsed.schema}.${parsed.name}`,
+            );
           }
           patched = patched.replace(oldStr, newStr);
         }

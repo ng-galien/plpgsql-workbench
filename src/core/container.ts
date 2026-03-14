@@ -5,13 +5,13 @@
  * Dependencies are resolved by parameter name via Awilix PROXY mode.
  */
 
-import { createContainer, asValue, type AwilixContainer } from "awilix";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import type { ServerRequest, ServerNotification } from "@modelcontextprotocol/sdk/types.js";
+import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
+import { type AwilixContainer, asValue, createContainer } from "awilix";
+import type { z } from "zod";
 import type { DbClient } from "./connection.js";
-import type { ToolResult } from "./helpers.js";  // used by ToolHandler
-import { z } from "zod";
+import type { ToolResult } from "./helpers.js"; // used by ToolHandler
 
 // --- Core types ---
 
@@ -23,6 +23,7 @@ export type ToolExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 export interface ToolMetadata {
   name: string;
   description: string;
+  // biome-ignore lint/suspicious/noExplicitAny: Zod schema shape varies per tool
   schema: z.ZodObject<any>;
 }
 
@@ -86,10 +87,7 @@ export async function mountTools(server: McpServer, container: AwilixContainer, 
     try {
       const toolNames = await withClient(async (client) => {
         const box = toolbox ?? "admin";
-        const res = await client.query(
-          `SELECT tool_name FROM workbench.toolbox_tool WHERE toolbox_name = $1`,
-          [box]
-        );
+        const res = await client.query(`SELECT tool_name FROM workbench.toolbox_tool WHERE toolbox_name = $1`, [box]);
         return res.rows.map((r: { tool_name: string }) => r.tool_name);
       });
       if (toolNames.length > 0) {
@@ -120,9 +118,13 @@ export async function mountTools(server: McpServer, container: AwilixContainer, 
 
 function isToolHandler(val: unknown): val is ToolHandler {
   return (
-    typeof val === "object" && val !== null &&
-    "metadata" in val && "handler" in val &&
+    typeof val === "object" &&
+    val !== null &&
+    "metadata" in val &&
+    "handler" in val &&
+    // biome-ignore lint/suspicious/noExplicitAny: narrowing unknown to check structural shape
     typeof (val as any).metadata?.name === "string" &&
+    // biome-ignore lint/suspicious/noExplicitAny: narrowing unknown to check structural shape
     typeof (val as any).handler === "function"
   );
 }

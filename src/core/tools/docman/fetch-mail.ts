@@ -35,8 +35,7 @@ export function createDocFetchMailTool({
         .map((c: any) => c.text)
         .join("\n");
 
-      const messageIds = [...searchText.matchAll(/^message: (.+)$/gm)]
-        .map((m) => m[1].trim());
+      const messageIds = [...searchText.matchAll(/^message: (.+)$/gm)].map((m) => m[1].trim());
 
       if (messageIds.length === 0) {
         return text(`No emails found for: ${query}`);
@@ -51,29 +50,26 @@ export function createDocFetchMailTool({
           .map((c: any) => c.text)
           .join("\n");
 
-        const attachments = [...readText.matchAll(/attachment: (.+?) \| id: (.+)$/gm)]
-          .map((m) => ({ filename: m[1].trim(), attachmentId: m[2].trim() }));
+        const attachments = [...readText.matchAll(/attachment: (.+?) \| id: (.+)$/gm)].map((m) => ({
+          filename: m[1].trim(),
+          attachmentId: m[2].trim(),
+        }));
 
         for (const att of attachments) {
-          await gmailAttachmentTool.handler(
-            { message_id: msgId, attachment_id: att.attachmentId },
-            extra,
-          );
+          await gmailAttachmentTool.handler({ message_id: msgId, attachment_id: att.attachmentId }, extra);
           fetched++;
         }
       }
 
       // 3. Register downloaded files via PL/pgSQL
       return await withClient(async (client) => {
-        const res = await client.query(
-          `SELECT * FROM docman.register(NULL, 'email')`
-        );
+        const res = await client.query(`SELECT * FROM docman.register(NULL, 'email')`);
         const { registered } = res.rows[0];
 
         return text(
           `Fetched from ${messageIds.length} emails\n` +
-          `attachments: ${fetched} downloaded, ${registered} new in docman\n\n` +
-          `next:\n  - doc_inbox\n  - doc_search source:email`
+            `attachments: ${fetched} downloaded, ${registered} new in docman\n\n` +
+            `next:\n  - doc_inbox\n  - doc_search source:email`,
         );
       });
     },

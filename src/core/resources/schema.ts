@@ -23,7 +23,8 @@ async function queryTablesOverview(
   client: DbClient,
   schema: string,
 ): Promise<{ name: string; columns_inline: string }[]> {
-  const { rows } = await client.query<{ table_name: string; columns_inline: string }>(`
+  const { rows } = await client.query<{ table_name: string; columns_inline: string }>(
+    `
     SELECT
       c.relname AS table_name,
       string_agg(
@@ -50,7 +51,9 @@ async function queryTablesOverview(
     WHERE n.nspname = $1 AND c.relkind = 'r'
     GROUP BY c.relname, c.oid
     ORDER BY c.relname
-  `, [schema]);
+  `,
+    [schema],
+  );
   return rows.map((r) => ({ name: r.table_name, columns_inline: r.columns_inline }));
 }
 
@@ -58,7 +61,8 @@ async function queryFunctionsOverview(
   client: DbClient,
   schema: string,
 ): Promise<{ name: string; signature: string }[]> {
-  const { rows } = await client.query<{ name: string; signature: string }>(`
+  const { rows } = await client.query<{ name: string; signature: string }>(
+    `
     SELECT
       p.proname AS name,
       p.proname || '(' ||
@@ -71,15 +75,15 @@ async function queryFunctionsOverview(
     JOIN pg_language l ON l.oid = p.prolang
     WHERE n.nspname = $1 AND l.lanname IN ('sql', 'plpgsql')
     ORDER BY p.proname
-  `, [schema]);
+  `,
+    [schema],
+  );
   return rows;
 }
 
-async function queryTriggersOverview(
-  client: DbClient,
-  schema: string,
-): Promise<{ name: string; summary: string }[]> {
-  const { rows } = await client.query<{ name: string; summary: string }>(`
+async function queryTriggersOverview(client: DbClient, schema: string): Promise<{ name: string; summary: string }[]> {
+  const { rows } = await client.query<{ name: string; summary: string }>(
+    `
     SELECT DISTINCT
       t.tgname AS name,
       t.tgname || ' ON ' || c.relname || ' ' ||
@@ -97,7 +101,9 @@ async function queryTriggersOverview(
     JOIN pg_proc p ON p.oid = t.tgfoid
     WHERE n.nspname = $1 AND NOT t.tgisinternal
     ORDER BY summary
-  `, [schema]);
+  `,
+    [schema],
+  );
   return rows;
 }
 

@@ -13,7 +13,8 @@ export interface TypeDetail {
 
 export async function queryType(client: DbClient, schema: string, name: string): Promise<TypeDetail | null> {
   // Composite
-  const compResult = await client.query<{ attname: string; typname: string }>(`
+  const compResult = await client.query<{ attname: string; typname: string }>(
+    `
     SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod) AS typname
     FROM pg_type t
     JOIN pg_namespace n ON n.oid = t.typnamespace
@@ -21,31 +22,40 @@ export async function queryType(client: DbClient, schema: string, name: string):
     WHERE n.nspname = $1 AND t.typname = $2
       AND a.attnum > 0 AND NOT a.attisdropped
     ORDER BY a.attnum
-  `, [schema, name]);
+  `,
+    [schema, name],
+  );
 
   if (compResult.rows.length > 0) {
     const used_by = await findTypeUsers(client, name);
     return {
-      name, schema, kind: "composite",
+      name,
+      schema,
+      kind: "composite",
       attributes: compResult.rows.map((r) => ({ name: r.attname, type: r.typname })),
       used_by,
     };
   }
 
   // Enum
-  const enumResult = await client.query<{ enumlabel: string }>(`
+  const enumResult = await client.query<{ enumlabel: string }>(
+    `
     SELECT e.enumlabel
     FROM pg_type t
     JOIN pg_namespace n ON n.oid = t.typnamespace
     JOIN pg_enum e ON e.enumtypid = t.oid
     WHERE n.nspname = $1 AND t.typname = $2
     ORDER BY e.enumsortorder
-  `, [schema, name]);
+  `,
+    [schema, name],
+  );
 
   if (enumResult.rows.length > 0) {
     const used_by = await findTypeUsers(client, name);
     return {
-      name, schema, kind: "enum",
+      name,
+      schema,
+      kind: "enum",
       values: enumResult.rows.map((r) => r.enumlabel),
       used_by,
     };
@@ -55,13 +65,16 @@ export async function queryType(client: DbClient, schema: string, name: string):
 }
 
 async function findTypeUsers(client: DbClient, typeName: string): Promise<string[]> {
-  const { rows } = await client.query<{ user_name: string }>(`
+  const { rows } = await client.query<{ user_name: string }>(
+    `
     SELECT n.nspname || '.' || p.proname AS user_name
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE p.prosrc ~* $1
     ORDER BY user_name
-  `, [`\\m${typeName}\\M`]);
+  `,
+    [`\\m${typeName}\\M`],
+  );
   return rows.map((r) => r.user_name);
 }
 

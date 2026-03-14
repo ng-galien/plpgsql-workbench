@@ -1,9 +1,9 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import fs from "fs/promises";
-import path from "path";
 
 interface LoadResult {
   filename: string;
@@ -11,10 +11,7 @@ interface LoadResult {
   message?: string;
 }
 
-async function loadFunctions(
-  client: DbClient,
-  dir: string,
-): Promise<string> {
+async function loadFunctions(client: DbClient, dir: string): Promise<string> {
   let entries: string[];
   try {
     entries = await fs.readdir(dir);
@@ -89,7 +86,10 @@ function formatResults(results: LoadResult[], dir: string): string {
   return parts.join("\n");
 }
 
-export function createFuncLoadTool({ withClient, moduleRegistry }: {
+export function createFuncLoadTool({
+  withClient,
+  moduleRegistry,
+}: {
   withClient: WithClient;
   moduleRegistry: Promise<import("../../pgm/registry.js").ModuleRegistry>;
 }): ToolHandler {
@@ -101,9 +101,7 @@ export function createFuncLoadTool({ withClient, moduleRegistry }: {
         "Executes each .sql file (CREATE OR REPLACE FUNCTION) in its own transaction.\n" +
         "Path is auto-resolved from module registry (schema → module → src/).",
       schema: z.object({
-        target: z
-          .string()
-          .describe("plpgsql:// URI scope. plpgsql://schema to load all functions from src/schema/"),
+        target: z.string().describe("plpgsql:// URI scope. plpgsql://schema to load all functions from src/schema/"),
       }),
     },
     handler: async (args, _extra) => {
@@ -119,8 +117,8 @@ export function createFuncLoadTool({ withClient, moduleRegistry }: {
       if (!srcDir) {
         return text(
           `problem: no module owns schema "${schema}"\n` +
-          `where: pg_func_load\n` +
-          `fix_hint: check modules/*/module.json schemas field`,
+            `where: pg_func_load\n` +
+            `fix_hint: check modules/*/module.json schemas field`,
         );
       }
 

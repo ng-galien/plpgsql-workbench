@@ -7,10 +7,10 @@ import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
 
 function resolveElement(client: any, canvasId: string, idOrName: string) {
-  return client.query(
-    `SELECT id FROM document.element WHERE canvas_id = $1 AND (id::text = $2 OR name = $2) LIMIT 1`,
-    [canvasId, idOrName],
-  );
+  return client.query(`SELECT id FROM document.element WHERE canvas_id = $1 AND (id::text = $2 OR name = $2) LIMIT 1`, [
+    canvasId,
+    idOrName,
+  ]);
 }
 
 export function createIllGroupTool({ withClient }: { withClient: WithClient }): ToolHandler {
@@ -49,11 +49,14 @@ Actions:
               if (rows.length > 0) uuids.push(rows[0].id);
             }
             if (uuids.length < 2) return text("Could not resolve at least 2 elements.");
-            const { rows } = await client.query(
-              `SELECT document.group_create($1, $2, $3) as id`,
-              [canvasId, uuids, args.name ?? null],
+            const { rows } = await client.query(`SELECT document.group_create($1, $2, $3) as id`, [
+              canvasId,
+              uuids,
+              args.name ?? null,
+            ]);
+            return text(
+              `Grouped ${uuids.length} elements -> ${String(rows[0]?.id).slice(0, 8)}${args.name ? ` (${args.name})` : ""}`,
             );
-            return text(`Grouped ${uuids.length} elements -> ${String(rows[0]?.id).slice(0, 8)}${args.name ? ` (${args.name})` : ""}`);
           }
 
           case "dissolve": {

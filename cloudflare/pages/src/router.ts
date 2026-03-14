@@ -6,8 +6,8 @@
  */
 
 import { getConfig } from "./config.js";
-import { t } from "./i18n.js";
 import { enhance } from "./enhance.js";
+import { t } from "./i18n.js";
 import type { AppModule } from "./types.js";
 
 /** Router state — shared between all navigation functions */
@@ -30,7 +30,7 @@ let _cb: RouterCallbacks;
 
 /** Initialize the router with shared state and shell callbacks (singleton) */
 export function initRouter(state: RouterState, callbacks: RouterCallbacks): void {
-  if (_state) console.warn('[pgv] initRouter called more than once');
+  if (_state) console.warn("[pgv] initRouter called more than once");
   _state = state;
   _cb = callbacks;
 }
@@ -39,14 +39,14 @@ export function initRouter(state: RouterState, callbacks: RouterCallbacks): void
 export function go(path: string, push?: boolean): Promise<void> | void {
   if (push === undefined) push = true;
   var cfg = getConfig();
-  _state.actions.push({ type: 'go', path: path, ts: Date.now() });
+  _state.actions.push({ type: "go", path: path, ts: Date.now() });
   if (_state.actions.length > 30) _state.actions.shift();
 
   // Home page: render module cards
-  if (!_state.fixedSchema && _state.modules.length > 0 && (path === '/' || path === '')) {
+  if (!_state.fixedSchema && _state.modules.length > 0 && (path === "/" || path === "")) {
     _state.currentSchema = null;
     renderHome();
-    if (push) history.pushState({}, '', '/');
+    if (push) history.pushState({}, "", "/");
     window.scrollTo(0, 0);
     return;
   }
@@ -55,53 +55,56 @@ export function go(path: string, push?: boolean): Promise<void> | void {
   var rpcUrl: string, body: Record<string, unknown>;
   if (_state.fixedSchema) {
     // App mode: single schema, use page(p_path)
-    rpcUrl = cfg.rpc('/page');
+    rpcUrl = cfg.rpc("/page");
     body = { p_path: path };
     _state.currentSchema = _state.fixedSchema;
   } else {
     // Route mode: /{schema}/path?params -> pgv.route(schema, path, method, params)
-    var m = path.match(/^\/([a-z][a-z0-9_]*)(\/[^?]*)?\??(.*)$/);
+    const m = path.match(/^\/([a-z][a-z0-9_]*)(\/[^?]*)?\??(.*)$/);
     if (m) {
-      rpcUrl = cfg.rpc('/route');
-      var params: Record<string, string> = {};
-      if (m[3]) new URLSearchParams(m[3]).forEach(function(v, k) { params[k] = v; });
-      body = { p_schema: m[1], p_path: m[2] || '/', p_method: 'GET', p_params: params };
+      rpcUrl = cfg.rpc("/route");
+      const params: Record<string, string> = {};
+      if (m[3])
+        new URLSearchParams(m[3]).forEach((v, k) => {
+          params[k] = v;
+        });
+      body = { p_schema: m[1], p_path: m[2] || "/", p_method: "GET", p_params: params };
       _state.currentSchema = m[1];
     } else {
       // Root path or no schema prefix -> show home (module cards)
       renderHome();
-      if (push) history.pushState({}, '', '/');
+      if (push) history.pushState({}, "", "/");
       window.scrollTo(0, 0);
       return;
     }
   }
 
   return fetch(rpcUrl, {
-    method: 'POST',
-    headers: cfg.headers('text/html'),
-    body: JSON.stringify(body)
+    method: "POST",
+    headers: cfg.headers("text/html"),
+    body: JSON.stringify(body),
   })
-  .then(function(r) {
-    if (!r.ok) return handleError(r);
-    return r.text().then(function(html) {
-      render(html);
-      if (push) history.pushState({}, '', path);
-      window.scrollTo(0, 0);
+    .then((r) => {
+      if (!r.ok) return handleError(r);
+      return r.text().then((html) => {
+        render(html);
+        if (push) history.pushState({}, "", path);
+        window.scrollTo(0, 0);
+      });
+    })
+    .catch(() => {
+      _cb.showToast(t("error.network"), "error", t("error.unreachable"));
     });
-  })
-  .catch(function() {
-    _cb.showToast(t('error.network'), 'error', t('error.unreachable'));
-  });
 }
 
 /** POST action — submit data to PostgREST via pgv.route() */
 export function post(endpoint: string, data: Record<string, unknown>): Promise<void> | void {
   var cfg = getConfig();
-  _state.actions.push({ type: 'post', endpoint: endpoint, ts: Date.now() });
+  _state.actions.push({ type: "post", endpoint: endpoint, ts: Date.now() });
   if (_state.actions.length > 30) _state.actions.shift();
   var schema: string | null, fn: string;
-  if (endpoint.indexOf('.') !== -1) {
-    var parts = endpoint.split('.');
+  if (endpoint.indexOf(".") !== -1) {
+    const parts = endpoint.split(".");
     schema = parts[0];
     fn = parts[1];
   } else {
@@ -109,19 +112,21 @@ export function post(endpoint: string, data: Record<string, unknown>): Promise<v
     fn = endpoint;
   }
   // Route via pgv.route() -- returns text/html domain
-  var path = '/' + fn.replace(/^post_/, '');
-  return fetch(cfg.rpc('/route'), {
-    method: 'POST',
-    headers: cfg.headers('text/html'),
-    body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'POST', p_params: data })
+  var path = `/${fn.replace(/^post_/, "")}`;
+  return fetch(cfg.rpc("/route"), {
+    method: "POST",
+    headers: cfg.headers("text/html"),
+    body: JSON.stringify({ p_schema: schema, p_path: path, p_method: "POST", p_params: data }),
   })
-  .then(function(r) {
-    if (!r.ok) return handleError(r);
-    return r.text().then(function(html) { render(html); });
-  })
-  .catch(function() {
-    _cb.showToast(t('error.network'), 'error', t('error.unreachable'));
-  });
+    .then((r) => {
+      if (!r.ok) return handleError(r);
+      return r.text().then((html) => {
+        render(html);
+      });
+    })
+    .catch(() => {
+      _cb.showToast(t("error.network"), "error", t("error.unreachable"));
+    });
 }
 
 /** Render response HTML — extract toasts, redirects, then inject into #app */
@@ -130,69 +135,78 @@ export function render(html: string): void {
   var tm = html.match(/<template data-toast="([^"]*)">([\s\S]*?)<\/template>/);
   if (tm) {
     _cb.showToast(tm[2].trim(), tm[1]);
-    html = html.replace(tm[0], '');
+    html = html.replace(tm[0], "");
   }
 
   // Extract <template data-redirect="/path"></template>
   var rm = html.match(/<template data-redirect="([^"]+)"><\/template>/);
   if (rm) {
-    var rpath = rm[1];
+    let rpath = rm[1];
     // Prefix with schema if path is relative (no schema segment)
-    if (_state.currentSchema && !rpath.match(/^\/[a-z][a-z0-9_]*\//))
-      rpath = '/' + _state.currentSchema + rpath;
-    go(rpath); return;
+    if (_state.currentSchema && !rpath.match(/^\/[a-z][a-z0-9_]*\//)) rpath = `/${_state.currentSchema}${rpath}`;
+    go(rpath);
+    return;
   }
 
   // Render page content
   if (!html.trim()) return;
-  var app = document.getElementById('app')!;
-  (window as any).pgv.unmount();
-  app.innerHTML = html;
+  const appEl = document.getElementById("app");
+  if (!appEl) return;
+  window.pgv.unmount();
+  appEl.innerHTML = html;
 
   // Post-process: markdown, scripts, clickable rows
-  _cb.nextTick(function() { enhance(app); });
+  _cb.nextTick(() => {
+    enhance(appEl);
+  });
 }
 
 /** Handle HTTP error responses */
 export function handleError(r: Response): Promise<void> {
   var status = r.status;
-  return r.json().then(function(e: any) {
-    if (e.message) {
-      var title = status + ' — ' + (e.code || t('error.prefix'));
-      var detail = e.message + (e.hint ? ' (' + e.hint + ')' : '');
-      _cb.showToast(title, 'error', detail);
-    } else {
-      _cb.showToast(t('error.prefix') + ' ' + status, 'error');
-    }
-  }).catch(function() {
-    _cb.showToast(t('error.prefix') + ' ' + status, 'error');
-  });
+  return r
+    .json()
+    .then((e: { message?: string; code?: string; hint?: string }) => {
+      if (e.message) {
+        const title = `${status} — ${e.code || t("error.prefix")}`;
+        const detail = e.message + (e.hint ? ` (${e.hint})` : "");
+        _cb.showToast(title, "error", detail);
+      } else {
+        _cb.showToast(`${t("error.prefix")} ${status}`, "error");
+      }
+    })
+    .catch(() => {
+      _cb.showToast(`${t("error.prefix")} ${status}`, "error");
+    });
 }
 
 /** Render the home page with module cards */
 export function renderHome(): void {
-  var h = '<main class="container"><hgroup><h2>' + t('apps') + '</h2></hgroup>';
+  var h = `<main class="container"><hgroup><h2>${t("apps")}</h2></hgroup>`;
   h += '<div class="pgv-app-grid">';
-  for (var i = 0; i < _state.modules.length; i++) {
-    var m = _state.modules[i];
+  for (let i = 0; i < _state.modules.length; i++) {
+    const m = _state.modules[i];
     h += '<article class="pgv-app-card">';
-    h += '<header>' + m.brand + '</header>';
-    h += '<ul>';
-    for (var j = 0; j < m.items.length; j++) {
-      var it = m.items[j];
-      h += '<li><a href="/' + m.schema + (it.href || '/') + '">';
-      if (it.icon) h += '<span class="pgv-app-card-icon">' + it.icon + '</span> ';
-      h += (it.label || '') + '</a></li>';
+    h += `<header>${m.brand}</header>`;
+    h += "<ul>";
+    for (let j = 0; j < m.items.length; j++) {
+      const it = m.items[j];
+      h += `<li><a href="/${m.schema}${it.href || "/"}">`;
+      if (it.icon) h += `<span class="pgv-app-card-icon">${it.icon}</span> `;
+      h += `${it.label || ""}</a></li>`;
     }
-    h += '</ul>';
-    h += '<footer><a href="/' + m.schema + '/">' + t('open_module') + ' &rarr;</a></footer>';
-    h += '</article>';
+    h += "</ul>";
+    h += `<footer><a href="/${m.schema}/">${t("open_module")} &rarr;</a></footer>`;
+    h += "</article>";
   }
-  h += '</div></main>';
-  var app = document.getElementById('app')!;
-  (window as any).pgv.unmount();
-  app.innerHTML = h;
-  _cb.nextTick(function() { enhance(app); });
+  h += "</div></main>";
+  const homeEl = document.getElementById("app");
+  if (!homeEl) return;
+  window.pgv.unmount();
+  homeEl.innerHTML = h;
+  _cb.nextTick(() => {
+    enhance(homeEl);
+  });
 }
 
 /** Open a form dialog, optionally fetching content from a route */
@@ -201,26 +215,31 @@ export function openFormDialog(id: string, src: string | undefined): void {
   var dlg = document.getElementById(id) as HTMLDialogElement | null;
   if (!dlg) return;
   if (src) {
-    var body = dlg.querySelector('.pgv-form-dialog-body') as HTMLElement;
-    body.innerHTML = '<p aria-busy="true">' + t('loading') + '</p>';
+    const body = dlg.querySelector(".pgv-form-dialog-body") as HTMLElement;
+    body.innerHTML = `<p aria-busy="true">${t("loading")}</p>`;
     dlg.showModal();
-    var schema = _state.currentSchema;
-    var raw = src.charAt(0) === '/' ? src : '/' + src;
-    var parts = raw.split('?');
-    var path = parts[0];
-    var params: Record<string, string> = {};
-    if (parts[1]) new URLSearchParams(parts[1]).forEach(function(v, k) { params[k] = v; });
-    fetch(cfg.rpc('/route'), {
-      method: 'POST',
-      headers: cfg.headers('text/html'),
-      body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'GET', p_params: params })
+    const schema = _state.currentSchema;
+    const raw = src.charAt(0) === "/" ? src : `/${src}`;
+    const parts = raw.split("?");
+    const path = parts[0];
+    const params: Record<string, string> = {};
+    if (parts[1])
+      new URLSearchParams(parts[1]).forEach((v, k) => {
+        params[k] = v;
+      });
+    fetch(cfg.rpc("/route"), {
+      method: "POST",
+      headers: cfg.headers("text/html"),
+      body: JSON.stringify({ p_schema: schema, p_path: path, p_method: "GET", p_params: params }),
     })
-    .then(function(r) { return r.ok ? r.text() : Promise.reject(r); })
-    .then(function(html) {
-      body.innerHTML = html;
-      enhance(body);
-    })
-    .catch(function() { body.innerHTML = '<p>' + t('error.load') + '</p>'; });
+      .then((r) => (r.ok ? r.text() : Promise.reject(r)))
+      .then((html) => {
+        body.innerHTML = html;
+        enhance(body);
+      })
+      .catch(() => {
+        body.innerHTML = `<p>${t("error.load")}</p>`;
+      });
   } else {
     dlg.showModal();
   }
@@ -229,26 +248,26 @@ export function openFormDialog(id: string, src: string | undefined): void {
 /** Submit a form dialog via POST, then reload current page */
 export function submitFormDialog(form: HTMLFormElement, data: Record<string, unknown>): void {
   var cfg = getConfig();
-  var dlg = form.closest('dialog') as HTMLDialogElement | null;
-  var rpc = form.dataset.rpc!;
+  var dlg = form.closest("dialog") as HTMLDialogElement | null;
+  var rpc = form.dataset.rpc ?? "";
   var schema = _state.currentSchema;
-  var path = '/' + rpc.replace(/^post_/, '');
-  fetch(cfg.rpc('/route'), {
-    method: 'POST',
-    headers: cfg.headers('text/html'),
-    body: JSON.stringify({ p_schema: schema, p_path: path, p_method: 'POST', p_params: data })
+  var path = `/${rpc.replace(/^post_/, "")}`;
+  fetch(cfg.rpc("/route"), {
+    method: "POST",
+    headers: cfg.headers("text/html"),
+    body: JSON.stringify({ p_schema: schema, p_path: path, p_method: "POST", p_params: data }),
   })
-  .then(function(r) {
-    if (!r.ok) return handleError(r);
-    return r.text().then(function(html) {
-      var tm = html.match(/<template data-toast="([^"]*)">([\s\S]*?)<\/template>/);
-      if (tm) _cb.showToast(tm[2].trim(), tm[1]);
-      if (dlg) dlg.close();
-      // Reload current page
-      go(location.pathname + location.search, false);
+    .then((r) => {
+      if (!r.ok) return handleError(r);
+      return r.text().then((html) => {
+        var tm = html.match(/<template data-toast="([^"]*)">([\s\S]*?)<\/template>/);
+        if (tm) _cb.showToast(tm[2].trim(), tm[1]);
+        if (dlg) dlg.close();
+        // Reload current page
+        go(location.pathname + location.search, false);
+      });
+    })
+    .catch(() => {
+      _cb.showToast(t("error.network"), "error");
     });
-  })
-  .catch(function() {
-    _cb.showToast(t('error.network'), 'error');
-  });
 }

@@ -1,8 +1,8 @@
+import { execFileSync } from "node:child_process";
+import { existsSync, statSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
-import os from "os";
-import { existsSync, statSync } from "fs";
-import path from "path";
-import { execFileSync } from "child_process";
 import type { ToolHandler } from "../../container.js";
 import { text } from "../../helpers.js";
 
@@ -20,7 +20,8 @@ export function createOpenTool(): ToolHandler {
     },
     handler: async (args, _extra) => {
       const filePath = path.resolve(args.path as string);
-      if (!existsSync(filePath)) return text(`problem: path not found: ${filePath}\nwhere: fs_open\nfix_hint: check the path argument`);
+      if (!existsSync(filePath))
+        return text(`problem: path not found: ${filePath}\nwhere: fs_open\nfix_hint: check the path argument`);
 
       const isDir = statSync(filePath).isDirectory();
       const platform = os.platform();
@@ -34,16 +35,13 @@ export function createOpenTool(): ToolHandler {
           execFileSync("xdg-open", [filePath]);
         }
       } catch (err) {
-        return text(`problem: open failed: ${err instanceof Error ? err.message : String(err)}\nwhere: fs_open\nfix_hint: check file permissions or default application`);
+        return text(
+          `problem: open failed: ${err instanceof Error ? err.message : String(err)}\nwhere: fs_open\nfix_hint: check file permissions or default application`,
+        );
       }
 
       const kind = isDir ? "directory" : "file";
-      const parts = [
-        `✓ opened ${kind}: ${filePath}`,
-        `completeness: full`,
-        "",
-        "next:",
-      ];
+      const parts = [`✓ opened ${kind}: ${filePath}`, `completeness: full`, "", "next:"];
       if (isDir) {
         parts.push(`  - fs_scan path:${filePath}`);
       } else {

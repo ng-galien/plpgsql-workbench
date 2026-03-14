@@ -37,9 +37,14 @@ function parseTap(rows: { runtests: string }[]): TestReport {
 
     if (current && !current.ok) {
       const haveMatch = line.match(/#\s+have:\s*(.+)/);
-      if (haveMatch) { current.have = haveMatch[1]; continue; }
+      if (haveMatch) {
+        current.have = haveMatch[1];
+        continue;
+      }
       const wantMatch = line.match(/#\s+want:\s*(.+)/);
-      if (wantMatch) { current.want = wantMatch[1]; continue; }
+      if (wantMatch) {
+        current.want = wantMatch[1];
+      }
     }
   }
   if (current) results.push(current);
@@ -69,11 +74,7 @@ export function formatTestReport(report: TestReport): string {
   return parts.join("\n");
 }
 
-export async function runTests(
-  client: DbClient,
-  testSchema: string,
-  pattern?: string,
-): Promise<TestReport | null> {
+export async function runTests(client: DbClient, testSchema: string, pattern?: string): Promise<TestReport | null> {
   const { rows: schemaCheck } = await client.query<{ exists: boolean }>(
     `SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = $1) AS exists`,
     [testSchema],
@@ -96,9 +97,7 @@ export async function runTests(
   const extraSchemas = isIntegration ? `, ${qi("pgv_ut")}, ${qi("pgv")}` : "";
 
   // Detect if we're already inside a transaction (e.g. called from pg_func_set)
-  const { rows: txCheck } = await client.query<{ in_tx: boolean }>(
-    `SELECT now() != statement_timestamp() AS in_tx`,
-  );
+  const { rows: txCheck } = await client.query<{ in_tx: boolean }>(`SELECT now() != statement_timestamp() AS in_tx`);
   const inTransaction = txCheck[0]?.in_tx ?? false;
 
   // Use SET LOCAL inside a transaction so search_path is automatically
@@ -128,7 +127,9 @@ export async function runTests(
     }
     const msg = err instanceof Error ? err.message : String(err);
     return {
-      passed: 0, failed: 1, total: 1,
+      passed: 0,
+      failed: 1,
+      total: 1,
       results: [{ ok: false, description: `test execution error: ${msg}` }],
     };
   }
@@ -136,7 +137,10 @@ export async function runTests(
 
 // --- Tool factory ---
 
-export function createTestTool({ withClient, runTests }: {
+export function createTestTool({
+  withClient,
+  runTests,
+}: {
   withClient: WithClient;
   runTests: (client: DbClient, testSchema: string, pattern?: string) => Promise<TestReport | null>;
 }): ToolHandler {
@@ -147,7 +151,10 @@ export function createTestTool({ withClient, runTests }: {
         "Run pgTAP tests. target: run unit test for a function. schema: run all tests in a test schema.\n" +
         "Convention and examples: pg_get plpgsql://workbench/doc/testing",
       schema: z.object({
-        uri: z.string().optional().describe("URI: plpgsql://schema (all tests) or plpgsql://schema/function/name (one function's tests)"),
+        uri: z
+          .string()
+          .optional()
+          .describe("URI: plpgsql://schema (all tests) or plpgsql://schema/function/name (one function's tests)"),
         schema: z.string().optional().describe("Test schema. Ex: public_ut, billing_it"),
         pattern: z.string().optional().describe("Regex filter on test names. Ex: ^test_hello$"),
       }),
@@ -166,7 +173,7 @@ export function createTestTool({ withClient, runTests }: {
         if (target) {
           const parsed = PlUri.parse(target);
           if (!parsed) {
-            return text("✗ invalid URI: " + target);
+            return text(`✗ invalid URI: ${target}`);
           }
           // URI pointing to a schema (no kind/name) → treat as test schema
           if (!parsed.kind || !parsed.name) {

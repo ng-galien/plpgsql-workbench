@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * pgm — PostgreSQL Module Manager
  *
@@ -14,35 +15,30 @@
  *   pgm module list           List all available modules
  */
 
+import fs from "node:fs/promises";
+import path from "node:path";
 import { Command } from "commander";
-import fs from "fs/promises";
-import path from "path";
-import {
-  findWorkspaceRoot,
-  findAppRoot,
-  loadAppConfig,
-  saveAppConfig,
-  loadManifest,
-  listAvailableModules,
-  resolve,
-} from "./resolver.js";
-import { installModules } from "./installer.js";
 import { checkModules, deployModules } from "./deployer.js";
+import { installModules } from "./installer.js";
+import {
+  findAppRoot,
+  findWorkspaceRoot,
+  listAvailableModules,
+  loadAppConfig,
+  loadManifest,
+  resolve,
+  saveAppConfig,
+} from "./resolver.js";
 import { findNextPorts, scaffoldApp, scaffoldModule } from "./scaffold.js";
-import { syncToSupabase, cleanSupabaseMigrations } from "./supabase.js";
+import { cleanSupabaseMigrations, syncToSupabase } from "./supabase.js";
 
 const program = new Command();
 
-program
-  .name("pgm")
-  .description("PostgreSQL Module Manager")
-  .version("0.1.0");
+program.name("pgm").description("PostgreSQL Module Manager").version("0.1.0");
 
 // ── pgm app ──────────────────────────────────────────────────────
 
-const app = program
-  .command("app")
-  .description("App lifecycle (init, install, deploy, remove, list)");
+const app = program.command("app").description("App lifecycle (init, install, deploy, remove, list)");
 
 // --- app init ---
 
@@ -281,9 +277,7 @@ app
 
 // ── pgm module ───────────────────────────────────────────────────
 
-const mod = program
-  .command("module")
-  .description("Module development (new, info, list)");
+const mod = program.command("module").description("Module development (new, info, list)");
 
 // --- module new ---
 
@@ -307,7 +301,7 @@ mod
     }
 
     const schemaName = opts.schema ?? moduleName;
-    const mcpPort = parseInt(opts.port);
+    const mcpPort = parseInt(opts.port, 10);
 
     console.log(`Creating module ${moduleName}...\n`);
 
@@ -373,9 +367,7 @@ mod
 
 // ── pgm supabase ────────────────────────────────────────────────
 
-const supa = program
-  .command("supabase")
-  .description("Supabase deployment (sync migrations)");
+const supa = program.command("supabase").description("Supabase deployment (sync migrations)");
 
 // --- supabase sync ---
 

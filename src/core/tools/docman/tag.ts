@@ -19,20 +19,32 @@ export function createDocTagTool({ withClient }: { withClient: WithClient }): To
       }),
     },
     handler: async (args) => {
-      const { id, label, kind = "tag", parent, confidence = 1.0 } = args as {
-        id: string; label: string; kind?: string; parent?: string; confidence?: number;
+      const {
+        id,
+        label,
+        kind = "tag",
+        parent,
+        confidence = 1.0,
+      } = args as {
+        id: string;
+        label: string;
+        kind?: string;
+        parent?: string;
+        confidence?: number;
       };
 
       return await withClient(async (client) => {
-        const res = await client.query(
-          `SELECT docman.tag($1, $2, $3, $4, $5)`,
-          [id, label, kind, parent ?? null, confidence]
-        );
+        const res = await client.query(`SELECT docman.tag($1, $2, $3, $4, $5)`, [
+          id,
+          label,
+          kind,
+          parent ?? null,
+          confidence,
+        ]);
         const labelId = res.rows[0]?.tag;
 
         return text(
-          `Tagged: ${label} (${kind}) -> document ${id}\n` +
-          `label_id: ${labelId}  confidence: ${confidence}`
+          `Tagged: ${label} (${kind}) -> document ${id}\n` + `label_id: ${labelId}  confidence: ${confidence}`,
         );
       });
     },

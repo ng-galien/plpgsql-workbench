@@ -1,12 +1,10 @@
+import path from "node:path";
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import path from "path";
 import { ensureDocstoreSchema, hashFile, walkDir } from "./utils.js";
 
-export function createSyncTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createSyncTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "fs_sync",
@@ -17,9 +15,10 @@ export function createSyncTool({ withClient }: {
         "Use fs_scan to apply changes after reviewing the sync report.",
       schema: z.object({
         path: z.string().describe("Root directory to compare (absolute path)"),
-        exclude: z.array(z.string()).optional().describe(
-          "Directory names to exclude (default: .git, node_modules, dist, build, ...)",
-        ),
+        exclude: z
+          .array(z.string())
+          .optional()
+          .describe("Directory names to exclude (default: .git, node_modules, dist, build, ...)"),
       }),
     },
     handler: async (args, _extra) => {
@@ -34,7 +33,9 @@ export function createSyncTool({ withClient }: {
         try {
           diskFiles = await walkDir(rootPath, exclude);
         } catch (err: unknown) {
-          return text(`problem: cannot read directory: ${rootPath}\nwhere: fs_sync\nfix_hint: ${err instanceof Error ? err.message : String(err)}`);
+          return text(
+            `problem: cannot read directory: ${rootPath}\nwhere: fs_sync\nfix_hint: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
 
         const diskSet = new Set(diskFiles);
@@ -42,7 +43,7 @@ export function createSyncTool({ withClient }: {
         // Load DB entries under this root
         const { rows: dbRows } = await client.query<{ path: string; content_hash: string | null; size_bytes: string }>(
           `SELECT path, content_hash, size_bytes FROM docstore.file WHERE path LIKE $1`,
-          [rootPath + "/%"],
+          [`${rootPath}/%`],
         );
 
         const dbMap = new Map<string, { hash: string | null; size: number }>();
@@ -55,7 +56,7 @@ export function createSyncTool({ withClient }: {
         const modified: string[] = [];
         const orphaned: string[] = [];
         let unchanged = 0;
-        let hashErrors = 0;
+        let _hashErrors = 0;
 
         // Files on disk
         for (const filePath of diskFiles) {
@@ -71,7 +72,7 @@ export function createSyncTool({ withClient }: {
                 unchanged++;
               }
             } catch {
-              hashErrors++;
+              _hashErrors++;
             }
           }
         }
@@ -92,7 +93,9 @@ export function createSyncTool({ withClient }: {
         parts.push(`${sym} sync: ${rootPath}`);
         const anyTruncated = newFiles.length > 20 || modified.length > 20 || orphaned.length > 20;
         parts.push(`completeness: ${anyTruncated ? "partial" : "full"}`);
-        parts.push(`total: ${total}, new: ${newFiles.length}, modified: ${modified.length}, orphaned: ${orphaned.length}, unchanged: ${unchanged}`);
+        parts.push(
+          `total: ${total}, new: ${newFiles.length}, modified: ${modified.length}, orphaned: ${orphaned.length}, unchanged: ${unchanged}`,
+        );
 
         if (newFiles.length > 0) {
           parts.push("");
@@ -126,7 +129,9 @@ export function createSyncTool({ withClient }: {
           parts.push("next:");
           parts.push(`  - fs_scan path:${rootPath} (to register new and update modified)`);
           if (orphaned.length > 0) {
-            parts.push(`  - query DELETE FROM docstore.file WHERE path LIKE '${rootPath}/%' AND path NOT IN (SELECT path FROM docstore.file WHERE ...)`);
+            parts.push(
+              `  - query DELETE FROM docstore.file WHERE path LIKE '${rootPath}/%' AND path NOT IN (SELECT path FROM docstore.file WHERE ...)`,
+            );
           }
         }
 

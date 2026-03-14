@@ -3,15 +3,16 @@
  */
 
 import { z } from "zod";
-import type { ToolHandler, ToolExtra, WithClient } from "../../container.js";
+import type { ToolExtra, ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import { loadCanvas, compactState } from "./state.js";
+import { compactState, loadCanvas } from "./state.js";
 
 export function createGetStateTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "ill_get_state",
-      description: "Get canvas state + user session (selection, phase). Default: compact text. Use format='full' for JSON.",
+      description:
+        "Get canvas state + user session (selection, phase). Default: compact text. Use format='full' for JSON.",
       schema: z.object({
         canvas_id: z.string().describe("Canvas UUID"),
         format: z.enum(["compact", "full"]).optional().describe("Output format. Default: compact"),
@@ -37,9 +38,10 @@ export function createGetStateTool({ withClient }: { withClient: WithClient }): 
         }
 
         // Compact: add session info header
-        const selectedStr = Array.isArray(session.selected_ids) && session.selected_ids.length > 0
-          ? `selected: [${session.selected_ids.map((id: string) => id.slice(0, 8)).join(", ")}]`
-          : "selected: none";
+        const selectedStr =
+          Array.isArray(session.selected_ids) && session.selected_ids.length > 0
+            ? `selected: [${session.selected_ids.map((id: string) => id.slice(0, 8)).join(", ")}]`
+            : "selected: none";
         const sessionLine = `${selectedStr}  phase: ${session.phase}  zoom: ${session.zoom}`;
 
         return text(`${compactState(loaded)}\n${sessionLine}`);

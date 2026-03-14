@@ -18,25 +18,23 @@ export function createDocInboxTool({ withClient }: { withClient: WithClient }): 
       const { limit = 20, max_confidence } = args as { limit?: number; max_confidence?: number };
 
       return await withClient(async (client) => {
-        const res = await client.query(
-          `SELECT * FROM docman.inbox($1, $2)`,
-          [limit, max_confidence ?? null]
-        );
+        const res = await client.query(`SELECT * FROM docman.inbox($1, $2)`, [limit, max_confidence ?? null]);
 
         if (res.rows.length === 0) {
           return text("Inbox is empty — all documents are classified.");
         }
 
-        const lines = res.rows.map((r: any) =>
-          `${r.filename}  ${r.extension || "?"}  ${r.source}  ${Math.round(r.size_bytes / 1024)}KB` +
-          (r.doc_type ? `  [${r.doc_type}]` : "") +
-          `\n  id: ${r.id}\n  path: ${r.file_path}`
+        const lines = res.rows.map(
+          (r: any) =>
+            `${r.filename}  ${r.extension || "?"}  ${r.source}  ${Math.round(r.size_bytes / 1024)}KB` +
+            (r.doc_type ? `  [${r.doc_type}]` : "") +
+            `\n  id: ${r.id}\n  path: ${r.file_path}`,
         );
 
         return text(
           `Unclassified: ${res.rows.length} shown\n\n` +
-          lines.join("\n\n") +
-          `\n\nnext:\n  - doc_peek id:<id> to read a document\n  - doc_classify id:<id> doc_type:... summary:...`
+            lines.join("\n\n") +
+            `\n\nnext:\n  - doc_peek id:<id> to read a document\n  - doc_classify id:<id> doc_type:... summary:...`,
         );
       });
     },

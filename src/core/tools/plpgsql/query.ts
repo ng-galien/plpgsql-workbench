@@ -4,9 +4,7 @@ import { text } from "../../helpers.js";
 
 const MAX_QUERY_ROWS = 100;
 
-export function createQueryTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createQueryTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "pg_query",

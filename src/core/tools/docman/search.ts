@@ -27,10 +27,7 @@ export function createDocSearchTool({ withClient }: { withClient: WithClient }):
       const filters = args as Record<string, unknown>;
 
       return await withClient(async (client) => {
-        const res = await client.query(
-          `SELECT docman.search($1)`,
-          [JSON.stringify(filters)]
-        );
+        const res = await client.query(`SELECT docman.search($1)`, [JSON.stringify(filters)]);
 
         const docs = res.rows[0]?.search ?? [];
 
@@ -50,8 +47,8 @@ export function createDocSearchTool({ withClient }: { withClient: WithClient }):
 
         return text(
           `Found ${docs.length} documents\n\n` +
-          lines.join("\n\n") +
-          `\n\nnext:\n  - doc_peek id:<id> to read content\n  - doc_classify id:<id> ...`
+            lines.join("\n\n") +
+            `\n\nnext:\n  - doc_peek id:<id> to read content\n  - doc_classify id:<id> ...`,
         );
       });
     },

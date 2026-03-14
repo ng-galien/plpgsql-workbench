@@ -87,18 +87,22 @@
   color: var(--pgv-text);
   transition: background 0.1s;
 }
-.pgv-pager-btns button:hover:not([disabled]):not(.active) {
+
+.pgv-pager-btns button:hover:not([disabled], .active) {
   background: var(--pgv-table-hover);
 }
+
 .pgv-pager-btns button.active {
   background: var(--pgv-accent);
   color: #fff;
   font-weight: 600;
 }
+
 .pgv-pager-btns button[disabled] {
   opacity: 0.25;
   cursor: default;
 }
+
 .pgv-pager-dots {
   min-width: 1.2rem;
   text-align: center;
@@ -117,6 +121,7 @@
   padding-right: 1.4rem;
   position: relative;
 }
+
 .pgv-sortable::after {
   content: '⇅';
   position: absolute;
@@ -131,6 +136,7 @@
 
 /* ── Filter Bar (pgv.filter_form) ────────────────────────────── */
 .pgv-filter { margin-bottom: 1rem; }
+
 .pgv-filter-bar {
   display: flex;
   align-items: flex-end;
@@ -138,6 +144,7 @@
   flex-wrap: wrap;
   margin-bottom: 0;
 }
+
 .pgv-filter-inputs {
   display: flex;
   gap: 0.5rem;
@@ -145,6 +152,7 @@
   flex-wrap: wrap;
   align-items: flex-end;
 }
+
 .pgv-filter-inputs input,
 .pgv-filter-inputs select,
 .pgv-filter-inputs textarea {
@@ -156,24 +164,30 @@
   flex: 1 1 120px;
   max-width: 220px;
 }
+
 .pgv-filter-inputs label {
   font-size: 0.78rem;
   margin-bottom: 0.15rem;
   opacity: 0.7;
 }
+
 .pgv-filter-submit {
   white-space: nowrap;
   padding: 0.4rem 0.85rem;
   font-size: 0.85rem;
   margin-bottom: 0;
   height: auto;
+
   --pico-background-color: var(--pgv-badge-info-bg);
   --pico-color: var(--pgv-badge-info-fg);
+
   border: 1px solid var(--pgv-badge-info-bg);
 }
+
 .pgv-filter-submit:hover {
   opacity: 0.85;
 }
+
 .pgv-filter-chips {
   display: flex;
   flex-wrap: wrap;
@@ -182,6 +196,7 @@
   align-items: center;
 }
 .pgv-filter-chips:empty { display: none; }
+
 .pgv-filter-chip {
   display: inline-flex;
   align-items: center;
@@ -192,6 +207,7 @@
   background: var(--pgv-badge-info-bg);
   color: var(--pgv-badge-info-fg);
 }
+
 .pgv-filter-chip button {
   all: unset;
   cursor: pointer;
@@ -201,6 +217,7 @@
   padding: 0 0.1rem;
 }
 .pgv-filter-chip button:hover { opacity: 1; }
+
 .pgv-filter-clear {
   font-size: 0.78rem;
   color: var(--pgv-muted);

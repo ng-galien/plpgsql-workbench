@@ -5,9 +5,9 @@
  * Components subscribe via pgListen(), the bus handles channel lifecycle.
  */
 
-import { createClient, type SupabaseClient, type RealtimeChannel } from "@supabase/supabase-js";
+import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import { getConfig } from "./config.js";
-import type { PgChangeHandler } from "./types.js";
+import type { PgChangeHandler, PgChangePayload } from "./types.js";
 
 let client: SupabaseClient | null = null;
 const channels: Record<string, RealtimeChannel> = {};
@@ -38,9 +38,9 @@ export function pgListen(schema: string, table: string, handler: PgChangeHandler
   if (!channels[key]) {
     const ch = supabase()
       .channel(`rt-${key}`)
-      .on("postgres_changes", { event: "*", schema, table }, (payload: any) => {
+      .on("postgres_changes", { event: "*", schema, table }, (payload: PgChangePayload) => {
         const fns = listeners[key];
-        if (fns) fns.forEach((fn) => fn(payload));
+        if (fns) for (const fn of fns) fn(payload);
       })
       .subscribe();
     channels[key] = ch;
@@ -68,7 +68,9 @@ export function pgListen(schema: string, table: string, handler: PgChangeHandler
  * Resolves with data on success, rejects with error on failure.
  */
 export async function pgRpc(fn: string, params?: Record<string, unknown>, schema?: string): Promise<unknown> {
-  const { data, error } = await supabase().schema(schema || "public").rpc(fn, params || {});
+  const { data, error } = await supabase()
+    .schema(schema || "public")
+    .rpc(fn, params || {});
   if (error) throw error;
   return data;
 }

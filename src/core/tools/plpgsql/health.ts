@@ -1,12 +1,15 @@
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
-import { execFileSync } from "child_process";
-import fs from "fs/promises";
-import path from "path";
 import type { ToolHandler, WithClient } from "../../container.js";
-import type { ModuleRegistry, ModuleInfo } from "../../pgm/registry.js";
 import { text } from "../../helpers.js";
+import type { ModuleInfo, ModuleRegistry } from "../../pgm/registry.js";
 
-export function createHealthTool({ withClient, moduleRegistry }: {
+export function createHealthTool({
+  withClient,
+  moduleRegistry,
+}: {
   withClient: WithClient;
   moduleRegistry: Promise<ModuleRegistry>;
 }): ToolHandler {
@@ -25,9 +28,7 @@ export function createHealthTool({ withClient, moduleRegistry }: {
       const filterMod = args.module as string | undefined;
       const registry = await moduleRegistry;
       const modules: ModuleInfo[] = registry.allModules();
-      const filtered = filterMod
-        ? modules.filter((m: ModuleInfo) => m.name === filterMod)
-        : modules;
+      const filtered = filterMod ? modules.filter((m: ModuleInfo) => m.name === filterMod) : modules;
 
       if (filtered.length === 0) {
         return text(`no module found${filterMod ? ` matching "${filterMod}"` : ""}`);
@@ -41,8 +42,12 @@ export function createHealthTool({ withClient, moduleRegistry }: {
 
         // Inbox: pending messages for lead
         const { rows: inbox } = await client.query<{
-          id: number; from_module: string; msg_type: string;
-          subject: string; status: string; priority: string;
+          id: number;
+          from_module: string;
+          msg_type: string;
+          subject: string;
+          status: string;
+          priority: string;
           created_at: Date;
         }>(
           `SELECT id, from_module, msg_type, subject, status, priority, created_at
@@ -62,8 +67,12 @@ export function createHealthTool({ withClient, moduleRegistry }: {
 
         // Sent: unresolved messages from lead with age
         const { rows: sent } = await client.query<{
-          id: number; to_module: string; subject: string;
-          status: string; priority: string; created_at: Date;
+          id: number;
+          to_module: string;
+          subject: string;
+          status: string;
+          priority: string;
+          created_at: Date;
           age_min: number;
         }>(
           `SELECT id, to_module, subject, status, priority, created_at,
@@ -85,7 +94,10 @@ export function createHealthTool({ withClient, moduleRegistry }: {
 
         // Orphan issues: no message dispatched
         const { rows: orphans } = await client.query<{
-          id: number; issue_type: string; module: string; description: string;
+          id: number;
+          issue_type: string;
+          module: string;
+          description: string;
         }>(
           `SELECT id, issue_type, module, description
              FROM workbench.issue_report
@@ -103,8 +115,13 @@ export function createHealthTool({ withClient, moduleRegistry }: {
         // ── 2. Pending tasks ──
         parts.push("");
         const { rows: tasks } = await client.query<{
-          id: number; from_module: string; to_module: string;
-          msg_type: string; subject: string; status: string; priority: string;
+          id: number;
+          from_module: string;
+          to_module: string;
+          msg_type: string;
+          subject: string;
+          status: string;
+          priority: string;
         }>(
           `SELECT id, from_module, to_module, msg_type, subject, status, priority
              FROM workbench.agent_message
@@ -117,8 +134,8 @@ export function createHealthTool({ withClient, moduleRegistry }: {
         );
 
         parts.push("== TASKS ==");
-        const pending = tasks.filter(t => t.status !== "resolved");
-        const resolved = tasks.filter(t => t.status === "resolved");
+        const pending = tasks.filter((t) => t.status !== "resolved");
+        const resolved = tasks.filter((t) => t.status === "resolved");
         if (pending.length === 0 && resolved.length === 0) {
           parts.push("  (no tasks)");
         } else {
@@ -143,11 +160,7 @@ export function createHealthTool({ withClient, moduleRegistry }: {
         parts.push("== COHERENCE (DB vs src/) ==");
 
         for (const mod of filtered) {
-          const schemas = [
-            mod.schemas.public,
-            mod.schemas.test,
-            mod.schemas.qa,
-          ].filter((s): s is string => !!s);
+          const schemas = [mod.schemas.public, mod.schemas.test, mod.schemas.qa].filter((s): s is string => !!s);
           if (schemas.length === 0) continue;
 
           // Get DB functions for these schemas
@@ -181,8 +194,11 @@ export function createHealthTool({ withClient, moduleRegistry }: {
             const baseDir = schema.endsWith("_qa") ? qaDir : srcDir;
             for (const name of names) {
               const srcFile = path.join(baseDir, schema, `${name}.sql`);
-              try { await fs.access(srcFile); }
-              catch { missing.push(`${schema}/${name}.sql`); }
+              try {
+                await fs.access(srcFile);
+              } catch {
+                missing.push(`${schema}/${name}.sql`);
+              }
             }
           }
 
@@ -198,7 +214,9 @@ export function createHealthTool({ withClient, moduleRegistry }: {
                 const funcName = f.replace(/(_\d+)?\.sql$/, "");
                 if (!dbNames.has(funcName)) extra.push(`${schema}/${f}`);
               }
-            } catch { /* dir doesn't exist */ }
+            } catch {
+              /* dir doesn't exist */
+            }
           }
 
           const totalFuncs = dbFuncs.length;
@@ -216,9 +234,11 @@ export function createHealthTool({ withClient, moduleRegistry }: {
         parts.push("== GIT STATUS ==");
 
         try {
-          const gitOut = execFileSync("git", [
-            "status", "--porcelain", "--", "modules/",
-          ], { encoding: "utf8", cwd: registry.workspaceRoot, stdio: ["ignore", "pipe", "pipe"] });
+          const gitOut = execFileSync("git", ["status", "--porcelain", "--", "modules/"], {
+            encoding: "utf8",
+            cwd: registry.workspaceRoot,
+            stdio: ["ignore", "pipe", "pipe"],
+          });
 
           if (!gitOut.trim()) {
             parts.push("  clean (no uncommitted changes)");
@@ -243,10 +263,11 @@ export function createHealthTool({ withClient, moduleRegistry }: {
             }
 
             // Also check root files
-            const rootGit = execFileSync("git", [
-              "status", "--porcelain", "--",
-              "src/", "seed/", "Makefile", "package.json", "docker-compose.yml",
-            ], { encoding: "utf8", cwd: registry.workspaceRoot, stdio: ["ignore", "pipe", "pipe"] });
+            const rootGit = execFileSync(
+              "git",
+              ["status", "--porcelain", "--", "src/", "seed/", "Makefile", "package.json", "docker-compose.yml"],
+              { encoding: "utf8", cwd: registry.workspaceRoot, stdio: ["ignore", "pipe", "pipe"] },
+            );
             if (rootGit.trim()) {
               const rootFiles = rootGit.trim().split("\n");
               parts.push(`  (root): ${rootFiles.length} file(s) changed`);

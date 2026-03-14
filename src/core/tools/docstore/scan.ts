@@ -1,10 +1,10 @@
+import { readdirSync } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import fs from "fs/promises";
-import { readdirSync } from "fs";
-import path from "path";
-import { ensureDocstoreSchema, hashFile, walkDir, mimeFromExt, formatSize, DEFAULT_EXCLUDE } from "./utils.js";
+import { DEFAULT_EXCLUDE, ensureDocstoreSchema, formatSize, hashFile, mimeFromExt, walkDir } from "./utils.js";
 
 /** Count files recursively under a directory. */
 function countFiles(dirPath: string, excludeSet: Set<string>): number {
@@ -20,13 +20,13 @@ function countFiles(dirPath: string, excludeSet: Set<string>): number {
         count++;
       }
     }
-  } catch { /* permission denied */ }
+  } catch {
+    /* permission denied */
+  }
   return count;
 }
 
-export function createScanTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createScanTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "fs_scan",
@@ -41,9 +41,10 @@ export function createScanTool({ withClient }: {
         ext: z.string().optional().describe("Filter by extension (e.g. '.pdf', '.md')"),
         limit: z.number().optional().describe("Max files to return (default: 50)"),
         offset: z.number().optional().describe("Skip first N files (default: 0)"),
-        exclude: z.array(z.string()).optional().describe(
-          "Directory names to exclude (default: .git, node_modules, dist, build, ...)",
-        ),
+        exclude: z
+          .array(z.string())
+          .optional()
+          .describe("Directory names to exclude (default: .git, node_modules, dist, build, ...)"),
       }),
     },
     handler: async (args, _extra) => {
@@ -82,7 +83,9 @@ export function createScanTool({ withClient }: {
             subdirs.sort((a, b) => a.name.localeCompare(b.name));
           }
         } catch (err: unknown) {
-          return text(`problem: cannot read directory: ${rootPath}\nwhere: fs_scan\nfix_hint: ${err instanceof Error ? err.message : String(err)}`);
+          return text(
+            `problem: cannot read directory: ${rootPath}\nwhere: fs_scan\nfix_hint: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
 
         // Extension filter
@@ -164,14 +167,16 @@ export function createScanTool({ withClient }: {
         parts.push(`${sym} scan: ${rootPath}`);
         const isPartial = offset + limit < total;
         parts.push(`completeness: ${isPartial ? "partial" : "full"}`);
-        parts.push(`total: ${total}, page: ${page.length} (offset ${offset}), added: ${added}, updated: ${updated}, unchanged: ${unchanged}`);
+        parts.push(
+          `total: ${total}, page: ${page.length} (offset ${offset}), added: ${added}, updated: ${updated}, unchanged: ${unchanged}`,
+        );
 
         // Subdirectories
         if (subdirs.length > 0) {
           parts.push("");
           parts.push(`subdirs (${subdirs.length}):`);
           for (const d of subdirs) {
-            parts.push(`  ${(d.name + "/").padEnd(40)} ${String(d.fileCount).padStart(6)} files`);
+            parts.push(`  ${(`${d.name}/`).padEnd(40)} ${String(d.fileCount).padStart(6)} files`);
           }
         }
 
@@ -184,7 +189,7 @@ export function createScanTool({ withClient }: {
             const size = formatSize(Number(file.stat.size));
             const date = file.stat.mtime.toISOString().slice(0, 10);
             const rel = path.relative(rootPath, file.path);
-            const hash = hashCache.get(file.path) ?? await hashFile(file.path);
+            const hash = hashCache.get(file.path) ?? (await hashFile(file.path));
             const dbHash = dbMap.get(file.path);
             let status = "new";
             if (dbHash !== undefined) {

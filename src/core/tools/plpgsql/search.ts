@@ -5,9 +5,7 @@ import { PlUri } from "../../uri.js";
 
 const SEARCH_LIMIT = 20;
 
-export function createSearchTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createSearchTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "pg_search",
@@ -59,27 +57,43 @@ export function createSearchTool({ withClient }: {
           let pi = nextIdx;
           conditions.push("l.lanname IN ('sql', 'plpgsql')");
 
-          if (name) { conditions.push(`p.proname LIKE $${pi++}`); params.push(name); }
-          if (content) { conditions.push(`p.prosrc ~ $${pi++}`); params.push(content); }
+          if (name) {
+            conditions.push(`p.proname LIKE $${pi++}`);
+            params.push(name);
+          }
+          if (content) {
+            conditions.push(`p.prosrc ~ $${pi++}`);
+            params.push(content);
+          }
 
           const contentIdx = content ? pi - 1 : 0;
           const { rows } = await client.query<{
-            schema_name: string; obj_name: string; signature: string; match_lines: string | null;
-          }>(`
+            schema_name: string;
+            obj_name: string;
+            signature: string;
+            match_lines: string | null;
+          }>(
+            `
             SELECT n.nspname AS schema_name, p.proname AS obj_name,
               p.proname || '(' || COALESCE(pg_get_function_arguments(p.oid), '') || ') -> ' || pg_get_function_result(p.oid) AS signature,
-              ${content ? `(
+              ${
+                content
+                  ? `(
                 SELECT string_agg(line_num || '| ' || line, E'\\n' ORDER BY line_num)
                 FROM unnest(string_to_array(p.prosrc, E'\\n')) WITH ORDINALITY AS lines(line, line_num)
                 WHERE line ~ $${contentIdx}
-              )` : "NULL"} AS match_lines
+              )`
+                  : "NULL"
+              } AS match_lines
             FROM pg_proc p
             JOIN pg_namespace n ON n.oid = p.pronamespace
             JOIN pg_language l ON l.oid = p.prolang
             WHERE ${conditions.join(" AND ")}
             ORDER BY n.nspname, p.proname
             LIMIT ${SEARCH_LIMIT + 1}
-          `, params);
+          `,
+            params,
+          );
 
           if (rows.length > 0) {
             const hasMore = rows.length > SEARCH_LIMIT;
@@ -87,7 +101,12 @@ export function createSearchTool({ withClient }: {
             const lines = display.map((r) => {
               let line = `  ${r.signature}  ${PlUri.fn(r.schema_name, r.obj_name)}`;
               if (r.match_lines) {
-                line += "\n" + r.match_lines.split("\n").map((l) => `      ${l.trim()}`).join("\n");
+                line +=
+                  "\n" +
+                  r.match_lines
+                    .split("\n")
+                    .map((l) => `      ${l.trim()}`)
+                    .join("\n");
               }
               return line;
             });
@@ -100,15 +119,21 @@ export function createSearchTool({ withClient }: {
           const { conditions, params, nextIdx } = schemaConditions("n");
           let pi = nextIdx;
           conditions.push("c.relkind = 'r'");
-          if (name) { conditions.push(`c.relname LIKE $${pi++}`); params.push(name); }
+          if (name) {
+            conditions.push(`c.relname LIKE $${pi++}`);
+            params.push(name);
+          }
 
-          const { rows } = await client.query<{ schema_name: string; obj_name: string }>(`
+          const { rows } = await client.query<{ schema_name: string; obj_name: string }>(
+            `
             SELECT n.nspname AS schema_name, c.relname AS obj_name
             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE ${conditions.join(" AND ")}
             ORDER BY n.nspname, c.relname
             LIMIT ${SEARCH_LIMIT + 1}
-          `, params);
+          `,
+            params,
+          );
 
           if (rows.length > 0) {
             const hasMore = rows.length > SEARCH_LIMIT;
@@ -123,20 +148,28 @@ export function createSearchTool({ withClient }: {
           const { conditions, params, nextIdx } = schemaConditions("n");
           let pi = nextIdx;
           conditions.push("NOT t.tgisinternal");
-          if (name) { conditions.push(`t.tgname LIKE $${pi++}`); params.push(name); }
+          if (name) {
+            conditions.push(`t.tgname LIKE $${pi++}`);
+            params.push(name);
+          }
 
-          const { rows } = await client.query<{ schema_name: string; obj_name: string; on_table: string }>(`
+          const { rows } = await client.query<{ schema_name: string; obj_name: string; on_table: string }>(
+            `
             SELECT DISTINCT n.nspname AS schema_name, t.tgname AS obj_name, c.relname AS on_table
             FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE ${conditions.join(" AND ")}
             ORDER BY n.nspname, t.tgname
             LIMIT ${SEARCH_LIMIT + 1}
-          `, params);
+          `,
+            params,
+          );
 
           if (rows.length > 0) {
             const hasMore = rows.length > SEARCH_LIMIT;
             const display = hasMore ? rows.slice(0, SEARCH_LIMIT) : rows;
-            const lines = display.map((r) => `  ${r.obj_name} ON ${r.on_table}  ${PlUri.trigger(r.schema_name, r.obj_name)}`);
+            const lines = display.map(
+              (r) => `  ${r.obj_name} ON ${r.on_table}  ${PlUri.trigger(r.schema_name, r.obj_name)}`,
+            );
             sections.push(`triggers (${formatCount(display.length, hasMore)}):\n${lines.join("\n")}`);
           }
         }
@@ -147,15 +180,21 @@ export function createSearchTool({ withClient }: {
           let pi = nextIdx;
           conditions.push("t.typtype IN ('c', 'e')");
           conditions.push("t.typname NOT LIKE '\\_%'");
-          if (name) { conditions.push(`t.typname LIKE $${pi++}`); params.push(name); }
+          if (name) {
+            conditions.push(`t.typname LIKE $${pi++}`);
+            params.push(name);
+          }
 
-          const { rows } = await client.query<{ schema_name: string; obj_name: string; typtype: string }>(`
+          const { rows } = await client.query<{ schema_name: string; obj_name: string; typtype: string }>(
+            `
             SELECT n.nspname AS schema_name, t.typname AS obj_name, t.typtype
             FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
             WHERE ${conditions.join(" AND ")}
             ORDER BY n.nspname, t.typname
             LIMIT ${SEARCH_LIMIT + 1}
-          `, params);
+          `,
+            params,
+          );
 
           if (rows.length > 0) {
             const hasMore = rows.length > SEARCH_LIMIT;

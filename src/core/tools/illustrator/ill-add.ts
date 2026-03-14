@@ -4,9 +4,9 @@
  */
 
 import { z } from "zod";
+import { jsonb } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import { jsonb } from "../../connection.js";
 
 export function createIllAddTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
@@ -38,10 +38,9 @@ Common: name (semantic label), opacity (0-1), rotation (degrees), fill, stroke, 
       // For images, fetch asset dimensions for crop math
       if (type === "image" && props.asset_id) {
         const assetResult = await withClient(async (client) => {
-          const { rows } = await client.query(
-            `SELECT width, height, filename FROM asset.asset WHERE id = $1`,
-            [props.asset_id as string],
-          );
+          const { rows } = await client.query(`SELECT width, height, filename FROM asset.asset WHERE id = $1`, [
+            props.asset_id as string,
+          ]);
           return rows[0];
         });
         if (assetResult) {
@@ -51,17 +50,20 @@ Common: name (semantic label), opacity (0-1), rotation (degrees), fill, stroke, 
       }
 
       return withClient(async (client) => {
-        const { rows } = await client.query(
-          `SELECT document.element_add($1, $2, 0, $3) as id`,
-          [canvasId, type, jsonb(props)],
-        );
+        const { rows } = await client.query(`SELECT document.element_add($1, $2, 0, $3) as id`, [
+          canvasId,
+          type,
+          jsonb(props),
+        ]);
         const id = rows[0]?.id;
         const shortId = String(id).slice(0, 8);
         const name = props.name ? ` (${props.name})` : "";
 
         switch (type) {
           case "text":
-            return text(`Text "${String(props.content ?? "").slice(0, 30)}"${name} -> ${shortId} at x:${props.x} y:${props.y}`);
+            return text(
+              `Text "${String(props.content ?? "").slice(0, 30)}"${name} -> ${shortId} at x:${props.x} y:${props.y}`,
+            );
           case "rect":
             return text(`Rect${name} -> ${shortId} at x:${props.x} y:${props.y} ${props.width}×${props.height}mm`);
           case "line":

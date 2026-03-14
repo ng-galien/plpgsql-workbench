@@ -31,6 +31,7 @@
   overflow-x: auto;
   margin: 0 0.25rem;
 }
+
 .pgv-app-nav a {
   display: flex;
   align-items: center;
@@ -44,6 +45,7 @@
   transition: color 0.15s, background 0.15s;
 }
 .pgv-app-nav a:hover { color: var(--pgv-text); background: var(--pgv-hover); }
+
 .pgv-app-nav a.pgv-app-active {
   color: var(--pgv-accent);
   background: var(--pgv-accent-subtle);
@@ -80,13 +82,16 @@
 
 .pgv-app-card {
   margin-bottom: 0;
+
   --pico-block-spacing-vertical: 0.5rem;
   --pico-block-spacing-horizontal: 0.75rem;
+
   transition: box-shadow 0.15s, border-color 0.15s;
 }
+
 .pgv-app-card:hover {
   border-color: var(--pgv-accent);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
 }
 
 .pgv-app-card header {
@@ -98,6 +103,7 @@
   padding: 0;
   margin: 0;
 }
+
 .pgv-app-card ul li a {
   display: block;
   padding: 0.25rem 0;
@@ -112,6 +118,7 @@
 .pgv-app-card footer {
   text-align: right;
 }
+
 .pgv-app-card footer a {
   color: var(--pgv-accent);
   text-decoration: none;
@@ -119,7 +126,7 @@
 }
 .pgv-app-card footer a:hover { text-decoration: underline; }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .pgv-app-nav { gap: 0; }
   .pgv-app-nav a { padding: 0.4rem 0.45rem; font-size: 0.75rem; }
 }
@@ -127,11 +134,12 @@
 /* ── Navigation ────────────────────────────────────────────────── */
 nav {
   position: sticky;
-  top: var(--pgv-app-bar-h, 0px);
+  top: var(--pgv-app-bar-h, 0);
   z-index: 100;
   background: var(--pgv-surface);
   border-bottom: 1px solid var(--pgv-border);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 6%);
+
   --pico-nav-element-spacing-vertical: 0;
   --pico-nav-element-spacing-horizontal: 0;
 }
@@ -201,7 +209,7 @@ nav strong {
   color: var(--pgv-text);
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .pgv-nav-burger > ul:first-child {
     flex: 1;
     justify-content: space-between;
@@ -225,7 +233,7 @@ nav strong {
     right: 0;
     background: var(--pgv-surface);
     border-bottom: 1px solid var(--pgv-border);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
     z-index: 99;
   }
 

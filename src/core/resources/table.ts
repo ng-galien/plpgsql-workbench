@@ -27,7 +27,8 @@ export async function queryTable(client: DbClient, schema: string, name: string)
     default_val: string | null;
     is_pk: boolean;
     fk_target: string | null;
-  }>(`
+  }>(
+    `
     SELECT
       a.attname,
       pg_catalog.format_type(a.atttypid, a.atttypmod) AS typname,
@@ -52,7 +53,9 @@ export async function queryTable(client: DbClient, schema: string, name: string)
     LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
     WHERE n.nspname = $1 AND c.relname = $2
     ORDER BY a.attnum
-  `, [schema, name]);
+  `,
+    [schema, name],
+  );
 
   if (colRows.length === 0) return null;
 
@@ -65,10 +68,13 @@ export async function queryTable(client: DbClient, schema: string, name: string)
     fk_target: r.fk_target,
   }));
 
-  const { rows: idxRows } = await client.query<{ indexname: string; indexdef: string }>(`
+  const { rows: idxRows } = await client.query<{ indexname: string; indexdef: string }>(
+    `
     SELECT indexname, indexdef FROM pg_indexes
     WHERE schemaname = $1 AND tablename = $2 AND indexname NOT LIKE '%_pkey'
-  `, [schema, name]);
+  `,
+    [schema, name],
+  );
   const indexes = idxRows.map((r) => r.indexname);
 
   const used_by = await findTableUsers(client, schema, name);
@@ -81,14 +87,17 @@ async function findTableUsers(
   schema: string,
   tableName: string,
 ): Promise<{ name: string; mode: "R" | "W" | "RW" }[]> {
-  const { rows } = await client.query<{ proname: string; prosrc: string }>(`
+  const { rows } = await client.query<{ proname: string; prosrc: string }>(
+    `
     SELECT p.proname, p.prosrc
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     JOIN pg_language l ON l.oid = p.prolang
     WHERE n.nspname = $1 AND l.lanname IN ('sql', 'plpgsql')
       AND p.prosrc ~* $2
-  `, [schema, `\\m${tableName}\\M`]);
+  `,
+    [schema, `\\m${tableName}\\M`],
+  );
 
   const esc = tableName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return rows.map((r) => {
@@ -117,12 +126,12 @@ export function formatTable(table: TableDetail): string {
     parts.push(`  ${col.name.padEnd(nameW + 2)}${col.type.padEnd(typeW + 2)}${suffix}`);
   }
 
-  parts.push(table.indexes.length > 0
-    ? `  indexes: ${table.indexes.join(", ")}`
-    : `  indexes: none`);
-  parts.push(table.used_by.length > 0
-    ? `  used_by: ${table.used_by.map((u) => `${u.name}(${u.mode})`).join(", ")}`
-    : `  used_by: none`);
+  parts.push(table.indexes.length > 0 ? `  indexes: ${table.indexes.join(", ")}` : `  indexes: none`);
+  parts.push(
+    table.used_by.length > 0
+      ? `  used_by: ${table.used_by.map((u) => `${u.name}(${u.mode})`).join(", ")}`
+      : `  used_by: none`,
+  );
 
   return parts.join("\n");
 }

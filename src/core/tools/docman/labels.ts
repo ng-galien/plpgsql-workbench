@@ -16,10 +16,7 @@ export function createDocLabelsTool({ withClient }: { withClient: WithClient }):
       const { kind, parent_id } = args as { kind?: string; parent_id?: number };
 
       return await withClient(async (client) => {
-        const res = await client.query(
-          `SELECT * FROM docman.labels($1, $2)`,
-          [kind ?? null, parent_id ?? null]
-        );
+        const res = await client.query(`SELECT * FROM docman.labels($1, $2)`, [kind ?? null, parent_id ?? null]);
 
         if (res.rows.length === 0) {
           return text("No labels defined yet.");
@@ -30,7 +27,7 @@ export function createDocLabelsTool({ withClient }: { withClient: WithClient }):
           const parent = r.parent_id ? ` parent: ${r.parent_id}` : "";
           return `[${r.id}] ${r.name} (${r.kind})${parent}${aliases}`;
         });
-        return text(`Labels (${res.rows.length}):\n\n` + lines.join("\n"));
+        return text(`Labels (${res.rows.length}):\n\n${lines.join("\n")}`);
       });
     },
   };
@@ -57,11 +54,10 @@ export function createDocEntitiesTool({ withClient }: { withClient: WithClient }
 
         const lines = res.rows.map((r: any) => {
           const aliases = r.aliases?.length > 0 ? ` aliases: ${r.aliases.join(", ")}` : "";
-          const meta = Object.keys(r.metadata ?? {}).length > 0
-            ? ` ${JSON.stringify(r.metadata)}` : "";
+          const meta = Object.keys(r.metadata ?? {}).length > 0 ? ` ${JSON.stringify(r.metadata)}` : "";
           return `[${r.id}] ${r.name} (${r.kind})${aliases}${meta}`;
         });
-        return text(`Entities (${res.rows.length}):\n\n` + lines.join("\n"));
+        return text(`Entities (${res.rows.length}):\n\n${lines.join("\n")}`);
       });
     },
   };
@@ -83,7 +79,7 @@ export function createDocEntityKindsTool({ withClient }: { withClient: WithClien
         }
 
         const lines = res.rows.map((r: any) => `${r.kind}: ${r.count}`);
-        return text(`Entity kinds:\n\n` + lines.join("\n"));
+        return text(`Entity kinds:\n\n${lines.join("\n")}`);
       });
     },
   };
@@ -105,7 +101,7 @@ export function createDocDocTypesTool({ withClient }: { withClient: WithClient }
         }
 
         const lines = res.rows.map((r: any) => `${r.doc_type}: ${r.count}`);
-        return text(`Document types:\n\n` + lines.join("\n"));
+        return text(`Document types:\n\n${lines.join("\n")}`);
       });
     },
   };

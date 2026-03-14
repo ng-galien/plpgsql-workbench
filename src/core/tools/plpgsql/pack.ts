@@ -1,10 +1,10 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
 import { ensureParserModule, extractFuncDeps } from "./deps.js";
-import fs from "fs/promises";
-import path from "path";
 
 interface FuncRow {
   schema: string;
@@ -16,10 +16,7 @@ interface FuncRow {
   ident: string;
 }
 
-async function querySchemaFunctions(
-  client: DbClient,
-  schemas: string[],
-): Promise<FuncRow[]> {
+async function querySchemaFunctions(client: DbClient, schemas: string[]): Promise<FuncRow[]> {
   const { rows } = await client.query<FuncRow>(
     `SELECT n.nspname AS schema, p.proname AS name, l.lanname AS lang,
             pg_get_functiondef(p.oid) AS ddl, p.oid::text,
@@ -43,7 +40,10 @@ async function querySchemaFunctions(
 
 // ── Topological sort ─────────────────────────────────────────────
 
-interface Edge { caller: string; callee: string }
+interface Edge {
+  caller: string;
+  callee: string;
+}
 
 function topoSort(fns: FuncRow[], edges: Edge[]): FuncRow[] {
   const key = (f: FuncRow) => `${f.schema}.${f.name}.${f.oid}`;
@@ -118,7 +118,10 @@ function topoSort(fns: FuncRow[], edges: Edge[]): FuncRow[] {
 
 // ── Tool ─────────────────────────────────────────────────────────
 
-export function createPackTool({ withClient, moduleRegistry }: {
+export function createPackTool({
+  withClient,
+  moduleRegistry,
+}: {
   withClient: WithClient;
   moduleRegistry: Promise<import("../../pgm/registry.js").ModuleRegistry>;
 }): ToolHandler {
@@ -135,7 +138,10 @@ export function createPackTool({ withClient, moduleRegistry }: {
       }),
     },
     handler: async (args) => {
-      const schemas = (args.schemas as string).split(",").map((s) => s.trim()).filter(Boolean);
+      const schemas = (args.schemas as string)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       const role = (args.role as string) ?? "anon";
 
       if (schemas.length === 0) return text("problem: no schemas specified");
@@ -145,15 +151,15 @@ export function createPackTool({ withClient, moduleRegistry }: {
       if (!mapping) {
         return text(
           `problem: no module owns schemas [${schemas.join(", ")}]\n` +
-          `where: pg_pack\n` +
-          `fix_hint: check modules/*/module.json schemas field`,
+            `where: pg_pack\n` +
+            `fix_hint: check modules/*/module.json schemas field`,
         );
       }
       if (!mapping.functionsFile) {
         return text(
           `problem: module "${mapping.module}" has no functions SQL file in module.json\n` +
-          `where: pg_pack\n` +
-          `fix_hint: add a "build/<schema>.func.sql" entry to module.json sql field`,
+            `where: pg_pack\n` +
+            `fix_hint: add a "build/<schema>.func.sql" entry to module.json sql field`,
         );
       }
 
@@ -218,14 +224,16 @@ export function createPackTool({ withClient, moduleRegistry }: {
             for (const trig of triggers) {
               const key = `${trig.func_schema}.${trig.func_name}`;
               if (!triggersByFunc.has(key)) triggersByFunc.set(key, []);
-              triggersByFunc.get(key)!.push(
-                `DROP TRIGGER IF EXISTS ${trig.tgname} ON ${trig.table_schema}.${trig.relname};\n${trig.triggerdef};`,
-              );
+              triggersByFunc
+                .get(key)!
+                .push(
+                  `DROP TRIGGER IF EXISTS ${trig.tgname} ON ${trig.table_schema}.${trig.relname};\n${trig.triggerdef};`,
+                );
             }
 
             for (const fn of fns) {
               const ddl = fn.ddl.trimEnd();
-              sections.push(ddl.endsWith(";") ? ddl : ddl + ";");
+              sections.push(ddl.endsWith(";") ? ddl : `${ddl};`);
               if (fn.description) {
                 const escaped = fn.description.replace(/'/g, "''");
                 sections.push(`COMMENT ON FUNCTION ${fn.ident} IS '${escaped}';`);
@@ -255,8 +263,8 @@ export function createPackTool({ withClient, moduleRegistry }: {
 
         // --- Coherence check: build/ vs src/ ---
         const srcDir = path.join(mapping.modulePath, "src");
-        const missing: string[] = [];   // in DB but not in src/
-        const extra: string[] = [];     // in src/ but not in DB
+        const missing: string[] = []; // in DB but not in src/
+        const extra: string[] = []; // in src/ but not in DB
 
         const dbFuncs = new Map<string, Set<string>>(); // schema → Set<name>
         for (const fn of sorted) {
@@ -269,8 +277,11 @@ export function createPackTool({ withClient, moduleRegistry }: {
           const baseDir = schema.endsWith("_qa") ? path.join(mapping.modulePath, "qa") : srcDir;
           for (const name of names) {
             const srcFile = path.join(baseDir, schema, `${name}.sql`);
-            try { await fs.access(srcFile); }
-            catch { missing.push(`${schema}/${name}.sql`); }
+            try {
+              await fs.access(srcFile);
+            } catch {
+              missing.push(`${schema}/${name}.sql`);
+            }
           }
         }
 
@@ -288,11 +299,13 @@ export function createPackTool({ withClient, moduleRegistry }: {
                 extra.push(`${schema}/${f}`);
               }
             }
-          } catch { /* src/schema/ doesn't exist yet */ }
+          } catch {
+            /* src/schema/ doesn't exist yet */
+          }
         }
 
         const parts: string[] = [];
-        const fileList = schemas.map(s => `build/${s}.func.sql`).join(", ");
+        const fileList = schemas.map((s) => `build/${s}.func.sql`).join(", ");
         parts.push(`packed ${totalFunctions} functions from ${schemas.length} schema(s) -> ${fileList}`);
         parts.push(`deps: ${edges.length} edges resolved via AST`);
         parts.push("");

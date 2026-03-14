@@ -1,9 +1,9 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import fs from "fs/promises";
-import path from "path";
 
 interface FunctionEntry {
   oid: string;
@@ -12,12 +12,9 @@ interface FunctionEntry {
   ddl: string;
 }
 
-async function queryFunctions(
-  client: DbClient,
-  schema?: string,
-  fnName?: string,
-): Promise<FunctionEntry[]> {
-  let where = "l.lanname IN ('plpgsql', 'sql') AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid = d.refobjid WHERE d.objid = p.oid AND d.deptype = 'e')";
+async function queryFunctions(client: DbClient, schema?: string, fnName?: string): Promise<FunctionEntry[]> {
+  let where =
+    "l.lanname IN ('plpgsql', 'sql') AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid = d.refobjid WHERE d.objid = p.oid AND d.deptype = 'e')";
   const params: string[] = [];
 
   if (schema) {
@@ -45,12 +42,7 @@ async function queryFunctions(
   return rows;
 }
 
-async function dumpFunctions(
-  client: DbClient,
-  outDir: string,
-  schema?: string,
-  fnName?: string,
-): Promise<string> {
+async function dumpFunctions(client: DbClient, outDir: string, schema?: string, fnName?: string): Promise<string> {
   const functions = await queryFunctions(client, schema, fnName);
 
   if (functions.length === 0) {
@@ -81,7 +73,7 @@ async function dumpFunctions(
     }
 
     const filePath = path.join(schemaDir, fileName);
-    const content = fn.ddl.trimEnd().endsWith(";") ? fn.ddl : fn.ddl.trimEnd() + ";\n";
+    const content = fn.ddl.trimEnd().endsWith(";") ? fn.ddl : `${fn.ddl.trimEnd()};\n`;
     await fs.writeFile(filePath, content, "utf-8");
     written.push(`${fn.schema}/${fileName}`);
   }
@@ -96,7 +88,10 @@ async function dumpFunctions(
   return parts.join("\n");
 }
 
-export function createFuncSaveTool({ withClient, moduleRegistry }: {
+export function createFuncSaveTool({
+  withClient,
+  moduleRegistry,
+}: {
   withClient: WithClient;
   moduleRegistry: Promise<import("../../pgm/registry.js").ModuleRegistry>;
 }): ToolHandler {
@@ -132,7 +127,9 @@ export function createFuncSaveTool({ withClient, moduleRegistry }: {
           if (schemaMatch) {
             schema = schemaMatch[1];
           } else {
-            return text(`problem: invalid target: ${target}\nwhere: pg_func_save\nfix_hint: expected plpgsql://schema or plpgsql://schema/function/name`);
+            return text(
+              `problem: invalid target: ${target}\nwhere: pg_func_save\nfix_hint: expected plpgsql://schema or plpgsql://schema/function/name`,
+            );
           }
         }
 
@@ -145,8 +142,8 @@ export function createFuncSaveTool({ withClient, moduleRegistry }: {
         if (!outDir) {
           return text(
             `problem: no module owns schema "${schema}"\n` +
-            `where: pg_func_save\n` +
-            `fix_hint: check modules/*/module.json schemas field`,
+              `where: pg_func_save\n` +
+              `fix_hint: check modules/*/module.json schemas field`,
           );
         }
 

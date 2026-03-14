@@ -5,8 +5,8 @@
  * migration files in supabase/migrations/ from build/*.sql files.
  */
 
-import fs from "fs/promises";
-import path from "path";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { loadManifest, resolve } from "./resolver.js";
 
 export interface SyncResult {
@@ -21,11 +21,7 @@ export interface SyncResult {
  * @param moduleNames - modules to include (resolved with dependencies)
  * @param prefix - timestamp prefix for migration files (default: auto-generate)
  */
-export async function syncToSupabase(
-  wsRoot: string,
-  moduleNames: string[],
-  prefix?: string,
-): Promise<SyncResult> {
+export async function syncToSupabase(wsRoot: string, moduleNames: string[], prefix?: string): Promise<SyncResult> {
   const modulesDir = path.join(wsRoot, "modules");
   const migrationsDir = path.join(wsRoot, "supabase", "migrations");
 
@@ -62,16 +58,14 @@ export async function syncToSupabase(
 
   // Migration 0: Extensions (filter dev-only)
   const devOnlyExtensions = new Set(["plpgsql_check", "pgtap"]);
-  const prodExtensions = Array.from(extensions).filter(ext => !devOnlyExtensions.has(ext));
+  const prodExtensions = Array.from(extensions).filter((ext) => !devOnlyExtensions.has(ext));
 
   if (prodExtensions.length > 0 || extensions.has("unaccent")) {
-    const extSql = prodExtensions
-      .map(ext => `CREATE EXTENSION IF NOT EXISTS ${ext};`)
-      .join("\n");
+    const extSql = prodExtensions.map((ext) => `CREATE EXTENSION IF NOT EXISTS ${ext};`).join("\n");
 
     // Add pgv_search FTS config only if pgv module is NOT in the sync list
     // (pgv.ddl.sql creates it already — avoid double creation)
-    const pgvIncluded = plan.order.some(m => m.name === "pgv");
+    const pgvIncluded = plan.order.some((m) => m.name === "pgv");
     let ftsSql = "";
     if (extensions.has("unaccent") && !pgvIncluded) {
       ftsSql = `
@@ -126,7 +120,7 @@ END $$;
         // No role adaptation needed — dev and prod use same roles (anon, authenticated)
         // Remove dev-only extensions that may not exist on Supabase
         // Strip _ut and _qa function blocks from .func.sql files
-        let adapted = content
+        const adapted = content
           .replace(/CREATE EXTENSION IF NOT EXISTS plpgsql_check[^;]*;/g, "-- plpgsql_check (dev only)")
           .replace(/CREATE EXTENSION IF NOT EXISTS pgtap[^;]*;/g, "-- pgtap (dev only)");
 

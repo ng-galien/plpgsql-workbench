@@ -1,16 +1,16 @@
 import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
-import { text, wrap } from "../../helpers.js";
-import { PlUri } from "../../uri.js";
-import { queryCatalog, formatCatalog } from "../../resources/catalog.js";
-import { querySchema, formatSchema } from "../../resources/schema.js";
-import { queryFunction, formatFunction } from "../../resources/function.js";
-import { queryTable, formatTable } from "../../resources/table.js";
-import { queryTrigger, formatTrigger } from "../../resources/trigger.js";
-import { queryType, formatType } from "../../resources/type.js";
-import { resolveDoc, resolveDocIndex } from "../../workbench.js";
 import { computeContextToken } from "../../context-token.js";
+import { text, wrap } from "../../helpers.js";
+import { formatCatalog, queryCatalog } from "../../resources/catalog.js";
+import { formatFunction, queryFunction } from "../../resources/function.js";
+import { formatSchema, querySchema } from "../../resources/schema.js";
+import { formatTable, queryTable } from "../../resources/table.js";
+import { formatTrigger, queryTrigger } from "../../resources/trigger.js";
+import { formatType, queryType } from "../../resources/type.js";
+import { PlUri } from "../../uri.js";
+import { resolveDoc, resolveDocIndex } from "../../workbench.js";
 
 // --- Shared service (registered in container, injected into set) ---
 
@@ -112,7 +112,10 @@ export async function resolveUri(uri: string, client: DbClient): Promise<string>
 
 // --- Tool factory ---
 
-export function createGetTool({ withClient, resolveUri }: {
+export function createGetTool({
+  withClient,
+  resolveUri,
+}: {
   withClient: WithClient;
   resolveUri: (uri: string, client: DbClient) => Promise<string>;
 }): ToolHandler {
@@ -125,10 +128,9 @@ export function createGetTool({ withClient, resolveUri }: {
         "Batch: plpgsql://schema/function/* (all functions). Multi: pass URI array.\n" +
         "Kinds: function, table, trigger, type",
       schema: z.object({
-        uri: z.union([
-          z.string().describe("Single URI or glob pattern"),
-          z.array(z.string()).describe("Multiple URIs"),
-        ]).describe("plpgsql:// URI(s)"),
+        uri: z
+          .union([z.string().describe("Single URI or glob pattern"), z.array(z.string()).describe("Multiple URIs")])
+          .describe("plpgsql:// URI(s)"),
       }),
     },
     handler: async (args, _extra) => {

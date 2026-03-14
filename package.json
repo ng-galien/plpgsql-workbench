@@ -38,11 +38,14 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.7",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.18.0",
     "@types/ws": "^8.18.1",
     "nodemon": "^3.1.14",
     "playwright": "^1.58.2",
+    "stylelint": "^17.4.0",
+    "stylelint-config-standard": "^40.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0"
   }

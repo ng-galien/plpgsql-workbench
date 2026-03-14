@@ -25,10 +25,10 @@ export function createUpdateMetaTool({ withClient }: { withClient: WithClient })
         if (args.teamNotes !== undefined) meta.teamNotes = args.teamNotes;
         if (args.rating !== undefined) meta.rating = Math.min(5, Math.max(0, args.rating as number));
 
-        await client.query(
-          `UPDATE document.canvas SET meta = meta || $2, updated_at = now() WHERE id = $1`,
-          [args.canvas_id, JSON.stringify(meta)],
-        );
+        await client.query(`UPDATE document.canvas SET meta = meta || $2, updated_at = now() WHERE id = $1`, [
+          args.canvas_id,
+          JSON.stringify(meta),
+        ]);
         return text(`Meta updated${args.rating !== undefined ? ` (rating: ${meta.rating}/5)` : ""}`);
       });
     },
@@ -85,10 +85,15 @@ export function createShowMessageTool({ withClient }: { withClient: WithClient }
     handler: async (args, _extra) => {
       return withClient(async (client) => {
         // Update toast on ALL sessions for this canvas (all connected users see it)
-        await client.query(
-          `UPDATE document.session SET toast = $2, updated_at = now() WHERE canvas_id = $1`,
-          [args.canvas_id, JSON.stringify({ text: args.text, level: args.level ?? "info", duration: args.duration ?? 3000, at: new Date().toISOString() })],
-        );
+        await client.query(`UPDATE document.session SET toast = $2, updated_at = now() WHERE canvas_id = $1`, [
+          args.canvas_id,
+          JSON.stringify({
+            text: args.text,
+            level: args.level ?? "info",
+            duration: args.duration ?? 3000,
+            at: new Date().toISOString(),
+          }),
+        ]);
         return text(`Toast sent: "${args.text}" (${args.level ?? "info"})`);
       });
     },
@@ -106,10 +111,7 @@ export function createExportSvgTool({ withClient }: { withClient: WithClient }):
     },
     handler: async (args, _extra) => {
       return withClient(async (client) => {
-        const { rows } = await client.query(
-          `SELECT document.canvas_render_svg_mini($1) as svg`,
-          [args.canvas_id],
-        );
+        const { rows } = await client.query(`SELECT document.canvas_render_svg_mini($1) as svg`, [args.canvas_id]);
         if (!rows[0]?.svg) return text("Canvas not found or empty.");
         return text(rows[0].svg);
       });
@@ -117,16 +119,17 @@ export function createExportSvgTool({ withClient }: { withClient: WithClient }):
   };
 }
 
-export function createCheckLayoutTool({ withClient }: { withClient: WithClient }): ToolHandler {
+export function createCheckLayoutTool({ withClient: _withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "ill_check_layout",
-      description: "Analyze layout for collisions, out-of-bounds, bleed zone, spacing issues. Returns diagnostic report.",
+      description:
+        "Analyze layout for collisions, out-of-bounds, bleed zone, spacing issues. Returns diagnostic report.",
       schema: z.object({
         canvas_id: z.string().describe("Canvas UUID"),
       }),
     },
-    handler: async (args, _extra) => {
+    handler: async (_args, _extra) => {
       // TODO: Port layout.ts analysis (requires loadCanvas + bbox computation)
       return text("check_layout: not yet implemented (requires positioning engine port)");
     },
@@ -165,7 +168,7 @@ export function createMeasureTextTool(): ToolHandler {
             lines.push(current);
             current = w;
           } else {
-            current = current ? current + " " + w : w;
+            current = current ? `${current} ${w}` : w;
           }
         }
         if (current) lines.push(current);
@@ -173,10 +176,12 @@ export function createMeasureTextTool(): ToolHandler {
         lines = textStr.split("\n");
       }
 
-      const width = Math.max(...lines.map(l => l.length * charW));
+      const width = Math.max(...lines.map((l) => l.length * charW));
       const height = lines.length * lineH;
 
-      return text(`lines: ${lines.length}\nwidth: ${width.toFixed(1)}mm\nheight: ${height.toFixed(1)}mm\nlineHeight: ${lineH.toFixed(1)}mm`);
+      return text(
+        `lines: ${lines.length}\nwidth: ${width.toFixed(1)}mm\nheight: ${height.toFixed(1)}mm\nlineHeight: ${lineH.toFixed(1)}mm`,
+      );
     },
   };
 }

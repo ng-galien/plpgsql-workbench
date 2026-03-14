@@ -1,13 +1,11 @@
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
-import { text } from "../../helpers.js";
-import { PlUri } from "../../uri.js";
-import { queryFunction, formatFunction } from "../../resources/function.js";
 import { validateContextToken } from "../../context-token.js";
+import { text } from "../../helpers.js";
+import { formatFunction, queryFunction } from "../../resources/function.js";
+import { PlUri } from "../../uri.js";
 
-export function createFuncDelTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createFuncDelTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "pg_func_del",
@@ -16,7 +14,10 @@ export function createFuncDelTool({ withClient }: {
         "Requires context_token (read before delete). Returns dropped function details.",
       schema: z.object({
         uri: z.string().describe("Target URI. Ex: plpgsql://cad/function/page_index"),
-        context_token: z.string().optional().describe("Context token from pg_get. Required — proves the function was read before deletion."),
+        context_token: z
+          .string()
+          .optional()
+          .describe("Context token from pg_get. Required — proves the function was read before deletion."),
       }),
     },
     handler: async (args, _extra) => {
@@ -47,7 +48,9 @@ export function createFuncDelTool({ withClient }: {
         );
 
         if (identRes.rows.length === 0) {
-          return text(`completeness: full\n\nproblem: function ${schema}.${name} not found\nwhere: pg_func_del\nfix_hint: check schema and function name`);
+          return text(
+            `completeness: full\n\nproblem: function ${schema}.${name} not found\nwhere: pg_func_del\nfix_hint: check schema and function name`,
+          );
         }
 
         const ident = identRes.rows[0].ident;

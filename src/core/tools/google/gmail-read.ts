@@ -17,7 +17,10 @@ function extractBody(payload: any): string {
   }
   if (!body && payload.body?.data && payload.mimeType === "text/html") {
     const html = Buffer.from(payload.body.data, "base64url").toString("utf-8");
-    return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return html
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
   return body;
 }
@@ -45,9 +48,7 @@ function collectAttachments(payload: any): Attachment[] {
   return attachments;
 }
 
-export function createGmailReadTool({ gmailClient }: {
-  gmailClient: GmailClient;
-}): ToolHandler {
+export function createGmailReadTool({ gmailClient }: { gmailClient: GmailClient }): ToolHandler {
   return {
     metadata: {
       name: "gmail_read",
@@ -62,11 +63,13 @@ export function createGmailReadTool({ gmailClient }: {
     handler: async (args, _extra) => {
       const messageId = args.message_id as string;
 
-      let gmail;
+      let gmail: Awaited<ReturnType<typeof ensureGmailConnected>> | undefined;
       try {
         gmail = await ensureGmailConnected(gmailClient);
       } catch (err) {
-        return text(`problem: Gmail auth failed: ${(err as Error).message}\nwhere: gmail_read\nfix_hint: check workbench.config(google, *)`);
+        return text(
+          `problem: Gmail auth failed: ${(err as Error).message}\nwhere: gmail_read\nfix_hint: check workbench.config(google, *)`,
+        );
       }
 
       const detail = await gmail.users.messages.get({

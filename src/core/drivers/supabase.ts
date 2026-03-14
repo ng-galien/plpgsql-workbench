@@ -29,6 +29,7 @@ export interface PostgresWithClientOptions {
  *   So sql.unsafe("SELECT fn($1,$2)", [id, sql.json(props)]) correctly sends
  *   props as jsonb (OID 3802), not json (OID 114).
  */
+// biome-ignore lint/suspicious/noExplicitAny: postgres.js Sql instance has no public type export
 export function createPostgresWithClient(sql: any, opts?: PostgresWithClientOptions): WithClient {
   const defaultTenantId = opts?.tenantId ?? "dev";
   const defaultUserId = opts?.userId ?? "dev";
@@ -38,9 +39,13 @@ export function createPostgresWithClient(sql: any, opts?: PostgresWithClientOpti
   return async <T>(cb: (client: DbClient) => Promise<T>): Promise<T> => {
     const tenantId = resolveTenantId?.() ?? defaultTenantId;
     const userId = resolveUserId?.() ?? defaultUserId;
-    await sql.unsafe(`SELECT set_config('app.tenant_id', $1, false), set_config('app.user_id', $2, false)`, [tenantId, userId]);
+    await sql.unsafe(`SELECT set_config('app.tenant_id', $1, false), set_config('app.user_id', $2, false)`, [
+      tenantId,
+      userId,
+    ]);
 
     const client: DbClient = {
+      // biome-ignore lint/suspicious/noExplicitAny: generic default must accept any row shape
       async query<R = any>(queryText: string, params?: unknown[]): Promise<QueryResult<R>> {
         if (!params || params.length === 0) {
           return toResult<R>(await sql.unsafe(queryText));
@@ -48,10 +53,8 @@ export function createPostgresWithClient(sql: any, opts?: PostgresWithClientOpti
 
         // Map JsonbParam → sql.json() (Parameter with OID 3802), pass others as-is.
         // sql.unsafe() + handleValue() handles Parameter instances natively.
-        const args = params.map(p =>
-          p instanceof JsonbParam
-            ? sql.json(typeof p.value === "string" ? JSON.parse(p.value) : p.value)
-            : p
+        const args = params.map((p) =>
+          p instanceof JsonbParam ? sql.json(typeof p.value === "string" ? JSON.parse(p.value) : p.value) : p,
         );
 
         return toResult<R>(await sql.unsafe(queryText, args));
@@ -62,10 +65,12 @@ export function createPostgresWithClient(sql: any, opts?: PostgresWithClientOpti
   };
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: postgres.js result is an augmented array with no public type
 function toResult<R>(result: any): QueryResult<R> {
   return {
     rows: result as R[],
     rowCount: result.count ?? result.length,
+    // biome-ignore lint/suspicious/noExplicitAny: postgres.js column descriptor has no public type
     fields: result.columns?.map((c: any) => ({ name: c.name })),
   };
 }

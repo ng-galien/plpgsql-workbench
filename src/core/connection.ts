@@ -8,8 +8,8 @@
  * Cloudflare/Deno (prod): postgres.js wrapper
  */
 
-/** Query result — kept loose (any) to stay compatible with existing tool code. */
-export interface QueryResult<T = any> {
+/** Query result — default generic kept as Record for compatibility with existing tool code. */
+export interface QueryResult<T = Record<string, unknown>> {
   rows: T[];
   rowCount: number | null;
   fields?: { name: string }[];
@@ -35,8 +35,11 @@ export function jsonb(value: unknown): JsonbParam {
 
 /** Database client — the only thing tools see. */
 export interface DbClient {
+  // biome-ignore lint/suspicious/noExplicitAny: generic default must accept any row shape from raw SQL
   query<T = any>(sql: string, params?: unknown[]): Promise<QueryResult<T>>;
   /** PG-specific: listen for notices (used by coverage, dev only). */
+  // biome-ignore lint/suspicious/noExplicitAny: pg PoolClient notice callback signature varies
   on?(event: string, fn: (...args: any[]) => void): void;
+  // biome-ignore lint/suspicious/noExplicitAny: pg PoolClient notice callback signature varies
   removeListener?(event: string, fn: (...args: any[]) => void): void;
 }

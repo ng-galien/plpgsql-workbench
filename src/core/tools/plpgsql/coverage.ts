@@ -2,15 +2,16 @@ import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
+import { type CoverageResult, formatCoverageReport, runCoverage } from "../../instrument/coverage.js";
 import { PlUri } from "../../uri.js";
-import { runCoverage, formatCoverageReport, type CoverageResult } from "../../instrument/coverage.js";
 import type { TestReport } from "./test.js";
 
-type RunTestsFn = (
-  client: DbClient, testSchema: string, pattern?: string,
-) => Promise<TestReport | null>;
+type RunTestsFn = (client: DbClient, testSchema: string, pattern?: string) => Promise<TestReport | null>;
 
-export function createCoverageTool({ withClient, runTests }: {
+export function createCoverageTool({
+  withClient,
+  runTests,
+}: {
   withClient: WithClient;
   runTests: RunTestsFn;
 }): ToolHandler {
@@ -31,7 +32,9 @@ export function createCoverageTool({ withClient, runTests }: {
       const target = args.target as string;
       const parsed = PlUri.parse(target);
       if (!parsed) {
-        return text("problem: invalid URI\nwhere: pg_coverage\nfix_hint: use plpgsql://schema or plpgsql://schema/function/name");
+        return text(
+          "problem: invalid URI\nwhere: pg_coverage\nfix_hint: use plpgsql://schema or plpgsql://schema/function/name",
+        );
       }
 
       // Schema-level batch coverage
@@ -43,24 +46,23 @@ export function createCoverageTool({ withClient, runTests }: {
 
       // Single function coverage
       if (parsed.kind !== "function" || !parsed.name) {
-        return text("problem: target must be a function or schema URI\nwhere: pg_coverage\nfix_hint: use plpgsql://schema or plpgsql://schema/function/name");
+        return text(
+          "problem: target must be a function or schema URI\nwhere: pg_coverage\nfix_hint: use plpgsql://schema or plpgsql://schema/function/name",
+        );
       }
 
       return withClient(async (client) => {
         const utSchema = `${parsed.schema}_ut`;
         const testPattern = `^test_${parsed.name}$`;
 
-        const result = await runCoverage(
-          client,
-          parsed.schema,
-          parsed.name!,
-          async (c) => {
-            await runTests(c, utSchema, testPattern);
-          },
-        );
+        const result = await runCoverage(client, parsed.schema, parsed.name!, async (c) => {
+          await runTests(c, utSchema, testPattern);
+        });
 
         if (!result) {
-          return text(`problem: function ${parsed.schema}.${parsed.name} not found\nwhere: pg_coverage\nfix_hint: check the target URI`);
+          return text(
+            `problem: function ${parsed.schema}.${parsed.name} not found\nwhere: pg_coverage\nfix_hint: check the target URI`,
+          );
         }
 
         if (result.totalPoints === 0) {
@@ -117,14 +119,9 @@ async function runSchemaCoverage(
 
   for (const fn of withTest) {
     try {
-      const result = await runCoverage(
-        client,
-        schema,
-        fn.name,
-        async (c) => {
-          await runTests(c, utSchema, `^test_${fn.name}$`);
-        },
-      );
+      const result = await runCoverage(client, schema, fn.name, async (c) => {
+        await runTests(c, utSchema, `^test_${fn.name}$`);
+      });
       if (result) results.push(result);
     } catch (err) {
       errors.push(`${fn.name}: ${err instanceof Error ? err.message : String(err)}`);
@@ -146,12 +143,14 @@ async function runSchemaCoverage(
     lines.push("function | blocks | branches | coverage");
     lines.push("---------|--------|----------|--------");
     for (const r of results.sort((a, b) => a.percentage - b.percentage)) {
-      const blocks = r.points.filter(p => p.kind === "block");
-      const branches = r.points.filter(p => p.kind === "branch");
-      const hitBlocks = blocks.filter(p => r.hit.has(p.id)).length;
-      const hitBranches = branches.filter(p => r.hit.has(p.id)).length;
+      const blocks = r.points.filter((p) => p.kind === "block");
+      const branches = r.points.filter((p) => p.kind === "branch");
+      const hitBlocks = blocks.filter((p) => r.hit.has(p.id)).length;
+      const hitBranches = branches.filter((p) => r.hit.has(p.id)).length;
       const sym = r.percentage === 100 ? "✓" : r.percentage >= 80 ? "⚠" : "✗";
-      lines.push(`${sym} ${r.name} | ${hitBlocks}/${blocks.length} | ${hitBranches}/${branches.length} | ${r.percentage}%`);
+      lines.push(
+        `${sym} ${r.name} | ${hitBlocks}/${blocks.length} | ${hitBranches}/${branches.length} | ${r.percentage}%`,
+      );
       totalPoints += r.totalPoints;
       totalHit += r.coveredPoints;
     }

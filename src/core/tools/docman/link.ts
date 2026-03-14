@@ -19,20 +19,26 @@ export function createDocLinkTool({ withClient }: { withClient: WithClient }): T
       }),
     },
     handler: async (args) => {
-      const { id, kind, name, role, confidence = 1.0 } = args as {
-        id: string; kind: string; name: string; role: string; confidence?: number;
+      const {
+        id,
+        kind,
+        name,
+        role,
+        confidence = 1.0,
+      } = args as {
+        id: string;
+        kind: string;
+        name: string;
+        role: string;
+        confidence?: number;
       };
 
       return await withClient(async (client) => {
-        const res = await client.query(
-          `SELECT docman.link($1, $2, $3, $4, $5)`,
-          [id, kind, name, role, confidence]
-        );
+        const res = await client.query(`SELECT docman.link($1, $2, $3, $4, $5)`, [id, kind, name, role, confidence]);
         const entityId = res.rows[0]?.link;
 
         return text(
-          `Linked: ${name} (${kind}:${role}) -> document ${id}\n` +
-          `entity_id: ${entityId}  confidence: ${confidence}`
+          `Linked: ${name} (${kind}:${role}) -> document ${id}\n` + `entity_id: ${entityId}  confidence: ${confidence}`,
         );
       });
     },

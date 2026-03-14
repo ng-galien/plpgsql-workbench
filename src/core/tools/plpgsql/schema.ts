@@ -1,11 +1,11 @@
+import { execFile } from "node:child_process";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import fs from "fs/promises";
-import path from "path";
-import crypto from "crypto";
-import { execFile } from "child_process";
 
 function resolveDir(dir: string): string {
   if (path.isAbsolute(dir)) return dir;
@@ -40,11 +40,7 @@ interface MigrationResult {
   message?: string;
 }
 
-async function applyMigrations(
-  client: DbClient,
-  dir: string,
-  force: boolean,
-): Promise<string> {
+async function applyMigrations(client: DbClient, dir: string, force: boolean): Promise<string> {
   const resolved = resolveDir(dir);
 
   let entries: string[];
@@ -155,9 +151,7 @@ function formatResults(results: MigrationResult[], dir: string): string {
   return parts.join("\n");
 }
 
-export function createSchemaTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createSchemaTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "pg_schema",
@@ -166,12 +160,10 @@ export function createSchemaTool({ withClient }: {
         "Executes .sql files in alphabetical order, each in its own transaction.\n" +
         "Tracks applied files to avoid re-running. Detects changed files.",
       schema: z.object({
-        path: z.string().describe("Directory containing DDL migration .sql files (relative to project root or absolute)"),
-        force: z
-          .boolean()
-          .optional()
-          .default(false)
-          .describe("Re-apply changed files instead of warning"),
+        path: z
+          .string()
+          .describe("Directory containing DDL migration .sql files (relative to project root or absolute)"),
+        force: z.boolean().optional().default(false).describe("Re-apply changed files instead of warning"),
       }),
     },
     handler: async (args, _extra) => {

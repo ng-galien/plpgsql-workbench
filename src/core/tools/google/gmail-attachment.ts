@@ -1,15 +1,13 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
-import fs from "fs";
-import path from "path";
-import os from "os";
 import type { ToolHandler } from "../../container.js";
 import { text } from "../../helpers.js";
 import type { GmailClient } from "./auth.js";
 import { ensureGmailConnected } from "./auth.js";
 
-export function createGmailAttachmentTool({ gmailClient }: {
-  gmailClient: GmailClient;
-}): ToolHandler {
+export function createGmailAttachmentTool({ gmailClient }: { gmailClient: GmailClient }): ToolHandler {
   return {
     metadata: {
       name: "gmail_attachment",
@@ -27,16 +25,20 @@ export function createGmailAttachmentTool({ gmailClient }: {
       const messageId = args.message_id as string;
       const attachmentId = args.attachment_id as string;
 
-      let gmail;
+      let gmail: Awaited<ReturnType<typeof ensureGmailConnected>> | undefined;
       try {
         gmail = await ensureGmailConnected(gmailClient);
       } catch (err) {
-        return text(`problem: Gmail auth failed: ${(err as Error).message}\nwhere: gmail_attachment\nfix_hint: check workbench.config(google, *)`);
+        return text(
+          `problem: Gmail auth failed: ${(err as Error).message}\nwhere: gmail_attachment\nfix_hint: check workbench.config(google, *)`,
+        );
       }
 
       const inboxRoot = gmailClient.getConfig().inboxRoot;
       if (!inboxRoot) {
-        return text("problem: inbox_root not configured\nwhere: gmail_attachment\nfix_hint: pg_query sql:INSERT INTO workbench.config VALUES ('google','inboxRoot','/path/to/inbox')");
+        return text(
+          "problem: inbox_root not configured\nwhere: gmail_attachment\nfix_hint: pg_query sql:INSERT INTO workbench.config VALUES ('google','inboxRoot','/path/to/inbox')",
+        );
       }
       const resolvedRoot = path.resolve(inboxRoot.replace(/^~/, os.homedir()));
 
@@ -92,7 +94,9 @@ export function createGmailAttachmentTool({ gmailClient }: {
 
       const data = attachment.data.data;
       if (!data) {
-        return text(`problem: attachment ${attachmentId} has no data\nwhere: gmail_attachment\nfix_hint: verify the attachment_id from gmail_read`);
+        return text(
+          `problem: attachment ${attachmentId} has no data\nwhere: gmail_attachment\nfix_hint: verify the attachment_id from gmail_read`,
+        );
       }
 
       const buffer = Buffer.from(data, "base64url");
@@ -103,7 +107,12 @@ export function createGmailAttachmentTool({ gmailClient }: {
       fs.writeFileSync(filePath, buffer);
 
       const size = buffer.length;
-      const sizeStr = size < 1024 ? `${size}B` : size < 1024 * 1024 ? `${(size / 1024).toFixed(0)}KB` : `${(size / (1024 * 1024)).toFixed(1)}MB`;
+      const sizeStr =
+        size < 1024
+          ? `${size}B`
+          : size < 1024 * 1024
+            ? `${(size / 1024).toFixed(0)}KB`
+            : `${(size / (1024 * 1024)).toFixed(1)}MB`;
 
       const parts: string[] = [
         `saved: ${filePath}`,

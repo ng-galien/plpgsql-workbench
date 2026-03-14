@@ -1,12 +1,15 @@
-import { z } from "zod";
 import { execFile } from "node:child_process";
+import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
 import type { ModuleRegistry } from "../../pgm/registry.js";
 
 const MSG_TYPES = ["feature_request", "bug_report", "breaking_change", "question", "info", "task"] as const;
 
-export function createMsgTool({ withClient, moduleRegistry }: {
+export function createMsgTool({
+  withClient,
+  moduleRegistry,
+}: {
   withClient: WithClient;
   moduleRegistry: Promise<ModuleRegistry>;
 }): ToolHandler {
@@ -24,9 +27,15 @@ export function createMsgTool({ withClient, moduleRegistry }: {
         type: z.enum(MSG_TYPES).describe("Message category"),
         subject: z.string().describe("Short summary (one line)"),
         body: z.string().optional().describe("Detailed description, context, code references"),
-        payload: z.record(z.string(), z.unknown()).optional().describe("Structured task input (JSONB). Ex: {action:'generate_bom', args:{part_id:42}}"),
+        payload: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("Structured task input (JSONB). Ex: {action:'generate_bom', args:{part_id:42}}"),
         reply_to: z.number().optional().describe("Parent message ID for threading"),
-        priority: z.enum(["normal", "high"]).optional().describe("Delivery urgency. 'high' = delivered during PreToolUse hook"),
+        priority: z
+          .enum(["normal", "high"])
+          .optional()
+          .describe("Delivery urgency. 'high' = delivered during PreToolUse hook"),
       }),
     },
     handler: async (args, _extra) => {
@@ -66,7 +75,10 @@ export function createMsgTool({ withClient, moduleRegistry }: {
           }
           targets = [...moduleNames];
         } else if (to.includes(",")) {
-          targets = to.split(",").map(s => s.trim()).filter(Boolean);
+          targets = to
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
         } else {
           targets = [to];
         }
@@ -110,9 +122,7 @@ export function createMsgTool({ withClient, moduleRegistry }: {
   };
 }
 
-export function createMsgInboxTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createMsgInboxTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "pg_msg_inbox",
@@ -125,15 +135,20 @@ export function createMsgInboxTool({ withClient }: {
         module: z.string().describe("Your module name (comma-separated for aliases). Ex: cad, pgv, lead"),
         resolve: z.number().optional().describe("Message ID to mark as resolved"),
         resolution: z.string().optional().describe("Resolution note (when resolving)"),
-        result: z.record(z.string(), z.unknown()).optional().describe("Structured task result (JSONB). Use when resolving a task."),
+        result: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("Structured task result (JSONB). Use when resolving a task."),
         sent: z.boolean().optional().describe("Show messages sent by you (track resolutions)"),
-        status: z.enum(["new", "acknowledged", "resolved", "all"]).optional()
+        status: z
+          .enum(["new", "acknowledged", "resolved", "all"])
+          .optional()
           .describe("Filter by status (default: new + acknowledged)"),
         limit: z.number().optional().describe("Max messages (default: 1 = last message only)"),
       }),
     },
     handler: async (args, _extra) => {
-      const names = (args.module as string).split(",").map(s => s.trim());
+      const names = (args.module as string).split(",").map((s) => s.trim());
       const mod = names[0];
       const resolveId = args.resolve as number | undefined;
       const resolution = (args.resolution as string) || null;
@@ -189,10 +204,9 @@ export function createMsgInboxTool({ withClient }: {
             .filter((r: any) => r.status === "resolved" && (!r.acknowledged_at || r.resolved_at > r.acknowledged_at))
             .map((r: any) => r.id);
           if (resolvedIds.length > 0) {
-            await client.query(
-              `UPDATE workbench.agent_message SET acknowledged_at = resolved_at WHERE id = ANY($1)`,
-              [resolvedIds],
-            );
+            await client.query(`UPDATE workbench.agent_message SET acknowledged_at = resolved_at WHERE id = ANY($1)`, [
+              resolvedIds,
+            ]);
           }
 
           if (rows.length === 0) {
@@ -248,17 +262,18 @@ export function createMsgInboxTool({ withClient }: {
         }
 
         if (rows.length === 0) {
-          return text(`inbox: ${mod} (0 messages)\n\nno pending messages\n\nnext: pg_msg from:${mod} to:... type:... subject:...`);
+          return text(
+            `inbox: ${mod} (0 messages)\n\nno pending messages\n\nnext: pg_msg from:${mod} to:... type:... subject:...`,
+          );
         }
 
         const newCount = newIds.length;
         const ackCount = rows.filter((r: any) => r.status === "acknowledged").length;
-        const counts = [
-          newCount > 0 ? `${newCount} new` : null,
-          ackCount > 0 ? `${ackCount} acknowledged` : null,
-        ].filter(Boolean).join(", ");
+        const counts = [newCount > 0 ? `${newCount} new` : null, ackCount > 0 ? `${ackCount} acknowledged` : null]
+          .filter(Boolean)
+          .join(", ");
 
-        const lines = [`inbox: ${mod} (${counts || rows.length + " messages"})`, ""];
+        const lines = [`inbox: ${mod} (${counts || `${rows.length} messages`})`, ""];
 
         for (const r of rows) {
           const status = r.status === "new" ? "NEW" : r.status.toUpperCase();

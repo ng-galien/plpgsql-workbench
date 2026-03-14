@@ -1,24 +1,43 @@
+import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
-import fs from "fs/promises";
-import { existsSync } from "fs";
-import path from "path";
-import { execFileSync } from "child_process";
-import { ensureDocstoreSchema, mimeFromExt, formatSize, hashFile } from "./utils.js";
+import { ensureDocstoreSchema, formatSize, hashFile, mimeFromExt } from "./utils.js";
 
 const TEXT_TYPES = new Set([
-  "text/plain", "text/markdown", "text/csv", "text/html", "text/css",
-  "text/yaml", "text/toml", "text/typescript", "text/x-python",
-  "text/x-java", "text/x-go", "text/x-rust", "text/x-c", "text/x-c++",
-  "application/json", "application/xml", "application/javascript",
-  "application/sql", "application/x-sh",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "text/html",
+  "text/css",
+  "text/yaml",
+  "text/toml",
+  "text/typescript",
+  "text/x-python",
+  "text/x-java",
+  "text/x-go",
+  "text/x-rust",
+  "text/x-c",
+  "text/x-c++",
+  "application/json",
+  "application/xml",
+  "application/javascript",
+  "application/sql",
+  "application/x-sh",
 ]);
 
 let _hasPdftotext: boolean | null = null;
 function hasPdftotext(): boolean {
   if (_hasPdftotext === null) {
-    try { execFileSync("pdftotext", ["-v"], { stdio: "pipe" }); _hasPdftotext = true; } catch { _hasPdftotext = false; }
+    try {
+      execFileSync("pdftotext", ["-v"], { stdio: "pipe" });
+      _hasPdftotext = true;
+    } catch {
+      _hasPdftotext = false;
+    }
   }
   return _hasPdftotext;
 }
@@ -32,12 +51,12 @@ function extractPdfText(filePath: string, maxLines: number): string[] | null {
       timeout: 10000,
     });
     return raw.toString("utf-8").split("\n").slice(0, maxLines);
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-export function createPeekTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createPeekTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "fs_peek",
@@ -58,10 +77,12 @@ export function createPeekTool({ withClient }: {
       const maxLines = (args.lines as number | undefined) ?? 100;
       const lineOffset = (args.offset as number | undefined) ?? 0;
 
-      if (!existsSync(filePath)) return text(`problem: file not found: ${filePath}\nwhere: fs_peek\nfix_hint: check the path argument`);
+      if (!existsSync(filePath))
+        return text(`problem: file not found: ${filePath}\nwhere: fs_peek\nfix_hint: check the path argument`);
 
       const stat = await fs.stat(filePath);
-      if (!stat.isFile()) return text(`problem: not a file: ${filePath}\nwhere: fs_peek\nfix_hint: use fs_scan for directories`);
+      if (!stat.isFile())
+        return text(`problem: not a file: ${filePath}\nwhere: fs_peek\nfix_hint: use fs_scan for directories`);
 
       const ext = path.extname(filePath);
       const mime = mimeFromExt(ext);
@@ -123,7 +144,10 @@ export function createPeekTool({ withClient }: {
           const hasMore = lineOffset + maxLines < total;
           if (hasMore) contentTruncated = true;
 
-          parts.push("", `content: pdf extract (first 3 pages), lines ${lineOffset + 1}-${lineOffset + chunk.length} of ${total}`);
+          parts.push(
+            "",
+            `content: pdf extract (first 3 pages), lines ${lineOffset + 1}-${lineOffset + chunk.length} of ${total}`,
+          );
           for (const line of chunk) {
             parts.push(`  ${line}`);
           }

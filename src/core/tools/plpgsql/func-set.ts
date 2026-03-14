@@ -1,22 +1,25 @@
 import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
-import type { ToolResult } from "../../helpers.js";
-import { text, formatErrorTriplet } from "../../helpers.js";
-import { PlUri } from "../../uri.js";
-import { queryFunction, formatFunction } from "../../resources/function.js";
 import { computeContextToken, validateContextToken } from "../../context-token.js";
+import type { ToolResult } from "../../helpers.js";
+import { formatErrorTriplet, text } from "../../helpers.js";
+import { formatFunction, queryFunction } from "../../resources/function.js";
+import { PlUri } from "../../uri.js";
 import type { TestReport } from "./test.js";
 
 // --- Service types ---
 
 export type SetFunctionFn = (
-  client: DbClient, schema: string, name: string, content: string, description?: string, contextToken?: string,
+  client: DbClient,
+  schema: string,
+  name: string,
+  content: string,
+  description?: string,
+  contextToken?: string,
 ) => Promise<ToolResult>;
 
-type RunTestsFn = (
-  client: DbClient, testSchema: string, pattern?: string,
-) => Promise<TestReport | null>;
+type RunTestsFn = (client: DbClient, testSchema: string, pattern?: string) => Promise<TestReport | null>;
 
 type FormatTestReportFn = (report: TestReport) => string;
 
@@ -24,7 +27,10 @@ type ResolveUriFn = (uri: string, client: DbClient) => Promise<string>;
 
 // --- Shared service factory (injected into edit + set tools) ---
 
-export function createSetFunction({ runTests, formatTestReport }: {
+export function createSetFunction({
+  runTests,
+  formatTestReport,
+}: {
   runTests: RunTestsFn;
   formatTestReport: FormatTestReportFn;
 }): SetFunctionFn {
@@ -42,7 +48,7 @@ export function createSetFunction({ runTests, formatTestReport }: {
        WHERE n.nspname = $1 AND p.proname = $2`,
       [schema, name],
     );
-    const overloadsBefore = parseInt(beforeCount.rows[0]?.count ?? "0");
+    const overloadsBefore = parseInt(beforeCount.rows[0]?.count ?? "0", 10);
 
     await client.query("BEGIN");
 
@@ -60,17 +66,17 @@ export function createSetFunction({ runTests, formatTestReport }: {
        WHERE n.nspname = $1 AND p.proname = $2`,
       [schema, name],
     );
-    const overloadsAfter = parseInt(afterCount.rows[0]?.count ?? "0");
+    const overloadsAfter = parseInt(afterCount.rows[0]?.count ?? "0", 10);
     if (overloadsAfter > 1 && overloadsAfter > overloadsBefore) {
       await client.query("ROLLBACK");
       return text(
         `completeness: full\n\n` +
-        `✗ overload interdit: ${schema}.${name} a deja ${overloadsBefore} signature(s).\n` +
-        `  Ce deploy cree une nouvelle surcharge (${overloadsAfter} total).\n` +
-        `  Les overloads causent des bugs de routing implicite.\n` +
-        `  fix_hint: renomme la fonction ou supprime l'ancienne signature d'abord.\n` +
-        `  Use pg_get plpgsql://${schema}/function/${name} to see existing signatures.\n\n` +
-        `deploy rolled back`,
+          `✗ overload interdit: ${schema}.${name} a deja ${overloadsBefore} signature(s).\n` +
+          `  Ce deploy cree une nouvelle surcharge (${overloadsAfter} total).\n` +
+          `  Les overloads causent des bugs de routing implicite.\n` +
+          `  fix_hint: renomme la fonction ou supprime l'ancienne signature d'abord.\n` +
+          `  Use pg_get plpgsql://${schema}/function/${name} to see existing signatures.\n\n` +
+          `deploy rolled back`,
       );
     }
 
@@ -92,21 +98,26 @@ export function createSetFunction({ runTests, formatTestReport }: {
     } else {
       try {
         await client.query("SAVEPOINT plpgsql_check");
-        const check = await client.query<{ lineno: number; message: string; hint: string | null; level: string; statement: string | null }>(
-          `SELECT lineno, message, hint, level, statement FROM plpgsql_check_function_tb($1)`,
-          [`${schema}.${name}`],
-        );
+        const check = await client.query<{
+          lineno: number;
+          message: string;
+          hint: string | null;
+          level: string;
+          statement: string | null;
+        }>(`SELECT lineno, message, hint, level, statement FROM plpgsql_check_function_tb($1)`, [`${schema}.${name}`]);
         await client.query("RELEASE SAVEPOINT plpgsql_check");
         if (check.rows.length === 0) {
           validation = "✓ plpgsql_check passed";
         } else {
           hasErrors = check.rows.some((r) => r.level === "error");
-          const diag = check.rows.map((r) => {
-            const parts = [`problem: ${r.message}`, `where: line ${r.lineno}`];
-            if (r.statement) parts.push(`statement: ${r.statement}`);
-            if (r.hint) parts.push(`fix_hint: ${r.hint}`);
-            return `  [${r.level}]\n  ${parts.join("\n  ")}`;
-          }).join("\n");
+          const diag = check.rows
+            .map((r) => {
+              const parts = [`problem: ${r.message}`, `where: line ${r.lineno}`];
+              if (r.statement) parts.push(`statement: ${r.statement}`);
+              if (r.hint) parts.push(`fix_hint: ${r.hint}`);
+              return `  [${r.level}]\n  ${parts.join("\n  ")}`;
+            })
+            .join("\n");
           const sym = hasErrors ? "✗" : "⚠";
           validation = `${sym} plpgsql_check:\n${diag}`;
         }
@@ -141,9 +152,9 @@ export function createSetFunction({ runTests, formatTestReport }: {
         await client.query("ROLLBACK");
         return text(
           `completeness: full\n\n${validation}\n\n` +
-          `✗ boundary violation: cross-schema calls to internal (_prefix) functions:\n${details}\n\n` +
-          `Convention: schema._name() = interne, cross-module interdit.\n` +
-          `deploy rolled back`,
+            `✗ boundary violation: cross-schema calls to internal (_prefix) functions:\n${details}\n\n` +
+            `Convention: schema._name() = interne, cross-module interdit.\n` +
+            `deploy rolled back`,
         );
       }
     } catch {
@@ -158,7 +169,9 @@ export function createSetFunction({ runTests, formatTestReport }: {
     if (testReport && testReport.total > 0) {
       if (testReport.failed > 0) {
         await client.query("ROLLBACK");
-        return text(`completeness: full\n\n${validation}\n---\n${formatTestReport(testReport)}\n\ndeploy rolled back (fix failing tests and retry)`);
+        return text(
+          `completeness: full\n\n${validation}\n---\n${formatTestReport(testReport)}\n\ndeploy rolled back (fix failing tests and retry)`,
+        );
       }
       testSection = `\n---\n${formatTestReport(testReport)}`;
     }
@@ -170,7 +183,9 @@ export function createSetFunction({ runTests, formatTestReport }: {
 
     // Apply COMMENT ON FUNCTION if description provided
     if (description) {
-      const { rows: [{ ident }] } = await client.query<{ ident: string }>(
+      const {
+        rows: [{ ident }],
+      } = await client.query<{ ident: string }>(
         `SELECT p.oid::regprocedure::text AS ident
          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = $1 AND p.proname = $2 LIMIT 1`,
@@ -193,16 +208,16 @@ export function createSetFunction({ runTests, formatTestReport }: {
 
 // --- Tool factory ---
 
-export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
+export function createFuncSetTool({
+  withClient,
+  setFunction,
+  resolveUri,
+}: {
   withClient: WithClient;
   setFunction: SetFunctionFn;
   resolveUri: ResolveUriFn;
 }): ToolHandler {
-  async function setDdl(
-    client: DbClient,
-    parsed: PlUri,
-    content: string,
-  ): Promise<ToolResult> {
+  async function setDdl(client: DbClient, parsed: PlUri, content: string): Promise<ToolResult> {
     try {
       await client.query("BEGIN");
       try {
@@ -210,7 +225,9 @@ export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
         await client.query("ROLLBACK");
       } catch (err: unknown) {
         await client.query("ROLLBACK");
-        return text(`completeness: full\n\n✗ dry-run failed\n${formatErrorTriplet(err, content, `${parsed.schema}.${parsed.name}`)}`);
+        return text(
+          `completeness: full\n\n✗ dry-run failed\n${formatErrorTriplet(err, content, `${parsed.schema}.${parsed.name}`)}`,
+        );
       }
     } catch (err: unknown) {
       return text(`completeness: full\n\n✗ ${formatErrorTriplet(err)}`);
@@ -223,7 +240,9 @@ export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
       await client.query("COMMIT");
     } catch (err: unknown) {
       await client.query("ROLLBACK").catch(() => {});
-      return text(`completeness: full\n\n✗ deploy failed after dry-run\n${formatErrorTriplet(err, content, `${parsed.schema}.${parsed.name}`)}`);
+      return text(
+        `completeness: full\n\n✗ deploy failed after dry-run\n${formatErrorTriplet(err, content, `${parsed.schema}.${parsed.name}`)}`,
+      );
     }
 
     // Return deployed state
@@ -240,8 +259,16 @@ export function createFuncSetTool({ withClient, setFunction, resolveUri }: {
       schema: z.object({
         uri: z.string().describe("Target URI. Ex: plpgsql://public/function/transfer"),
         content: z.string().describe("Full SQL statement. Ex: CREATE OR REPLACE FUNCTION ..."),
-        description: z.string().optional().describe("Function doc (COMMENT ON FUNCTION). Short description of what the function does."),
-        context_token: z.string().optional().describe("Context token from pg_get. Required when modifying an existing function. Proves the function was read before modification."),
+        description: z
+          .string()
+          .optional()
+          .describe("Function doc (COMMENT ON FUNCTION). Short description of what the function does."),
+        context_token: z
+          .string()
+          .optional()
+          .describe(
+            "Context token from pg_get. Required when modifying an existing function. Proves the function was read before modification.",
+          ),
       }),
     },
     handler: async (args, _extra) => {

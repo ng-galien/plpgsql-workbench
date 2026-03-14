@@ -23,7 +23,9 @@ Actions:
 - setup: Change format/orientation/background. Args: id (UUID), format, orientation, background
 - clear: Remove all elements. Args: id (UUID)`,
       schema: z.object({
-        action: z.enum(["new", "list", "load", "delete", "duplicate", "rename", "setup", "clear"]).describe("Operation"),
+        action: z
+          .enum(["new", "list", "load", "delete", "duplicate", "rename", "setup", "clear"])
+          .describe("Operation"),
         name: z.string().optional().describe("Document name (new, duplicate, rename)"),
         id: z.string().optional().describe("Canvas UUID or name (load, delete, duplicate, rename, setup, clear)"),
         format: z.string().optional().describe("Canvas format (new, setup)"),
@@ -49,10 +51,15 @@ Actions:
             const isLandscape = orient === "paysage" && !SCREEN_FORMATS.has(fmt);
             const w = isLandscape ? dims.h : dims.w;
             const h = isLandscape ? dims.w : dims.h;
-            const { rows } = await client.query(
-              `SELECT document.canvas_create($1, $2, $3, $4, $5, $6, $7) as id`,
-              [name, fmt, orient, w, h, bg, cat],
-            );
+            const { rows } = await client.query(`SELECT document.canvas_create($1, $2, $3, $4, $5, $6, $7) as id`, [
+              name,
+              fmt,
+              orient,
+              w,
+              h,
+              bg,
+              cat,
+            ]);
             return text(`Canvas "${name}" [${cat}] ${fmt} ${orient} (${w}×${h}mm) bg:${bg}\nid: ${rows[0]?.id}`);
           }
 
@@ -66,8 +73,8 @@ Actions:
               [args.category ?? null],
             );
             if (rows.length === 0) return text("No documents.");
-            const lines = rows.map((r: any) =>
-              `- "${r.name}" [${r.category}] ${r.format} ${r.orientation} (${r.elements} el)  id: ${r.id}`
+            const lines = rows.map(
+              (r: any) => `- "${r.name}" [${r.category}] ${r.format} ${r.orientation} (${r.elements} el)  id: ${r.id}`,
             );
             return text(`${rows.length} document(s):\n${lines.join("\n")}`);
           }
@@ -88,7 +95,7 @@ Actions:
           case "delete": {
             if (!args.id) return text("id is required");
             const { rows: countRows } = await client.query(`SELECT count(*) as cnt FROM document.canvas`);
-            if (parseInt(countRows[0].cnt) <= 1) return text("Cannot delete the only document.");
+            if (parseInt(countRows[0].cnt, 10) <= 1) return text("Cannot delete the only document.");
             const { rows } = await client.query(`DELETE FROM document.canvas WHERE id = $1 RETURNING name`, [args.id]);
             if (rows.length === 0) return text(`Not found: ${args.id}`);
             return text(`Deleted "${rows[0].name}"`);
@@ -96,21 +103,25 @@ Actions:
 
           case "duplicate": {
             if (!args.id || !args.name) return text("id and name are required");
-            const { rows } = await client.query(
-              `SELECT document.canvas_duplicate($1, $2) as id`, [args.id, args.name],
-            );
+            const { rows } = await client.query(`SELECT document.canvas_duplicate($1, $2) as id`, [args.id, args.name]);
             return text(`Duplicated -> "${args.name}"\nid: ${rows[0]?.id}`);
           }
 
           case "rename": {
             if (!args.id || !args.name) return text("id and name are required");
-            await client.query(`UPDATE document.canvas SET name = $2, updated_at = now() WHERE id = $1`, [args.id, args.name]);
+            await client.query(`UPDATE document.canvas SET name = $2, updated_at = now() WHERE id = $1`, [
+              args.id,
+              args.name,
+            ]);
             return text(`Renamed -> "${args.name}"`);
           }
 
           case "setup": {
             if (!args.id) return text("id is required");
-            const { rows: cur } = await client.query(`SELECT format, orientation, background FROM document.canvas WHERE id = $1`, [args.id]);
+            const { rows: cur } = await client.query(
+              `SELECT format, orientation, background FROM document.canvas WHERE id = $1`,
+              [args.id],
+            );
             if (cur.length === 0) return text(`Not found: ${args.id}`);
             const fmt = (args.format as string) ?? cur[0].format;
             const orient = (args.orientation as string) ?? cur[0].orientation;

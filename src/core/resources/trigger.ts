@@ -17,7 +17,8 @@ export async function queryTrigger(client: DbClient, schema: string, name: strin
     event: string;
     function_name: string;
     for_each: string;
-  }>(`
+  }>(
+    `
     SELECT
       c.relname AS table_name,
       string_agg(em.event, ' OR ') AS event,
@@ -37,7 +38,9 @@ export async function queryTrigger(client: DbClient, schema: string, name: strin
     WHERE n.nspname = $1 AND t.tgname = $2 AND NOT t.tgisinternal AND em.event IS NOT NULL
     GROUP BY t.tgname, c.relname, p.proname, t.tgtype
     LIMIT 1
-  `, [schema, name]);
+  `,
+    [schema, name],
+  );
 
   if (rows.length === 0) return null;
 

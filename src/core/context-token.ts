@@ -8,7 +8,7 @@
  * forcing a re-read. This is correct behavior.
  */
 
-import crypto from "crypto";
+import crypto from "node:crypto";
 import type { DbClient } from "./connection.js";
 
 // Per-process secret — tokens expire on server restart
@@ -23,11 +23,7 @@ function hmac(payload: string): string {
  * Encodes: body hash + callee body hashes + caller names.
  * Returns null if function doesn't exist.
  */
-export async function computeContextToken(
-  client: DbClient,
-  schema: string,
-  name: string,
-): Promise<string | null> {
+export async function computeContextToken(client: DbClient, schema: string, name: string): Promise<string | null> {
   const { rows } = await client.query<{ prosrc: string }>(
     `SELECT p.prosrc FROM pg_proc p
      JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -43,10 +39,11 @@ export async function computeContextToken(
   // Extract schema-qualified calls from body
   const calls: string[] = [];
   const re = /\b(\w+)\.(\w+)\s*\(/g;
-  let m;
-  while ((m = re.exec(rows[0].prosrc)) !== null) {
+  let m: RegExpExecArray | null = re.exec(rows[0].prosrc);
+  while (m !== null) {
     const qname = `${m[1]}.${m[2]}`;
     if (!calls.includes(qname)) calls.push(qname);
+    m = re.exec(rows[0].prosrc);
   }
 
   // Get callee body hashes in one query

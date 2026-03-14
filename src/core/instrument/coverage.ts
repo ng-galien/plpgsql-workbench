@@ -1,7 +1,7 @@
+import crypto from "node:crypto";
 import type { DbClient } from "../connection.js";
 import { queryFunctionDdl } from "../resources/function.js";
-import { extractCoveragePoints, type CoveragePoint } from "./visitor.js";
-import crypto from "crypto";
+import { type CoveragePoint, extractCoveragePoints } from "./visitor.js";
 
 export interface CoverageResult {
   runId: string;
@@ -58,10 +58,8 @@ function instrumentBody(body: string, points: CoveragePoint[]): string {
     const idx = lineNo - 1;
     if (idx < 0 || idx >= lines.length) continue;
     const indent = lines[idx].match(/^(\s*)/)?.[1] ?? "  ";
-    const markers = byLine.get(lineNo)!;
-    const injected = markers.reverse().map(
-      (p) => `${indent}RAISE WARNING '${COV_PREFIX}%', '${p.id}';`,
-    );
+    const markers = byLine.get(lineNo) ?? [];
+    const injected = markers.reverse().map((p) => `${indent}RAISE WARNING '${COV_PREFIX}%', '${p.id}';`);
     lines.splice(idx, 0, ...injected);
   }
 
@@ -74,10 +72,7 @@ function instrumentBody(body: string, points: CoveragePoint[]): string {
     const endIfIdx = findPattern(lines, afterLine, /^\s*END\s+IF\s*;/i);
     if (endIfIdx >= 0) {
       const indent = lines[endIfIdx].match(/^(\s*)/)?.[1] ?? "  ";
-      lines.splice(endIfIdx, 0,
-        `${indent}ELSE`,
-        `${indent}  RAISE WARNING '${COV_PREFIX}%', '${p.id}';`,
-      );
+      lines.splice(endIfIdx, 0, `${indent}ELSE`, `${indent}  RAISE WARNING '${COV_PREFIX}%', '${p.id}';`);
     }
   }
 
@@ -89,9 +84,7 @@ function instrumentBody(body: string, points: CoveragePoint[]): string {
     const endLoopIdx = findPattern(lines, afterLine, /^\s*END\s+LOOP\s*;/i);
     if (endLoopIdx >= 0) {
       const indent = lines[endLoopIdx].match(/^(\s*)/)?.[1] ?? "  ";
-      lines.splice(endLoopIdx + 1, 0,
-        `${indent}RAISE WARNING '${COV_PREFIX}%', '${p.id}';`,
-      );
+      lines.splice(endLoopIdx + 1, 0, `${indent}RAISE WARNING '${COV_PREFIX}%', '${p.id}';`);
     }
   }
 
@@ -108,7 +101,7 @@ function findOriginalLine(originalLine: number, beforePoints: CoveragePoint[]): 
   for (const p of beforePoints) {
     if (p.line <= originalLine) offset++;
   }
-  return (originalLine - 1) + offset; // 1-indexed to 0-indexed + offset
+  return originalLine - 1 + offset; // 1-indexed to 0-indexed + offset
 }
 
 /**
@@ -209,10 +202,11 @@ export async function runCoverage(
 
   await client.query("BEGIN");
   try {
-    await client.query(
-      `INSERT INTO workbench.cov_run (id, schema_name, fn_name) VALUES ($1, $2, $3)`,
-      [runId, schema, name],
-    );
+    await client.query(`INSERT INTO workbench.cov_run (id, schema_name, fn_name) VALUES ($1, $2, $3)`, [
+      runId,
+      schema,
+      name,
+    ]);
     for (const p of points) {
       await client.query(
         `INSERT INTO workbench.cov_point (run_id, id, line, kind, label) VALUES ($1, $2, $3, $4, $5)`,
@@ -230,7 +224,6 @@ export async function runCoverage(
     originalDdl.slice(0, extracted.bodyStart) +
     instrumentedBody +
     originalDdl.slice(extracted.bodyStart + extracted.body.length);
-
 
   // Deploy + capture
   const hit = new Set<string>();
@@ -257,10 +250,10 @@ export async function runCoverage(
 
   // Batch UPDATE hits
   if (hit.size > 0) {
-    await client.query(
-      `UPDATE workbench.cov_point SET hit = true WHERE run_id = $1 AND id = ANY($2)`,
-      [runId, [...hit]],
-    );
+    await client.query(`UPDATE workbench.cov_point SET hit = true WHERE run_id = $1 AND id = ANY($2)`, [
+      runId,
+      [...hit],
+    ]);
   }
 
   const coveredPoints = points.filter((p) => hit.has(p.id)).length;
@@ -274,7 +267,9 @@ export function formatCoverageReport(result: CoverageResult): string {
   const parts: string[] = [];
   const pct = result.percentage;
   const sym = pct === 100 ? "✓" : pct >= 80 ? "⚠" : "✗";
-  parts.push(`${sym} ${result.schema}.${result.name}: ${pct}% coverage (${result.coveredPoints}/${result.totalPoints} points)`);
+  parts.push(
+    `${sym} ${result.schema}.${result.name}: ${pct}% coverage (${result.coveredPoints}/${result.totalPoints} points)`,
+  );
   if (result.runId) parts.push(`run: ${result.runId}`);
   parts.push("");
 

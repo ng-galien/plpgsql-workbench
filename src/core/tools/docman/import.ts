@@ -25,7 +25,9 @@ export function createDocImportTool({
     },
     handler: async (args, extra) => {
       const { ext, recursive } = args as {
-        path?: string; ext?: string; recursive?: boolean;
+        path?: string;
+        ext?: string;
+        recursive?: boolean;
       };
 
       let dir = args.path as string | undefined;
@@ -43,23 +45,17 @@ export function createDocImportTool({
       }
 
       // 1. Scan filesystem -> docstore.file
-      await scanTool.handler(
-        { path: dir, ext, recursive: recursive ?? true },
-        extra,
-      );
+      await scanTool.handler({ path: dir, ext, recursive: recursive ?? true }, extra);
 
       // 2. Register in docman.document via PL/pgSQL
       return await withClient(async (client) => {
-        const res = await client.query(
-          `SELECT * FROM docman.register($1, 'filesystem')`,
-          [dir]
-        );
+        const res = await client.query(`SELECT * FROM docman.register($1, 'filesystem')`, [dir]);
         const { registered, skipped } = res.rows[0];
 
         return text(
           `Imported from ${dir}\n` +
-          `new: ${registered}, skipped: ${skipped}\n\n` +
-          `next:\n  - doc_inbox\n  - doc_search name:%pattern%`
+            `new: ${registered}, skipped: ${skipped}\n\n` +
+            `next:\n  - doc_inbox\n  - doc_search name:%pattern%`,
         );
       });
     },

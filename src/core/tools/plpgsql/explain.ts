@@ -2,9 +2,7 @@ import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
 
-export function createExplainTool({ withClient }: {
-  withClient: WithClient;
-}): ToolHandler {
+export function createExplainTool({ withClient }: { withClient: WithClient }): ToolHandler {
   return {
     metadata: {
       name: "pg_explain",
@@ -22,9 +20,7 @@ export function createExplainTool({ withClient }: {
         // (EXPLAIN ANALYZE actually executes the query)
         await client.query("BEGIN");
         try {
-          const { rows } = await client.query<{ "QUERY PLAN": string }>(
-            `EXPLAIN ANALYZE ${sql}`,
-          );
+          const { rows } = await client.query<{ "QUERY PLAN": string }>(`EXPLAIN ANALYZE ${sql}`);
           return text(`completeness: full\n\n${rows.map((r) => r["QUERY PLAN"]).join("\n")}`);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);

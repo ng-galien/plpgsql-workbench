@@ -19,14 +19,19 @@ export function createDocClassifyTool({ withClient }: { withClient: WithClient }
     },
     handler: async (args) => {
       const { id, doc_type, document_date, summary } = args as {
-        id: string; doc_type?: string; document_date?: string; summary?: string;
+        id: string;
+        doc_type?: string;
+        document_date?: string;
+        summary?: string;
       };
 
       return await withClient(async (client) => {
-        await client.query(
-          `SELECT docman.classify($1, $2, $3::date, $4)`,
-          [id, doc_type ?? null, document_date ?? null, summary ?? null]
-        );
+        await client.query(`SELECT docman.classify($1, $2, $3::date, $4)`, [
+          id,
+          doc_type ?? null,
+          document_date ?? null,
+          summary ?? null,
+        ]);
 
         const parts = [`Classified: ${id}`];
         if (doc_type) parts.push(`type: ${doc_type}`);
@@ -35,7 +40,7 @@ export function createDocClassifyTool({ withClient }: { withClient: WithClient }
 
         return text(
           parts.join("\n") +
-          `\n\nnext:\n  - doc_tag id:${id} label:... to assign labels\n  - doc_link id:${id} kind:... name:... role:... to link entities`
+            `\n\nnext:\n  - doc_tag id:${id} label:... to assign labels\n  - doc_link id:${id} kind:... name:... role:... to link entities`,
         );
       });
     },

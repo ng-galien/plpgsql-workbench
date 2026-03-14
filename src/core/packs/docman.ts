@@ -8,19 +8,23 @@
  * Keys: documentsRoot
  */
 
-import { asFunction, type AwilixContainer } from "awilix";
+import { type AwilixContainer, asFunction } from "awilix";
 import type { ToolPack } from "../container.js";
-
-import { createDocImportTool } from "../tools/docman/import.js";
-import { createDocFetchMailTool } from "../tools/docman/fetch-mail.js";
-import { createDocPeekTool } from "../tools/docman/peek.js";
-import { createDocInboxTool } from "../tools/docman/inbox.js";
-import { createDocSearchTool } from "../tools/docman/search.js";
 import { createDocClassifyTool } from "../tools/docman/classify.js";
-import { createDocTagTool, createDocUntagTool } from "../tools/docman/tag.js";
+import { createDocFetchMailTool } from "../tools/docman/fetch-mail.js";
+import { createDocImportTool } from "../tools/docman/import.js";
+import { createDocInboxTool } from "../tools/docman/inbox.js";
+import {
+  createDocDocTypesTool,
+  createDocEntitiesTool,
+  createDocEntityKindsTool,
+  createDocLabelsTool,
+} from "../tools/docman/labels.js";
 import { createDocLinkTool, createDocUnlinkTool } from "../tools/docman/link.js";
-import { createDocRelateTool, createDocUnrelateTool, createDocRelationsTool } from "../tools/docman/relate.js";
-import { createDocLabelsTool, createDocEntitiesTool, createDocEntityKindsTool, createDocDocTypesTool } from "../tools/docman/labels.js";
+import { createDocPeekTool } from "../tools/docman/peek.js";
+import { createDocRelateTool, createDocRelationsTool, createDocUnrelateTool } from "../tools/docman/relate.js";
+import { createDocSearchTool } from "../tools/docman/search.js";
+import { createDocTagTool, createDocUntagTool } from "../tools/docman/tag.js";
 
 export const docmanPack: ToolPack = (container: AwilixContainer) => {
   container.register({

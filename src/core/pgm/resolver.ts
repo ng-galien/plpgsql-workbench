@@ -3,8 +3,8 @@
  * and produces an ordered install plan.
  */
 
-import fs from "fs/promises";
-import path from "path";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 // --- Types ---
 
@@ -91,7 +91,7 @@ export async function loadAppConfig(appDir: string): Promise<AppConfig> {
 }
 
 export async function saveAppConfig(appDir: string, config: AppConfig): Promise<void> {
-  await fs.writeFile(path.join(appDir, "workbench.json"), JSON.stringify(config, null, 2) + "\n", "utf-8");
+  await fs.writeFile(path.join(appDir, "workbench.json"), `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }
 
 // --- List available modules ---
@@ -149,7 +149,7 @@ export async function resolve(modulesDir: string, requested: string[]): Promise<
 
   for (const { from, to } of edges) {
     inDegree.set(from, (inDegree.get(from) ?? 0) + 1);
-    graph.get(to)!.push(from);
+    graph.get(to)?.push(from);
   }
 
   const queue: string[] = [];
@@ -160,8 +160,8 @@ export async function resolve(modulesDir: string, requested: string[]): Promise<
 
   const order: ModuleManifest[] = [];
   while (queue.length > 0) {
-    const name = queue.shift()!;
-    order.push(manifests.get(name)!);
+    const name = queue.shift() as string;
+    order.push(manifests.get(name) as ModuleManifest);
     for (const dependent of graph.get(name) ?? []) {
       const deg = (inDegree.get(dependent) ?? 1) - 1;
       inDegree.set(dependent, deg);

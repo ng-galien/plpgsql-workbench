@@ -3,11 +3,11 @@
  * Pure functions — no DI dependencies, safe to import directly.
  */
 
+import crypto from "node:crypto";
+import { createReadStream } from "node:fs";
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { DbClient } from "../../connection.js";
-import fs from "fs/promises";
-import { createReadStream } from "fs";
-import path from "path";
-import crypto from "crypto";
 
 // --- Schema setup ---
 
@@ -47,14 +47,19 @@ export function hashFile(filePath: string): Promise<string> {
 // --- Directory walking ---
 
 export const DEFAULT_EXCLUDE = new Set([
-  ".git", "node_modules", ".DS_Store", "__pycache__",
-  ".idea", ".vscode", "dist", "build", "target", ".next",
+  ".git",
+  "node_modules",
+  ".DS_Store",
+  "__pycache__",
+  ".idea",
+  ".vscode",
+  "dist",
+  "build",
+  "target",
+  ".next",
 ]);
 
-export async function walkDir(
-  dir: string,
-  exclude?: string[],
-): Promise<string[]> {
+export async function walkDir(dir: string, exclude?: string[]): Promise<string[]> {
   const excludeSet = new Set(exclude ?? DEFAULT_EXCLUDE);
   const files: string[] = [];
 

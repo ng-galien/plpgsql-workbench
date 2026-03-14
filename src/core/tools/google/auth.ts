@@ -5,10 +5,10 @@
  * Config is read lazily from workbench.config(google, *) on first connect().
  */
 
-import fs from "fs";
-import path from "path";
-import { google } from "googleapis";
+import fs from "node:fs";
+import path from "node:path";
 import { authenticate } from "@google-cloud/local-auth";
+import { google } from "googleapis";
 import type { WithClient } from "../../container.js";
 
 export interface GoogleAuthConfig {
@@ -24,9 +24,7 @@ export interface GmailClient {
   getConfig: () => GoogleAuthConfig;
 }
 
-export function createGmailClient({ withClient }: {
-  withClient: WithClient;
-}): GmailClient {
+export function createGmailClient({ withClient }: { withClient: WithClient }): GmailClient {
   let config: GoogleAuthConfig | null = null;
   let auth: any = null;
   let connected = false;
@@ -34,20 +32,18 @@ export function createGmailClient({ withClient }: {
   async function loadConfig(): Promise<GoogleAuthConfig> {
     if (config) return config;
     config = await withClient(async (client) => {
-      const res = await client.query(
-        `SELECT key, value FROM workbench.config WHERE app = 'google'`
-      );
+      const res = await client.query(`SELECT key, value FROM workbench.config WHERE app = 'google'`);
       const map = Object.fromEntries(res.rows.map((r: any) => [r.key, r.value]));
       if (!map.credentialsPath) {
         throw new Error(
           "Config missing: workbench.config(google, credentialsPath).\n" +
-          "fix_hint: pg_query sql:INSERT INTO workbench.config VALUES ('google','credentialsPath','/path/to/credentials.json')"
+            "fix_hint: pg_query sql:INSERT INTO workbench.config VALUES ('google','credentialsPath','/path/to/credentials.json')",
         );
       }
       if (!map.tokenPath) {
         throw new Error(
           "Config missing: workbench.config(google, tokenPath).\n" +
-          "fix_hint: pg_query sql:INSERT INTO workbench.config VALUES ('google','tokenPath','/path/to/token.json')"
+            "fix_hint: pg_query sql:INSERT INTO workbench.config VALUES ('google','tokenPath','/path/to/token.json')",
         );
       }
       return {
@@ -93,7 +89,7 @@ export function createGmailClient({ withClient }: {
       });
       ensureDir(cfg.tokenPath);
       // Atomic write: temp file + rename, restricted permissions
-      const tmpPath = cfg.tokenPath + ".tmp";
+      const tmpPath = `${cfg.tokenPath}.tmp`;
       fs.writeFileSync(tmpPath, payload, { mode: 0o600 });
       fs.renameSync(tmpPath, cfg.tokenPath);
     }

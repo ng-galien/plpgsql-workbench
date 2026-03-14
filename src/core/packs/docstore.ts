@@ -6,13 +6,12 @@
  * Depends on pool/withClient being registered by another pack (e.g. plpgsql).
  */
 
-import { asFunction, type AwilixContainer } from "awilix";
+import { type AwilixContainer, asFunction } from "awilix";
 import type { ToolPack } from "../container.js";
-
+import { createOpenTool } from "../tools/docstore/open.js";
+import { createPeekTool } from "../tools/docstore/peek.js";
 import { createScanTool } from "../tools/docstore/scan.js";
 import { createSyncTool } from "../tools/docstore/sync.js";
-import { createPeekTool } from "../tools/docstore/peek.js";
-import { createOpenTool } from "../tools/docstore/open.js";
 
 export const docstorePack: ToolPack = (container: AwilixContainer, _config: Record<string, unknown>) => {
   // Validate that withClient is available (registered by plpgsql or another pack)

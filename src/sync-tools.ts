@@ -9,16 +9,14 @@
 
 import { Pool } from "pg";
 import { toJSONSchema } from "zod";
-import { buildContainer, type ToolPack, type ToolHandler } from "./core/container.js";
-import { plpgsqlPack } from "./core/packs/plpgsql.js";
+import { buildContainer, type ToolHandler, type ToolPack } from "./core/container.js";
+import { docmanPack } from "./core/packs/docman.js";
 import { docstorePack } from "./core/packs/docstore.js";
 import { googlePack } from "./core/packs/google.js";
-import { docmanPack } from "./core/packs/docman.js";
+import { plpgsqlPack } from "./core/packs/plpgsql.js";
 
 const connectionString =
-  process.env.PLPGSQL_CONNECTION ??
-  process.env.DATABASE_URL ??
-  "postgresql://postgres@localhost:5432/postgres";
+  process.env.PLPGSQL_CONNECTION ?? process.env.DATABASE_URL ?? "postgresql://postgres@localhost:5432/postgres";
 
 const packConfigs: Record<string, Record<string, unknown>> = {
   plpgsql: {},
@@ -48,21 +46,19 @@ try {
     await client.query(
       `INSERT INTO workbench.toolbox (name, description)
        VALUES ('admin', 'All tools — development & administration')
-       ON CONFLICT (name) DO NOTHING`
+       ON CONFLICT (name) DO NOTHING`,
     );
 
     // Sync tools: upsert with description + input_schema
     for (const [name, handler] of registry) {
       const desc = handler.metadata?.description ?? null;
-      const schema = handler.metadata?.schema
-        ? JSON.stringify(toJSONSchema(handler.metadata.schema))
-        : null;
+      const schema = handler.metadata?.schema ? JSON.stringify(toJSONSchema(handler.metadata.schema)) : null;
       await client.query(
         `INSERT INTO workbench.toolbox_tool (toolbox_name, tool_name, description, input_schema)
          VALUES ('admin', $1, $2, $3)
          ON CONFLICT (toolbox_name, tool_name)
          DO UPDATE SET description = EXCLUDED.description, input_schema = EXCLUDED.input_schema`,
-        [name, desc, schema]
+        [name, desc, schema],
       );
     }
 
@@ -71,7 +67,7 @@ try {
       `DELETE FROM workbench.toolbox_tool
        WHERE toolbox_name = 'admin'
          AND tool_name != ALL($1)`,
-      [toolNames]
+      [toolNames],
     );
 
     await client.query("COMMIT");

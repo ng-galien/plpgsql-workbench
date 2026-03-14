@@ -289,8 +289,24 @@ watch-illustrator: ## Live reload illustrator client (esbuild watch → cloudfla
 		--format=esm --target=es2022 --external:d3 --loader:.css=css \
 		--watch --sourcemap
 
-check: ## Type-check without emitting
-	npx tsc --noEmit
+check: check-server check-shell check-lint check-css build-shell build-illustrator ## Full quality gate
+	@echo "✓ All checks passed"
+
+check-server: ## Type-check MCP server (src/)
+	@echo "  tsc server ..."
+	@npx tsc --noEmit
+
+check-shell: ## Type-check pgView shell (strict + unused)
+	@echo "  tsc shell ..."
+	@npx tsc --noEmit -p cloudflare/pages/tsconfig.json
+
+check-lint: ## Biome lint (TS)
+	@echo "  biome lint ..."
+	@npx biome lint
+
+check-css: ## Stylelint (CSS)
+	@echo "  stylelint ..."
+	@npx stylelint "cloudflare/pages/src/css/*.css"
 
 # --- Help ---
 

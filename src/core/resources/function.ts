@@ -17,14 +17,17 @@ export interface FunctionDetail {
 // --- Query ---
 
 export async function queryFunctionDdl(client: DbClient, schema: string, name: string): Promise<string | null> {
-  const { rows } = await client.query<{ def: string }>(`
+  const { rows } = await client.query<{ def: string }>(
+    `
     SELECT pg_get_functiondef(p.oid) AS def
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     JOIN pg_language l ON l.oid = p.prolang
     WHERE n.nspname = $1 AND p.proname = $2 AND l.lanname IN ('sql', 'plpgsql')
     LIMIT 1
-  `, [schema, name]);
+  `,
+    [schema, name],
+  );
   return rows.length > 0 ? rows[0].def : null;
 }
 
@@ -35,7 +38,8 @@ export async function queryFunction(client: DbClient, schema: string, name: stri
     prosrc: string;
     args: string;
     description: string | null;
-  }>(`
+  }>(
+    `
     SELECT
       p.oid::text,
       pg_get_function_result(p.oid) AS return_type,
@@ -47,7 +51,9 @@ export async function queryFunction(client: DbClient, schema: string, name: stri
     JOIN pg_language l ON l.oid = p.prolang
     WHERE n.nspname = $1 AND p.proname = $2 AND l.lanname IN ('sql', 'plpgsql')
     LIMIT 1
-  `, [schema, name]);
+  `,
+    [schema, name],
+  );
 
   if (rows.length === 0) return null;
 
@@ -59,7 +65,18 @@ export async function queryFunction(client: DbClient, schema: string, name: stri
   const callers = await findCallers(client, schema, name);
   const tables_used = await findTablesUsed(client, schema, body);
 
-  return { name, schema, args, return_type: row.return_type, description: row.description, variables, body, calls, callers, tables_used };
+  return {
+    name,
+    schema,
+    args,
+    return_type: row.return_type,
+    description: row.description,
+    variables,
+    body,
+    calls,
+    callers,
+    tables_used,
+  };
 }
 
 // --- Format ---
@@ -74,18 +91,16 @@ export function formatFunction(fn: FunctionDetail): string {
     parts.push(`  doc: ${fn.description}`);
   }
 
-  parts.push(fn.variables.length > 0
-    ? `  vars: ${fn.variables.map((v) => `${v.name} ${v.type}`).join(", ")}`
-    : `  vars: none`);
-  parts.push(fn.calls.length > 0
-    ? `  calls: ${fn.calls.join(", ")}`
-    : `  calls: none`);
-  parts.push(fn.callers.length > 0
-    ? `  callers: ${fn.callers.join(", ")}`
-    : `  callers: none`);
-  parts.push(fn.tables_used.length > 0
-    ? `  tables: ${fn.tables_used.map((t) => `${t.name}(${t.mode}) ${PlUri.table(fn.schema, t.name)}`).join(", ")}`
-    : `  tables: none`);
+  parts.push(
+    fn.variables.length > 0 ? `  vars: ${fn.variables.map((v) => `${v.name} ${v.type}`).join(", ")}` : `  vars: none`,
+  );
+  parts.push(fn.calls.length > 0 ? `  calls: ${fn.calls.join(", ")}` : `  calls: none`);
+  parts.push(fn.callers.length > 0 ? `  callers: ${fn.callers.join(", ")}` : `  callers: none`);
+  parts.push(
+    fn.tables_used.length > 0
+      ? `  tables: ${fn.tables_used.map((t) => `${t.name}(${t.mode}) ${PlUri.table(fn.schema, t.name)}`).join(", ")}`
+      : `  tables: none`,
+  );
   parts.push(`  body:`);
   const lines = fn.body.split("\n");
   const numWidth = String(lines.length).length;
@@ -131,25 +146,29 @@ function extractVariables(body: string): { name: string; type: string }[] {
 function extractCalls(body: string): string[] {
   const calls = new Set<string>();
   const re = /(?:PERFORM|SELECT|:=)\s+(?:(\w+)\.)?(\w+)\s*\(/gi;
-  let match;
-  while ((match = re.exec(body)) !== null) {
+  let match: RegExpExecArray | null = re.exec(body);
+  while (match !== null) {
     const fn = match[2];
     if (!SQL_BUILTINS.has(fn.toLowerCase())) {
       calls.add(match[1] ? `${match[1]}.${fn}` : fn);
     }
+    match = re.exec(body);
   }
   return Array.from(calls);
 }
 
 async function findCallers(client: DbClient, schema: string, name: string): Promise<string[]> {
-  const { rows } = await client.query<{ caller: string }>(`
+  const { rows } = await client.query<{ caller: string }>(
+    `
     SELECT n.nspname || '.' || p.proname AS caller
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE p.prosrc ~ $1
       AND NOT (n.nspname = $2 AND p.proname = $3)
     ORDER BY caller
-  `, [`\\m${name}\\M`, schema, name]);
+  `,
+    [`\\m${name}\\M`, schema, name],
+  );
   return rows.map((r) => r.caller);
 }
 
@@ -158,11 +177,14 @@ async function findTablesUsed(
   schema: string,
   body: string,
 ): Promise<{ name: string; mode: "R" | "W" | "RW" }[]> {
-  const { rows: tables } = await client.query<{ relname: string }>(`
+  const { rows: tables } = await client.query<{ relname: string }>(
+    `
     SELECT c.relname FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = $1 AND c.relkind = 'r'
-  `, [schema]);
+  `,
+    [schema],
+  );
 
   const used: { name: string; mode: "R" | "W" | "RW" }[] = [];
   for (const t of tables) {
@@ -179,10 +201,39 @@ async function findTablesUsed(
 }
 
 const SQL_BUILTINS = new Set([
-  "now", "coalesce", "nullif", "greatest", "least", "count", "sum", "avg",
-  "min", "max", "array_agg", "string_agg", "row_to_json", "to_json",
-  "to_jsonb", "jsonb_build_object", "jsonb_populate_record", "format",
-  "concat", "length", "lower", "upper", "trim", "substr", "replace",
-  "round", "ceil", "floor", "abs", "random", "gen_random_uuid",
-  "nextval", "currval", "setval", "found",
+  "now",
+  "coalesce",
+  "nullif",
+  "greatest",
+  "least",
+  "count",
+  "sum",
+  "avg",
+  "min",
+  "max",
+  "array_agg",
+  "string_agg",
+  "row_to_json",
+  "to_json",
+  "to_jsonb",
+  "jsonb_build_object",
+  "jsonb_populate_record",
+  "format",
+  "concat",
+  "length",
+  "lower",
+  "upper",
+  "trim",
+  "substr",
+  "replace",
+  "round",
+  "ceil",
+  "floor",
+  "abs",
+  "random",
+  "gen_random_uuid",
+  "nextval",
+  "currval",
+  "setval",
+  "found",
 ]);

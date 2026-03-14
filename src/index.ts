@@ -1,24 +1,26 @@
 #!/usr/bin/env node
 
+import { execFile, execFileSync } from "node:child_process";
+import fsSync from "node:fs";
+import fs from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
-import fsSync from "fs";
-import fs from "fs/promises";
-import http from "http";
-import os from "os";
-import path from "path";
-import pino from "pino";
-import { WebSocketServer, WebSocket } from "ws";
 import pty from "node-pty";
-import { execFileSync, execFile } from "child_process";
-import { promisify } from "util";
+import pino from "pino";
+import { type WebSocket, WebSocketServer } from "ws";
+
 const execFileAsync = promisify(execFile);
+
 import { buildContainer, mountTools, type ToolPack } from "./core/container.js";
-import { plpgsqlPack } from "./core/packs/plpgsql.js";
+import { docmanPack } from "./core/packs/docman.js";
 import { docstorePack } from "./core/packs/docstore.js";
 import { googlePack } from "./core/packs/google.js";
-import { docmanPack } from "./core/packs/docman.js";
+import { plpgsqlPack } from "./core/packs/plpgsql.js";
 
 const log = pino({
   level: process.env.LOG_LEVEL ?? "info",
@@ -78,10 +80,7 @@ for (const name of appConfig.packs) {
 
 log.info({ app: appConfig.name, packs: Object.keys(packImpls) }, "Building container");
 
-const container = buildContainer(
-  { packs: packConfigs },
-  packImpls,
-);
+const container = buildContainer({ packs: packConfigs }, packImpls);
 
 const registry: Map<string, unknown> = container.resolve("toolRegistry");
 log.info({ tools: [...registry.keys()], count: registry.size }, "Tools registered");
@@ -110,7 +109,9 @@ app.post("/mcp", async (req, res) => {
     await server.close().catch(() => {});
   };
 
-  res.on("close", () => { void closeAll(); });
+  res.on("close", () => {
+    void closeAll();
+  });
 
   try {
     await server.connect(transport);
@@ -147,7 +148,8 @@ const WORKFLOW = [
   "  4. pg_query -> SELECT ad-hoc et DML donnees uniquement",
 ].join("\n");
 
-const DDL_PATTERN = /\b(CREATE\s+(SCHEMA|TABLE|INDEX|EXTENSION|TYPE)|ALTER\s+(TABLE|SCHEMA|TYPE)|DROP\s+(SCHEMA|TABLE|INDEX|TYPE|EXTENSION))\b/i;
+const DDL_PATTERN =
+  /\b(CREATE\s+(SCHEMA|TABLE|INDEX|EXTENSION|TYPE)|ALTER\s+(TABLE|SCHEMA|TYPE)|DROP\s+(SCHEMA|TABLE|INDEX|TYPE|EXTENSION))\b/i;
 const FUNC_PATTERN = /\bCREATE\s+(OR\s+REPLACE\s+)?FUNCTION\b/i;
 const DESTRUCTIVE_PATTERN = /\b(DROP\s+FUNCTION|TRUNCATE|GRANT\s+|REVOKE\s+)\b/i;
 // Note: DROP FUNCTION stays blocked in pg_query — agents must use pg_func_del instead
@@ -156,21 +158,30 @@ const INTERNAL_CALL_RE = /\b(\w+)\._(\w+)\s*\(/g;
 
 // moduleRegistry is registered as a Promise — await it once at startup
 let moduleRegistry: import("./core/pgm/registry.js").ModuleRegistry | null = null;
-const moduleRegistryPromise: Promise<import("./core/pgm/registry.js").ModuleRegistry> = container.resolve("moduleRegistry");
-moduleRegistryPromise.then((r) => { moduleRegistry = r; }).catch(() => {});
+const moduleRegistryPromise: Promise<import("./core/pgm/registry.js").ModuleRegistry> =
+  container.resolve("moduleRegistry");
+moduleRegistryPromise
+  .then((r) => {
+    moduleRegistry = r;
+  })
+  .catch(() => {});
 
 function logHook(mod: string, tool: string, action: string, allowed: boolean, reason?: string) {
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    pool.query(`SELECT workbench.log_hook($1,$2,$3,$4,$5)`,
-      [mod, tool, action, allowed, reason ?? null],
-    ).catch(() => {});
-  } catch { /* pool not ready */ }
+    pool
+      .query(`SELECT workbench.log_hook($1,$2,$3,$4,$5)`, [mod, tool, action, allowed, reason ?? null])
+      .catch(() => {});
+  } catch {
+    /* pool not ready */
+  }
 }
 
 function deny(res: import("express").Response, reason: string, mod?: string, tool?: string, action?: string) {
   if (mod && tool) logHook(mod, tool, action ?? "", false, reason);
-  res.json({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } });
+  res.json({
+    hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason },
+  });
 }
 function allow(res: import("express").Response, mod?: string, tool?: string, action?: string) {
   if (mod && tool) logHook(mod, tool, action ?? "", true);
@@ -178,7 +189,11 @@ function allow(res: import("express").Response, mod?: string, tool?: string, act
 }
 
 // Validate module name on all hook endpoints — one agent = one module, no comma lists
-function validateModuleName(req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) {
+function validateModuleName(
+  req: import("express").Request,
+  res: import("express").Response,
+  next: import("express").NextFunction,
+) {
   const mod = req.params.module as string;
   if (!mod || mod.includes(",")) {
     return res.status(400).json({
@@ -233,8 +248,11 @@ app.post("/hooks/:module", async (req, res) => {
         },
       });
     }
-  } catch { /* inbox_check table may not exist yet */ }
-  const mapping = moduleRegistry.resolveByName(mod) ?? moduleRegistry.resolve([mod]) ?? moduleRegistry.resolve([`${mod}_ut`]);
+  } catch {
+    /* inbox_check table may not exist yet */
+  }
+  const mapping =
+    moduleRegistry.resolveByName(mod) ?? moduleRegistry.resolve([mod]) ?? moduleRegistry.resolve([`${mod}_ut`]);
   const schemas = mapping?.schemas ?? [mod];
 
   // Rule: pg_query must not do DDL, function management, or destructive ops
@@ -242,15 +260,34 @@ app.post("/hooks/:module", async (req, res) => {
     const sql = (tool_input?.sql ?? "") as string;
     if (FUNC_PATTERN.test(sql)) {
       log.warn({ mod, sql: sql.slice(0, 80) }, "hook: blocked CREATE FUNCTION in pg_query");
-      return deny(res, "pg_query interdit pour les fonctions. Utilise pg_func_set + pg_test.\n\n" + WORKFLOW, mod, tool_name, sql.slice(0, 120));
+      return deny(
+        res,
+        `pg_query interdit pour les fonctions. Utilise pg_func_set + pg_test.\n\n${WORKFLOW}`,
+        mod,
+        tool_name,
+        sql.slice(0, 120),
+      );
     }
     if (DDL_PATTERN.test(sql)) {
       log.warn({ mod, sql: sql.slice(0, 80) }, "hook: blocked DDL in pg_query");
-      return deny(res, "pg_query interdit pour le DDL. Ecris un fichier SQL + pg_schema.\n\n" + WORKFLOW, mod, tool_name, sql.slice(0, 120));
+      return deny(
+        res,
+        `pg_query interdit pour le DDL. Ecris un fichier SQL + pg_schema.\n\n${WORKFLOW}`,
+        mod,
+        tool_name,
+        sql.slice(0, 120),
+      );
     }
     if (DESTRUCTIVE_PATTERN.test(sql)) {
       log.warn({ mod, sql: sql.slice(0, 80) }, "hook: blocked destructive op in pg_query");
-      return deny(res, "pg_query interdit pour DROP FUNCTION / TRUNCATE / GRANT / REVOKE. Utilise pg_func_del pour supprimer une fonction.\n\n" + WORKFLOW, mod, tool_name, sql.slice(0, 120));
+      return deny(
+        res,
+        "pg_query interdit pour DROP FUNCTION / TRUNCATE / GRANT / REVOKE. Utilise pg_func_del pour supprimer une fonction.\n\n" +
+          WORKFLOW,
+        mod,
+        tool_name,
+        sql.slice(0, 120),
+      );
     }
   }
 
@@ -261,15 +298,35 @@ app.post("/hooks/:module", async (req, res) => {
     const modulePath = mapping?.modulePath;
     if (mod !== "lead" && modulePath && !filePath.startsWith(path.resolve(modulePath))) {
       log.warn({ mod, file: filePath, allowed: modulePath }, "hook: blocked file op outside module");
-      return deny(res, `Module ${mod}: ${tool_name} interdit hors du repertoire du module (${modulePath}). Travaille uniquement dans le repertoire du module.`, mod, tool_name, filePath);
+      return deny(
+        res,
+        `Module ${mod}: ${tool_name} interdit hors du repertoire du module (${modulePath}). Travaille uniquement dans le repertoire du module.`,
+        mod,
+        tool_name,
+        filePath,
+      );
     }
     if (filePath.endsWith(".func.sql")) {
       log.warn({ mod, file: filePath }, "hook: blocked direct write to .func.sql");
-      return deny(res, "*.func.sql est genere par pg_pack. Utilise pg_func_set pour iterer, puis pg_pack pour exporter.\n\n" + WORKFLOW, mod, tool_name, filePath);
+      return deny(
+        res,
+        "*.func.sql est genere par pg_pack. Utilise pg_func_set pour iterer, puis pg_pack pour exporter.\n\n" +
+          WORKFLOW,
+        mod,
+        tool_name,
+        filePath,
+      );
     }
     if (tool_name === "Write" && filePath.endsWith(".sql") && FUNC_PATTERN.test(content)) {
       log.warn({ mod, file: filePath }, "hook: blocked Write of SQL function file");
-      return deny(res, "Interdit d'ecrire des fonctions dans des fichiers SQL. Utilise pg_func_set + pg_test, puis pg_func_save quand stable.\n\n" + WORKFLOW, mod, tool_name, filePath);
+      return deny(
+        res,
+        "Interdit d'ecrire des fonctions dans des fichiers SQL. Utilise pg_func_set + pg_test, puis pg_func_save quand stable.\n\n" +
+          WORKFLOW,
+        mod,
+        tool_name,
+        filePath,
+      );
     }
   }
 
@@ -278,27 +335,46 @@ app.post("/hooks/:module", async (req, res) => {
     const schema = (tool_input?.schema ?? "") as string;
     if (schema && !schemas.includes(schema)) {
       log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_set");
-      return deny(res, `Module ${mod}: pg_func_set interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`, mod, tool_name, schema);
+      return deny(
+        res,
+        `Module ${mod}: pg_func_set interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`,
+        mod,
+        tool_name,
+        schema,
+      );
     }
     // Check function body for cross-module _internal() calls
     const body = (tool_input?.body ?? "") as string;
     const internalCalls: string[] = [];
-    let match: RegExpExecArray | null;
     const re = new RegExp(INTERNAL_CALL_RE.source, INTERNAL_CALL_RE.flags);
-    while ((match = re.exec(body)) !== null) {
+    let match: RegExpExecArray | null = re.exec(body);
+    while (match !== null) {
       const callSchema = match[1];
       if (!schemas.includes(callSchema)) {
         internalCalls.push(`${callSchema}._${match[2]}`);
       }
+      match = re.exec(body);
     }
     if (internalCalls.length > 0) {
       log.warn({ mod, calls: internalCalls }, "hook: blocked cross-module _internal calls");
-      return deny(res, `Module ${mod}: appel a des fonctions internes d'un autre module interdit.\nViolations: ${internalCalls.join(", ")}\n\nConvention: schema._name() = interne, cross-module interdit.`, mod, tool_name, internalCalls.join(","));
+      return deny(
+        res,
+        `Module ${mod}: appel a des fonctions internes d'un autre module interdit.\nViolations: ${internalCalls.join(", ")}\n\nConvention: schema._name() = interne, cross-module interdit.`,
+        mod,
+        tool_name,
+        internalCalls.join(","),
+      );
     }
     // pgv-specific: no inline styles
     if (schema === "pgv" && /style\s*=\s*"/.test(body)) {
       log.warn({ mod }, "hook: blocked inline style in pgv function");
-      return deny(res, "Les fonctions pgv ne doivent pas contenir de style inline (style=\"...\"). Utilise class=\"pgv-*\" et definis les styles dans pgview.css.", mod, tool_name, "inline-style");
+      return deny(
+        res,
+        'Les fonctions pgv ne doivent pas contenir de style inline (style="..."). Utilise class="pgv-*" et definis les styles dans pgview.css.',
+        mod,
+        tool_name,
+        "inline-style",
+      );
     }
   }
 
@@ -307,7 +383,13 @@ app.post("/hooks/:module", async (req, res) => {
     const schema = (tool_input?.schema ?? "") as string;
     if (schema && !schemas.includes(schema)) {
       log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_edit");
-      return deny(res, `Module ${mod}: pg_func_edit interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`, mod, tool_name, schema);
+      return deny(
+        res,
+        `Module ${mod}: pg_func_edit interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`,
+        mod,
+        tool_name,
+        schema,
+      );
     }
   }
 
@@ -318,7 +400,13 @@ app.post("/hooks/:module", async (req, res) => {
     const schema = match?.[1] ?? "";
     if (schema && !schemas.includes(schema)) {
       log.warn({ mod, schema, allowed: schemas }, "hook: blocked cross-module pg_func_del");
-      return deny(res, `Module ${mod}: pg_func_del interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`, mod, tool_name, schema);
+      return deny(
+        res,
+        `Module ${mod}: pg_func_del interdit sur le schema '${schema}'. Schemas autorises: ${schemas.join(", ")}`,
+        mod,
+        tool_name,
+        schema,
+      );
     }
   }
 
@@ -331,10 +419,10 @@ app.post("/hooks/:module", async (req, res) => {
       return deny(
         res,
         `Les messages de type '${msgType}' ne peuvent pas être envoyés directement à un autre module.\n` +
-        `Deux options :\n` +
-        `1. Envoyer au lead : pg_msg from:${mod} to:lead type:${msgType} subject:...\n` +
-        `2. Créer une issue : pg_query sql: "INSERT INTO workbench.issue_report(issue_type, module, description, context) VALUES ('${msgType === "bug_report" ? "bug" : "enhancement"}', '${to}', '<description>', '{}')"\n` +
-        `Seuls les messages de type 'info' peuvent être envoyés directement entre modules.`,
+          `Deux options :\n` +
+          `1. Envoyer au lead : pg_msg from:${mod} to:lead type:${msgType} subject:...\n` +
+          `2. Créer une issue : pg_query sql: "INSERT INTO workbench.issue_report(issue_type, module, description, context) VALUES ('${msgType === "bug_report" ? "bug" : "enhancement"}', '${to}', '<description>', '{}')"\n` +
+          `Seuls les messages de type 'info' peuvent être envoyés directement entre modules.`,
         mod,
         tool_name,
         `${msgType}->${to}`,
@@ -350,9 +438,7 @@ app.post("/hooks/:module/session", async (req, res) => {
   const mod = req.params.module;
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const { rows } = await pool.query(
-      `SELECT * FROM workbench.inbox_pending($1)`, [mod],
-    );
+    const { rows } = await pool.query(`SELECT * FROM workbench.inbox_pending($1)`, [mod]);
     if (rows.length > 0) {
       const lines = rows.map((r: any) => {
         const pri = r.priority === "high" ? " ⚡HIGH" : "";
@@ -409,10 +495,12 @@ app.post("/hooks/:module/stop", async (req, res) => {
     if (rows.length > 0) {
       const msg = rows[0];
       // Auto-ack: mark as acknowledged so we don't re-deliver on next stop
-      await pool.query(
-        `UPDATE workbench.agent_message SET status = 'acknowledged', acknowledged_at = now() WHERE id = $1 AND status = 'new'`,
-        [msg.id],
-      ).catch(() => {});
+      await pool
+        .query(
+          `UPDATE workbench.agent_message SET status = 'acknowledged', acknowledged_at = now() WHERE id = $1 AND status = 'new'`,
+          [msg.id],
+        )
+        .catch(() => {});
       const pri = msg.priority === "high" ? " [HIGH PRIORITY]" : "";
       stopBlockCount.set(mod, count + 1);
       const lines = [
@@ -443,11 +531,16 @@ app.get("/api/browse", async (req, res) => {
   if (process.env.WORKBENCH_MODE !== "dev") {
     return res.status(403).send("Forbidden: /api/browse only available in WORKBENCH_MODE=dev");
   }
-  let dir = (req.query.path as string) || os.homedir();
+  const dir = (req.query.path as string) || os.homedir();
   // Walk up to a valid directory if the path doesn't exist
   let resolved = path.resolve(dir);
   for (let i = 0; i < 20; i++) {
-    try { await fs.access(resolved); break; } catch { resolved = path.dirname(resolved); }
+    try {
+      await fs.access(resolved);
+      break;
+    } catch {
+      resolved = path.dirname(resolved);
+    }
   }
   try {
     const parent = path.dirname(resolved);
@@ -461,21 +554,23 @@ app.get("/api/browse", async (req, res) => {
     lines.push(`<div class="folder-path" id="folder-current-path">${esc(resolved)}</div>`);
     lines.push(`<div class="folder-list">`);
     if (resolved !== parent) {
-      lines.push(`<a href="#" data-path="${esc(parent)}" class="folder-up"><span class="folder-icon">&#x2B06;</span> ..</a>`);
+      lines.push(
+        `<a href="#" data-path="${esc(parent)}" class="folder-up"><span class="folder-icon">&#x2B06;</span> ..</a>`,
+      );
     }
     for (const d of dirs) {
       const full = path.join(resolved, d);
-      lines.push(
-        `<a href="#" data-path="${esc(full)}">` +
-        `<span class="folder-icon">&#x1F4C1;</span> ${esc(d)}</a>`
-      );
+      lines.push(`<a href="#" data-path="${esc(full)}">` + `<span class="folder-icon">&#x1F4C1;</span> ${esc(d)}</a>`);
     }
     if (dirs.length === 0) lines.push(`<div class="folder-empty">Aucun sous-dossier</div>`);
     lines.push(`</div>`);
 
     res.type("html").send(lines.join("\n"));
   } catch {
-    res.type("html").status(400).send(`<p>Impossible de lire : <code>${esc(dir)}</code></p>`);
+    res
+      .type("html")
+      .status(400)
+      .send(`<p>Impossible de lire : <code>${esc(dir)}</code></p>`);
   }
 });
 
@@ -549,7 +644,10 @@ app.get("/preview", async (req, res) => {
     res.type("html").send(page);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    res.status(500).type("html").send(`<pre style="color:red">${esc(msg)}</pre>`);
+    res
+      .status(500)
+      .type("html")
+      .send(`<pre style="color:red">${esc(msg)}</pre>`);
   }
 });
 
@@ -566,11 +664,11 @@ const httpServer = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
 // --- Server-side output batching (adaptive intervals, Codeman pattern) ---
-const BATCH_INTERVAL_DEFAULT = 16;  // ~60fps
-const BATCH_INTERVAL_BURST   = 50;  // burst mode: batch longer
-const BATCH_FLUSH_THRESHOLD  = 65536; // 64KB → flush immediately
-const WS_PING_INTERVAL       = 15000;
-const WS_BACKPRESSURE_LIMIT  = 262144; // 256KB bufferedAmount → skip
+const BATCH_INTERVAL_DEFAULT = 16; // ~60fps
+const BATCH_INTERVAL_BURST = 50; // burst mode: batch longer
+const BATCH_FLUSH_THRESHOLD = 65536; // 64KB → flush immediately
+const WS_PING_INTERVAL = 15000;
+const WS_BACKPRESSURE_LIMIT = 262144; // 256KB bufferedAmount → skip
 
 interface OutputBatch {
   chunks: string[];
@@ -613,7 +711,10 @@ function flushBatch(key: string, clients: Set<WebSocket>) {
   const combined = batch.chunks.join("");
   batch.chunks = [];
   batch.size = 0;
-  if (batch.timer) { clearTimeout(batch.timer); batch.timer = null; }
+  if (batch.timer) {
+    clearTimeout(batch.timer);
+    batch.timer = null;
+  }
 
   for (const client of clients) {
     if (client.readyState !== 1) continue;
@@ -626,7 +727,9 @@ function flushBatch(key: string, clients: Set<WebSocket>) {
 // WS heartbeat: ping every 15s, terminate if no pong within 10s
 function setupWsPing(ws: WebSocket) {
   let alive = true;
-  ws.on("pong", () => { alive = true; });
+  ws.on("pong", () => {
+    alive = true;
+  });
 
   const interval = setInterval(() => {
     if (!alive) {
@@ -647,11 +750,11 @@ const terminals = new Map<string, { proc: pty.IPty; clients: Set<WebSocket>; ses
 async function createAgentSession(mod: string): Promise<number | null> {
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const { rows } = await pool.query(
-      `SELECT workbench.session_create($1, $2)`, [mod, process.pid],
-    );
+    const { rows } = await pool.query(`SELECT workbench.session_create($1, $2)`, [mod, process.pid]);
     return rows[0]?.session_create ?? null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function endAgentSession(sessionId: number | null, status: string) {
@@ -659,7 +762,9 @@ async function endAgentSession(sessionId: number | null, status: string) {
   try {
     const pool: import("pg").Pool = container.resolve("pool");
     await pool.query(`SELECT workbench.session_end($1, $2)`, [sessionId, status]);
-  } catch { /* silent */ }
+  } catch {
+    /* silent */
+  }
 }
 
 // Resolve tmux binary — node-pty's posix_spawnp may not inherit full PATH
@@ -670,7 +775,10 @@ const TMUX_BIN = (() => {
   }
   // Fallback: ask the shell
   try {
-    return execFileSync("/bin/sh", ["-c", "command -v tmux"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    return execFileSync("/bin/sh", ["-c", "command -v tmux"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
   } catch {
     return "tmux";
   }
@@ -726,7 +834,11 @@ wss.on("connection", async (ws: WebSocket, _req: http.IncomingMessage, mod: stri
   if (!term || term.proc.pid <= 0) {
     // Concurrency guard: reserve the slot synchronously before any await,
     // so a second WS for the same module reuses the pending entry.
-    const placeholder = { proc: null as unknown as pty.IPty, clients: new Set<WebSocket>(), sessionId: null as number | null };
+    const placeholder = {
+      proc: null as unknown as pty.IPty,
+      clients: new Set<WebSocket>(),
+      sessionId: null as number | null,
+    };
     terminals.set(mod, placeholder);
 
     const modPath = resolveModulePath(mod);
@@ -770,7 +882,9 @@ wss.on("connection", async (ws: WebSocket, _req: http.IncomingMessage, mod: stri
       void endAgentSession(term!.sessionId, exitCode === 0 ? "done" : "error");
       // Cancel pending batch timer before deleting
       const batch = outputBatches.get(`terminal:${mod}`);
-      if (batch?.timer) { clearTimeout(batch.timer); }
+      if (batch?.timer) {
+        clearTimeout(batch.timer);
+      }
       for (const client of term!.clients) {
         client.send(`\r\n\x1b[33m[Terminal exited with code ${exitCode}]\x1b[0m\r\n`);
       }
@@ -793,7 +907,9 @@ wss.on("connection", async (ws: WebSocket, _req: http.IncomingMessage, mod: stri
         term!.proc.resize(parsed.cols, parsed.rows);
         return;
       }
-    } catch { /* not JSON, treat as input */ }
+    } catch {
+      /* not JSON, treat as input */
+    }
     term!.proc.write(msg.toString());
   });
 
@@ -823,10 +939,7 @@ app.get("/api/hooks", async (req, res) => {
   const mod = req.query.module as string | undefined;
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const { rows } = await pool.query(
-      `SELECT * FROM workbench.api_hooks($1)`,
-      [mod ?? null],
-    );
+    const { rows } = await pool.query(`SELECT * FROM workbench.api_hooks($1)`, [mod ?? null]);
     res.json(rows);
   } catch {
     res.json([]);
@@ -838,10 +951,7 @@ app.get("/api/messages", async (req, res) => {
   const mod = req.query.module as string | undefined;
   try {
     const pool: import("pg").Pool = container.resolve("pool");
-    const { rows } = await pool.query(
-      `SELECT * FROM workbench.api_messages($1)`,
-      [mod ?? null],
-    );
+    const { rows } = await pool.query(`SELECT * FROM workbench.api_messages($1)`, [mod ?? null]);
     res.json(rows);
   } catch {
     res.json([]);
@@ -863,18 +973,20 @@ app.get("/api/tmux", async (_req, res) => {
   if (process.env.WORKBENCH_MODE !== "dev") return res.status(403).send("Forbidden");
   try {
     // Batch: single list-sessions call
-    const rawSessions = execFileSync(TMUX_BIN, [
-      "list-sessions", "-F",
-      "#{session_name}\t#{session_created}\t#{session_activity}",
-    ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const rawSessions = execFileSync(
+      TMUX_BIN,
+      ["list-sessions", "-F", "#{session_name}\t#{session_created}\t#{session_activity}"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
 
     // Batch: single list-panes call for ALL sessions
     const paneMap = new Map<string, { cwd: string; dead: boolean }>();
     try {
-      const rawPanes = execFileSync(TMUX_BIN, [
-        "list-panes", "-a", "-F",
-        "#{session_name}\t#{pane_current_path}\t#{pane_dead}",
-      ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+      const rawPanes = execFileSync(
+        TMUX_BIN,
+        ["list-panes", "-a", "-F", "#{session_name}\t#{pane_current_path}\t#{pane_dead}"],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      );
       for (const line of rawPanes.trim().split("\n").filter(Boolean)) {
         const [sess, cwd, dead] = line.split("\t");
         if (!paneMap.has(sess)) {
@@ -884,24 +996,39 @@ app.get("/api/tmux", async (_req, res) => {
     } catch {}
 
     const wsRoot = resolveWorkspaceRoot();
-    const activityRe = /(?:Brewing|Cascading|Crunching|Churning|Cooking|Embellishing|Manifesting|Sautéed|Thinking|Worked|Cooked|Crunched|thinking|pg_func_set|pg_pack|pg_schema|pg_test|pg_query|pg_msg|Write|Edit|Read)/;
+    const activityRe =
+      /(?:Brewing|Cascading|Crunching|Churning|Cooking|Embellishing|Manifesting|Sautéed|Thinking|Worked|Cooked|Crunched|thinking|pg_func_set|pg_pack|pg_schema|pg_test|pg_query|pg_msg|Write|Edit|Read)/;
 
-    const parsed = rawSessions.trim().split("\n").filter(Boolean).map(line => {
-      const [name, created, activity] = line.split("\t");
-      const pane = paneMap.get(name) ?? { cwd: "", dead: false };
-      return { name, created: parseInt(created) * 1000, activity: parseInt(activity) * 1000, cwd: pane.cwd, dead: pane.dead, status: "idle" };
-    }).filter(s => s.cwd.startsWith(wsRoot) && !s.dead);
+    const parsed = rawSessions
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [name, created, activity] = line.split("\t");
+        const pane = paneMap.get(name) ?? { cwd: "", dead: false };
+        return {
+          name,
+          created: parseInt(created, 10) * 1000,
+          activity: parseInt(activity, 10) * 1000,
+          cwd: pane.cwd,
+          dead: pane.dead,
+          status: "idle",
+        };
+      })
+      .filter((s) => s.cwd.startsWith(wsRoot) && !s.dead);
 
     // Async parallel capture-pane for status detection (non-blocking)
-    await Promise.all(parsed.map(async (s) => {
-      try {
-        const { stdout } = await execFileAsync(TMUX_BIN, ["capture-pane", "-t", s.name, "-p"], {
-          encoding: "utf8",
-        });
-        const lines = stdout.split("\n").filter(l => activityRe.test(l));
-        if (lines.length > 0) s.status = lines[lines.length - 1].trim();
-      } catch {}
-    }));
+    await Promise.all(
+      parsed.map(async (s) => {
+        try {
+          const { stdout } = await execFileAsync(TMUX_BIN, ["capture-pane", "-t", s.name, "-p"], {
+            encoding: "utf8",
+          });
+          const lines = stdout.split("\n").filter((l) => activityRe.test(l));
+          if (lines.length > 0) s.status = lines[lines.length - 1].trim();
+        } catch {}
+      }),
+    );
 
     res.json(parsed);
   } catch {
@@ -955,7 +1082,11 @@ function handleTmuxAttach(ws: WebSocket, session: string) {
         paused = true;
         proc.pause();
         drainInterval = setInterval(() => {
-          if (ws.readyState !== 1) { clearInterval(drainInterval!); drainInterval = null; return; }
+          if (ws.readyState !== 1) {
+            clearInterval(drainInterval!);
+            drainInterval = null;
+            return;
+          }
           if (ws.bufferedAmount < WS_BACKPRESSURE_LIMIT / 2) {
             clearInterval(drainInterval!);
             drainInterval = null;
@@ -991,33 +1122,48 @@ function handleTmuxAttach(ws: WebSocket, session: string) {
         if (!scrollbackSent) {
           scrollbackSent = true;
           try {
-            const scrollback = execFileSync(TMUX_BIN, [
-              "capture-pane", "-t", session, "-p", "-e", "-S", "-500",
-            ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+            const scrollback = execFileSync(TMUX_BIN, ["capture-pane", "-t", session, "-p", "-e", "-S", "-500"], {
+              encoding: "utf8",
+              stdio: ["ignore", "pipe", "pipe"],
+            });
             if (scrollback.trim()) {
               ws.send(scrollback);
             }
-          } catch { /* session may have no scrollback */ }
+          } catch {
+            /* session may have no scrollback */
+          }
         }
         return;
       }
-    } catch { /* not JSON, treat as input */ }
+    } catch {
+      /* not JSON, treat as input */
+    }
     proc.write(msg);
   });
 
   ws.on("close", () => {
-    if (drainInterval) { clearInterval(drainInterval); drainInterval = null; }
+    if (drainInterval) {
+      clearInterval(drainInterval);
+      drainInterval = null;
+    }
     // Kill pty (detaches from tmux, session continues running)
-    try { proc.kill(); } catch {}
+    try {
+      proc.kill();
+    } catch {}
   });
 }
 
 // --- Agent lifecycle: spawn / kill via tmux ---
 // Env vars to strip to avoid Claude Code nesting issues
 const CLAUDE_VARS_TO_STRIP = [
-  "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SESSION_ID",
-  "CLAUDE_CODE_CONVERSATION_ID", "CLAUDE_CODE_TASK_ID",
-  "NON_INTERACTIVE", "MCP_TRANSPORT", "MCP_SESSION_ID",
+  "CLAUDECODE",
+  "CLAUDE_CODE_ENTRYPOINT",
+  "CLAUDE_CODE_SESSION_ID",
+  "CLAUDE_CODE_CONVERSATION_ID",
+  "CLAUDE_CODE_TASK_ID",
+  "NON_INTERACTIVE",
+  "MCP_TRANSPORT",
+  "MCP_SESSION_ID",
 ];
 
 app.post("/api/agents/:module/spawn", async (req, res) => {
@@ -1038,17 +1184,13 @@ app.post("/api/agents/:module/spawn", async (req, res) => {
 
   // Write spawn script (strips parent Claude env, launches claude CLI)
   const scriptFile = `/tmp/pgw-spawn-${session}.sh`;
-  const script = [
-    "#!/bin/sh",
-    `unset ${CLAUDE_VARS_TO_STRIP.join(" ")}`,
-    `exec claude`,
-  ].join("\n");
+  const script = ["#!/bin/sh", `unset ${CLAUDE_VARS_TO_STRIP.join(" ")}`, `exec claude`].join("\n");
   fsSync.writeFileSync(scriptFile, script, { mode: 0o700 });
 
   try {
-    execFileSync(TMUX_BIN, [
-      "new-session", "-d", "-s", session, "-c", modPath, scriptFile,
-    ], { stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync(TMUX_BIN, ["new-session", "-d", "-s", session, "-c", modPath, scriptFile], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     // Terminal config for proper xterm.js rendering (true color, unicode, history)
     const tmuxOpts: [string, string][] = [
       ["history-limit", "50000"],
@@ -1072,7 +1214,9 @@ app.post("/api/agents/:module/spawn", async (req, res) => {
       execFileSync(TMUX_BIN, ["set-window-option", "-q", "-t", session, "utf8", "on"], {
         stdio: ["ignore", "pipe", "pipe"],
       });
-    } catch { /* older tmux versions may not support these */ }
+    } catch {
+      /* older tmux versions may not support these */
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return res.status(500).json({ error: msg });
@@ -1095,7 +1239,9 @@ app.post("/api/agents/:module/kill", async (req, res) => {
     execFileSync(TMUX_BIN, ["has-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
     execFileSync(TMUX_BIN, ["kill-session", "-t", session], { stdio: ["ignore", "pipe", "pipe"] });
     // Per-client ptys auto-detect tmux session death via onExit — no centralized cleanup needed
-    try { fsSync.unlinkSync(`/tmp/pgw-spawn-${session}.sh`); } catch {}
+    try {
+      fsSync.unlinkSync(`/tmp/pgw-spawn-${session}.sh`);
+    } catch {}
     log.info({ mod, session }, "Killed Claude agent tmux session");
     return res.json({ status: "killed", module: mod, session });
   } catch {}
@@ -1115,7 +1261,10 @@ httpServer.listen(PORT, async () => {
   const pool: import("pg").Pool = container.resolve("pool");
   try {
     const { rows } = await pool.query("SELECT version(), inet_server_addr()::text AS addr, inet_server_port() AS port");
-    log.info({ db: rows[0].version.split(" on ")[0], addr: rows[0].addr, port: rows[0].port, connStr }, "Connected to database");
+    log.info(
+      { db: rows[0].version.split(" on ")[0], addr: rows[0].addr, port: rows[0].port, connStr },
+      "Connected to database",
+    );
   } catch (err) {
     log.warn({ err, connStr }, "Could not connect to database");
   }

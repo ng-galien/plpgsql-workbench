@@ -4,7 +4,19 @@
  */
 
 import type { DbClient } from "../../connection.js";
-import type { Canvas, Element, LoadedCanvas, TextElement, RectElement, LineElement, CircleElement, EllipseElement, ImageElement, GroupElement, PathElement } from "./types.js";
+import type {
+  Canvas,
+  CircleElement,
+  Element,
+  EllipseElement,
+  GroupElement,
+  ImageElement,
+  LineElement,
+  LoadedCanvas,
+  PathElement,
+  RectElement,
+  TextElement,
+} from "./types.js";
 
 /** Load a canvas with all its elements, reconstructed as a nested tree. */
 export async function loadCanvas(client: DbClient, canvasId: string): Promise<LoadedCanvas | null> {
@@ -45,10 +57,9 @@ export async function loadCanvas(client: DbClient, canvasId: string): Promise<Lo
 
 /** Resolve a canvas by name or UUID. */
 export async function resolveCanvasId(client: DbClient, nameOrId: string): Promise<string | null> {
-  const { rows } = await client.query(
-    `SELECT id FROM document.canvas WHERE id::text = $1 OR name = $1 LIMIT 1`,
-    [nameOrId],
-  );
+  const { rows } = await client.query(`SELECT id FROM document.canvas WHERE id::text = $1 OR name = $1 LIMIT 1`, [
+    nameOrId,
+  ]);
   return rows.length > 0 ? rows[0].id : null;
 }
 
@@ -58,7 +69,9 @@ export function compactState(loaded: LoadedCanvas): string {
   const total = countElements(loaded.elements);
   const lines: string[] = [];
 
-  lines.push(`Canvas: "${c.name}" [${c.category}] ${c.format} ${c.orientation} ${c.w}x${c.h}mm bg:${c.bg} | ${total} elements`);
+  lines.push(
+    `Canvas: "${c.name}" [${c.category}] ${c.format} ${c.orientation} ${c.w}x${c.h}mm bg:${c.bg} | ${total} elements`,
+  );
   lines.push("─".repeat(60));
 
   for (const el of loaded.elements) {
@@ -76,7 +89,7 @@ function renderElement(el: Element, indent: number, lines: string[]): void {
   switch (el.type) {
     case "text": {
       const t = el as TextElement;
-      const preview = t.content.length > 30 ? t.content.slice(0, 27) + "..." : t.content;
+      const preview = t.content.length > 30 ? `${t.content.slice(0, 27)}...` : t.content;
       lines.push(`${pad}${id}${nameTag}  text  "${preview}" x:${t.x} y:${t.y} sz:${t.fontSize} fill:${t.fill}`);
       break;
     }

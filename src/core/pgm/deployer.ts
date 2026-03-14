@@ -3,10 +3,10 @@
  * PostgreSQL database in dependency-resolved order.
  */
 
-import fs from "fs/promises";
-import path from "path";
+import fs from "node:fs/promises";
+import path from "node:path";
 import pg from "pg";
-import type { ModuleManifest, InstallPlan } from "./resolver.js";
+import type { InstallPlan, ModuleManifest } from "./resolver.js";
 
 // --- Check types ---
 
@@ -35,11 +35,7 @@ export interface DeployResult {
 
 // --- Pre-deploy check ---
 
-export async function checkModules(
-  plan: InstallPlan,
-  connectionString: string,
-  only?: string,
-): Promise<CheckResult[]> {
+export async function checkModules(plan: InstallPlan, connectionString: string, only?: string): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
 
   // --- Static checks (no DB needed) ---
@@ -115,20 +111,14 @@ export async function checkModules(
   await client.connect();
 
   try {
-    const { rows: schemaRows } = await client.query<{ nspname: string }>(
-      `SELECT nspname FROM pg_namespace`,
-    );
+    const { rows: schemaRows } = await client.query<{ nspname: string }>(`SELECT nspname FROM pg_namespace`);
     const existingSchemas = new Set(schemaRows.map((r) => r.nspname));
 
     // Check available extensions (can be installed), not just installed ones
-    const { rows: availRows } = await client.query<{ name: string }>(
-      `SELECT name FROM pg_available_extensions`,
-    );
+    const { rows: availRows } = await client.query<{ name: string }>(`SELECT name FROM pg_available_extensions`);
     const availableExtensions = new Set(availRows.map((r) => r.name));
 
-    const { rows: extRows } = await client.query<{ extname: string }>(
-      `SELECT extname FROM pg_extension`,
-    );
+    const { rows: extRows } = await client.query<{ extname: string }>(`SELECT extname FROM pg_extension`);
     const installedExtensions = new Set(extRows.map((r) => r.extname));
 
     // Track what earlier modules in the plan will provide
@@ -142,9 +132,7 @@ export async function checkModules(
 
       // Check extensions: available on server (or already installed, or will be installed upstream)
       for (const ext of manifest.extensions) {
-        const available = availableExtensions.has(ext)
-          || installedExtensions.has(ext)
-          || willInstall.has(ext);
+        const available = availableExtensions.has(ext) || installedExtensions.has(ext) || willInstall.has(ext);
         checks.push({
           kind: "extension",
           name: ext,
@@ -223,11 +211,7 @@ export async function deployModules(
   return results;
 }
 
-async function deployModule(
-  client: pg.Client,
-  modulesDir: string,
-  manifest: ModuleManifest,
-): Promise<DeployResult> {
+async function deployModule(client: pg.Client, modulesDir: string, manifest: ModuleManifest): Promise<DeployResult> {
   const moduleDir = path.join(modulesDir, manifest.name);
   const files: DeployResult["files"] = [];
 

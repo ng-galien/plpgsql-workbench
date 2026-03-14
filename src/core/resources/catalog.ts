@@ -36,9 +36,9 @@ export async function queryCatalog(client: DbClient): Promise<CatalogEntry[]> {
 
   return rows.map((r) => ({
     name: r.schema_name,
-    tables: parseInt(r.table_count),
-    functions: parseInt(r.function_count),
-    triggers: parseInt(r.trigger_count),
+    tables: parseInt(r.table_count, 10),
+    functions: parseInt(r.function_count, 10),
+    triggers: parseInt(r.trigger_count, 10),
   }));
 }
 
@@ -48,9 +48,7 @@ export function formatCatalog(entries: CatalogEntry[]): string {
   if (entries.length === 0) return "(no schemas)";
   const pad = Math.max(...entries.map((e) => e.name.length)) + 2;
   return entries
-    .map((e) =>
-      `${e.name.padEnd(pad)} ${summarizeCounts(e).padEnd(40)} ${PlUri.schema(e.name)}`,
-    )
+    .map((e) => `${e.name.padEnd(pad)} ${summarizeCounts(e).padEnd(40)} ${PlUri.schema(e.name)}`)
     .join("\n");
 }
 

@@ -3,15 +3,15 @@
  * Used by MCP tools (pg_pack, pg_func_save) to know where to write.
  */
 
-import fs from "fs/promises";
-import path from "path";
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { ModuleManifest } from "./resolver.js";
 
 export interface ModuleMapping {
   module: string;
-  modulePath: string;        // absolute path to module dir
-  functionsFile: string;     // relative SQL file for pg_pack output
-  schemas: string[];         // all schemas owned by this module
+  modulePath: string; // absolute path to module dir
+  functionsFile: string; // relative SQL file for pg_pack output
+  schemas: string[]; // all schemas owned by this module
 }
 
 export interface ModuleInfo {
@@ -76,10 +76,10 @@ export async function buildModuleRegistry(workspaceRoot: string): Promise<Module
     workspaceRoot,
 
     allModules(): ModuleInfo[] {
-      return mappings.map(m => {
-        const pub = m.schemas.find(s => !s.endsWith("_ut") && !s.endsWith("_it") && !s.endsWith("_qa"));
-        const test = m.schemas.find(s => s.endsWith("_ut"));
-        const qa = m.schemas.find(s => s.endsWith("_qa"));
+      return mappings.map((m) => {
+        const pub = m.schemas.find((s) => !s.endsWith("_ut") && !s.endsWith("_it") && !s.endsWith("_qa"));
+        const test = m.schemas.find((s) => s.endsWith("_ut"));
+        const qa = m.schemas.find((s) => s.endsWith("_qa"));
         return { name: m.module, path: m.modulePath, schemas: { public: pub, test, qa } };
       });
     },
