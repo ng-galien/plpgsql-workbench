@@ -287,11 +287,13 @@ export-svg: ## Export all canvas SVGs to tmp/
 	done
 	@echo "Done"
 
-export-pdf: export-svg ## Export all canvas as PDF (SVG → PDF via rsvg-convert)
-	@for f in tmp/*.svg; do \
+export-pdf: export-svg ## Export all canvas as PDF (SVG → Chrome headless)
+	@CHROME="$$(which google-chrome-stable 2>/dev/null || echo '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')"; \
+	for f in tmp/*.svg; do \
 		python3 scripts/svg-embed-images.py "$$f" dev/frontend; \
 		pdf="$${f%.svg}.pdf"; \
-		rsvg-convert -f pdf --keep-image-data "$$f" -o "$$pdf" 2>/dev/null; \
-		echo "  $$pdf"; \
+		"$$CHROME" --headless --disable-gpu --no-sandbox --print-to-pdf="$$pdf" --no-pdf-header-footer \
+			"file://$$(cd . && pwd)/$$f" 2>/dev/null; \
+		echo "  $$pdf ($$(du -h "$$pdf" | cut -f1))"; \
 	done
 	@echo "Done"

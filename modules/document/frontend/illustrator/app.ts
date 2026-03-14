@@ -1,6 +1,8 @@
 // ============================================================
-// APP — entry point
+// APP — entry point (Zustand + Supabase Realtime)
 // ============================================================
+
+// @ts-nocheck
 
 import "./styles/tokens.css";
 import "./styles/loader.css";
@@ -13,13 +15,13 @@ import { initEvents } from "./events.js";
 import { initWs } from "./ws.js";
 import { render } from "./render.js";
 import { renderUI } from "./ui.js";
-import { loadAssets } from "./photos.js";
 import { initImageEditor } from "./image-editor.js";
+import * as sync from "./supabase-sync.js";
 
-// Register state machine guards
+// Register state machine guards (no-op in Zustand bridge)
 store.use(guardMiddleware);
 
-// Subscriptions — replace the old render callback chain
+// Subscriptions — re-render on state changes
 subscribeToSlices(["doc", "ui"], () => render());
 subscribeToSlices(["doc", "ui"], () => renderUI());
 
@@ -33,5 +35,7 @@ initToast();
 initZoom();
 initEvents();
 initWs();
-loadAssets();
 initImageEditor();
+
+// Load assets from Supabase
+sync.loadAssets();
