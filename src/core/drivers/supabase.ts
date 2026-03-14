@@ -1,50 +1,68 @@
 /**
- * Supabase driver — implements DbClient using @supabase/supabase-js.
+ * Supabase driver — implements DbClient using postgres npm driver.
  *
- * Uses supabase.rpc('exec_sql', { sql, params }) for raw SQL execution.
- * Requires a PostgreSQL function `exec_sql(sql text, params jsonb)` deployed
- * in the database (see below).
+ * Sets app.tenant_id on every withClient call:
+ * - Dev: 'dev' (default)
+ * - Prod: extracted from JWT auth.uid() or passed explicitly
  *
- * For Supabase Edge Functions: uses the auto-injected SUPABASE_DB_URL with
- * the postgres npm driver for direct SQL access (no PostgREST overhead).
+ * For Supabase Edge Functions: uses the auto-injected SUPABASE_DB_URL.
  */
 
 import type { DbClient, QueryResult } from "../connection.js";
 import type { WithClient } from "../container.js";
 
+export interface PostgresWithClientOptions {
+  /** Default tenant_id to set on each connection. Default: 'dev' */
+  tenantId?: string;
+  /** Function to resolve tenant_id dynamically (e.g. from JWT). Overrides tenantId. */
+  resolveTenantId?: () => string | undefined;
+}
+
 /**
  * Create a WithClient using the postgres npm driver (direct connection).
- * This is the recommended approach for Edge Functions that need raw SQL.
- *
- * Usage:
- *   import postgres from "postgres";
- *   const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!);
- *   const withClient = createPostgresWithClient(sql);
+ * Sets app.tenant_id before each callback execution.
  */
-export function createPostgresWithClient(sql: any): WithClient {
-  const client: DbClient = {
-    async query<T = any>(text: string, params?: unknown[]): Promise<QueryResult<T>> {
-      // postgres.js uses tagged template literals, but we need parameterized queries.
-      // Use the unsafe() method for dynamic SQL with parameters.
-      if (params && params.length > 0) {
-        // Replace $1, $2, ... with postgres.js positional syntax
-        const result = await sql.unsafe(text, params);
+export function createPostgresWithClient(sql: any, opts?: PostgresWithClientOptions): WithClient {
+  const defaultTenantId = opts?.tenantId ?? "dev";
+  const resolveTenantId = opts?.resolveTenantId;
+
+  return async <T>(cb: (client: DbClient) => Promise<T>): Promise<T> => {
+    // Resolve tenant_id: dynamic resolver > static default
+    const tenantId = resolveTenantId?.() ?? defaultTenantId;
+
+    // Set tenant_id for this session
+    await sql.unsafe(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
+
+    const client: DbClient = {
+      async query<R = any>(text: string, params?: unknown[]): Promise<QueryResult<R>> {
+        if (params && params.length > 0) {
+          // postgres.js auto-detects JSON strings and sends them as PG type json (OID 114),
+          // but json doesn't support the - operator (only jsonb does).
+          // Workaround: wrap JSON strings in a helper object that postgres.js sends as text.
+          const safeParams = params.map(p => {
+            if (typeof p === "object" && p !== null && !Array.isArray(p)) {
+              return JSON.stringify(p);
+            }
+            return p;
+          });
+          // Force all params as text type to avoid json/jsonb type confusion
+          const types = safeParams.map(() => 0); // 0 = let PG infer from ::cast
+          const result = await sql.unsafe(text, safeParams, { types });
+          return {
+            rows: result as R[],
+            rowCount: result.count ?? result.length,
+            fields: result.columns?.map((c: any) => ({ name: c.name })),
+          };
+        }
+        const result = await sql.unsafe(text);
         return {
-          rows: result as T[],
+          rows: result as R[],
           rowCount: result.count ?? result.length,
           fields: result.columns?.map((c: any) => ({ name: c.name })),
         };
-      }
-      const result = await sql.unsafe(text);
-      return {
-        rows: result as T[],
-        rowCount: result.count ?? result.length,
-        fields: result.columns?.map((c: any) => ({ name: c.name })),
-      };
-    },
-  };
+      },
+    };
 
-  return async <T>(cb: (client: DbClient) => Promise<T>): Promise<T> => {
     return cb(client);
   };
 }

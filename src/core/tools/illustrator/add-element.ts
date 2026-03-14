@@ -44,15 +44,16 @@ export function createAddTextTool({ withClient }: { withClient: WithClient }): T
       };
 
       return withClient(async (client) => {
+        const allProps = {
+          ...props,
+          name: args.name ?? null,
+          fill: args.fill ?? "#1C1C1C",
+          opacity: args.opacity ?? 1,
+          rotation: args.rotation ?? 0,
+        };
         const { rows } = await client.query(
           `SELECT document.element_add($1, 'text', 0, $2) as id`,
-          [canvasId, JSON.stringify({
-            ...props,
-            name: args.name ?? null,
-            fill: args.fill ?? "#1C1C1C",
-            opacity: args.opacity ?? 1,
-            rotation: args.rotation ?? 0,
-          })],
+          [canvasId, JSON.stringify(allProps)],
         );
         const id = rows[0]?.id;
         const preview = (args.text as string).slice(0, 30);

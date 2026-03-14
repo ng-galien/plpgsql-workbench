@@ -25,7 +25,11 @@ const sql = postgres(dbUrl, {
   connect_timeout: 10,
   max: 5,
 });
-const withClient = createPostgresWithClient(sql);
+const withClient = createPostgresWithClient(sql, {
+  tenantId: "dev",
+  // In production: resolveTenantId extracts auth.uid() from the JWT
+  // resolveTenantId: () => currentRequestUserId,
+});
 
 // -- Edge pack: supabase driver + pg_query --
 const edgePack: ToolPack = (container, _config) => {
