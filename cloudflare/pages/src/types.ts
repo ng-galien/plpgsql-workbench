@@ -15,5 +15,5 @@ export interface AppModule {
   module: string;
   brand: string;
   schema: string;
-  items: { href: string; label: string; icon?: string }[];
+  items: { href?: string; label?: string; icon?: string }[];
 }
