@@ -40,7 +40,7 @@ BEGIN
     LOOP
       v_svg := document.canvas_render_svg_mini(r.id);
       SELECT count(*)::int INTO v_elem_cnt FROM document.element WHERE canvas_id = r.id;
-      v_href := pgv.call_ref('get_canvas', jsonb_build_object('p_id', r.id));
+      v_href := pgv.call_ref('get_editor', jsonb_build_object('p_id', r.id));
 
       v_cards := v_cards || (
         '<a href="' || v_href || '">'
