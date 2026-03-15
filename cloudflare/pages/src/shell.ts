@@ -8,7 +8,7 @@
 import { getConfig } from "./config.js";
 import { setEnhanceContext } from "./enhance.js";
 import { loadI18n, t } from "./i18n.js";
-import { pgListen, pgRpc } from "./realtime.js";
+import { pgListen, pgRpc, supabase } from "./realtime.js";
 import {
   go,
   handleError,
@@ -165,6 +165,19 @@ export function createShellComponent(): Record<string, unknown> {
       // Realtime notifications — toast on INSERT with link
       self._unsubRealtime = [];
       self._watchedSchema = null;
+
+      // AI activity channel — broadcast from MCP to browser
+      const aiChannel = supabase().channel("ai-activity");
+      aiChannel.on("broadcast", { event: "activity" }, (msg: { payload: { msg?: string; detail?: string; href?: string; action?: string } }) => {
+        const p = msg.payload || {};
+        console.log("[pgv] AI broadcast:", p);
+        if (p.action === "navigate" && p.href) {
+          self.go(p.href);
+        } else {
+          self.showToast(p.msg || "AI", "info", p.detail || "", p.href || "");
+        }
+      });
+      aiChannel.subscribe();
 
       // Error tracking (circular buffer, max 20) — store refs for cleanup
       self._onError = (e: ErrorEvent) => {
