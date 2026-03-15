@@ -34,15 +34,18 @@ export function pgListen(schema: string, table: string, handler: PgChangeHandler
   if (!listeners[key]) listeners[key] = [];
   listeners[key].push(handler);
 
-  // Open channel on first listener for this table
+  // Open channel on first listener for this table (or whole schema if table is "*")
   if (!channels[key]) {
+    const filter = table !== "*" ? { event: "*" as const, schema, table } : { event: "*" as const, schema };
     const ch = supabase()
       .channel(`rt-${key}`)
-      .on("postgres_changes", { event: "*", schema, table }, (payload: PgChangePayload) => {
+      .on("postgres_changes", filter, (payload: PgChangePayload) => {
         const fns = listeners[key];
         if (fns) for (const fn of fns) fn(payload);
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`[pgv] Realtime channel rt-${key}: ${status}`);
+      });
     channels[key] = ch;
   }
 

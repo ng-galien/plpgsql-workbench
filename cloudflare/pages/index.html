@@ -111,7 +111,9 @@
       <div style="font-weight:600;margin-bottom:0.15rem" x-text="toast.msg"></div>
       <div x-show="toast.detail" style="color:var(--pgv-muted);font-size:0.8rem"
            x-text="toast.detail"></div>
-      <a x-show="toast.level === 'error'" class="pgv-toast-report" href="#"
+      <a x-show="toast.href" class="pgv-toast-link" :href="toast.href"
+         @click.prevent="toast.show = false; go(toast.href)">Ouvrir &rarr;</a>
+      <a x-show="toast.level === 'error' && !toast.href" class="pgv-toast-report" href="#"
          @click.prevent="issueFromError()" x-text="t('issue.report')"></a>
     </article>
   </div>

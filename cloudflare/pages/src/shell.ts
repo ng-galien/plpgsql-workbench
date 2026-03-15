@@ -36,7 +36,7 @@ interface ShellComponent {
   };
   $nextTick: (fn: () => void) => void;
   // State
-  toast: { show: boolean; msg: string; level: string; detail: string };
+  toast: { show: boolean; msg: string; level: string; detail: string; href: string };
   dlg: { title: string; target: string };
   search: { open: boolean; query: string; idx: number };
   issue: { open: boolean; desc: string; type: string };
@@ -49,10 +49,12 @@ interface ShellComponent {
   _onError?: (e: ErrorEvent) => void;
   _onRejection?: (e: PromiseRejectionEvent) => void;
   _onKeydown?: (e: KeyboardEvent) => void;
+  _unsubRealtime: (() => void)[];
+  _watchedSchema: string | null;
   // Methods
   go(path: string, push?: boolean): void;
   post(endpoint: string, data: Record<string, unknown>): void;
-  showToast(msg: string, level?: string, detail?: string): void;
+  showToast(msg: string, level?: string, detail?: string, href?: string): void;
   searchOpen(): void;
   searchClose(): void;
   searchExec(): void;
@@ -65,6 +67,7 @@ interface ShellComponent {
   _confirm(msg: string): Promise<boolean>;
   _themeToggle(): void;
   _listen(): void;
+  _watchSchema(schema: string | null): void;
   _searchHighlight(): void;
   _render(html: string): void;
   _err(r: Response): Promise<void>;
@@ -79,7 +82,7 @@ interface ShellComponent {
 /** Create and return the pgview Alpine data object */
 export function createShellComponent(): Record<string, unknown> {
   return {
-    toast: { show: false, msg: "", level: "success", detail: "" },
+    toast: { show: false, msg: "", level: "success", detail: "", href: "" },
     dlg: { title: "", target: "" },
     search: { open: false, query: "", idx: 0 },
     issue: { open: false, desc: "", type: "bug" },
@@ -115,6 +118,7 @@ export function createShellComponent(): Record<string, unknown> {
         },
         set currentSchema(v) {
           self._currentSchema = v;
+          self._watchSchema(v);
         },
         get fixedSchema() {
           return self._fixedSchema;
@@ -157,6 +161,10 @@ export function createShellComponent(): Record<string, unknown> {
           self.$nextTick(fn);
         },
       });
+
+      // Realtime notifications — toast on INSERT with link
+      self._unsubRealtime = [];
+      self._watchedSchema = null;
 
       // Error tracking (circular buffer, max 20) — store refs for cleanup
       self._onError = (e: ErrorEvent) => {
@@ -315,6 +323,8 @@ export function createShellComponent(): Record<string, unknown> {
       if (this._onError) window.removeEventListener("error", this._onError);
       if (this._onRejection) window.removeEventListener("unhandledrejection", this._onRejection);
       if (this._onKeydown) document.removeEventListener("keydown", this._onKeydown);
+      for (const unsub of this._unsubRealtime) unsub();
+      this._unsubRealtime = [];
     },
 
     /* -- Navigation (delegated to router) -- */
@@ -345,9 +355,9 @@ export function createShellComponent(): Record<string, unknown> {
 
     /* -- Toast -- */
 
-    showToast: function (this: ShellComponent, msg: string, level?: string, detail?: string) {
+    showToast: function (this: ShellComponent, msg: string, level?: string, detail?: string, href?: string) {
       clearTimeout(this._tt);
-      this.toast = { show: true, msg: msg, level: level || "success", detail: detail || "" };
+      this.toast = { show: true, msg: msg, level: level || "success", detail: detail || "", href: href || "" };
 
       this._tt = setTimeout(
         () => {
@@ -355,6 +365,33 @@ export function createShellComponent(): Record<string, unknown> {
         },
         level === "error" ? 8000 : 3000,
       );
+    },
+
+    /* -- Realtime watch: subscribe to INSERTs on current schema -- */
+    _watchSchema: function (this: ShellComponent, schema: string | null) {
+      console.log("[pgv] _watchSchema", schema, "prev:", this._watchedSchema);
+      if (schema === this._watchedSchema) return;
+      // Unsub previous
+      for (const unsub of this._unsubRealtime) unsub();
+      this._unsubRealtime = [];
+      this._watchedSchema = schema;
+      if (!schema || schema === "pgv") return;
+
+      // Listen to all tables individually would require knowing them.
+      // For now, listen to the whole schema — Realtime filters by publication.
+      console.log("[pgv] pgListen", schema, "* (all tables in publication)");
+      const self = this;
+      const unsub = pgListen(schema, "*", (payload) => {
+        console.log("[pgv] Realtime event:", payload.eventType, payload.table, payload.new);
+        if (payload.eventType !== "INSERT") return;
+        const row = payload.new;
+        const table = payload.table;
+        const id = row.id as string | undefined;
+        const name = (row.name || row.title || row.label || table) as string;
+        const href = id ? `/${schema}/${table}?p_id=${id}` : `/${schema}/`;
+        self.showToast(name, "info", `${t("realtime.created")} · ${table}`, href);
+      });
+      this._unsubRealtime.push(unsub);
     },
 
     /* -- Error handling (delegated to router) -- */
