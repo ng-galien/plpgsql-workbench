@@ -9,6 +9,7 @@ import fsSync from "node:fs";
 import pathMod from "node:path";
 import { type AwilixContainer, asFunction, asValue } from "awilix";
 import { Pool } from "pg";
+import { createBroadcastService } from "../broadcast.js";
 import type { DbClient } from "../connection.js";
 import type { ToolPack, WithClient } from "../container.js";
 import { buildModuleRegistry } from "../pgm/registry.js";
@@ -31,6 +32,7 @@ import { createQueryTool } from "../tools/plpgsql/query.js";
 import { createSchemaTool } from "../tools/plpgsql/schema.js";
 import { createSearchTool } from "../tools/plpgsql/search.js";
 import { createTestTool, formatTestReport, runTests } from "../tools/plpgsql/test.js";
+import { createBroadcastTool } from "../tools/plpgsql/broadcast.js";
 import { createVisualTool } from "../tools/plpgsql/visual.js";
 
 export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record<string, unknown>) => {
@@ -106,5 +108,9 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
     previewTool: asFunction(createPreviewTool).singleton(),
     healthTool: asFunction(createHealthTool).singleton(),
     visualTool: asFunction(createVisualTool).singleton(),
+
+    // AI broadcast service (live notifications to browser)
+    broadcast: asFunction(createBroadcastService).singleton(),
+    broadcastTool: asFunction(createBroadcastTool).singleton(),
   });
 };
