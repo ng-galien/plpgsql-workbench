@@ -2,6 +2,7 @@ CREATE OR REPLACE FUNCTION docs.document_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF docs.document
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   IF p_filter IS NULL THEN

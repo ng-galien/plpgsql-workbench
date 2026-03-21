@@ -2,6 +2,7 @@ CREATE OR REPLACE FUNCTION docs.document_print_css(p_doc_id text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_d docs.document;

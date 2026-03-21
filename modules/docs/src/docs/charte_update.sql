@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.charte_update(p_data docs.charte)
  RETURNS docs.charte
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   IF p_data.name IS NOT NULL AND p_data.name != '' THEN

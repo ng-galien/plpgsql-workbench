@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.library_add_asset(p_library_id text, p_asset_id uuid, p_role text DEFAULT NULL::text, p_context text DEFAULT NULL::text, p_sort_order integer DEFAULT 0)
  RETURNS void
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   INSERT INTO docs.library_asset (library_id, asset_id, role, context, sort_order)

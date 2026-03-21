@@ -5,6 +5,8 @@ AS $function$
 DECLARE
   v text;
 BEGIN
+  -- docs functions already have SET api.expose = 'mcp'
+
   -- charte: full inspection
   v := pgv.schema_inspect('docs', 'charte');
   RETURN NEXT ok(v LIKE '## charte%', 'charte: header');
@@ -39,5 +41,7 @@ BEGIN
   -- Missing entity
   v := pgv.schema_inspect('docs', 'nonexistent');
   RETURN NEXT ok(v LIKE '%not found%', 'missing entity: error message');
+
+
 END;
 $function$;

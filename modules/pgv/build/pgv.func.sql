@@ -1956,6 +1956,7 @@ BEGIN
         p_entity || '_create', p_entity || '_read', p_entity || '_load',
         p_entity || '_list', p_entity || '_update', p_entity || '_delete'
       )
+      AND p.proconfig @> ARRAY['api.expose=mcp']
     ORDER BY array_position(v_crud_names, p.proname)
   LOOP
     IF NOT v_has_section THEN
@@ -1990,6 +1991,7 @@ BEGIN
         p_entity || '_create', p_entity || '_read', p_entity || '_load',
         p_entity || '_list', p_entity || '_update', p_entity || '_delete'
       )
+      AND p.proconfig @> ARRAY['api.expose=mcp']
     ORDER BY p.proname
   LOOP
     IF NOT v_has_section THEN
@@ -2266,12 +2268,13 @@ BEGIN
 
   -- HATEOAS: discover available actions
   IF v_id IS NOT NULL THEN
-    -- Standard CRUD actions
+    -- Standard CRUD actions (only api.expose=mcp)
     FOR v_rec IN
       SELECT p.proname FROM pg_proc p
       JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname = v_schema
         AND p.proname IN (v_entity || '_update', v_entity || '_delete', v_entity || '_read', v_entity || '_load')
+        AND p.proconfig @> ARRAY['api.expose=mcp']
     LOOP
       IF v_rec.proname = v_entity || '_update' THEN
         v_actions := v_actions || jsonb_build_object('verb', 'patch', 'uri', v_schema || '://' || v_entity || '/' || v_id);
@@ -2279,7 +2282,7 @@ BEGIN
         v_actions := v_actions || jsonb_build_object('verb', 'delete', 'uri', v_schema || '://' || v_entity || '/' || v_id);
       END IF;
     END LOOP;
-    -- Custom methods
+    -- Custom methods (only api.expose=mcp)
     FOR v_rec IN
       SELECT p.proname FROM pg_proc p
       JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -2290,6 +2293,7 @@ BEGIN
           v_entity || '_create', v_entity || '_update', v_entity || '_delete',
           v_entity || '_check'
         )
+        AND p.proconfig @> ARRAY['api.expose=mcp']
       ORDER BY p.proname
     LOOP
       v_actions := v_actions || jsonb_build_object(

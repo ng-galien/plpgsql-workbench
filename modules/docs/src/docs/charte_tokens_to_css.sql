@@ -2,6 +2,7 @@ CREATE OR REPLACE FUNCTION docs.charte_tokens_to_css(p_charte_id text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_c docs.charte;

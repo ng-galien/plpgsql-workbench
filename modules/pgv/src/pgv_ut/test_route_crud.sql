@@ -29,17 +29,23 @@ BEGIN
   v := pgv.route_crud('get', 'docs://charte/nonexistent_id');
   RETURN NEXT ok(v ? 'data', 'read: has data key');
 
-  -- HATEOAS: actions on entity/{id}
+  -- HATEOAS: actions filtered by api.expose=mcp
   v := pgv.route_crud('get', 'docs://charte/test');
   RETURN NEXT ok(jsonb_typeof(v->'actions') = 'array', 'hateoas: actions is array');
-  -- charte has delete + tokens_to_css
   RETURN NEXT ok(
     EXISTS (SELECT 1 FROM jsonb_array_elements(v->'actions') a WHERE a->>'verb' = 'delete'),
-    'hateoas: delete action present'
+    'hateoas: delete action present (api.expose=mcp)'
   );
   RETURN NEXT ok(
     EXISTS (SELECT 1 FROM jsonb_array_elements(v->'actions') a WHERE a->>'method' = 'tokens_to_css'),
-    'hateoas: custom method tokens_to_css'
+    'hateoas: custom method tokens_to_css (api.expose=mcp)'
+  );
+
+  -- Slug in HATEOAS actions
+  v := pgv.route_crud('get', 'docs://charte/ocean');
+  RETURN NEXT ok(
+    EXISTS (SELECT 1 FROM jsonb_array_elements(v->'actions') a WHERE a->>'uri' LIKE '%/ocean/%'),
+    'slug: HATEOAS URIs contain slug'
   );
 
   -- Error: nonexistent schema
@@ -58,16 +64,9 @@ BEGIN
   v := pgv.route_crud('post', 'docs://charte/test');
   RETURN NEXT is(v->>'error', 'bad_request', 'error: post without method');
 
-  -- Slug-based read: URI segment passed as-is to _read
+  -- Slug-based read
   v := pgv.route_crud('get', 'docs://charte/my-slug-name');
   RETURN NEXT ok(v ? 'data', 'slug: read passes segment to _read');
   RETURN NEXT is(v->>'uri', 'docs://charte/my-slug-name', 'slug: uri preserved with slug');
-
-  -- Slug in HATEOAS actions
-  v := pgv.route_crud('get', 'docs://charte/ocean');
-  RETURN NEXT ok(
-    EXISTS (SELECT 1 FROM jsonb_array_elements(v->'actions') a WHERE a->>'uri' LIKE '%/ocean/%'),
-    'slug: HATEOAS URIs contain slug'
-  );
 END;
 $function$;

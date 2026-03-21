@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.page_add(p_doc_id text, p_name text DEFAULT NULL::text, p_html text DEFAULT ''::text)
  RETURNS integer
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_idx integer;

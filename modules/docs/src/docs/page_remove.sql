@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.page_remove(p_doc_id text, p_page_index integer)
  RETURNS boolean
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_total int;

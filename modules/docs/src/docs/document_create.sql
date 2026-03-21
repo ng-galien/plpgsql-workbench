@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.document_create(p_data docs.document)
  RETURNS docs.document
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   CASE COALESCE(p_data.format, 'A4')

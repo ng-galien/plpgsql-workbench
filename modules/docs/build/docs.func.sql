@@ -16,6 +16,7 @@ CREATE OR REPLACE FUNCTION docs.charte_check(p_html text, p_charte_id text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_violations text[] := ARRAY[]::text[];
@@ -75,6 +76,7 @@ COMMENT ON FUNCTION docs.charte_check(text,text) IS 'Validate HTML uses charte C
 CREATE OR REPLACE FUNCTION docs.charte_create(p_data docs.charte)
  RETURNS docs.charte
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   p_data.id := gen_random_uuid()::text;
@@ -93,6 +95,7 @@ COMMENT ON FUNCTION docs.charte_create(docs.charte) IS 'Create charte — auto-s
 CREATE OR REPLACE FUNCTION docs.charte_delete(p_id text)
  RETURNS boolean
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_deleted int;
@@ -109,6 +112,7 @@ CREATE OR REPLACE FUNCTION docs.charte_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF docs.charte
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   IF p_filter IS NULL THEN
@@ -124,6 +128,7 @@ CREATE OR REPLACE FUNCTION docs.charte_read(p_id text)
  RETURNS docs.charte
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   RETURN (SELECT c FROM docs.charte c WHERE (c.slug = p_id OR c.id = p_id) AND c.tenant_id = current_setting('app.tenant_id', true));
@@ -135,6 +140,7 @@ CREATE OR REPLACE FUNCTION docs.charte_tokens_to_css(p_charte_id text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_c docs.charte;
@@ -210,6 +216,7 @@ COMMENT ON FUNCTION docs.charte_tokens_to_css(text) IS 'Generate CSS variables b
 CREATE OR REPLACE FUNCTION docs.charte_update(p_data docs.charte)
  RETURNS docs.charte
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   IF p_data.name IS NOT NULL AND p_data.name != '' THEN
@@ -254,6 +261,7 @@ COMMENT ON FUNCTION docs.charte_update(docs.charte) IS 'Partial update charte �
 CREATE OR REPLACE FUNCTION docs.document_create(p_data docs.document)
  RETURNS docs.document
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   CASE COALESCE(p_data.format, 'A4')
@@ -307,6 +315,7 @@ COMMENT ON FUNCTION docs.document_create(docs.document) IS 'Create document — 
 CREATE OR REPLACE FUNCTION docs.document_delete(p_id text)
  RETURNS boolean
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_deleted int;
@@ -322,6 +331,7 @@ COMMENT ON FUNCTION docs.document_delete(text) IS 'Delete document by slug or id
 CREATE OR REPLACE FUNCTION docs.document_duplicate(p_source_id text, p_new_name text)
  RETURNS text
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_src docs.document;
@@ -348,6 +358,7 @@ CREATE OR REPLACE FUNCTION docs.document_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF docs.document
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   IF p_filter IS NULL THEN
@@ -363,6 +374,7 @@ CREATE OR REPLACE FUNCTION docs.document_print_css(p_doc_id text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_d docs.document;
@@ -397,6 +409,7 @@ CREATE OR REPLACE FUNCTION docs.document_read(p_id text)
  RETURNS docs.document
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   RETURN (SELECT d FROM docs.document d WHERE (d.slug = p_id OR d.id = p_id) AND d.tenant_id = current_setting('app.tenant_id', true));
@@ -407,6 +420,7 @@ COMMENT ON FUNCTION docs.document_read(text) IS 'Read document by slug or id —
 CREATE OR REPLACE FUNCTION docs.document_update(p_data docs.document)
  RETURNS docs.document
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   IF p_data.name IS NOT NULL AND p_data.name != '' THEN
@@ -919,6 +933,7 @@ CREATE OR REPLACE FUNCTION docs.layout_check(p_html text, p_width numeric, p_hei
  RETURNS text
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_overflows text[] := ARRAY[]::text[];
@@ -960,6 +975,7 @@ COMMENT ON FUNCTION docs.layout_check(text,numeric,numeric) IS 'Detect elements 
 CREATE OR REPLACE FUNCTION docs.library_add_asset(p_library_id text, p_asset_id uuid, p_role text DEFAULT NULL::text, p_context text DEFAULT NULL::text, p_sort_order integer DEFAULT 0)
  RETURNS void
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   INSERT INTO docs.library_asset (library_id, asset_id, role, context, sort_order)
@@ -975,6 +991,7 @@ COMMENT ON FUNCTION docs.library_add_asset(text,uuid,text,text,integer) IS 'Add 
 CREATE OR REPLACE FUNCTION docs.library_create(p_data docs.library)
  RETURNS docs.library
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   p_data.id := gen_random_uuid()::text;
@@ -990,6 +1007,7 @@ COMMENT ON FUNCTION docs.library_create(docs.library) IS 'Create library — aut
 CREATE OR REPLACE FUNCTION docs.library_delete(p_id text)
  RETURNS boolean
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_deleted int;
@@ -1005,6 +1023,7 @@ CREATE OR REPLACE FUNCTION docs.library_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF docs.library
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   IF p_filter IS NULL THEN
@@ -1020,6 +1039,7 @@ CREATE OR REPLACE FUNCTION docs.library_read(p_id text)
  RETURNS docs.library
  LANGUAGE plpgsql
  STABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   RETURN (SELECT l FROM docs.library l WHERE (l.slug = p_id OR l.id = p_id) AND l.tenant_id = current_setting('app.tenant_id', true));
@@ -1030,6 +1050,7 @@ COMMENT ON FUNCTION docs.library_read(text) IS 'Read library by slug or id — r
 CREATE OR REPLACE FUNCTION docs.library_remove_asset(p_library_id text, p_asset_id uuid)
  RETURNS boolean
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_deleted int;
@@ -1058,6 +1079,7 @@ CREATE OR REPLACE FUNCTION docs.normalize_color(p_raw text)
  RETURNS text
  LANGUAGE plpgsql
  IMMUTABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_raw text;
@@ -1097,6 +1119,7 @@ COMMENT ON FUNCTION docs.normalize_color(text) IS 'Normalize CSS color to #rrggb
 CREATE OR REPLACE FUNCTION docs.page_add(p_doc_id text, p_name text DEFAULT NULL::text, p_html text DEFAULT ''::text)
  RETURNS integer
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_idx integer;
@@ -1114,6 +1137,7 @@ COMMENT ON FUNCTION docs.page_add(text,text,text) IS 'Add a page to a document (
 CREATE OR REPLACE FUNCTION docs.page_remove(p_doc_id text, p_page_index integer)
  RETURNS boolean
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_total int;
@@ -1147,6 +1171,7 @@ COMMENT ON FUNCTION docs.page_remove(text,integer) IS 'Remove a page and renumbe
 CREATE OR REPLACE FUNCTION docs.page_set_html(p_doc_id text, p_page_index integer, p_html text)
  RETURNS integer
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_old_html text;
@@ -1186,6 +1211,7 @@ CREATE OR REPLACE FUNCTION docs.style_merge(p_existing text, p_new text)
  RETURNS text
  LANGUAGE plpgsql
  IMMUTABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_props jsonb := '{}'::jsonb;
@@ -1240,6 +1266,7 @@ CREATE OR REPLACE FUNCTION docs.xhtml_validate(p_html text)
  RETURNS boolean
  LANGUAGE plpgsql
  IMMUTABLE
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   RETURN xml_is_well_formed('<root>' || COALESCE(p_html, '') || '</root>');
@@ -1250,6 +1277,7 @@ COMMENT ON FUNCTION docs.xhtml_validate(text) IS 'Check if HTML fragment is well
 CREATE OR REPLACE FUNCTION docs.xhtml_patch(p_html text, p_ops jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_html text := p_html;

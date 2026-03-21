@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.charte_create(p_data docs.charte)
  RETURNS docs.charte
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   p_data.id := gen_random_uuid()::text;

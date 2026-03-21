@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.document_delete(p_id text)
  RETURNS boolean
  LANGUAGE plpgsql
+ SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_deleted int;

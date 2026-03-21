@@ -100,6 +100,7 @@ BEGIN
         p_entity || '_create', p_entity || '_read', p_entity || '_load',
         p_entity || '_list', p_entity || '_update', p_entity || '_delete'
       )
+      AND p.proconfig @> ARRAY['api.expose=mcp']
     ORDER BY array_position(v_crud_names, p.proname)
   LOOP
     IF NOT v_has_section THEN
@@ -134,6 +135,7 @@ BEGIN
         p_entity || '_create', p_entity || '_read', p_entity || '_load',
         p_entity || '_list', p_entity || '_update', p_entity || '_delete'
       )
+      AND p.proconfig @> ARRAY['api.expose=mcp']
     ORDER BY p.proname
   LOOP
     IF NOT v_has_section THEN
