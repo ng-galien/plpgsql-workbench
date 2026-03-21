@@ -149,59 +149,6 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.charte_list() IS 'List all chartes for current tenant with preview colors';
 
-CREATE OR REPLACE FUNCTION docs.charte_load(p_name text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_c docs.charte;
-  v_css text;
-  v_token text;
-BEGIN
-  SELECT * INTO v_c FROM docs.charte
-  WHERE name = p_name AND tenant_id = current_setting('app.tenant_id', true);
-  IF v_c IS NULL THEN RETURN NULL; END IF;
-
-  v_css := docs.charte_tokens_to_css(v_c.id);
-
-  -- context_token: md5 of charte id + all color tokens (invalidates on any change)
-  v_token := md5('charte:' || v_c.id || '|' || v_c.color_bg || v_c.color_main || v_c.color_accent
-    || v_c.color_text || v_c.color_text_light || v_c.color_border
-    || COALESCE(v_c.color_extra::text, '') || v_c.font_heading || v_c.font_body);
-
-  RETURN jsonb_build_object(
-    'id', v_c.id,
-    'name', v_c.name,
-    'description', v_c.description,
-    'css', v_css,
-    'colors', jsonb_build_object(
-      'bg', v_c.color_bg, 'main', v_c.color_main, 'accent', v_c.color_accent,
-      'text', v_c.color_text, 'text_light', v_c.color_text_light, 'border', v_c.color_border,
-      'extra', v_c.color_extra
-    ),
-    'fonts', jsonb_build_object('heading', v_c.font_heading, 'body', v_c.font_body),
-    'spacing', jsonb_build_object(
-      'page', v_c.spacing_page, 'section', v_c.spacing_section,
-      'gap', v_c.spacing_gap, 'card', v_c.spacing_card
-    ),
-    'shadow', jsonb_build_object('card', v_c.shadow_card, 'elevated', v_c.shadow_elevated),
-    'radius', jsonb_build_object('card', v_c.radius_card),
-    'voice', jsonb_build_object(
-      'personality', to_jsonb(v_c.voice_personality),
-      'formality', v_c.voice_formality,
-      'do', to_jsonb(v_c.voice_do),
-      'dont', to_jsonb(v_c.voice_dont),
-      'vocabulary', to_jsonb(v_c.voice_vocabulary),
-      'examples', v_c.voice_examples
-    ),
-    'rules', v_c.rules,
-    'context_token', v_token
-  );
-END;
-$function$;
-COMMENT ON FUNCTION docs.charte_load(text) IS 'Load charte by name — returns tokens, CSS, voice, rules, context_token (md5)';
-
 CREATE OR REPLACE FUNCTION docs.charte_tokens_to_css(p_charte_id text)
  RETURNS text
  LANGUAGE plpgsql
@@ -278,7 +225,60 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.charte_tokens_to_css(text) IS 'Generate CSS variables block from charte tokens + Google Fonts @import';
 
-CREATE OR REPLACE FUNCTION docs.doc_create(p_name text, p_format text DEFAULT 'A4'::text, p_orientation text DEFAULT 'portrait'::text, p_charte_id text DEFAULT NULL::text, p_category text DEFAULT 'general'::text, p_html text DEFAULT ''::text, p_library_id text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION docs.charte_read(p_name text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_c docs.charte;
+  v_css text;
+  v_token text;
+BEGIN
+  SELECT * INTO v_c FROM docs.charte
+  WHERE name = p_name AND tenant_id = current_setting('app.tenant_id', true);
+  IF v_c IS NULL THEN RETURN NULL; END IF;
+
+  v_css := docs.charte_tokens_to_css(v_c.id);
+
+  -- context_token: md5 of charte id + all color tokens (invalidates on any change)
+  v_token := md5('charte:' || v_c.id || '|' || v_c.color_bg || v_c.color_main || v_c.color_accent
+    || v_c.color_text || v_c.color_text_light || v_c.color_border
+    || COALESCE(v_c.color_extra::text, '') || v_c.font_heading || v_c.font_body);
+
+  RETURN jsonb_build_object(
+    'id', v_c.id,
+    'name', v_c.name,
+    'description', v_c.description,
+    'css', v_css,
+    'colors', jsonb_build_object(
+      'bg', v_c.color_bg, 'main', v_c.color_main, 'accent', v_c.color_accent,
+      'text', v_c.color_text, 'text_light', v_c.color_text_light, 'border', v_c.color_border,
+      'extra', v_c.color_extra
+    ),
+    'fonts', jsonb_build_object('heading', v_c.font_heading, 'body', v_c.font_body),
+    'spacing', jsonb_build_object(
+      'page', v_c.spacing_page, 'section', v_c.spacing_section,
+      'gap', v_c.spacing_gap, 'card', v_c.spacing_card
+    ),
+    'shadow', jsonb_build_object('card', v_c.shadow_card, 'elevated', v_c.shadow_elevated),
+    'radius', jsonb_build_object('card', v_c.radius_card),
+    'voice', jsonb_build_object(
+      'personality', to_jsonb(v_c.voice_personality),
+      'formality', v_c.voice_formality,
+      'do', to_jsonb(v_c.voice_do),
+      'dont', to_jsonb(v_c.voice_dont),
+      'vocabulary', to_jsonb(v_c.voice_vocabulary),
+      'examples', v_c.voice_examples
+    ),
+    'rules', v_c.rules,
+    'context_token', v_token
+  );
+END;
+$function$;
+COMMENT ON FUNCTION docs.charte_read(text) IS 'Load charte by name — returns tokens, CSS, voice, rules, context_token (md5)';
+
+CREATE OR REPLACE FUNCTION docs.document_create(p_name text, p_format text DEFAULT 'A4'::text, p_orientation text DEFAULT 'portrait'::text, p_charte_id text DEFAULT NULL::text, p_category text DEFAULT 'general'::text, p_html text DEFAULT ''::text, p_library_id text DEFAULT NULL::text)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
@@ -321,9 +321,9 @@ BEGIN
   RETURN v_id;
 END;
 $function$;
-COMMENT ON FUNCTION docs.doc_create(text,text,text,text,text,text,text) IS 'Create document with format→dimensions, first page, optional charte and library';
+COMMENT ON FUNCTION docs.document_create(text,text,text,text,text,text,text) IS 'Create document with format→dimensions, first page, optional charte and library';
 
-CREATE OR REPLACE FUNCTION docs.doc_delete(p_id text)
+CREATE OR REPLACE FUNCTION docs.document_delete(p_id text)
  RETURNS boolean
  LANGUAGE plpgsql
 AS $function$
@@ -336,9 +336,9 @@ BEGIN
   RETURN v_deleted > 0;
 END;
 $function$;
-COMMENT ON FUNCTION docs.doc_delete(text) IS 'Delete document (CASCADE pages + revisions)';
+COMMENT ON FUNCTION docs.document_delete(text) IS 'Delete document (CASCADE pages + revisions)';
 
-CREATE OR REPLACE FUNCTION docs.doc_duplicate(p_source_id text, p_new_name text)
+CREATE OR REPLACE FUNCTION docs.document_duplicate(p_source_id text, p_new_name text)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
@@ -361,9 +361,9 @@ BEGIN
   RETURN v_id;
 END;
 $function$;
-COMMENT ON FUNCTION docs.doc_duplicate(text,text) IS 'Deep clone document with all pages';
+COMMENT ON FUNCTION docs.document_duplicate(text,text) IS 'Deep clone document with all pages';
 
-CREATE OR REPLACE FUNCTION docs.doc_list()
+CREATE OR REPLACE FUNCTION docs.document_list()
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
@@ -393,71 +393,9 @@ BEGIN
   RETURN v_result;
 END;
 $function$;
-COMMENT ON FUNCTION docs.doc_list() IS 'List all documents for current tenant with page count and charte name';
+COMMENT ON FUNCTION docs.document_list() IS 'List all documents for current tenant with page count and charte name';
 
-CREATE OR REPLACE FUNCTION docs.doc_load(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_d docs.document;
-  v_css text;
-  v_pages jsonb := '[]'::jsonb;
-  v_library jsonb;
-  r record;
-BEGIN
-  SELECT * INTO v_d FROM docs.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
-  IF v_d IS NULL THEN RETURN NULL; END IF;
-
-  IF v_d.charte_id IS NOT NULL THEN
-    v_css := docs.charte_tokens_to_css(v_d.charte_id);
-  END IF;
-
-  IF v_d.library_id IS NOT NULL THEN
-    v_library := docs.library_load(v_d.library_id);
-  END IF;
-
-  FOR r IN
-    SELECT page_index, name, html, format, orientation, width, height, bg, text_margin
-    FROM docs.page WHERE doc_id = p_id ORDER BY page_index
-  LOOP
-    v_pages := v_pages || jsonb_build_object(
-      'page_index', r.page_index,
-      'name', r.name,
-      'html', r.html,
-      'format', r.format,
-      'width', r.width,
-      'height', r.height,
-      'bg', r.bg
-    );
-  END LOOP;
-
-  RETURN jsonb_build_object(
-    'id', v_d.id,
-    'name', v_d.name,
-    'category', v_d.category,
-    'format', v_d.format,
-    'orientation', v_d.orientation,
-    'width', v_d.width,
-    'height', v_d.height,
-    'bg', v_d.bg,
-    'text_margin', v_d.text_margin,
-    'status', v_d.status,
-    'charte_id', v_d.charte_id,
-    'charte_css', v_css,
-    'library_id', v_d.library_id,
-    'library', v_library,
-    'pages', v_pages,
-    'active_page', v_d.active_page,
-    'rating', v_d.rating,
-    'design_notes', v_d.design_notes
-  );
-END;
-$function$;
-COMMENT ON FUNCTION docs.doc_load(text) IS 'Load document with all pages, charte CSS, and library assets';
-
-CREATE OR REPLACE FUNCTION docs.doc_print_css(p_doc_id text)
+CREATE OR REPLACE FUNCTION docs.document_print_css(p_doc_id text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
@@ -489,7 +427,7 @@ BEGIN
     || '.doc-print-page { width: ' || v_d.width::text || 'mm; height: ' || v_d.height::text || 'mm; margin: 0 auto 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; position: relative; }';
 END;
 $function$;
-COMMENT ON FUNCTION docs.doc_print_css(text) IS 'Generate @media print CSS for a document (page size, break-after, hide chrome)';
+COMMENT ON FUNCTION docs.document_print_css(text) IS 'Generate @media print CSS for a document (page size, break-after, hide chrome)';
 
 CREATE OR REPLACE FUNCTION docs.get_charte(p_id text)
  RETURNS text
@@ -631,6 +569,7 @@ COMMENT ON FUNCTION docs.get_chartes() IS 'pgView page: list chartes with color 
 CREATE OR REPLACE FUNCTION docs.get_document(p_id text)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_d docs.document;
@@ -678,9 +617,9 @@ BEGIN
   -- Actions
   v_body := v_body || '<p>'
     || '<a href="' || pgv.call_ref('get_print', jsonb_build_object('p_id', p_id)) || '" target="_blank"><button class="outline">Imprimer</button></a> '
-    || pgv.action('post_doc_duplicate', pgv.t('docs.btn_duplicate'), jsonb_build_object('p_source_id', p_id), 'Dupliquer ce document ?', 'outline')
+    || pgv.action('post_document_duplicate', pgv.t('docs.btn_duplicate'), jsonb_build_object('p_source_id', p_id), 'Dupliquer ce document ?', 'outline')
     || ' '
-    || pgv.action('post_doc_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_id', p_id), 'Supprimer ce document et toutes ses pages ?', 'danger')
+    || pgv.action('post_document_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_id', p_id), 'Supprimer ce document et toutes ses pages ?', 'danger')
     || '</p>';
 
   RETURN v_body;
@@ -853,6 +792,7 @@ COMMENT ON FUNCTION docs.get_library(text) IS 'pgView page: library detail with 
 CREATE OR REPLACE FUNCTION docs.get_print(p_id text)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_d docs.document;
@@ -868,7 +808,7 @@ BEGIN
     v_charte_css := docs.charte_tokens_to_css(v_d.charte_id);
   END IF;
 
-  v_print_css := docs.doc_print_css(p_id);
+  v_print_css := docs.document_print_css(p_id);
 
   v_body := '<style>' || v_charte_css || chr(10) || v_print_css || '</style>';
 
@@ -1075,7 +1015,7 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.library_list() IS 'List all libraries for current tenant with asset count';
 
-CREATE OR REPLACE FUNCTION docs.library_load(p_library_id text)
+CREATE OR REPLACE FUNCTION docs.library_read(p_library_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
@@ -1112,7 +1052,69 @@ BEGIN
   );
 END;
 $function$;
-COMMENT ON FUNCTION docs.library_load(text) IS 'Load library with all assets (metadata from asset.asset)';
+COMMENT ON FUNCTION docs.library_read(text) IS 'Load library with all assets (metadata from asset.asset)';
+
+CREATE OR REPLACE FUNCTION docs.document_read(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_d docs.document;
+  v_css text;
+  v_pages jsonb := '[]'::jsonb;
+  v_library jsonb;
+  r record;
+BEGIN
+  SELECT * INTO v_d FROM docs.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
+  IF v_d IS NULL THEN RETURN NULL; END IF;
+
+  IF v_d.charte_id IS NOT NULL THEN
+    v_css := docs.charte_tokens_to_css(v_d.charte_id);
+  END IF;
+
+  IF v_d.library_id IS NOT NULL THEN
+    v_library := docs.library_read(v_d.library_id);
+  END IF;
+
+  FOR r IN
+    SELECT page_index, name, html, format, orientation, width, height, bg, text_margin
+    FROM docs.page WHERE doc_id = p_id ORDER BY page_index
+  LOOP
+    v_pages := v_pages || jsonb_build_object(
+      'page_index', r.page_index,
+      'name', r.name,
+      'html', r.html,
+      'format', r.format,
+      'width', r.width,
+      'height', r.height,
+      'bg', r.bg
+    );
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'id', v_d.id,
+    'name', v_d.name,
+    'category', v_d.category,
+    'format', v_d.format,
+    'orientation', v_d.orientation,
+    'width', v_d.width,
+    'height', v_d.height,
+    'bg', v_d.bg,
+    'text_margin', v_d.text_margin,
+    'status', v_d.status,
+    'charte_id', v_d.charte_id,
+    'charte_css', v_css,
+    'library_id', v_d.library_id,
+    'library', v_library,
+    'pages', v_pages,
+    'active_page', v_d.active_page,
+    'rating', v_d.rating,
+    'design_notes', v_d.design_notes
+  );
+END;
+$function$;
+COMMENT ON FUNCTION docs.document_read(text) IS 'Load document with all pages, charte CSS, and library assets';
 
 CREATE OR REPLACE FUNCTION docs.library_remove_asset(p_library_id text, p_asset_id uuid)
  RETURNS boolean
@@ -1323,6 +1325,17 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.style_merge(text,text) IS 'Merge two CSS inline strings (last-write-wins per property)';
 
+CREATE OR REPLACE FUNCTION docs.xhtml_validate(p_html text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+BEGIN
+  RETURN xml_is_well_formed('<root>' || COALESCE(p_html, '') || '</root>');
+END;
+$function$;
+COMMENT ON FUNCTION docs.xhtml_validate(text) IS 'Check if HTML fragment is well-formed XML';
+
 CREATE OR REPLACE FUNCTION docs.xhtml_patch(p_html text, p_ops jsonb)
  RETURNS text
  LANGUAGE plpgsql
@@ -1491,17 +1504,6 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION docs.xhtml_patch(text,jsonb) IS 'Surgical XHTML patch by data-id: style merge, content replace, remove, insert, replace element';
-
-CREATE OR REPLACE FUNCTION docs.xhtml_validate(p_html text)
- RETURNS boolean
- LANGUAGE plpgsql
- IMMUTABLE
-AS $function$
-BEGIN
-  RETURN xml_is_well_formed('<root>' || COALESCE(p_html, '') || '</root>');
-END;
-$function$;
-COMMENT ON FUNCTION docs.xhtml_validate(text) IS 'Check if HTML fragment is well-formed XML';
 
 GRANT USAGE ON SCHEMA docs TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA docs TO anon;

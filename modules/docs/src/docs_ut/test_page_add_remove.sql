@@ -11,7 +11,7 @@ BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
 
-  v_id := docs.doc_create('Pages Test');
+  v_id := docs.document_create('Pages Test');
 
   -- Add pages
   v_idx := docs.page_add(v_id, 'Page 2');

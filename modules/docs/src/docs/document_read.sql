@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION docs.doc_load(p_id text)
+CREATE OR REPLACE FUNCTION docs.document_read(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
@@ -18,7 +18,7 @@ BEGIN
   END IF;
 
   IF v_d.library_id IS NOT NULL THEN
-    v_library := docs.library_load(v_d.library_id);
+    v_library := docs.library_read(v_d.library_id);
   END IF;
 
   FOR r IN

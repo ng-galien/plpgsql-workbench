@@ -21,7 +21,7 @@ BEGIN
   END IF;
 
   -- Link a document
-  v_doc_id := docs.doc_create('Linked Doc', p_library_id := v_lib_id);
+  v_doc_id := docs.document_create('Linked Doc', p_library_id := v_lib_id);
 
   RETURN NEXT ok(docs.library_delete('To Delete'), 'delete returns true');
 

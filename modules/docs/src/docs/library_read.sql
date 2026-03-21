@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION docs.library_load(p_library_id text)
+CREATE OR REPLACE FUNCTION docs.library_read(p_library_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE

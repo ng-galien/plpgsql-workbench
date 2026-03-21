@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION docs_ut.test_charte_load()
+CREATE OR REPLACE FUNCTION docs_ut.test_charte_read()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
@@ -25,9 +25,9 @@ BEGIN
     p_shadow_card := '0 1mm 4mm rgba(0,0,0,0.08)'
   );
 
-  v_result := docs.charte_load('Load Test');
+  v_result := docs.charte_read('Load Test');
 
-  RETURN NEXT ok(v_result IS NOT NULL, 'charte_load returns data');
+  RETURN NEXT ok(v_result IS NOT NULL, 'charte_read returns data');
   RETURN NEXT is(v_result->>'name', 'Load Test', 'name in result');
   RETURN NEXT ok(v_result->>'context_token' IS NOT NULL, 'context_token present');
   RETURN NEXT is(length(v_result->>'context_token'), 32, 'context_token is md5 (32 chars)');
@@ -47,7 +47,7 @@ BEGIN
   RETURN NEXT is(v_result->'colors'->'extra'->>'olive', '#5C6B3C', 'colors.extra.olive');
 
   -- Not found
-  RETURN NEXT ok(docs.charte_load('Nonexistent') IS NULL, 'returns NULL for unknown charte');
+  RETURN NEXT ok(docs.charte_read('Nonexistent') IS NULL, 'returns NULL for unknown charte');
 
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 END;

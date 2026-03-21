@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION docs_ut.test_doc_duplicate()
+CREATE OR REPLACE FUNCTION docs_ut.test_document_duplicate()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
@@ -12,10 +12,10 @@ BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
 
-  v_src := docs.doc_create('Original', p_html := '<div data-id="h">Hello</div>');
+  v_src := docs.document_create('Original', p_html := '<div data-id="h">Hello</div>');
   PERFORM docs.page_add(v_src, 'P2', '<p>Page 2</p>');
 
-  v_dup := docs.doc_duplicate(v_src, 'Copy');
+  v_dup := docs.document_duplicate(v_src, 'Copy');
 
   RETURN NEXT ok(v_dup IS NOT NULL, 'duplicate returns new id');
   RETURN NEXT ok(v_dup != v_src, 'different id');

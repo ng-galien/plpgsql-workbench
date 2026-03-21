@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.get_print(p_id text)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_d docs.document;
@@ -16,7 +17,7 @@ BEGIN
     v_charte_css := docs.charte_tokens_to_css(v_d.charte_id);
   END IF;
 
-  v_print_css := docs.doc_print_css(p_id);
+  v_print_css := docs.document_print_css(p_id);
 
   v_body := '<style>' || v_charte_css || chr(10) || v_print_css || '</style>';
 

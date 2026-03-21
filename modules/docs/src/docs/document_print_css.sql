@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION docs.doc_print_css(p_doc_id text)
+CREATE OR REPLACE FUNCTION docs.document_print_css(p_doc_id text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE

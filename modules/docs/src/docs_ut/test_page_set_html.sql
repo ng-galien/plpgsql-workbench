@@ -11,7 +11,7 @@ BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
 
-  v_id := docs.doc_create('HTML Test', p_html := '<div data-id="v1">Version 1</div>');
+  v_id := docs.document_create('HTML Test', p_html := '<div data-id="v1">Version 1</div>');
 
   -- Set new HTML
   v_cnt := docs.page_set_html(v_id, 0, '<div data-id="v2">Version 2</div><span data-id="s1">Span</span>');

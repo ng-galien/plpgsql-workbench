@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.get_document(p_id text)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_d docs.document;
@@ -48,9 +49,9 @@ BEGIN
   -- Actions
   v_body := v_body || '<p>'
     || '<a href="' || pgv.call_ref('get_print', jsonb_build_object('p_id', p_id)) || '" target="_blank"><button class="outline">Imprimer</button></a> '
-    || pgv.action('post_doc_duplicate', pgv.t('docs.btn_duplicate'), jsonb_build_object('p_source_id', p_id), 'Dupliquer ce document ?', 'outline')
+    || pgv.action('post_document_duplicate', pgv.t('docs.btn_duplicate'), jsonb_build_object('p_source_id', p_id), 'Dupliquer ce document ?', 'outline')
     || ' '
-    || pgv.action('post_doc_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_id', p_id), 'Supprimer ce document et toutes ses pages ?', 'danger')
+    || pgv.action('post_document_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_id', p_id), 'Supprimer ce document et toutes ses pages ?', 'danger')
     || '</p>';
 
   RETURN v_body;

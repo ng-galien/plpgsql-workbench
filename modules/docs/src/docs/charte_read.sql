@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION docs.charte_load(p_name text)
+CREATE OR REPLACE FUNCTION docs.charte_read(p_name text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE

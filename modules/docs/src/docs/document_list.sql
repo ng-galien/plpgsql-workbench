@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION docs.doc_list()
+CREATE OR REPLACE FUNCTION docs.document_list()
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE

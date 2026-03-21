@@ -177,7 +177,7 @@ END;
 $function$;
 COMMENT ON FUNCTION docs_ut.test_charte_list() IS 'Test charte list — count and preview data';
 
-CREATE OR REPLACE FUNCTION docs_ut.test_charte_load()
+CREATE OR REPLACE FUNCTION docs_ut.test_charte_read()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
@@ -204,9 +204,9 @@ BEGIN
     p_shadow_card := '0 1mm 4mm rgba(0,0,0,0.08)'
   );
 
-  v_result := docs.charte_load('Load Test');
+  v_result := docs.charte_read('Load Test');
 
-  RETURN NEXT ok(v_result IS NOT NULL, 'charte_load returns data');
+  RETURN NEXT ok(v_result IS NOT NULL, 'charte_read returns data');
   RETURN NEXT is(v_result->>'name', 'Load Test', 'name in result');
   RETURN NEXT ok(v_result->>'context_token' IS NOT NULL, 'context_token present');
   RETURN NEXT is(length(v_result->>'context_token'), 32, 'context_token is md5 (32 chars)');
@@ -226,14 +226,14 @@ BEGIN
   RETURN NEXT is(v_result->'colors'->'extra'->>'olive', '#5C6B3C', 'colors.extra.olive');
 
   -- Not found
-  RETURN NEXT ok(docs.charte_load('Nonexistent') IS NULL, 'returns NULL for unknown charte');
+  RETURN NEXT ok(docs.charte_read('Nonexistent') IS NULL, 'returns NULL for unknown charte');
 
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_charte_load() IS 'Test charte load — CSS output, context_token, voice';
+COMMENT ON FUNCTION docs_ut.test_charte_read() IS 'Test charte read — CSS output, context_token, voice';
 
-CREATE OR REPLACE FUNCTION docs_ut.test_doc_create()
+CREATE OR REPLACE FUNCTION docs_ut.test_document_create()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
@@ -248,7 +248,7 @@ BEGIN
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 
   -- A4 portrait
-  v_id := docs.doc_create('Test A4');
+  v_id := docs.document_create('Test A4');
   SELECT * INTO v_d FROM docs.document WHERE id = v_id;
   RETURN NEXT is(v_d.width, 210::numeric, 'A4 width = 210');
   RETURN NEXT is(v_d.height, 297::numeric, 'A4 height = 297');
@@ -260,13 +260,13 @@ BEGIN
   RETURN NEXT is(v_page_cnt, 1, 'first page auto-created');
 
   -- A3 landscape (swap)
-  v_id := docs.doc_create('Test A3 L', p_format := 'A3', p_orientation := 'landscape');
+  v_id := docs.document_create('Test A3 L', p_format := 'A3', p_orientation := 'landscape');
   SELECT * INTO v_d FROM docs.document WHERE id = v_id;
   RETURN NEXT is(v_d.width, 420::numeric, 'A3 landscape width = 420');
   RETURN NEXT is(v_d.height, 297::numeric, 'A3 landscape height = 297');
 
   -- HD (no swap for screen)
-  v_id := docs.doc_create('Test HD', p_format := 'HD');
+  v_id := docs.document_create('Test HD', p_format := 'HD');
   SELECT * INTO v_d FROM docs.document WHERE id = v_id;
   RETURN NEXT is(v_d.width, 1920::numeric, 'HD width = 1920');
   RETURN NEXT is(v_d.height, 1080::numeric, 'HD height = 1080');
@@ -275,12 +275,12 @@ BEGIN
   v_charte_id := docs.charte_create(p_name := 'Test DC', p_color_bg := '#fff', p_color_main := '#000',
     p_color_accent := '#f00', p_color_text := '#333', p_color_text_light := '#888', p_color_border := '#eee',
     p_font_heading := 'Inter', p_font_body := 'Inter');
-  v_id := docs.doc_create('With Charte', p_charte_id := v_charte_id);
+  v_id := docs.document_create('With Charte', p_charte_id := v_charte_id);
   SELECT * INTO v_d FROM docs.document WHERE id = v_id;
   RETURN NEXT is(v_d.charte_id, v_charte_id, 'charte linked');
 
   -- With initial HTML
-  v_id := docs.doc_create('With HTML', p_html := '<div data-id="h1">Hello</div>');
+  v_id := docs.document_create('With HTML', p_html := '<div data-id="h1">Hello</div>');
   RETURN NEXT is(
     (SELECT html FROM docs.page WHERE doc_id = v_id AND page_index = 0),
     '<div data-id="h1">Hello</div>', 'initial HTML stored');
@@ -289,9 +289,9 @@ BEGIN
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_doc_create() IS 'Test doc creation — format→dimensions, landscape swap, charte link';
+COMMENT ON FUNCTION docs_ut.test_document_create() IS 'Test document creation — format→dimensions, landscape swap, charte link';
 
-CREATE OR REPLACE FUNCTION docs_ut.test_doc_duplicate()
+CREATE OR REPLACE FUNCTION docs_ut.test_document_duplicate()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
@@ -305,10 +305,10 @@ BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
 
-  v_src := docs.doc_create('Original', p_html := '<div data-id="h">Hello</div>');
+  v_src := docs.document_create('Original', p_html := '<div data-id="h">Hello</div>');
   PERFORM docs.page_add(v_src, 'P2', '<p>Page 2</p>');
 
-  v_dup := docs.doc_duplicate(v_src, 'Copy');
+  v_dup := docs.document_duplicate(v_src, 'Copy');
 
   RETURN NEXT ok(v_dup IS NOT NULL, 'duplicate returns new id');
   RETURN NEXT ok(v_dup != v_src, 'different id');
@@ -327,9 +327,46 @@ BEGIN
   DELETE FROM docs.document WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_doc_duplicate() IS 'Test doc duplicate — deep clone with pages';
+COMMENT ON FUNCTION docs_ut.test_document_duplicate() IS 'Test document duplicate — deep clone with pages';
 
-CREATE OR REPLACE FUNCTION docs_ut.test_doc_load()
+CREATE OR REPLACE FUNCTION docs_ut.test_document_print_css()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id text;
+  v_css text;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+  DELETE FROM docs.document WHERE tenant_id = 'test';
+
+  -- A4 portrait
+  v_id := docs.document_create('Print A4');
+  v_css := docs.document_print_css(v_id);
+  RETURN NEXT ok(v_css LIKE '%size: 210mm 297mm%', 'A4 portrait @page size');
+  RETURN NEXT ok(v_css LIKE '%break-after: page%', 'break-after present');
+  RETURN NEXT ok(v_css LIKE '%.doc-print-page%', 'print page class present');
+
+  -- A3 landscape
+  v_id := docs.document_create('Print A3L', p_format := 'A3', p_orientation := 'landscape');
+  v_css := docs.document_print_css(v_id);
+  -- landscape A3: doc w=420 h=297, @page should be 297mm 420mm (swapped back)
+  RETURN NEXT ok(v_css LIKE '%size: 297mm 420mm%', 'A3 landscape @page size swapped');
+
+  -- HD (no swap)
+  v_id := docs.document_create('Print HD', p_format := 'HD');
+  v_css := docs.document_print_css(v_id);
+  RETURN NEXT ok(v_css LIKE '%size: 1920mm 1080mm%', 'HD @page size (no swap)');
+
+  -- Not found
+  RETURN NEXT ok(docs.document_print_css('nonexistent') IS NULL, 'NULL for unknown doc');
+
+  DELETE FROM docs.document WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION docs_ut.test_document_print_css() IS 'Test document_print_css — @page dimensions, landscape swap';
+
+CREATE OR REPLACE FUNCTION docs_ut.test_document_read()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
@@ -346,12 +383,12 @@ BEGIN
     p_color_accent := '#C4956A', p_color_text := '#333', p_color_text_light := '#888', p_color_border := '#eee',
     p_font_heading := 'Inter', p_font_body := 'Inter');
 
-  v_id := docs.doc_create('Load Test', p_charte_id := v_charte_id, p_html := '<p data-id="p1">Hi</p>');
+  v_id := docs.document_create('Load Test', p_charte_id := v_charte_id, p_html := '<p data-id="p1">Hi</p>');
   PERFORM docs.page_add(v_id, 'Page 2', '<p data-id="p2">Page two</p>');
 
-  v_result := docs.doc_load(v_id);
+  v_result := docs.document_read(v_id);
 
-  RETURN NEXT ok(v_result IS NOT NULL, 'doc_load returns data');
+  RETURN NEXT ok(v_result IS NOT NULL, 'document_read returns data');
   RETURN NEXT is(v_result->>'name', 'Load Test', 'name');
   RETURN NEXT is(v_result->>'format', 'A4', 'format');
   RETURN NEXT is(jsonb_array_length(v_result->'pages'), 2, '2 pages loaded');
@@ -360,50 +397,13 @@ BEGIN
   RETURN NEXT ok(v_result->>'charte_css' LIKE '%--charte-color-bg%', 'charte CSS included');
 
   -- Not found
-  RETURN NEXT ok(docs.doc_load('nonexistent') IS NULL, 'NULL for unknown doc');
+  RETURN NEXT ok(docs.document_read('nonexistent') IS NULL, 'NULL for unknown doc');
 
   DELETE FROM docs.document WHERE tenant_id = 'test';
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_doc_load() IS 'Test doc load — document + pages + charte CSS';
-
-CREATE OR REPLACE FUNCTION docs_ut.test_doc_print_css()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_id text;
-  v_css text;
-BEGIN
-  PERFORM set_config('app.tenant_id', 'test', true);
-  DELETE FROM docs.document WHERE tenant_id = 'test';
-
-  -- A4 portrait
-  v_id := docs.doc_create('Print A4');
-  v_css := docs.doc_print_css(v_id);
-  RETURN NEXT ok(v_css LIKE '%size: 210mm 297mm%', 'A4 portrait @page size');
-  RETURN NEXT ok(v_css LIKE '%break-after: page%', 'break-after present');
-  RETURN NEXT ok(v_css LIKE '%.doc-print-page%', 'print page class present');
-
-  -- A3 landscape
-  v_id := docs.doc_create('Print A3L', p_format := 'A3', p_orientation := 'landscape');
-  v_css := docs.doc_print_css(v_id);
-  -- landscape A3: doc w=420 h=297, @page should be 297mm 420mm (swapped back)
-  RETURN NEXT ok(v_css LIKE '%size: 297mm 420mm%', 'A3 landscape @page size swapped');
-
-  -- HD (no swap)
-  v_id := docs.doc_create('Print HD', p_format := 'HD');
-  v_css := docs.doc_print_css(v_id);
-  RETURN NEXT ok(v_css LIKE '%size: 1920mm 1080mm%', 'HD @page size (no swap)');
-
-  -- Not found
-  RETURN NEXT ok(docs.doc_print_css('nonexistent') IS NULL, 'NULL for unknown doc');
-
-  DELETE FROM docs.document WHERE tenant_id = 'test';
-END;
-$function$;
-COMMENT ON FUNCTION docs_ut.test_doc_print_css() IS 'Test doc_print_css — @page dimensions, landscape swap';
+COMMENT ON FUNCTION docs_ut.test_document_read() IS 'Test document read — document + pages + charte CSS';
 
 CREATE OR REPLACE FUNCTION docs_ut.test_get_print()
  RETURNS SETOF text
@@ -422,7 +422,7 @@ BEGIN
     p_color_accent := '#C4956A', p_color_text := '#333', p_color_text_light := '#888', p_color_border := '#eee',
     p_font_heading := 'Inter', p_font_body := 'Inter');
 
-  v_id := docs.doc_create('Print Doc', p_charte_id := v_charte_id, p_html := '<p data-id="p1">Page 1</p>');
+  v_id := docs.document_create('Print Doc', p_charte_id := v_charte_id, p_html := '<p data-id="p1">Page 1</p>');
   PERFORM docs.page_add(v_id, 'Page 2', '<p data-id="p2">Page 2</p>');
 
   v_html := docs.get_print(v_id);
@@ -576,7 +576,7 @@ BEGIN
   END IF;
 
   -- Link a document
-  v_doc_id := docs.doc_create('Linked Doc', p_library_id := v_lib_id);
+  v_doc_id := docs.document_create('Linked Doc', p_library_id := v_lib_id);
 
   RETURN NEXT ok(docs.library_delete('To Delete'), 'delete returns true');
 
@@ -596,7 +596,7 @@ END;
 $function$;
 COMMENT ON FUNCTION docs_ut.test_library_delete() IS 'Test library delete — cascade library_asset, FK SET NULL on documents';
 
-CREATE OR REPLACE FUNCTION docs_ut.test_library_load()
+CREATE OR REPLACE FUNCTION docs_ut.test_library_read()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
@@ -619,21 +619,21 @@ BEGIN
 
   PERFORM docs.library_add_asset(v_lib_id, v_asset_id, 'logo', 'Logo entreprise');
 
-  v_result := docs.library_load(v_lib_id);
+  v_result := docs.library_read(v_lib_id);
 
-  RETURN NEXT ok(v_result IS NOT NULL, 'library_load returns data');
+  RETURN NEXT ok(v_result IS NOT NULL, 'library_read returns data');
   RETURN NEXT is(v_result->>'name', 'Load Test', 'name in result');
   RETURN NEXT is(jsonb_array_length(v_result->'assets'), 1, '1 asset');
   RETURN NEXT ok(v_result->'assets'->0->>'filename' IS NOT NULL, 'asset filename present');
   RETURN NEXT is(v_result->'assets'->0->>'role', 'logo', 'asset role present');
 
   -- Not found
-  RETURN NEXT ok(docs.library_load('nonexistent') IS NULL, 'NULL for unknown library');
+  RETURN NEXT ok(docs.library_read('nonexistent') IS NULL, 'NULL for unknown library');
 
   DELETE FROM docs.library WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_library_load() IS 'Test library_load — returns library + asset metadata';
+COMMENT ON FUNCTION docs_ut.test_library_read() IS 'Test library_read — returns library + asset metadata';
 
 CREATE OR REPLACE FUNCTION docs_ut.test_normalize_color()
  RETURNS SETOF text
@@ -665,7 +665,7 @@ BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
 
-  v_id := docs.doc_create('Pages Test');
+  v_id := docs.document_create('Pages Test');
 
   -- Add pages
   v_idx := docs.page_add(v_id, 'Page 2');
@@ -715,7 +715,7 @@ BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
 
-  v_id := docs.doc_create('HTML Test', p_html := '<div data-id="v1">Version 1</div>');
+  v_id := docs.document_create('HTML Test', p_html := '<div data-id="v1">Version 1</div>');
 
   -- Set new HTML
   v_cnt := docs.page_set_html(v_id, 0, '<div data-id="v2">Version 2</div><span data-id="s1">Span</span>');

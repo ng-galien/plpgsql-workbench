@@ -15,7 +15,7 @@ BEGIN
     p_color_accent := '#C4956A', p_color_text := '#333', p_color_text_light := '#888', p_color_border := '#eee',
     p_font_heading := 'Inter', p_font_body := 'Inter');
 
-  v_id := docs.doc_create('Print Doc', p_charte_id := v_charte_id, p_html := '<p data-id="p1">Page 1</p>');
+  v_id := docs.document_create('Print Doc', p_charte_id := v_charte_id, p_html := '<p data-id="p1">Page 1</p>');
   PERFORM docs.page_add(v_id, 'Page 2', '<p data-id="p2">Page 2</p>');
 
   v_html := docs.get_print(v_id);

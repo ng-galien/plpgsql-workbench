@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION docs.doc_duplicate(p_source_id text, p_new_name text)
+CREATE OR REPLACE FUNCTION docs.document_duplicate(p_source_id text, p_new_name text)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
