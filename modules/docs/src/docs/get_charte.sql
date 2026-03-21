@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.get_charte(p_id text)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_c docs.charte;
@@ -82,7 +83,7 @@ BEGIN
 
   -- Actions
   v_body := v_body || '<p>'
-    || pgv.action('post_charte_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_name', v_c.name), 'Supprimer cette charte ?', 'danger')
+    || pgv.action('post_charte_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_id', v_c.id), 'Supprimer cette charte ?', 'danger')
     || '</p>';
 
   RETURN v_body;

@@ -3,22 +3,25 @@ CREATE OR REPLACE FUNCTION docs_ut.test_get_print()
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_charte_id text;
-  v_id text;
+  v_c docs.charte;
+  v_d docs.document;
   v_html text;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 
-  v_charte_id := docs.charte_create(p_name := 'Print Charte', p_color_bg := '#FAF6F1', p_color_main := '#2C3E2D',
-    p_color_accent := '#C4956A', p_color_text := '#333', p_color_text_light := '#888', p_color_border := '#eee',
-    p_font_heading := 'Inter', p_font_body := 'Inter');
+  v_c := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+    'name', 'Print Charte', 'color_bg', '#FAF6F1', 'color_main', '#2C3E2D', 'color_accent', '#C4956A',
+    'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
+    'font_heading', 'Inter', 'font_body', 'Inter'
+  )));
 
-  v_id := docs.document_create('Print Doc', p_charte_id := v_charte_id, p_html := '<p data-id="p1">Page 1</p>');
-  PERFORM docs.page_add(v_id, 'Page 2', '<p data-id="p2">Page 2</p>');
+  v_d := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'Print Doc', 'charte_id', v_c.id)));
+  PERFORM docs.page_set_html(v_d.id, 0, '<p data-id="p1">Page 1</p>');
+  PERFORM docs.page_add(v_d.id, 'Page 2', '<p data-id="p2">Page 2</p>');
 
-  v_html := docs.get_print(v_id);
+  v_html := docs.get_print(v_d.id);
 
   RETURN NEXT ok(v_html LIKE '%--charte-color-bg%', 'charte CSS present');
   RETURN NEXT ok(v_html LIKE '%@media print%', 'print CSS present');

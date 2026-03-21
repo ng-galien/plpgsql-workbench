@@ -3,23 +3,23 @@ CREATE OR REPLACE FUNCTION docs_ut.test_library_create()
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_id text;
-  v_lib record;
+  v_lib docs.library;
+  v_r record;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.library WHERE tenant_id = 'test';
 
-  v_id := docs.library_create('My French Tour', 'Photos oenotourisme Bourgogne');
+  v_lib := docs.library_create(jsonb_populate_record(NULL::docs.library, '{"name":"My French Tour","description":"Photos oenotourisme Bourgogne"}'::jsonb));
 
-  RETURN NEXT ok(v_id IS NOT NULL, 'library_create returns id');
+  RETURN NEXT ok(v_lib.id IS NOT NULL, 'library_create returns id');
 
-  SELECT * INTO v_lib FROM docs.library WHERE id = v_id;
-  RETURN NEXT is(v_lib.name, 'My French Tour', 'name stored');
-  RETURN NEXT is(v_lib.description, 'Photos oenotourisme Bourgogne', 'description stored');
+  SELECT * INTO v_r FROM docs.library WHERE id = v_lib.id;
+  RETURN NEXT is(v_r.name, 'My French Tour', 'name stored');
+  RETURN NEXT is(v_r.description, 'Photos oenotourisme Bourgogne', 'description stored');
 
   -- Unique name per tenant
   BEGIN
-    PERFORM docs.library_create('My French Tour');
+    PERFORM docs.library_create(jsonb_populate_record(NULL::docs.library, '{"name":"My French Tour"}'::jsonb));
     RETURN NEXT fail('duplicate name should raise');
   EXCEPTION WHEN unique_violation THEN
     RETURN NEXT pass('duplicate name raises unique_violation');

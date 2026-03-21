@@ -1,13 +1,12 @@
-CREATE OR REPLACE FUNCTION docs.library_create(p_name text, p_description text DEFAULT NULL::text)
- RETURNS text
+CREATE OR REPLACE FUNCTION docs.library_create(p_data docs.library)
+ RETURNS docs.library
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_id text;
 BEGIN
-  INSERT INTO docs.library (name, description)
-  VALUES (p_name, p_description)
-  RETURNING id INTO v_id;
-  RETURN v_id;
+  p_data.id := gen_random_uuid()::text;
+  p_data.tenant_id := current_setting('app.tenant_id', true);
+  p_data.created_at := now();
+  INSERT INTO docs.library VALUES (p_data.*) RETURNING * INTO p_data;
+  RETURN p_data;
 END;
 $function$;

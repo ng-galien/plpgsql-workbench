@@ -78,7 +78,7 @@ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
         RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
       END IF;
-      EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(%L::jsonb) r', v_schema, v_fn, p_data::text) INTO v_result;
+      EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(jsonb_populate_record(NULL::%I.%I, $1)) r', v_schema, v_fn, v_schema, v_entity) USING p_data INTO v_result;
 
     WHEN 'patch' THEN
       -- patch schema://entity/{id} → entity_update
@@ -86,7 +86,18 @@ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
         RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
       END IF;
-      EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(%L, %L::jsonb) r', v_schema, v_fn, v_id, p_data::text) INTO v_result;
+      -- Inject URI segment as slug (if table has slug column) or id
+      IF EXISTS (
+        SELECT 1 FROM pg_attribute a
+        JOIN pg_class c ON c.oid = a.attrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = v_schema AND c.relname = v_entity
+          AND a.attname = 'slug' AND a.attnum > 0 AND NOT a.attisdropped
+      ) THEN
+        EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(jsonb_populate_record(NULL::%I.%I, $1)) r', v_schema, v_fn, v_schema, v_entity) USING p_data || jsonb_build_object('slug', v_id) INTO v_result;
+      ELSE
+        EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(jsonb_populate_record(NULL::%I.%I, $1)) r', v_schema, v_fn, v_schema, v_entity) USING p_data || jsonb_build_object('id', v_id) INTO v_result;
+      END IF;
 
     WHEN 'delete' THEN
       -- delete schema://entity/{id} → entity_delete

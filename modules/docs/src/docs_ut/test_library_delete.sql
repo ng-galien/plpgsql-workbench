@@ -3,38 +3,38 @@ CREATE OR REPLACE FUNCTION docs_ut.test_library_delete()
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_lib_id text;
+  v_lib docs.library;
+  v_d docs.document;
   v_asset_id uuid;
-  v_doc_id text;
   v_cnt int;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
   DELETE FROM docs.library WHERE tenant_id = 'test';
 
-  v_lib_id := docs.library_create('To Delete');
+  v_lib := docs.library_create(jsonb_populate_record(NULL::docs.library, '{"name":"To Delete"}'::jsonb));
 
   -- Add asset if available
   SELECT id INTO v_asset_id FROM asset.asset LIMIT 1;
   IF v_asset_id IS NOT NULL THEN
-    PERFORM docs.library_add_asset(v_lib_id, v_asset_id, 'test');
+    PERFORM docs.library_add_asset(v_lib.id, v_asset_id, 'test');
   END IF;
 
   -- Link a document
-  v_doc_id := docs.document_create('Linked Doc', p_library_id := v_lib_id);
+  v_d := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'Linked Doc', 'library_id', v_lib.id)));
 
-  RETURN NEXT ok(docs.library_delete('To Delete'), 'delete returns true');
+  RETURN NEXT ok(docs.library_delete(v_lib.id), 'delete returns true');
 
-  SELECT count(*)::int INTO v_cnt FROM docs.library WHERE id = v_lib_id;
+  SELECT count(*)::int INTO v_cnt FROM docs.library WHERE id = v_lib.id;
   RETURN NEXT is(v_cnt, 0, 'library removed');
 
   -- Document still exists, library_id NULL
   RETURN NEXT ok(
-    (SELECT library_id IS NULL FROM docs.document WHERE id = v_doc_id),
+    (SELECT library_id IS NULL FROM docs.document WHERE id = v_d.id),
     'document library_id set to NULL'
   );
 
-  RETURN NEXT ok(NOT docs.library_delete('Nonexistent'), 'delete unknown returns false');
+  RETURN NEXT ok(NOT docs.library_delete('nonexistent-id'), 'delete unknown returns false');
 
   DELETE FROM docs.document WHERE tenant_id = 'test';
 END;

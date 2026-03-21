@@ -2214,7 +2214,7 @@ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
         RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
       END IF;
-      EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(%L::jsonb) r', v_schema, v_fn, p_data::text) INTO v_result;
+      EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(jsonb_populate_record(NULL::%I.%I, $1)) r', v_schema, v_fn, v_schema, v_entity) USING p_data INTO v_result;
 
     WHEN 'patch' THEN
       -- patch schema://entity/{id} → entity_update
@@ -2222,7 +2222,18 @@ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
         RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
       END IF;
-      EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(%L, %L::jsonb) r', v_schema, v_fn, v_id, p_data::text) INTO v_result;
+      -- Inject URI segment as slug (if table has slug column) or id
+      IF EXISTS (
+        SELECT 1 FROM pg_attribute a
+        JOIN pg_class c ON c.oid = a.attrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = v_schema AND c.relname = v_entity
+          AND a.attname = 'slug' AND a.attnum > 0 AND NOT a.attisdropped
+      ) THEN
+        EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(jsonb_populate_record(NULL::%I.%I, $1)) r', v_schema, v_fn, v_schema, v_entity) USING p_data || jsonb_build_object('slug', v_id) INTO v_result;
+      ELSE
+        EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(jsonb_populate_record(NULL::%I.%I, $1)) r', v_schema, v_fn, v_schema, v_entity) USING p_data || jsonb_build_object('id', v_id) INTO v_result;
+      END IF;
 
     WHEN 'delete' THEN
       -- delete schema://entity/{id} → entity_delete
@@ -2417,6 +2428,44 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv.select_search(text,text,text,text,text,text) IS 'Search-select combo: text input + hidden value + async dropdown fetched from RPC. Uses pgv-ss-* classes.';
+
+CREATE OR REPLACE FUNCTION pgv.slugify(VARIADIC p_parts text[])
+ RETURNS text
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
+DECLARE
+  v_raw text;
+  v_slug text;
+BEGIN
+  -- Concat non-null parts with space
+  SELECT string_agg(p, ' ') INTO v_raw
+  FROM unnest(p_parts) AS p
+  WHERE p IS NOT NULL AND trim(p) != '';
+
+  IF v_raw IS NULL THEN RETURN ''; END IF;
+
+  v_slug := lower(v_raw);
+
+  -- Unaccent via extension if available, else manual translate
+  BEGIN
+    v_slug := unaccent(v_slug);
+  EXCEPTION WHEN undefined_function THEN
+    v_slug := translate(v_slug,
+      'éèêëàâäùûüïîôöçœæñ',
+      'eeeeaaauuuiioocoanh');
+  END;
+
+  -- Replace non-alphanumeric with dash
+  v_slug := regexp_replace(v_slug, '[^a-z0-9]+', '-', 'g');
+
+  -- Trim dashes
+  v_slug := trim(BOTH '-' FROM v_slug);
+
+  RETURN v_slug;
+END;
+$function$;
+COMMENT ON FUNCTION pgv.slugify(text[]) IS 'Generate URL-safe slug from 1..N text segments. Handles accents, punctuation, multiple dashes.';
 
 CREATE OR REPLACE FUNCTION pgv.stat(p_label text, p_value text, p_detail text DEFAULT NULL::text)
  RETURNS text

@@ -11,8 +11,8 @@ BEGIN
   RETURN NEXT ok(v LIKE 'check_crud: docs%', 'header present');
 
   -- Entities with full CRUD get checkmark
-  RETURN NEXT ok(v LIKE '%✓ charte — create read list delete%', 'charte: full CRUD ok');
-  RETURN NEXT ok(v LIKE '%✓ document — create read list delete%', 'document: full CRUD ok');
+  RETURN NEXT ok(v LIKE '%✓ charte — create read list%delete%', 'charte: CRUD ok');
+  RETURN NEXT ok(v LIKE '%✓ document — create read list%delete%', 'document: CRUD ok');
   RETURN NEXT ok(v LIKE '%✓ library — create read list delete%', 'library: full CRUD ok');
 
   -- Naming warning

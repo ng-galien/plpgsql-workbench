@@ -1,25 +1,13 @@
-CREATE OR REPLACE FUNCTION docs.library_list()
- RETURNS jsonb
+CREATE OR REPLACE FUNCTION docs.library_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF docs.library
  LANGUAGE plpgsql
  STABLE
 AS $function$
-DECLARE
-  v_result jsonb := '[]'::jsonb;
-  r record;
 BEGIN
-  FOR r IN
-    SELECT l.id, l.name, l.description,
-           (SELECT count(*) FROM docs.library_asset la WHERE la.library_id = l.id) AS asset_cnt,
-           l.created_at
-    FROM docs.library l
-    WHERE l.tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY l.name
-  LOOP
-    v_result := v_result || jsonb_build_object(
-      'id', r.id, 'name', r.name, 'description', r.description,
-      'assets', r.asset_cnt, 'created_at', r.created_at
-    );
-  END LOOP;
-  RETURN v_result;
+  IF p_filter IS NULL THEN
+    RETURN QUERY SELECT * FROM docs.library WHERE tenant_id = current_setting('app.tenant_id', true) ORDER BY name;
+  ELSE
+    RETURN QUERY EXECUTE 'SELECT * FROM docs.library WHERE tenant_id = ' || quote_literal(current_setting('app.tenant_id', true)) || ' AND ' || pgv.rsql_to_where(p_filter, 'docs', 'library') || ' ORDER BY name';
+  END IF;
 END;
 $function$;

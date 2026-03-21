@@ -1,29 +1,13 @@
-CREATE OR REPLACE FUNCTION docs.charte_list()
- RETURNS jsonb
+CREATE OR REPLACE FUNCTION docs.charte_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF docs.charte
  LANGUAGE plpgsql
  STABLE
 AS $function$
-DECLARE
-  v_result jsonb := '[]'::jsonb;
-  r record;
 BEGIN
-  FOR r IN
-    SELECT id, name, description, color_bg, color_main, color_accent,
-           font_heading, font_body, created_at
-    FROM docs.charte
-    WHERE tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY name
-  LOOP
-    v_result := v_result || jsonb_build_object(
-      'id', r.id,
-      'name', r.name,
-      'description', r.description,
-      'colors', jsonb_build_object('bg', r.color_bg, 'main', r.color_main, 'accent', r.color_accent),
-      'fonts', jsonb_build_object('heading', r.font_heading, 'body', r.font_body),
-      'created_at', r.created_at
-    );
-  END LOOP;
-
-  RETURN v_result;
+  IF p_filter IS NULL THEN
+    RETURN QUERY SELECT * FROM docs.charte WHERE tenant_id = current_setting('app.tenant_id', true) ORDER BY name;
+  ELSE
+    RETURN QUERY EXECUTE 'SELECT * FROM docs.charte WHERE tenant_id = ' || quote_literal(current_setting('app.tenant_id', true)) || ' AND ' || pgv.rsql_to_where(p_filter, 'docs', 'charte') || ' ORDER BY name';
+  END IF;
 END;
 $function$;

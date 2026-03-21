@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.get_library(p_id text)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_lib docs.library;
@@ -45,7 +46,7 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || pgv.action('post_library_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_name', v_lib.name), 'Supprimer cette photothèque ?', 'danger')
+    || pgv.action('post_library_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_id', v_lib.id), 'Supprimer cette photothèque ?', 'danger')
     || '</p>';
 
   RETURN v_body;

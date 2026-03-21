@@ -57,5 +57,17 @@ BEGIN
   -- Error: POST without method
   v := pgv.route_crud('post', 'docs://charte/test');
   RETURN NEXT is(v->>'error', 'bad_request', 'error: post without method');
+
+  -- Slug-based read: URI segment passed as-is to _read
+  v := pgv.route_crud('get', 'docs://charte/my-slug-name');
+  RETURN NEXT ok(v ? 'data', 'slug: read passes segment to _read');
+  RETURN NEXT is(v->>'uri', 'docs://charte/my-slug-name', 'slug: uri preserved with slug');
+
+  -- Slug in HATEOAS actions
+  v := pgv.route_crud('get', 'docs://charte/ocean');
+  RETURN NEXT ok(
+    EXISTS (SELECT 1 FROM jsonb_array_elements(v->'actions') a WHERE a->>'uri' LIKE '%/ocean/%'),
+    'slug: HATEOAS URIs contain slug'
+  );
 END;
 $function$;

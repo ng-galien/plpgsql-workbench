@@ -1,43 +1,52 @@
-CREATE OR REPLACE FUNCTION docs.document_create(p_name text, p_format text DEFAULT 'A4'::text, p_orientation text DEFAULT 'portrait'::text, p_charte_id text DEFAULT NULL::text, p_category text DEFAULT 'general'::text, p_html text DEFAULT ''::text, p_library_id text DEFAULT NULL::text)
- RETURNS text
+CREATE OR REPLACE FUNCTION docs.document_create(p_data docs.document)
+ RETURNS docs.document
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_w numeric;
-  v_h numeric;
-  v_id text;
 BEGIN
-  CASE p_format
-    WHEN 'A2' THEN v_w := 420; v_h := 594;
-    WHEN 'A3' THEN v_w := 297; v_h := 420;
-    WHEN 'A4' THEN v_w := 210; v_h := 297;
-    WHEN 'A5' THEN v_w := 148; v_h := 210;
-    WHEN 'HD' THEN v_w := 1920; v_h := 1080;
-    WHEN 'MACBOOK' THEN v_w := 1440; v_h := 900;
-    WHEN 'IPAD' THEN v_w := 1024; v_h := 768;
-    WHEN 'MOBILE' THEN v_w := 390; v_h := 844;
-    ELSE RAISE EXCEPTION 'Unknown format: %', p_format;
+  -- Calculate dimensions from format
+  CASE COALESCE(p_data.format, 'A4')
+    WHEN 'A2' THEN p_data.width := 420; p_data.height := 594;
+    WHEN 'A3' THEN p_data.width := 297; p_data.height := 420;
+    WHEN 'A4' THEN p_data.width := 210; p_data.height := 297;
+    WHEN 'A5' THEN p_data.width := 148; p_data.height := 210;
+    WHEN 'HD' THEN p_data.width := 1920; p_data.height := 1080;
+    WHEN 'MACBOOK' THEN p_data.width := 1440; p_data.height := 900;
+    WHEN 'IPAD' THEN p_data.width := 1024; p_data.height := 768;
+    WHEN 'MOBILE' THEN p_data.width := 390; p_data.height := 844;
+    ELSE RAISE EXCEPTION 'Unknown format: %', p_data.format;
   END CASE;
 
-  IF p_orientation = 'landscape' AND p_format LIKE 'A_' THEN
-    v_w := v_w + v_h;
-    v_h := v_w - v_h;
-    v_w := v_w - v_h;
+  IF COALESCE(p_data.orientation, 'portrait') = 'landscape' AND COALESCE(p_data.format, 'A4') LIKE 'A_' THEN
+    p_data.width := p_data.width + p_data.height;
+    p_data.height := p_data.width - p_data.height;
+    p_data.width := p_data.width - p_data.height;
   END IF;
 
-  IF p_charte_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM docs.charte WHERE id = p_charte_id AND tenant_id = current_setting('app.tenant_id', true)) THEN
-      RAISE EXCEPTION 'Charte not found: %', p_charte_id;
+  IF p_data.charte_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM docs.charte WHERE id = p_data.charte_id AND tenant_id = current_setting('app.tenant_id', true)) THEN
+      RAISE EXCEPTION 'Charte not found: %', p_data.charte_id;
     END IF;
   END IF;
 
-  INSERT INTO docs.document (name, format, orientation, width, height, charte_id, category, library_id)
-  VALUES (p_name, p_format, p_orientation, v_w, v_h, p_charte_id, p_category, p_library_id)
-  RETURNING id INTO v_id;
+  p_data.id := gen_random_uuid()::text;
+  p_data.tenant_id := current_setting('app.tenant_id', true);
+  p_data.format := COALESCE(p_data.format, 'A4');
+  p_data.orientation := COALESCE(p_data.orientation, 'portrait');
+  p_data.category := COALESCE(p_data.category, 'general');
+  p_data.bg := COALESCE(p_data.bg, '#ffffff');
+  p_data.text_margin := COALESCE(p_data.text_margin, 10);
+  p_data.status := COALESCE(p_data.status, 'draft');
+  p_data.rating := COALESCE(p_data.rating, 0);
+  p_data.active_page := COALESCE(p_data.active_page, 0);
+  p_data.created_at := now();
+  p_data.updated_at := now();
 
+  INSERT INTO docs.document VALUES (p_data.*) RETURNING * INTO p_data;
+
+  -- Create first page
   INSERT INTO docs.page (doc_id, page_index, name, html)
-  VALUES (v_id, 0, 'Page 1', COALESCE(p_html, ''));
+  VALUES (p_data.id, 0, 'Page 1', '');
 
-  RETURN v_id;
+  RETURN p_data;
 END;
 $function$;

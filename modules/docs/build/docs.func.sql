@@ -72,37 +72,24 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.charte_check(text,text) IS 'Validate HTML uses charte CSS vars for colors/fonts (no hardcoded values)';
 
-CREATE OR REPLACE FUNCTION docs.charte_create(p_name text, p_description text DEFAULT NULL::text, p_color_bg text DEFAULT '#ffffff'::text, p_color_main text DEFAULT '#1a1a2e'::text, p_color_accent text DEFAULT '#e94560'::text, p_color_text text DEFAULT '#333333'::text, p_color_text_light text DEFAULT '#888888'::text, p_color_border text DEFAULT '#e0e0e0'::text, p_color_extra jsonb DEFAULT '{}'::jsonb, p_font_heading text DEFAULT 'Inter'::text, p_font_body text DEFAULT 'Inter'::text, p_spacing_page text DEFAULT NULL::text, p_spacing_section text DEFAULT NULL::text, p_spacing_gap text DEFAULT NULL::text, p_spacing_card text DEFAULT NULL::text, p_shadow_card text DEFAULT NULL::text, p_shadow_elevated text DEFAULT NULL::text, p_radius_card text DEFAULT NULL::text, p_voice_personality text[] DEFAULT NULL::text[], p_voice_formality text DEFAULT NULL::text, p_voice_do text[] DEFAULT NULL::text[], p_voice_dont text[] DEFAULT NULL::text[], p_voice_vocabulary text[] DEFAULT NULL::text[], p_voice_examples jsonb DEFAULT NULL::jsonb, p_rules jsonb DEFAULT '{}'::jsonb)
- RETURNS text
+CREATE OR REPLACE FUNCTION docs.charte_create(p_data docs.charte)
+ RETURNS docs.charte
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_id text;
 BEGIN
-  INSERT INTO docs.charte (
-    name, description,
-    color_bg, color_main, color_accent, color_text, color_text_light, color_border, color_extra,
-    font_heading, font_body,
-    spacing_page, spacing_section, spacing_gap, spacing_card,
-    shadow_card, shadow_elevated, radius_card,
-    voice_personality, voice_formality, voice_do, voice_dont, voice_vocabulary, voice_examples,
-    rules
-  ) VALUES (
-    p_name, p_description,
-    p_color_bg, p_color_main, p_color_accent, p_color_text, p_color_text_light, p_color_border, p_color_extra,
-    p_font_heading, p_font_body,
-    p_spacing_page, p_spacing_section, p_spacing_gap, p_spacing_card,
-    p_shadow_card, p_shadow_elevated, p_radius_card,
-    p_voice_personality, p_voice_formality, p_voice_do, p_voice_dont, p_voice_vocabulary, p_voice_examples,
-    p_rules
-  ) RETURNING id INTO v_id;
-
-  RETURN v_id;
+  p_data.id := gen_random_uuid()::text;
+  p_data.tenant_id := current_setting('app.tenant_id', true);
+  p_data.color_extra := COALESCE(p_data.color_extra, '{}'::jsonb);
+  p_data.rules := COALESCE(p_data.rules, '{}'::jsonb);
+  p_data.created_at := now();
+  p_data.updated_at := now();
+  INSERT INTO docs.charte VALUES (p_data.*) RETURNING * INTO p_data;
+  RETURN p_data;
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_create(text,text,text,text,text,text,text,text,jsonb,text,text,text,text,text,text,text,text,text,text[],text,text[],text[],text[],jsonb,jsonb) IS 'Create a design system charte with 6 mandatory colors, fonts, spacing, voice, rules';
+COMMENT ON FUNCTION docs.charte_create(docs.charte) IS 'Create charte from composite type — override id, tenant_id, timestamps, default NOT NULL jsonb fields';
 
-CREATE OR REPLACE FUNCTION docs.charte_delete(p_name text)
+CREATE OR REPLACE FUNCTION docs.charte_delete(p_id text)
  RETURNS boolean
  LANGUAGE plpgsql
 AS $function$
@@ -110,44 +97,38 @@ DECLARE
   v_deleted int;
 BEGIN
   DELETE FROM docs.charte
-  WHERE name = p_name AND tenant_id = current_setting('app.tenant_id', true);
-
+  WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted > 0;
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_delete(text) IS 'Delete a charte by name (FK SET NULL on documents)';
+COMMENT ON FUNCTION docs.charte_delete(text) IS 'Delete charte by id (FK SET NULL on documents)';
 
-CREATE OR REPLACE FUNCTION docs.charte_list()
- RETURNS jsonb
+CREATE OR REPLACE FUNCTION docs.charte_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF docs.charte
  LANGUAGE plpgsql
  STABLE
 AS $function$
-DECLARE
-  v_result jsonb := '[]'::jsonb;
-  r record;
 BEGIN
-  FOR r IN
-    SELECT id, name, description, color_bg, color_main, color_accent,
-           font_heading, font_body, created_at
-    FROM docs.charte
-    WHERE tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY name
-  LOOP
-    v_result := v_result || jsonb_build_object(
-      'id', r.id,
-      'name', r.name,
-      'description', r.description,
-      'colors', jsonb_build_object('bg', r.color_bg, 'main', r.color_main, 'accent', r.color_accent),
-      'fonts', jsonb_build_object('heading', r.font_heading, 'body', r.font_body),
-      'created_at', r.created_at
-    );
-  END LOOP;
-
-  RETURN v_result;
+  IF p_filter IS NULL THEN
+    RETURN QUERY SELECT * FROM docs.charte WHERE tenant_id = current_setting('app.tenant_id', true) ORDER BY name;
+  ELSE
+    RETURN QUERY EXECUTE 'SELECT * FROM docs.charte WHERE tenant_id = ' || quote_literal(current_setting('app.tenant_id', true)) || ' AND ' || pgv.rsql_to_where(p_filter, 'docs', 'charte') || ' ORDER BY name';
+  END IF;
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_list() IS 'List all chartes for current tenant with preview colors';
+COMMENT ON FUNCTION docs.charte_list(text) IS 'List chartes for current tenant — optional RSQL filter';
+
+CREATE OR REPLACE FUNCTION docs.charte_read(p_id text)
+ RETURNS docs.charte
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN (SELECT c FROM docs.charte c WHERE c.id = p_id AND c.tenant_id = current_setting('app.tenant_id', true));
+END;
+$function$;
+COMMENT ON FUNCTION docs.charte_read(text) IS 'Read charte by id — returns full composite row';
 
 CREATE OR REPLACE FUNCTION docs.charte_tokens_to_css(p_charte_id text)
  RETURNS text
@@ -225,103 +206,98 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.charte_tokens_to_css(text) IS 'Generate CSS variables block from charte tokens + Google Fonts @import';
 
-CREATE OR REPLACE FUNCTION docs.charte_read(p_name text)
- RETURNS jsonb
+CREATE OR REPLACE FUNCTION docs.charte_update(p_data docs.charte)
+ RETURNS docs.charte
  LANGUAGE plpgsql
- STABLE
 AS $function$
-DECLARE
-  v_c docs.charte;
-  v_css text;
-  v_token text;
 BEGIN
-  SELECT * INTO v_c FROM docs.charte
-  WHERE name = p_name AND tenant_id = current_setting('app.tenant_id', true);
-  IF v_c IS NULL THEN RETURN NULL; END IF;
-
-  v_css := docs.charte_tokens_to_css(v_c.id);
-
-  -- context_token: md5 of charte id + all color tokens (invalidates on any change)
-  v_token := md5('charte:' || v_c.id || '|' || v_c.color_bg || v_c.color_main || v_c.color_accent
-    || v_c.color_text || v_c.color_text_light || v_c.color_border
-    || COALESCE(v_c.color_extra::text, '') || v_c.font_heading || v_c.font_body);
-
-  RETURN jsonb_build_object(
-    'id', v_c.id,
-    'name', v_c.name,
-    'description', v_c.description,
-    'css', v_css,
-    'colors', jsonb_build_object(
-      'bg', v_c.color_bg, 'main', v_c.color_main, 'accent', v_c.color_accent,
-      'text', v_c.color_text, 'text_light', v_c.color_text_light, 'border', v_c.color_border,
-      'extra', v_c.color_extra
-    ),
-    'fonts', jsonb_build_object('heading', v_c.font_heading, 'body', v_c.font_body),
-    'spacing', jsonb_build_object(
-      'page', v_c.spacing_page, 'section', v_c.spacing_section,
-      'gap', v_c.spacing_gap, 'card', v_c.spacing_card
-    ),
-    'shadow', jsonb_build_object('card', v_c.shadow_card, 'elevated', v_c.shadow_elevated),
-    'radius', jsonb_build_object('card', v_c.radius_card),
-    'voice', jsonb_build_object(
-      'personality', to_jsonb(v_c.voice_personality),
-      'formality', v_c.voice_formality,
-      'do', to_jsonb(v_c.voice_do),
-      'dont', to_jsonb(v_c.voice_dont),
-      'vocabulary', to_jsonb(v_c.voice_vocabulary),
-      'examples', v_c.voice_examples
-    ),
-    'rules', v_c.rules,
-    'context_token', v_token
-  );
+  UPDATE docs.charte SET
+    name = COALESCE(NULLIF(p_data.name, ''), name),
+    description = COALESCE(p_data.description, description),
+    color_bg = COALESCE(NULLIF(p_data.color_bg, ''), color_bg),
+    color_main = COALESCE(NULLIF(p_data.color_main, ''), color_main),
+    color_accent = COALESCE(NULLIF(p_data.color_accent, ''), color_accent),
+    color_text = COALESCE(NULLIF(p_data.color_text, ''), color_text),
+    color_text_light = COALESCE(NULLIF(p_data.color_text_light, ''), color_text_light),
+    color_border = COALESCE(NULLIF(p_data.color_border, ''), color_border),
+    color_extra = COALESCE(p_data.color_extra, color_extra),
+    font_heading = COALESCE(NULLIF(p_data.font_heading, ''), font_heading),
+    font_body = COALESCE(NULLIF(p_data.font_body, ''), font_body),
+    spacing_page = COALESCE(p_data.spacing_page, spacing_page),
+    spacing_section = COALESCE(p_data.spacing_section, spacing_section),
+    spacing_gap = COALESCE(p_data.spacing_gap, spacing_gap),
+    spacing_card = COALESCE(p_data.spacing_card, spacing_card),
+    shadow_card = COALESCE(p_data.shadow_card, shadow_card),
+    shadow_elevated = COALESCE(p_data.shadow_elevated, shadow_elevated),
+    radius_card = COALESCE(p_data.radius_card, radius_card),
+    voice_personality = COALESCE(p_data.voice_personality, voice_personality),
+    voice_formality = COALESCE(p_data.voice_formality, voice_formality),
+    voice_do = COALESCE(p_data.voice_do, voice_do),
+    voice_dont = COALESCE(p_data.voice_dont, voice_dont),
+    voice_vocabulary = COALESCE(p_data.voice_vocabulary, voice_vocabulary),
+    voice_examples = COALESCE(p_data.voice_examples, voice_examples),
+    rules = COALESCE(p_data.rules, rules),
+    updated_at = now()
+  WHERE id = p_data.id AND tenant_id = current_setting('app.tenant_id', true)
+  RETURNING * INTO p_data;
+  RETURN p_data;
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_read(text) IS 'Load charte by name — returns tokens, CSS, voice, rules, context_token (md5)';
+COMMENT ON FUNCTION docs.charte_update(docs.charte) IS 'Partial update charte — NULL fields unchanged, empty strings ignored';
 
-CREATE OR REPLACE FUNCTION docs.document_create(p_name text, p_format text DEFAULT 'A4'::text, p_orientation text DEFAULT 'portrait'::text, p_charte_id text DEFAULT NULL::text, p_category text DEFAULT 'general'::text, p_html text DEFAULT ''::text, p_library_id text DEFAULT NULL::text)
- RETURNS text
+CREATE OR REPLACE FUNCTION docs.document_create(p_data docs.document)
+ RETURNS docs.document
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_w numeric;
-  v_h numeric;
-  v_id text;
 BEGIN
-  CASE p_format
-    WHEN 'A2' THEN v_w := 420; v_h := 594;
-    WHEN 'A3' THEN v_w := 297; v_h := 420;
-    WHEN 'A4' THEN v_w := 210; v_h := 297;
-    WHEN 'A5' THEN v_w := 148; v_h := 210;
-    WHEN 'HD' THEN v_w := 1920; v_h := 1080;
-    WHEN 'MACBOOK' THEN v_w := 1440; v_h := 900;
-    WHEN 'IPAD' THEN v_w := 1024; v_h := 768;
-    WHEN 'MOBILE' THEN v_w := 390; v_h := 844;
-    ELSE RAISE EXCEPTION 'Unknown format: %', p_format;
+  -- Calculate dimensions from format
+  CASE COALESCE(p_data.format, 'A4')
+    WHEN 'A2' THEN p_data.width := 420; p_data.height := 594;
+    WHEN 'A3' THEN p_data.width := 297; p_data.height := 420;
+    WHEN 'A4' THEN p_data.width := 210; p_data.height := 297;
+    WHEN 'A5' THEN p_data.width := 148; p_data.height := 210;
+    WHEN 'HD' THEN p_data.width := 1920; p_data.height := 1080;
+    WHEN 'MACBOOK' THEN p_data.width := 1440; p_data.height := 900;
+    WHEN 'IPAD' THEN p_data.width := 1024; p_data.height := 768;
+    WHEN 'MOBILE' THEN p_data.width := 390; p_data.height := 844;
+    ELSE RAISE EXCEPTION 'Unknown format: %', p_data.format;
   END CASE;
 
-  IF p_orientation = 'landscape' AND p_format LIKE 'A_' THEN
-    v_w := v_w + v_h;
-    v_h := v_w - v_h;
-    v_w := v_w - v_h;
+  IF COALESCE(p_data.orientation, 'portrait') = 'landscape' AND COALESCE(p_data.format, 'A4') LIKE 'A_' THEN
+    p_data.width := p_data.width + p_data.height;
+    p_data.height := p_data.width - p_data.height;
+    p_data.width := p_data.width - p_data.height;
   END IF;
 
-  IF p_charte_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM docs.charte WHERE id = p_charte_id AND tenant_id = current_setting('app.tenant_id', true)) THEN
-      RAISE EXCEPTION 'Charte not found: %', p_charte_id;
+  IF p_data.charte_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM docs.charte WHERE id = p_data.charte_id AND tenant_id = current_setting('app.tenant_id', true)) THEN
+      RAISE EXCEPTION 'Charte not found: %', p_data.charte_id;
     END IF;
   END IF;
 
-  INSERT INTO docs.document (name, format, orientation, width, height, charte_id, category, library_id)
-  VALUES (p_name, p_format, p_orientation, v_w, v_h, p_charte_id, p_category, p_library_id)
-  RETURNING id INTO v_id;
+  p_data.id := gen_random_uuid()::text;
+  p_data.tenant_id := current_setting('app.tenant_id', true);
+  p_data.format := COALESCE(p_data.format, 'A4');
+  p_data.orientation := COALESCE(p_data.orientation, 'portrait');
+  p_data.category := COALESCE(p_data.category, 'general');
+  p_data.bg := COALESCE(p_data.bg, '#ffffff');
+  p_data.text_margin := COALESCE(p_data.text_margin, 10);
+  p_data.status := COALESCE(p_data.status, 'draft');
+  p_data.rating := COALESCE(p_data.rating, 0);
+  p_data.active_page := COALESCE(p_data.active_page, 0);
+  p_data.created_at := now();
+  p_data.updated_at := now();
 
+  INSERT INTO docs.document VALUES (p_data.*) RETURNING * INTO p_data;
+
+  -- Create first page
   INSERT INTO docs.page (doc_id, page_index, name, html)
-  VALUES (v_id, 0, 'Page 1', COALESCE(p_html, ''));
+  VALUES (p_data.id, 0, 'Page 1', '');
 
-  RETURN v_id;
+  RETURN p_data;
 END;
 $function$;
-COMMENT ON FUNCTION docs.document_create(text,text,text,text,text,text,text) IS 'Create document with format→dimensions, first page, optional charte and library';
+COMMENT ON FUNCTION docs.document_create(docs.document) IS 'Create document from composite type — calculate dimensions from format, create first page';
 
 CREATE OR REPLACE FUNCTION docs.document_delete(p_id text)
  RETURNS boolean
@@ -363,37 +339,20 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.document_duplicate(text,text) IS 'Deep clone document with all pages';
 
-CREATE OR REPLACE FUNCTION docs.document_list()
- RETURNS jsonb
+CREATE OR REPLACE FUNCTION docs.document_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF docs.document
  LANGUAGE plpgsql
  STABLE
 AS $function$
-DECLARE
-  v_result jsonb := '[]'::jsonb;
-  r record;
 BEGIN
-  FOR r IN
-    SELECT d.id, d.name, d.category, d.format, d.orientation, d.status, d.rating,
-           c.name AS charte_name,
-           (SELECT count(*) FROM docs.page p WHERE p.doc_id = d.id) AS nb_pages,
-           d.updated_at
-    FROM docs.document d
-    LEFT JOIN docs.charte c ON c.id = d.charte_id
-    WHERE d.tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY d.category, d.updated_at DESC
-  LOOP
-    v_result := v_result || jsonb_build_object(
-      'id', r.id, 'name', r.name, 'category', r.category,
-      'format', r.format, 'orientation', r.orientation,
-      'status', r.status, 'rating', r.rating,
-      'charte', r.charte_name, 'pages', r.nb_pages,
-      'updated_at', r.updated_at
-    );
-  END LOOP;
-  RETURN v_result;
+  IF p_filter IS NULL THEN
+    RETURN QUERY SELECT * FROM docs.document WHERE tenant_id = current_setting('app.tenant_id', true) ORDER BY updated_at DESC;
+  ELSE
+    RETURN QUERY EXECUTE 'SELECT * FROM docs.document WHERE tenant_id = ' || quote_literal(current_setting('app.tenant_id', true)) || ' AND ' || pgv.rsql_to_where(p_filter, 'docs', 'document') || ' ORDER BY updated_at DESC';
+  END IF;
 END;
 $function$;
-COMMENT ON FUNCTION docs.document_list() IS 'List all documents for current tenant with page count and charte name';
+COMMENT ON FUNCTION docs.document_list(text) IS 'List documents for current tenant — optional RSQL filter';
 
 CREATE OR REPLACE FUNCTION docs.document_print_css(p_doc_id text)
  RETURNS text
@@ -429,9 +388,52 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.document_print_css(text) IS 'Generate @media print CSS for a document (page size, break-after, hide chrome)';
 
+CREATE OR REPLACE FUNCTION docs.document_read(p_id text)
+ RETURNS docs.document
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN (SELECT d FROM docs.document d WHERE d.id = p_id AND d.tenant_id = current_setting('app.tenant_id', true));
+END;
+$function$;
+COMMENT ON FUNCTION docs.document_read(text) IS 'Read document by id — returns full composite row';
+
+CREATE OR REPLACE FUNCTION docs.document_update(p_data docs.document)
+ RETURNS docs.document
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  UPDATE docs.document SET
+    name = COALESCE(NULLIF(p_data.name, ''), name),
+    category = COALESCE(NULLIF(p_data.category, ''), category),
+    charte_id = COALESCE(p_data.charte_id, charte_id),
+    bg = COALESCE(NULLIF(p_data.bg, ''), bg),
+    text_margin = COALESCE(p_data.text_margin, text_margin),
+    design_notes = COALESCE(p_data.design_notes, design_notes),
+    team_notes = COALESCE(p_data.team_notes, team_notes),
+    rating = COALESCE(p_data.rating, rating),
+    email_to = COALESCE(p_data.email_to, email_to),
+    email_cc = COALESCE(p_data.email_cc, email_cc),
+    email_bcc = COALESCE(p_data.email_bcc, email_bcc),
+    email_subject = COALESCE(p_data.email_subject, email_subject),
+    ref_module = COALESCE(p_data.ref_module, ref_module),
+    ref_id = COALESCE(p_data.ref_id, ref_id),
+    status = COALESCE(NULLIF(p_data.status, ''), status),
+    active_page = COALESCE(p_data.active_page, active_page),
+    library_id = COALESCE(p_data.library_id, library_id),
+    updated_at = now()
+  WHERE id = p_data.id AND tenant_id = current_setting('app.tenant_id', true)
+  RETURNING * INTO p_data;
+  RETURN p_data;
+END;
+$function$;
+COMMENT ON FUNCTION docs.document_update(docs.document) IS 'Partial update document — NULL fields unchanged, empty strings ignored';
+
 CREATE OR REPLACE FUNCTION docs.get_charte(p_id text)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_c docs.charte;
@@ -513,7 +515,7 @@ BEGIN
 
   -- Actions
   v_body := v_body || '<p>'
-    || pgv.action('post_charte_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_name', v_c.name), 'Supprimer cette charte ?', 'danger')
+    || pgv.action('post_charte_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_id', v_c.id), 'Supprimer cette charte ?', 'danger')
     || '</p>';
 
   RETURN v_body;
@@ -737,6 +739,7 @@ COMMENT ON FUNCTION docs.get_libraries() IS 'pgView page: list libraries with as
 CREATE OR REPLACE FUNCTION docs.get_library(p_id text)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 DECLARE
   v_lib docs.library;
@@ -781,7 +784,7 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>'
-    || pgv.action('post_library_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_name', v_lib.name), 'Supprimer cette photothèque ?', 'danger')
+    || pgv.action('post_library_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_id', v_lib.id), 'Supprimer cette photothèque ?', 'danger')
     || '</p>';
 
   RETURN v_body;
@@ -959,162 +962,59 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.library_add_asset(text,uuid,text,text,integer) IS 'Add or update an asset in a library with role and context';
 
-CREATE OR REPLACE FUNCTION docs.library_create(p_name text, p_description text DEFAULT NULL::text)
- RETURNS text
+CREATE OR REPLACE FUNCTION docs.library_create(p_data docs.library)
+ RETURNS docs.library
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_id text;
 BEGIN
-  INSERT INTO docs.library (name, description)
-  VALUES (p_name, p_description)
-  RETURNING id INTO v_id;
-  RETURN v_id;
+  p_data.id := gen_random_uuid()::text;
+  p_data.tenant_id := current_setting('app.tenant_id', true);
+  p_data.created_at := now();
+  INSERT INTO docs.library VALUES (p_data.*) RETURNING * INTO p_data;
+  RETURN p_data;
 END;
 $function$;
-COMMENT ON FUNCTION docs.library_create(text,text) IS 'Create a curated asset library for document composition';
+COMMENT ON FUNCTION docs.library_create(docs.library) IS 'Create library from composite type';
 
-CREATE OR REPLACE FUNCTION docs.library_delete(p_name text)
+CREATE OR REPLACE FUNCTION docs.library_delete(p_id text)
  RETURNS boolean
  LANGUAGE plpgsql
 AS $function$
 DECLARE
   v_deleted int;
 BEGIN
-  DELETE FROM docs.library WHERE name = p_name AND tenant_id = current_setting('app.tenant_id', true);
+  DELETE FROM docs.library WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted > 0;
 END;
 $function$;
-COMMENT ON FUNCTION docs.library_delete(text) IS 'Delete a library by name (CASCADE library_asset)';
+COMMENT ON FUNCTION docs.library_delete(text) IS 'Delete library by id (CASCADE library_asset)';
 
-CREATE OR REPLACE FUNCTION docs.library_list()
- RETURNS jsonb
+CREATE OR REPLACE FUNCTION docs.library_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF docs.library
  LANGUAGE plpgsql
  STABLE
 AS $function$
-DECLARE
-  v_result jsonb := '[]'::jsonb;
-  r record;
 BEGIN
-  FOR r IN
-    SELECT l.id, l.name, l.description,
-           (SELECT count(*) FROM docs.library_asset la WHERE la.library_id = l.id) AS asset_cnt,
-           l.created_at
-    FROM docs.library l
-    WHERE l.tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY l.name
-  LOOP
-    v_result := v_result || jsonb_build_object(
-      'id', r.id, 'name', r.name, 'description', r.description,
-      'assets', r.asset_cnt, 'created_at', r.created_at
-    );
-  END LOOP;
-  RETURN v_result;
-END;
-$function$;
-COMMENT ON FUNCTION docs.library_list() IS 'List all libraries for current tenant with asset count';
-
-CREATE OR REPLACE FUNCTION docs.library_read(p_library_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_lib docs.library;
-  v_assets jsonb := '[]'::jsonb;
-  r record;
-BEGIN
-  SELECT * INTO v_lib FROM docs.library WHERE id = p_library_id AND tenant_id = current_setting('app.tenant_id', true);
-  IF v_lib IS NULL THEN RETURN NULL; END IF;
-
-  FOR r IN
-    SELECT a.id, a.filename, a.title, a.description, a.tags, a.width, a.height, a.mime_type, a.path,
-           la.role, la.context, la.sort_order
-    FROM docs.library_asset la
-    JOIN asset.asset a ON a.id = la.asset_id
-    WHERE la.library_id = p_library_id
-    ORDER BY la.sort_order, a.filename
-  LOOP
-    v_assets := v_assets || jsonb_build_object(
-      'id', r.id, 'filename', r.filename, 'title', r.title,
-      'description', r.description, 'tags', r.tags,
-      'width', r.width, 'height', r.height, 'mime_type', r.mime_type, 'path', r.path,
-      'role', r.role, 'context', r.context, 'sort_order', r.sort_order
-    );
-  END LOOP;
-
-  RETURN jsonb_build_object(
-    'id', v_lib.id,
-    'name', v_lib.name,
-    'description', v_lib.description,
-    'assets', v_assets
-  );
-END;
-$function$;
-COMMENT ON FUNCTION docs.library_read(text) IS 'Load library with all assets (metadata from asset.asset)';
-
-CREATE OR REPLACE FUNCTION docs.document_read(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_d docs.document;
-  v_css text;
-  v_pages jsonb := '[]'::jsonb;
-  v_library jsonb;
-  r record;
-BEGIN
-  SELECT * INTO v_d FROM docs.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
-  IF v_d IS NULL THEN RETURN NULL; END IF;
-
-  IF v_d.charte_id IS NOT NULL THEN
-    v_css := docs.charte_tokens_to_css(v_d.charte_id);
+  IF p_filter IS NULL THEN
+    RETURN QUERY SELECT * FROM docs.library WHERE tenant_id = current_setting('app.tenant_id', true) ORDER BY name;
+  ELSE
+    RETURN QUERY EXECUTE 'SELECT * FROM docs.library WHERE tenant_id = ' || quote_literal(current_setting('app.tenant_id', true)) || ' AND ' || pgv.rsql_to_where(p_filter, 'docs', 'library') || ' ORDER BY name';
   END IF;
-
-  IF v_d.library_id IS NOT NULL THEN
-    v_library := docs.library_read(v_d.library_id);
-  END IF;
-
-  FOR r IN
-    SELECT page_index, name, html, format, orientation, width, height, bg, text_margin
-    FROM docs.page WHERE doc_id = p_id ORDER BY page_index
-  LOOP
-    v_pages := v_pages || jsonb_build_object(
-      'page_index', r.page_index,
-      'name', r.name,
-      'html', r.html,
-      'format', r.format,
-      'width', r.width,
-      'height', r.height,
-      'bg', r.bg
-    );
-  END LOOP;
-
-  RETURN jsonb_build_object(
-    'id', v_d.id,
-    'name', v_d.name,
-    'category', v_d.category,
-    'format', v_d.format,
-    'orientation', v_d.orientation,
-    'width', v_d.width,
-    'height', v_d.height,
-    'bg', v_d.bg,
-    'text_margin', v_d.text_margin,
-    'status', v_d.status,
-    'charte_id', v_d.charte_id,
-    'charte_css', v_css,
-    'library_id', v_d.library_id,
-    'library', v_library,
-    'pages', v_pages,
-    'active_page', v_d.active_page,
-    'rating', v_d.rating,
-    'design_notes', v_d.design_notes
-  );
 END;
 $function$;
-COMMENT ON FUNCTION docs.document_read(text) IS 'Load document with all pages, charte CSS, and library assets';
+COMMENT ON FUNCTION docs.library_list(text) IS 'List libraries for current tenant — optional RSQL filter';
+
+CREATE OR REPLACE FUNCTION docs.library_read(p_id text)
+ RETURNS docs.library
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN (SELECT l FROM docs.library l WHERE l.id = p_id AND l.tenant_id = current_setting('app.tenant_id', true));
+END;
+$function$;
+COMMENT ON FUNCTION docs.library_read(text) IS 'Read library by id — returns full composite row';
 
 CREATE OR REPLACE FUNCTION docs.library_remove_asset(p_library_id text, p_asset_id uuid)
  RETURNS boolean

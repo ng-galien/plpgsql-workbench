@@ -3,33 +3,33 @@ CREATE OR REPLACE FUNCTION docs_ut.test_document_read()
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_id text;
-  v_charte_id text;
-  v_result jsonb;
+  v_d docs.document;
+  v_c docs.charte;
+  v_r docs.document;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 
-  v_charte_id := docs.charte_create(p_name := 'Load Charte', p_color_bg := '#FAF6F1', p_color_main := '#2C3E2D',
-    p_color_accent := '#C4956A', p_color_text := '#333', p_color_text_light := '#888', p_color_border := '#eee',
-    p_font_heading := 'Inter', p_font_body := 'Inter');
+  v_c := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+    'name', 'Read Charte', 'color_bg', '#FAF6F1', 'color_main', '#2C3E2D', 'color_accent', '#C4956A',
+    'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
+    'font_heading', 'Inter', 'font_body', 'Inter'
+  )));
 
-  v_id := docs.document_create('Load Test', p_charte_id := v_charte_id, p_html := '<p data-id="p1">Hi</p>');
-  PERFORM docs.page_add(v_id, 'Page 2', '<p data-id="p2">Page two</p>');
+  v_d := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'Read Test', 'charte_id', v_c.id)));
+  PERFORM docs.page_add(v_d.id, 'Page 2', '<p data-id="p2">Page two</p>');
 
-  v_result := docs.document_read(v_id);
+  v_r := docs.document_read(v_d.id);
 
-  RETURN NEXT ok(v_result IS NOT NULL, 'document_read returns data');
-  RETURN NEXT is(v_result->>'name', 'Load Test', 'name');
-  RETURN NEXT is(v_result->>'format', 'A4', 'format');
-  RETURN NEXT is(jsonb_array_length(v_result->'pages'), 2, '2 pages loaded');
-  RETURN NEXT is((v_result->'pages'->0->>'page_index')::int, 0, 'page 0 index');
-  RETURN NEXT is((v_result->'pages'->1->>'page_index')::int, 1, 'page 1 index');
-  RETURN NEXT ok(v_result->>'charte_css' LIKE '%--charte-color-bg%', 'charte CSS included');
+  RETURN NEXT ok(v_r.id IS NOT NULL, 'document_read returns data');
+  RETURN NEXT is(v_r.name, 'Read Test', 'name');
+  RETURN NEXT is(v_r.format, 'A4', 'format');
+  RETURN NEXT is(v_r.charte_id, v_c.id, 'charte_id');
+  RETURN NEXT is(v_r.width, 210::numeric, 'width');
 
   -- Not found
-  RETURN NEXT ok(docs.document_read('nonexistent') IS NULL, 'NULL for unknown doc');
+  RETURN NEXT ok((docs.document_read('nonexistent')).id IS NULL, 'NULL for unknown doc');
 
   DELETE FROM docs.document WHERE tenant_id = 'test';
   DELETE FROM docs.charte WHERE tenant_id = 'test';
