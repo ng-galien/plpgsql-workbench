@@ -278,7 +278,7 @@ END;
 $function$;
 COMMENT ON FUNCTION document.charte_load(text) IS 'Load charte by name — returns tokens, CSS, voice, rules, context_token (md5)';
 
-CREATE OR REPLACE FUNCTION document.doc_create(p_name text, p_format text DEFAULT 'A4'::text, p_orientation text DEFAULT 'portrait'::text, p_charte_id text DEFAULT NULL::text, p_category text DEFAULT 'general'::text, p_html text DEFAULT ''::text)
+CREATE OR REPLACE FUNCTION document.doc_create(p_name text, p_format text DEFAULT 'A4'::text, p_orientation text DEFAULT 'portrait'::text, p_charte_id text DEFAULT NULL::text, p_category text DEFAULT 'general'::text, p_html text DEFAULT ''::text, p_library_id text DEFAULT NULL::text)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
@@ -287,7 +287,6 @@ DECLARE
   v_h numeric;
   v_id text;
 BEGIN
-  -- Format → dimensions
   CASE p_format
     WHEN 'A2' THEN v_w := 420; v_h := 594;
     WHEN 'A3' THEN v_w := 297; v_h := 420;
@@ -300,32 +299,29 @@ BEGIN
     ELSE RAISE EXCEPTION 'Unknown format: %', p_format;
   END CASE;
 
-  -- Landscape: swap w/h for print formats only (A*)
   IF p_orientation = 'landscape' AND p_format LIKE 'A_' THEN
     v_w := v_w + v_h;
     v_h := v_w - v_h;
     v_w := v_w - v_h;
   END IF;
 
-  -- Validate charte if provided
   IF p_charte_id IS NOT NULL THEN
     IF NOT EXISTS (SELECT 1 FROM document.charte WHERE id = p_charte_id AND tenant_id = current_setting('app.tenant_id', true)) THEN
       RAISE EXCEPTION 'Charte not found: %', p_charte_id;
     END IF;
   END IF;
 
-  INSERT INTO document.document (name, format, orientation, width, height, charte_id, category)
-  VALUES (p_name, p_format, p_orientation, v_w, v_h, p_charte_id, p_category)
+  INSERT INTO document.document (name, format, orientation, width, height, charte_id, category, library_id)
+  VALUES (p_name, p_format, p_orientation, v_w, v_h, p_charte_id, p_category, p_library_id)
   RETURNING id INTO v_id;
 
-  -- First page
   INSERT INTO document.page (doc_id, page_index, name, html)
   VALUES (v_id, 0, 'Page 1', COALESCE(p_html, ''));
 
   RETURN v_id;
 END;
 $function$;
-COMMENT ON FUNCTION document.doc_create(text,text,text,text,text,text) IS 'Create document with format→dimensions, first page, optional charte';
+COMMENT ON FUNCTION document.doc_create(text,text,text,text,text,text,text) IS 'Create document with format→dimensions, first page, optional charte and library';
 
 CREATE OR REPLACE FUNCTION document.doc_delete(p_id text)
  RETURNS boolean
@@ -398,63 +394,6 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION document.doc_list() IS 'List all documents for current tenant with page count and charte name';
-
-CREATE OR REPLACE FUNCTION document.doc_load(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_d document.document;
-  v_css text;
-  v_pages jsonb := '[]'::jsonb;
-  r record;
-BEGIN
-  SELECT * INTO v_d FROM document.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
-  IF v_d IS NULL THEN RETURN NULL; END IF;
-
-  -- Charte CSS
-  IF v_d.charte_id IS NOT NULL THEN
-    v_css := document.charte_tokens_to_css(v_d.charte_id);
-  END IF;
-
-  -- Pages
-  FOR r IN
-    SELECT page_index, name, html, format, orientation, width, height, bg, text_margin
-    FROM document.page WHERE doc_id = p_id ORDER BY page_index
-  LOOP
-    v_pages := v_pages || jsonb_build_object(
-      'page_index', r.page_index,
-      'name', r.name,
-      'html', r.html,
-      'format', r.format,
-      'width', r.width,
-      'height', r.height,
-      'bg', r.bg
-    );
-  END LOOP;
-
-  RETURN jsonb_build_object(
-    'id', v_d.id,
-    'name', v_d.name,
-    'category', v_d.category,
-    'format', v_d.format,
-    'orientation', v_d.orientation,
-    'width', v_d.width,
-    'height', v_d.height,
-    'bg', v_d.bg,
-    'text_margin', v_d.text_margin,
-    'status', v_d.status,
-    'charte_id', v_d.charte_id,
-    'charte_css', v_css,
-    'pages', v_pages,
-    'active_page', v_d.active_page,
-    'rating', v_d.rating,
-    'design_notes', v_d.design_notes
-  );
-END;
-$function$;
-COMMENT ON FUNCTION document.doc_load(text) IS 'Load document with all pages and charte CSS';
 
 CREATE OR REPLACE FUNCTION document.get_charte(p_id text)
  RETURNS text
@@ -714,6 +653,106 @@ END;
 $function$;
 COMMENT ON FUNCTION document.get_index() IS 'Document dashboard — stats chartes/documents, document list with status';
 
+CREATE OR REPLACE FUNCTION document.get_libraries()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_rows text[];
+  v_cnt int;
+  r record;
+BEGIN
+  SELECT count(*)::int INTO v_cnt FROM document.library WHERE tenant_id = current_setting('app.tenant_id', true);
+
+  v_body := '<h2>' || pgv.t('document.title_libraries') || '</h2>';
+
+  IF v_cnt = 0 THEN
+    RETURN v_body || pgv.empty(pgv.t('document.empty_no_libraries'), pgv.t('document.empty_first_library'));
+  END IF;
+
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT l.id, l.name, l.description,
+           (SELECT count(*) FROM document.library_asset la WHERE la.library_id = l.id) AS asset_cnt,
+           (SELECT count(*) FROM document.document d WHERE d.library_id = l.id) AS doc_cnt
+    FROM document.library l
+    WHERE l.tenant_id = current_setting('app.tenant_id', true)
+    ORDER BY l.name
+  LOOP
+    v_rows := v_rows || ARRAY[
+      format('<a href="/library?p_id=%s">%s</a>', r.id, pgv.esc(r.name)),
+      COALESCE(r.description, '—'),
+      r.asset_cnt::text,
+      r.doc_cnt::text
+    ];
+  END LOOP;
+
+  v_body := v_body || pgv.md_table(
+    ARRAY[pgv.t('document.col_name'), 'Description', 'Assets', 'Docs'],
+    v_rows, 20
+  );
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION document.get_libraries() IS 'pgView page: list libraries with asset count';
+
+CREATE OR REPLACE FUNCTION document.get_library(p_id text)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_lib document.library;
+  v_body text;
+  v_rows text[];
+  r record;
+BEGIN
+  SELECT * INTO v_lib FROM document.library WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
+  IF v_lib IS NULL THEN RETURN pgv.empty('Photothèque introuvable'); END IF;
+
+  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('document.brand'), '/libraries', pgv.esc(v_lib.name)]);
+
+  IF v_lib.description IS NOT NULL THEN
+    v_body := v_body || '<p>' || pgv.esc(v_lib.description) || '</p>';
+  END IF;
+
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT a.filename, a.title, a.mime_type, a.width, a.height,
+           la.role, la.context, la.sort_order
+    FROM document.library_asset la
+    JOIN asset.asset a ON a.id = la.asset_id
+    WHERE la.library_id = p_id
+    ORDER BY la.sort_order, a.filename
+  LOOP
+    v_rows := v_rows || ARRAY[
+      r.sort_order::text,
+      pgv.esc(r.filename),
+      COALESCE(r.title, '—'),
+      COALESCE(r.role, '—'),
+      COALESCE(r.context, '—'),
+      r.mime_type,
+      CASE WHEN r.width IS NOT NULL THEN r.width::text || '×' || r.height::text ELSE '—' END
+    ];
+  END LOOP;
+
+  IF cardinality(v_rows) > 0 THEN
+    v_body := v_body || '<h3>Assets</h3>'
+      || pgv.md_table(ARRAY['#', 'Fichier', 'Titre', 'Rôle', 'Contexte', 'Type', 'Dimensions'], v_rows, 20);
+  ELSE
+    v_body := v_body || pgv.empty('Aucun asset dans cette photothèque');
+  END IF;
+
+  v_body := v_body || '<p>'
+    || pgv.action('post_library_delete', pgv.t('document.btn_delete'), jsonb_build_object('p_name', v_lib.name), 'Supprimer cette photothèque ?', 'danger')
+    || '</p>';
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION document.get_library(text) IS 'pgView page: library detail with asset list';
+
 CREATE OR REPLACE FUNCTION document.i18n_seed()
  RETURNS void
  LANGUAGE plpgsql
@@ -724,6 +763,7 @@ BEGIN
     ('fr', 'document.brand', 'Documents'),
     ('fr', 'document.nav_documents', 'Documents'),
     ('fr', 'document.nav_chartes', 'Chartes'),
+    ('fr', 'document.nav_libraries', 'Photothèque'),
 
     -- Stats
     ('fr', 'document.stat_documents', 'Documents'),
@@ -766,10 +806,13 @@ BEGIN
     ('fr', 'document.empty_first_document', 'Créez votre premier document pour commencer.'),
     ('fr', 'document.empty_no_chartes', 'Aucune charte'),
     ('fr', 'document.empty_first_charte', 'Créez votre première charte graphique.'),
+    ('fr', 'document.empty_no_libraries', 'Aucune photothèque'),
+    ('fr', 'document.empty_first_library', 'Créez votre première photothèque pour composer des documents.'),
 
     -- Section titles
     ('fr', 'document.title_documents', 'Documents'),
     ('fr', 'document.title_chartes', 'Chartes graphiques'),
+    ('fr', 'document.title_libraries', 'Photothèques'),
 
     -- Errors
     ('fr', 'document.err_not_found', 'Document introuvable.'),
@@ -823,6 +866,192 @@ END;
 $function$;
 COMMENT ON FUNCTION document.layout_check(text,numeric,numeric) IS 'Detect elements overflowing canvas dimensions';
 
+CREATE OR REPLACE FUNCTION document.library_add_asset(p_library_id text, p_asset_id uuid, p_role text DEFAULT NULL::text, p_context text DEFAULT NULL::text, p_sort_order integer DEFAULT 0)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  INSERT INTO document.library_asset (library_id, asset_id, role, context, sort_order)
+  VALUES (p_library_id, p_asset_id, p_role, p_context, p_sort_order)
+  ON CONFLICT (library_id, asset_id) DO UPDATE SET
+    role = EXCLUDED.role,
+    context = EXCLUDED.context,
+    sort_order = EXCLUDED.sort_order;
+END;
+$function$;
+COMMENT ON FUNCTION document.library_add_asset(text,uuid,text,text,integer) IS 'Add or update an asset in a library with role and context';
+
+CREATE OR REPLACE FUNCTION document.library_create(p_name text, p_description text DEFAULT NULL::text)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id text;
+BEGIN
+  INSERT INTO document.library (name, description)
+  VALUES (p_name, p_description)
+  RETURNING id INTO v_id;
+  RETURN v_id;
+END;
+$function$;
+COMMENT ON FUNCTION document.library_create(text,text) IS 'Create a curated asset library for document composition';
+
+CREATE OR REPLACE FUNCTION document.library_delete(p_name text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_deleted int;
+BEGIN
+  DELETE FROM document.library WHERE name = p_name AND tenant_id = current_setting('app.tenant_id', true);
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted > 0;
+END;
+$function$;
+COMMENT ON FUNCTION document.library_delete(text) IS 'Delete a library by name (CASCADE library_asset)';
+
+CREATE OR REPLACE FUNCTION document.library_list()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_result jsonb := '[]'::jsonb;
+  r record;
+BEGIN
+  FOR r IN
+    SELECT l.id, l.name, l.description,
+           (SELECT count(*) FROM document.library_asset la WHERE la.library_id = l.id) AS asset_cnt,
+           l.created_at
+    FROM document.library l
+    WHERE l.tenant_id = current_setting('app.tenant_id', true)
+    ORDER BY l.name
+  LOOP
+    v_result := v_result || jsonb_build_object(
+      'id', r.id, 'name', r.name, 'description', r.description,
+      'assets', r.asset_cnt, 'created_at', r.created_at
+    );
+  END LOOP;
+  RETURN v_result;
+END;
+$function$;
+COMMENT ON FUNCTION document.library_list() IS 'List all libraries for current tenant with asset count';
+
+CREATE OR REPLACE FUNCTION document.library_load(p_library_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_lib document.library;
+  v_assets jsonb := '[]'::jsonb;
+  r record;
+BEGIN
+  SELECT * INTO v_lib FROM document.library WHERE id = p_library_id AND tenant_id = current_setting('app.tenant_id', true);
+  IF v_lib IS NULL THEN RETURN NULL; END IF;
+
+  FOR r IN
+    SELECT a.id, a.filename, a.title, a.description, a.tags, a.width, a.height, a.mime_type, a.path,
+           la.role, la.context, la.sort_order
+    FROM document.library_asset la
+    JOIN asset.asset a ON a.id = la.asset_id
+    WHERE la.library_id = p_library_id
+    ORDER BY la.sort_order, a.filename
+  LOOP
+    v_assets := v_assets || jsonb_build_object(
+      'id', r.id, 'filename', r.filename, 'title', r.title,
+      'description', r.description, 'tags', r.tags,
+      'width', r.width, 'height', r.height, 'mime_type', r.mime_type, 'path', r.path,
+      'role', r.role, 'context', r.context, 'sort_order', r.sort_order
+    );
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'id', v_lib.id,
+    'name', v_lib.name,
+    'description', v_lib.description,
+    'assets', v_assets
+  );
+END;
+$function$;
+COMMENT ON FUNCTION document.library_load(text) IS 'Load library with all assets (metadata from asset.asset)';
+
+CREATE OR REPLACE FUNCTION document.doc_load(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_d document.document;
+  v_css text;
+  v_pages jsonb := '[]'::jsonb;
+  v_library jsonb;
+  r record;
+BEGIN
+  SELECT * INTO v_d FROM document.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
+  IF v_d IS NULL THEN RETURN NULL; END IF;
+
+  IF v_d.charte_id IS NOT NULL THEN
+    v_css := document.charte_tokens_to_css(v_d.charte_id);
+  END IF;
+
+  IF v_d.library_id IS NOT NULL THEN
+    v_library := document.library_load(v_d.library_id);
+  END IF;
+
+  FOR r IN
+    SELECT page_index, name, html, format, orientation, width, height, bg, text_margin
+    FROM document.page WHERE doc_id = p_id ORDER BY page_index
+  LOOP
+    v_pages := v_pages || jsonb_build_object(
+      'page_index', r.page_index,
+      'name', r.name,
+      'html', r.html,
+      'format', r.format,
+      'width', r.width,
+      'height', r.height,
+      'bg', r.bg
+    );
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'id', v_d.id,
+    'name', v_d.name,
+    'category', v_d.category,
+    'format', v_d.format,
+    'orientation', v_d.orientation,
+    'width', v_d.width,
+    'height', v_d.height,
+    'bg', v_d.bg,
+    'text_margin', v_d.text_margin,
+    'status', v_d.status,
+    'charte_id', v_d.charte_id,
+    'charte_css', v_css,
+    'library_id', v_d.library_id,
+    'library', v_library,
+    'pages', v_pages,
+    'active_page', v_d.active_page,
+    'rating', v_d.rating,
+    'design_notes', v_d.design_notes
+  );
+END;
+$function$;
+COMMENT ON FUNCTION document.doc_load(text) IS 'Load document with all pages, charte CSS, and library assets';
+
+CREATE OR REPLACE FUNCTION document.library_remove_asset(p_library_id text, p_asset_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_deleted int;
+BEGIN
+  DELETE FROM document.library_asset WHERE library_id = p_library_id AND asset_id = p_asset_id;
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted > 0;
+END;
+$function$;
+COMMENT ON FUNCTION document.library_remove_asset(text,uuid) IS 'Remove an asset from a library';
+
 CREATE OR REPLACE FUNCTION document.nav_items()
  RETURNS jsonb
  LANGUAGE sql
@@ -830,7 +1059,8 @@ CREATE OR REPLACE FUNCTION document.nav_items()
 AS $function$
   SELECT jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('document.nav_documents'), 'icon', 'file-text'),
-    jsonb_build_object('href', '/chartes', 'label', pgv.t('document.nav_chartes'), 'icon', 'palette')
+    jsonb_build_object('href', '/chartes', 'label', pgv.t('document.nav_chartes'), 'icon', 'palette'),
+    jsonb_build_object('href', '/libraries', 'label', pgv.t('document.nav_libraries'), 'icon', 'image')
   );
 $function$;
 COMMENT ON FUNCTION document.nav_items() IS 'Navigation items for document module (i18n)';

@@ -400,6 +400,169 @@ END;
 $function$;
 COMMENT ON FUNCTION document_ut.test_layout_check() IS 'Test layout_check — elements within/outside canvas';
 
+CREATE OR REPLACE FUNCTION document_ut.test_library_assets()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_lib_id text;
+  v_asset_id uuid;
+  v_cnt int;
+  v_role text;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+  DELETE FROM document.library WHERE tenant_id = 'test';
+
+  v_lib_id := document.library_create('Test Lib');
+
+  -- Get a real asset
+  SELECT id INTO v_asset_id FROM asset.asset LIMIT 1;
+  IF v_asset_id IS NULL THEN
+    RETURN NEXT skip('no assets in database');
+    DELETE FROM document.library WHERE tenant_id = 'test';
+    RETURN;
+  END IF;
+
+  -- Add asset
+  PERFORM document.library_add_asset(v_lib_id, v_asset_id, 'hero', 'Photo principale pleine largeur');
+  SELECT count(*)::int INTO v_cnt FROM document.library_asset WHERE library_id = v_lib_id;
+  RETURN NEXT is(v_cnt, 1, 'asset added');
+
+  SELECT role INTO v_role FROM document.library_asset WHERE library_id = v_lib_id AND asset_id = v_asset_id;
+  RETURN NEXT is(v_role, 'hero', 'role stored');
+
+  -- Upsert role
+  PERFORM document.library_add_asset(v_lib_id, v_asset_id, 'background', 'Fond de page');
+  SELECT role INTO v_role FROM document.library_asset WHERE library_id = v_lib_id AND asset_id = v_asset_id;
+  RETURN NEXT is(v_role, 'background', 'role updated via upsert');
+
+  -- Remove
+  RETURN NEXT ok(document.library_remove_asset(v_lib_id, v_asset_id), 'remove returns true');
+  SELECT count(*)::int INTO v_cnt FROM document.library_asset WHERE library_id = v_lib_id;
+  RETURN NEXT is(v_cnt, 0, 'asset removed');
+
+  -- Remove nonexistent
+  RETURN NEXT ok(NOT document.library_remove_asset(v_lib_id, v_asset_id), 'remove nonexistent returns false');
+
+  DELETE FROM document.library WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_library_assets() IS 'Test library add/remove assets — upsert role/context';
+
+CREATE OR REPLACE FUNCTION document_ut.test_library_create()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_id text;
+  v_lib record;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+  DELETE FROM document.library WHERE tenant_id = 'test';
+
+  v_id := document.library_create('My French Tour', 'Photos oenotourisme Bourgogne');
+
+  RETURN NEXT ok(v_id IS NOT NULL, 'library_create returns id');
+
+  SELECT * INTO v_lib FROM document.library WHERE id = v_id;
+  RETURN NEXT is(v_lib.name, 'My French Tour', 'name stored');
+  RETURN NEXT is(v_lib.description, 'Photos oenotourisme Bourgogne', 'description stored');
+
+  -- Unique name per tenant
+  BEGIN
+    PERFORM document.library_create('My French Tour');
+    RETURN NEXT fail('duplicate name should raise');
+  EXCEPTION WHEN unique_violation THEN
+    RETURN NEXT pass('duplicate name raises unique_violation');
+  END;
+
+  DELETE FROM document.library WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_library_create() IS 'Test library creation — unique name per tenant';
+
+CREATE OR REPLACE FUNCTION document_ut.test_library_delete()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_lib_id text;
+  v_asset_id uuid;
+  v_doc_id text;
+  v_cnt int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+  DELETE FROM document.document WHERE tenant_id = 'test';
+  DELETE FROM document.library WHERE tenant_id = 'test';
+
+  v_lib_id := document.library_create('To Delete');
+
+  -- Add asset if available
+  SELECT id INTO v_asset_id FROM asset.asset LIMIT 1;
+  IF v_asset_id IS NOT NULL THEN
+    PERFORM document.library_add_asset(v_lib_id, v_asset_id, 'test');
+  END IF;
+
+  -- Link a document
+  v_doc_id := document.doc_create('Linked Doc', p_library_id := v_lib_id);
+
+  RETURN NEXT ok(document.library_delete('To Delete'), 'delete returns true');
+
+  SELECT count(*)::int INTO v_cnt FROM document.library WHERE id = v_lib_id;
+  RETURN NEXT is(v_cnt, 0, 'library removed');
+
+  -- Document still exists, library_id NULL
+  RETURN NEXT ok(
+    (SELECT library_id IS NULL FROM document.document WHERE id = v_doc_id),
+    'document library_id set to NULL'
+  );
+
+  RETURN NEXT ok(NOT document.library_delete('Nonexistent'), 'delete unknown returns false');
+
+  DELETE FROM document.document WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_library_delete() IS 'Test library delete — cascade library_asset, FK SET NULL on documents';
+
+CREATE OR REPLACE FUNCTION document_ut.test_library_load()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_lib_id text;
+  v_asset_id uuid;
+  v_result jsonb;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+  DELETE FROM document.library WHERE tenant_id = 'test';
+
+  v_lib_id := document.library_create('Load Test', 'Test library');
+
+  SELECT id INTO v_asset_id FROM asset.asset LIMIT 1;
+  IF v_asset_id IS NULL THEN
+    RETURN NEXT skip('no assets in database');
+    DELETE FROM document.library WHERE tenant_id = 'test';
+    RETURN;
+  END IF;
+
+  PERFORM document.library_add_asset(v_lib_id, v_asset_id, 'logo', 'Logo entreprise');
+
+  v_result := document.library_load(v_lib_id);
+
+  RETURN NEXT ok(v_result IS NOT NULL, 'library_load returns data');
+  RETURN NEXT is(v_result->>'name', 'Load Test', 'name in result');
+  RETURN NEXT is(jsonb_array_length(v_result->'assets'), 1, '1 asset');
+  RETURN NEXT ok(v_result->'assets'->0->>'filename' IS NOT NULL, 'asset filename present');
+  RETURN NEXT is(v_result->'assets'->0->>'role', 'logo', 'asset role present');
+
+  -- Not found
+  RETURN NEXT ok(document.library_load('nonexistent') IS NULL, 'NULL for unknown library');
+
+  DELETE FROM document.library WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION document_ut.test_library_load() IS 'Test library_load — returns library + asset metadata';
+
 CREATE OR REPLACE FUNCTION document_ut.test_normalize_color()
  RETURNS SETOF text
  LANGUAGE plpgsql

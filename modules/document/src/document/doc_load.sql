@@ -7,17 +7,20 @@ DECLARE
   v_d document.document;
   v_css text;
   v_pages jsonb := '[]'::jsonb;
+  v_library jsonb;
   r record;
 BEGIN
   SELECT * INTO v_d FROM document.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
   IF v_d IS NULL THEN RETURN NULL; END IF;
 
-  -- Charte CSS
   IF v_d.charte_id IS NOT NULL THEN
     v_css := document.charte_tokens_to_css(v_d.charte_id);
   END IF;
 
-  -- Pages
+  IF v_d.library_id IS NOT NULL THEN
+    v_library := document.library_load(v_d.library_id);
+  END IF;
+
   FOR r IN
     SELECT page_index, name, html, format, orientation, width, height, bg, text_margin
     FROM document.page WHERE doc_id = p_id ORDER BY page_index
@@ -46,6 +49,8 @@ BEGIN
     'status', v_d.status,
     'charte_id', v_d.charte_id,
     'charte_css', v_css,
+    'library_id', v_d.library_id,
+    'library', v_library,
     'pages', v_pages,
     'active_page', v_d.active_page,
     'rating', v_d.rating,

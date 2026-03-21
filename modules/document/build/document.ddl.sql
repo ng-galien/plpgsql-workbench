@@ -201,17 +201,54 @@ CREATE UNLOGGED TABLE document.session (
 );
 
 -- ────────────────────────────────────────────────────────
+-- Library (curated asset selection for composition)
+-- ────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS document.library (
+  id          text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  tenant_id   text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  name        text NOT NULL,
+  description text,
+  created_at  timestamptz DEFAULT now(),
+  UNIQUE (tenant_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_library_tenant ON document.library (tenant_id);
+
+CREATE TABLE IF NOT EXISTS document.library_asset (
+  library_id  text NOT NULL REFERENCES document.library(id) ON DELETE CASCADE,
+  asset_id    uuid NOT NULL REFERENCES asset.asset(id) ON DELETE CASCADE,
+  role        text,
+  context     text,
+  sort_order  integer DEFAULT 0,
+  PRIMARY KEY (library_id, asset_id)
+);
+
+ALTER TABLE document.document
+  ADD COLUMN IF NOT EXISTS library_id text REFERENCES document.library(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_doc_library ON document.document (library_id) WHERE library_id IS NOT NULL;
+
+-- ────────────────────────────────────────────────────────
 -- RLS
 -- ────────────────────────────────────────────────────────
 
 ALTER TABLE document.charte ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON document.charte
-  FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
-
 ALTER TABLE document.document ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON document.document
-  FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
-
 ALTER TABLE document.company ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON document.company
-  FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
+ALTER TABLE document.library ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'document.charte'::regclass AND polname = 'tenant_isolation') THEN
+    CREATE POLICY tenant_isolation ON document.charte FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'document.document'::regclass AND polname = 'tenant_isolation') THEN
+    CREATE POLICY tenant_isolation ON document.document FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'document.company'::regclass AND polname = 'tenant_isolation') THEN
+    CREATE POLICY tenant_isolation ON document.company FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polrelid = 'document.library'::regclass AND polname = 'tenant_isolation') THEN
+    CREATE POLICY tenant_isolation ON document.library FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
+  END IF;
+END $$;

@@ -8,6 +8,7 @@ BEGIN
     ('fr', 'document.brand', 'Documents'),
     ('fr', 'document.nav_documents', 'Documents'),
     ('fr', 'document.nav_chartes', 'Chartes'),
+    ('fr', 'document.nav_libraries', 'Photothèque'),
 
     -- Stats
     ('fr', 'document.stat_documents', 'Documents'),
@@ -50,10 +51,13 @@ BEGIN
     ('fr', 'document.empty_first_document', 'Créez votre premier document pour commencer.'),
     ('fr', 'document.empty_no_chartes', 'Aucune charte'),
     ('fr', 'document.empty_first_charte', 'Créez votre première charte graphique.'),
+    ('fr', 'document.empty_no_libraries', 'Aucune photothèque'),
+    ('fr', 'document.empty_first_library', 'Créez votre première photothèque pour composer des documents.'),
 
     -- Section titles
     ('fr', 'document.title_documents', 'Documents'),
     ('fr', 'document.title_chartes', 'Chartes graphiques'),
+    ('fr', 'document.title_libraries', 'Photothèques'),
 
     -- Errors
     ('fr', 'document.err_not_found', 'Document introuvable.'),
