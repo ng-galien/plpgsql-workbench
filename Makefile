@@ -148,7 +148,19 @@ sync-modules: ## Run pgm install in every app
 		fi; \
 	done
 
-# --- Agents (one tmux session per module, running claude with channel) ---
+# --- Docker agents (containerized Claude Code with channel) ---
+
+agent-docker: ## Start one containerized agent (M=name). Ex: make agent-docker M=docs
+	@test -n "$(M)" || (echo "Usage: make agent-docker M=docs" && exit 1)
+	cd docker/agent && docker compose up agent-$(M)
+
+agents-docker: ## Start all containerized agents
+	cd docker/agent && docker compose up -d
+
+agents-docker-down: ## Stop all containerized agents
+	cd docker/agent && docker compose down
+
+# --- Agents tmux (legacy, prefer docker agents) ---
 
 STRIP_VARS := CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_SESSION_ID \
 	CLAUDE_CODE_CONVERSATION_ID CLAUDE_CODE_TASK_ID \

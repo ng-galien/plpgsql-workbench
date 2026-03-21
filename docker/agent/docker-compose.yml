@@ -1,0 +1,34 @@
+services:
+  agent-docs:
+    build: .
+    network_mode: host
+    volumes:
+      - ./.credentials.json:/root/.claude/.credentials.json:ro
+      - ../../src/channel:/workspace/channel:ro
+      - ../../modules/docs/.mcp.json:/workspace/.mcp.json:ro
+      - ../../modules/docs/CLAUDE.md:/workspace/CLAUDE.md:ro
+      - ../../modules/docs/.claude:/workspace/.claude:ro
+    environment:
+      MODULE: docs
+      PLPGSQL_CONNECTION: postgresql://postgres:postgres@127.0.0.1:5433/postgres
+      CHANNEL_PORT: 8790
+    command: >
+      claude --dangerously-skip-permissions
+             --dangerously-load-development-channels server:workbench-channel
+
+  agent-pgv:
+    build: .
+    network_mode: host
+    volumes:
+      - ./.credentials.json:/root/.claude/.credentials.json:ro
+      - ../../src/channel:/workspace/channel:ro
+      - ../../modules/pgv/.mcp.json:/workspace/.mcp.json:ro
+      - ../../modules/pgv/CLAUDE.md:/workspace/CLAUDE.md:ro
+      - ../../modules/pgv/.claude:/workspace/.claude:ro
+    environment:
+      MODULE: pgv
+      PLPGSQL_CONNECTION: postgresql://postgres:postgres@127.0.0.1:5433/postgres
+      CHANNEL_PORT: 8791
+    command: >
+      claude --dangerously-skip-permissions
+             --dangerously-load-development-channels server:workbench-channel

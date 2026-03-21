@@ -13,3 +13,5 @@ cloudflare/pages/pgview.js
 cloudflare/pages/pgview.css
 cloudflare/pages/illustrator/app.js
 cloudflare/pages/illustrator/app.css
+docker/agent/claude-home/
+docker/agent/.credentials.json
