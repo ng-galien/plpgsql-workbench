@@ -47,6 +47,7 @@ BEGIN
 
   -- Actions
   v_body := v_body || '<p>'
+    || '<a href="' || pgv.call_ref('get_print', jsonb_build_object('p_id', p_id)) || '" target="_blank"><button class="outline">Imprimer</button></a> '
     || pgv.action('post_doc_duplicate', pgv.t('document.btn_duplicate'), jsonb_build_object('p_source_id', p_id), 'Dupliquer ce document ?', 'outline')
     || ' '
     || pgv.action('post_doc_delete', pgv.t('document.btn_delete'), jsonb_build_object('p_id', p_id), 'Supprimer ce document et toutes ses pages ?', 'danger')

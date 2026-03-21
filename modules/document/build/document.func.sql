@@ -395,6 +395,40 @@ END;
 $function$;
 COMMENT ON FUNCTION document.doc_list() IS 'List all documents for current tenant with page count and charte name';
 
+CREATE OR REPLACE FUNCTION document.doc_print_css(p_doc_id text)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_d document.document;
+  v_w numeric;
+  v_h numeric;
+BEGIN
+  SELECT * INTO v_d FROM document.document WHERE id = p_doc_id;
+  IF v_d IS NULL THEN RETURN NULL; END IF;
+
+  -- For landscape print formats, swap for @page size
+  IF v_d.orientation = 'landscape' AND v_d.format LIKE 'A_' THEN
+    v_w := v_d.height;
+    v_h := v_d.width;
+  ELSE
+    v_w := v_d.width;
+    v_h := v_d.height;
+  END IF;
+
+  RETURN '@media print {' || chr(10)
+    || '  @page { size: ' || v_w::text || 'mm ' || v_h::text || 'mm; margin: 0; }' || chr(10)
+    || '  nav, .pgv-nav, .pgv-toolbar, .pgv-sidebar, .pgv-toast, .pgv-breadcrumb, footer, button, [data-rpc] { display: none !important; }' || chr(10)
+    || '  main { padding: 0 !important; margin: 0 !important; }' || chr(10)
+    || '  .doc-print-page { width: ' || v_d.width::text || 'mm; height: ' || v_d.height::text || 'mm; break-after: page; overflow: hidden; }' || chr(10)
+    || '  .doc-print-page:last-child { break-after: auto; }' || chr(10)
+    || '}' || chr(10)
+    || '.doc-print-page { width: ' || v_d.width::text || 'mm; height: ' || v_d.height::text || 'mm; margin: 0 auto 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; position: relative; }';
+END;
+$function$;
+COMMENT ON FUNCTION document.doc_print_css(text) IS 'Generate @media print CSS for a document (page size, break-after, hide chrome)';
+
 CREATE OR REPLACE FUNCTION document.get_charte(p_id text)
  RETURNS text
  LANGUAGE plpgsql
@@ -581,6 +615,7 @@ BEGIN
 
   -- Actions
   v_body := v_body || '<p>'
+    || '<a href="' || pgv.call_ref('get_print', jsonb_build_object('p_id', p_id)) || '" target="_blank"><button class="outline">Imprimer</button></a> '
     || pgv.action('post_doc_duplicate', pgv.t('document.btn_duplicate'), jsonb_build_object('p_source_id', p_id), 'Dupliquer ce document ?', 'outline')
     || ' '
     || pgv.action('post_doc_delete', pgv.t('document.btn_delete'), jsonb_build_object('p_id', p_id), 'Supprimer ce document et toutes ses pages ?', 'danger')
@@ -589,7 +624,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION document.get_document(text) IS 'pgView page: document detail with pages, charte, actions';
+COMMENT ON FUNCTION document.get_document(text) IS 'pgView page: document detail with pages, charte, print/duplicate/delete actions';
 
 CREATE OR REPLACE FUNCTION document.get_index()
  RETURNS text
@@ -752,6 +787,47 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION document.get_library(text) IS 'pgView page: library detail with asset list';
+
+CREATE OR REPLACE FUNCTION document.get_print(p_id text)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_d document.document;
+  v_charte_css text := '';
+  v_print_css text;
+  v_body text;
+  r record;
+BEGIN
+  SELECT * INTO v_d FROM document.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
+  IF v_d IS NULL THEN RETURN pgv.empty(pgv.t('document.err_not_found')); END IF;
+
+  IF v_d.charte_id IS NOT NULL THEN
+    v_charte_css := document.charte_tokens_to_css(v_d.charte_id);
+  END IF;
+
+  v_print_css := document.doc_print_css(p_id);
+
+  v_body := '<style>' || v_charte_css || chr(10) || v_print_css || '</style>';
+
+  FOR r IN
+    SELECT page_index, html, bg,
+           COALESCE(width, v_d.width) AS w,
+           COALESCE(height, v_d.height) AS h
+    FROM document.page WHERE doc_id = p_id ORDER BY page_index
+  LOOP
+    v_body := v_body || '<div class="doc-print-page" style="width:' || r.w::text || 'mm;height:' || r.h::text || 'mm;'
+      || 'background:' || COALESCE(r.bg, v_d.bg) || '">'
+      || r.html
+      || '</div>';
+  END LOOP;
+
+  v_body := v_body || '<script>window.print()</script>';
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION document.get_print(text) IS 'Print-ready page: charte CSS + print CSS + all pages stacked + auto-print';
 
 CREATE OR REPLACE FUNCTION document.i18n_seed()
  RETURNS void
