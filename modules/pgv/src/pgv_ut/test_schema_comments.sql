@@ -5,12 +5,12 @@ AS $function$
 DECLARE
   v_result text;
 BEGIN
-  v_result := pgv.schema_comments('document');
+  v_result := pgv.schema_comments('workbench');
 
   RETURN NEXT ok(v_result IS NOT NULL, 'returns text');
-  RETURN NEXT ok(v_result LIKE 'SCHEMA document%', 'starts with SCHEMA header');
-  RETURN NEXT ok(v_result LIKE '%## document%', 'contains document table section');
-  RETURN NEXT ok(v_result LIKE '%## page%', 'contains page table section');
-  RETURN NEXT ok(v_result LIKE '%format:%', 'contains column format');
+  RETURN NEXT ok(v_result LIKE 'SCHEMA workbench%', 'starts with SCHEMA header');
+  RETURN NEXT ok(v_result LIKE '%## agent_message%', 'contains agent_message table section');
+  RETURN NEXT ok(v_result LIKE '%## tenant%', 'contains tenant table section');
+  RETURN NEXT ok(v_result LIKE '%msg_type:%', 'contains column msg_type');
 END;
 $function$;

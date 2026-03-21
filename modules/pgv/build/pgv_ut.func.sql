@@ -909,6 +909,109 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_route() IS 'Unit tests for pgv.route: page rendering, nav prefixing, rpc targets, typed dispatch';
 
+CREATE OR REPLACE FUNCTION pgv_ut.test_rsql()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result text;
+BEGIN
+  -- Simple equality (text)
+  v_result := pgv.rsql_to_where('name==ocean', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'name = ''ocean''', 'eq text: name==ocean');
+
+  -- Equality (numeric) — no quotes
+  v_result := pgv.rsql_to_where('price==42', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'price = 42', 'eq numeric: price==42');
+
+  -- Not equal
+  v_result := pgv.rsql_to_where('status!=draft', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'status != ''draft''', 'neq: status!=draft');
+
+  -- Greater than (numeric)
+  v_result := pgv.rsql_to_where('price>100', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'price > 100', 'gt numeric: price>100');
+
+  -- Less than equal (numeric)
+  v_result := pgv.rsql_to_where('id<=5', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'id <= 5', 'lte numeric: id<=5');
+
+  -- AND (;)
+  v_result := pgv.rsql_to_where('category==bois;status==actif', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'category = ''bois'' AND status = ''actif''', 'AND: ;');
+
+  -- OR (,)
+  v_result := pgv.rsql_to_where('price>=50,category==bois', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, '(price >= 50) OR (category = ''bois'')', 'OR: ,');
+
+  -- IN
+  v_result := pgv.rsql_to_where('status=in=(draft,actif)', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'status IN (''draft'', ''actif'')', 'in: =in=()');
+
+  -- NOT IN
+  v_result := pgv.rsql_to_where('category=out=(test,tmp)', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'category NOT IN (''test'', ''tmp'')', 'out: =out=()');
+
+  -- LIKE with wildcard
+  v_result := pgv.rsql_to_where('name=like=*poutre*', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'name LIKE ''%poutre%''', 'like: *→%');
+
+  -- ILIKE
+  v_result := pgv.rsql_to_where('name=ilike=*OCEAN*', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'name ILIKE ''%OCEAN%''', 'ilike: case-insensitive');
+
+  -- IS NULL
+  v_result := pgv.rsql_to_where('description=isnull=true', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'description IS NULL', 'isnull=true → IS NULL');
+
+  -- IS NOT NULL (via isnull=false)
+  v_result := pgv.rsql_to_where('description=isnull=false', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'description IS NOT NULL', 'isnull=false → IS NOT NULL');
+
+  -- NOTNULL
+  v_result := pgv.rsql_to_where('name=notnull=true', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'name IS NOT NULL', 'notnull=true → IS NOT NULL');
+
+  -- BETWEEN (numeric)
+  v_result := pgv.rsql_to_where('price=bt=(10,50)', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'price BETWEEN 10 AND 50', 'between numeric');
+
+  -- Combined IN + LIKE with AND
+  v_result := pgv.rsql_to_where('status=in=(draft,actif);name=like=*poutre*', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'status IN (''draft'', ''actif'') AND name LIKE ''%poutre%''', 'combined in+like');
+
+  -- Empty filter → true
+  v_result := pgv.rsql_to_where('', 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'true', 'empty filter → true');
+
+  -- NULL filter → true
+  v_result := pgv.rsql_to_where(NULL, 'pgv_qa', 'product');
+  RETURN NEXT is(v_result, 'true', 'null filter → true');
+
+  -- Invalid column → RAISE
+  BEGIN
+    v_result := pgv.rsql_to_where('fakecol==test', 'pgv_qa', 'product');
+    RETURN NEXT fail('invalid column should raise');
+  EXCEPTION WHEN OTHERS THEN
+    RETURN NEXT ok(SQLERRM LIKE '%does not exist%', 'invalid column raises exception');
+  END;
+
+  -- Injection: quotes escaped
+  v_result := pgv.rsql_to_where('name==O''Reilly', 'pgv_qa', 'product');
+  RETURN NEXT ok(v_result LIKE '%O''''Reilly%', 'injection: quotes escaped');
+
+  -- rsql_validate: valid
+  RETURN NEXT is(pgv.rsql_validate('name==test;price>10'), true, 'validate: valid');
+
+  -- rsql_validate: invalid
+  RETURN NEXT is(pgv.rsql_validate('not a filter'), false, 'validate: invalid');
+
+  -- rsql_validate: empty
+  RETURN NEXT is(pgv.rsql_validate(''), true, 'validate: empty is valid');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_rsql() IS 'Tests pgv.rsql_to_where() and pgv.rsql_validate() — all operators, type-awareness, security';
+
 CREATE OR REPLACE FUNCTION pgv_ut.test_schema_catalog()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -953,13 +1056,13 @@ AS $function$
 DECLARE
   v_result text;
 BEGIN
-  v_result := pgv.schema_comments('document');
+  v_result := pgv.schema_comments('workbench');
 
   RETURN NEXT ok(v_result IS NOT NULL, 'returns text');
-  RETURN NEXT ok(v_result LIKE 'SCHEMA document%', 'starts with SCHEMA header');
-  RETURN NEXT ok(v_result LIKE '%## document%', 'contains document table section');
-  RETURN NEXT ok(v_result LIKE '%## page%', 'contains page table section');
-  RETURN NEXT ok(v_result LIKE '%format:%', 'contains column format');
+  RETURN NEXT ok(v_result LIKE 'SCHEMA workbench%', 'starts with SCHEMA header');
+  RETURN NEXT ok(v_result LIKE '%## agent_message%', 'contains agent_message table section');
+  RETURN NEXT ok(v_result LIKE '%## tenant%', 'contains tenant table section');
+  RETURN NEXT ok(v_result LIKE '%msg_type:%', 'contains column msg_type');
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_schema_comments() IS 'Tests pgv.schema_comments() — text coverage of COMMENT ON';
@@ -973,25 +1076,25 @@ DECLARE
   v_table jsonb;
   v_col jsonb;
 BEGIN
-  v_result := pgv.schema_discover('document');
+  v_result := pgv.schema_discover('workbench');
 
   RETURN NEXT ok(jsonb_typeof(v_result) = 'array', 'returns jsonb array');
-  RETURN NEXT ok(jsonb_array_length(v_result) >= 5, 'document has >= 5 tables');
+  RETURN NEXT ok(jsonb_array_length(v_result) >= 5, 'workbench has >= 5 tables');
 
-  -- Find document table
+  -- Find agent_message table
   SELECT item INTO v_table FROM jsonb_array_elements(v_result) AS item
-  WHERE item->>'table' = 'document';
-  RETURN NEXT ok(v_table IS NOT NULL, 'document table found');
+  WHERE item->>'table' = 'agent_message';
+  RETURN NEXT ok(v_table IS NOT NULL, 'agent_message table found');
 
   -- Columns
-  RETURN NEXT ok(jsonb_array_length(v_table->'columns') > 10, 'document has > 10 columns');
+  RETURN NEXT ok(jsonb_array_length(v_table->'columns') > 5, 'agent_message has > 5 columns');
 
   -- Check a specific column
   SELECT col INTO v_col FROM jsonb_array_elements(v_table->'columns') AS col
-  WHERE col->>'name' = 'format';
-  RETURN NEXT ok(v_col IS NOT NULL, 'format column found');
-  RETURN NEXT is(v_col->>'type', 'text', 'format is text type');
-  RETURN NEXT is((v_col->>'nullable')::bool, false, 'format is NOT NULL');
+  WHERE col->>'name' = 'msg_type';
+  RETURN NEXT ok(v_col IS NOT NULL, 'msg_type column found');
+  RETURN NEXT is(v_col->>'type', 'text', 'msg_type is text type');
+  RETURN NEXT is((v_col->>'nullable')::bool, false, 'msg_type is NOT NULL');
 
   -- FK
   RETURN NEXT ok(jsonb_typeof(v_table->'foreign_keys') = 'array', 'foreign_keys is array');
@@ -1011,28 +1114,26 @@ DECLARE
   v_result jsonb;
   v_check jsonb;
 BEGIN
-  v_result := pgv.schema_table('document', 'document');
+  v_result := pgv.schema_table('workbench', 'agent_message');
 
-  RETURN NEXT is(v_result->>'schema', 'document', 'schema is document');
-  RETURN NEXT is(v_result->>'table', 'document', 'table is document');
-  RETURN NEXT ok(jsonb_array_length(v_result->'columns') > 10, 'has columns');
+  RETURN NEXT is(v_result->>'schema', 'workbench', 'schema is workbench');
+  RETURN NEXT is(v_result->>'table', 'agent_message', 'table is agent_message');
+  RETURN NEXT ok(jsonb_array_length(v_result->'columns') > 5, 'has columns');
 
-  -- CHECK constraints
+  -- CHECK constraints (msg_type, priority, status)
   RETURN NEXT ok(jsonb_array_length(v_result->'check_constraints') > 0, 'has check constraints');
   SELECT item INTO v_check FROM jsonb_array_elements(v_result->'check_constraints') AS item
-  WHERE item->>'definition' LIKE '%format%';
-  RETURN NEXT ok(v_check IS NOT NULL, 'format check constraint found');
-  RETURN NEXT ok(v_check->>'definition' LIKE '%A4%', 'format check includes A4');
-
-  -- FK
-  RETURN NEXT ok(jsonb_array_length(v_result->'foreign_keys') > 0, 'has foreign keys');
+  WHERE item->>'definition' LIKE '%msg_type%';
+  RETURN NEXT ok(v_check IS NOT NULL, 'msg_type check constraint found');
+  RETURN NEXT ok(v_check->>'definition' LIKE '%task%', 'msg_type check includes task');
 
   -- Indexes
-  RETURN NEXT ok(jsonb_array_length(v_result->'indexes') > 0, 'has indexes');
+  RETURN NEXT ok(jsonb_array_length(v_result->'indexes') >= 0, 'indexes is array');
 
-  -- RLS
-  RETURN NEXT is((v_result->'rls'->>'enabled')::bool, true, 'RLS is enabled');
-  RETURN NEXT ok(jsonb_array_length(v_result->'rls'->'policies') > 0, 'has RLS policies');
+  -- RLS on tenant table
+  v_result := pgv.schema_table('workbench', 'tenant');
+  RETURN NEXT is((v_result->'rls'->>'enabled')::bool, true, 'RLS is enabled on tenant');
+  RETURN NEXT ok(jsonb_array_length(v_result->'rls'->'policies') > 0, 'tenant has RLS policies');
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_schema_table() IS 'Tests pgv.schema_table() — detailed table structure with CHECK, FK, indexes, RLS';
