@@ -54,7 +54,7 @@ interface ShellComponent {
   // Methods
   go(path: string, push?: boolean): void;
   post(endpoint: string, data: Record<string, unknown>): void;
-  showToast(msg: string, level?: string, detail?: string, href?: string): void;
+  showToast(msg: string, level?: string, detail?: string, href?: string, sticky?: boolean): void;
   searchOpen(): void;
   searchClose(): void;
   searchExec(): void;
@@ -168,13 +168,13 @@ export function createShellComponent(): Record<string, unknown> {
 
       // AI activity channel — broadcast from MCP to browser
       const aiChannel = supabase().channel("ai-activity");
-      aiChannel.on("broadcast", { event: "activity" }, (msg: { payload: { msg?: string; detail?: string; href?: string; action?: string } }) => {
+      aiChannel.on("broadcast", { event: "activity" }, (msg: { payload: { msg?: string; detail?: string; href?: string; action?: string; level?: string } }) => {
         const p = msg.payload || {};
         console.log("[pgv] AI broadcast:", p);
         if (p.action === "navigate" && p.href) {
           self.go(p.href);
         } else {
-          self.showToast(p.msg || "AI", "info", p.detail || "", p.href || "");
+          self.showToast(p.msg || "AI", p.level || "info", p.detail || "", p.href || "", !!p.href);
         }
       });
       aiChannel.subscribe();
@@ -368,16 +368,18 @@ export function createShellComponent(): Record<string, unknown> {
 
     /* -- Toast -- */
 
-    showToast: function (this: ShellComponent, msg: string, level?: string, detail?: string, href?: string) {
+    showToast: function (this: ShellComponent, msg: string, level?: string, detail?: string, href?: string, sticky?: boolean) {
       clearTimeout(this._tt);
       this.toast = { show: true, msg: msg, level: level || "success", detail: detail || "", href: href || "" };
 
-      this._tt = setTimeout(
-        () => {
-          this.toast.show = false;
-        },
-        level === "error" ? 8000 : 3000,
-      );
+      if (!sticky) {
+        this._tt = setTimeout(
+          () => {
+            this.toast.show = false;
+          },
+          level === "error" ? 8000 : href ? 6000 : 3000,
+        );
+      }
     },
 
     /* -- Realtime watch: subscribe to INSERTs on current schema -- */

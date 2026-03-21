@@ -1,221 +1,217 @@
--- document — DDL
+-- document — DDL (v2: XHTML composition engine)
 
 CREATE SCHEMA IF NOT EXISTS document;
 CREATE SCHEMA IF NOT EXISTS document_ut;
 CREATE SCHEMA IF NOT EXISTS document_qa;
 
--- Infos émetteur (entreprise) — pré-requis bloquant pour factures/devis
+-- ────────────────────────────────────────────────────────
+-- Charte (design tokens, voice, rules)
+-- ────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS document.charte (
+  id                text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  tenant_id         text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  name              text NOT NULL,
+  description       text,
+
+  -- Color socle (obligatoire — le design system minimum)
+  color_bg          text NOT NULL,
+  color_main        text NOT NULL,
+  color_accent      text NOT NULL,
+  color_text        text NOT NULL,
+  color_text_light  text NOT NULL,
+  color_border      text NOT NULL,
+  color_extra       jsonb NOT NULL DEFAULT '{}',
+
+  -- Font (obligatoire)
+  font_heading      text NOT NULL,
+  font_body         text NOT NULL,
+
+  -- Spacing
+  spacing_page      text,
+  spacing_section   text,
+  spacing_gap       text,
+  spacing_card      text,
+
+  -- Shadow
+  shadow_card       text,
+  shadow_elevated   text,
+
+  -- Radius
+  radius_card       text,
+
+  -- Voice
+  voice_personality text[],
+  voice_formality   text,
+  voice_do          text[],
+  voice_dont        text[],
+  voice_vocabulary  text[],
+  voice_examples    jsonb,
+
+  -- Rules (libre)
+  rules             jsonb NOT NULL DEFAULT '{}',
+
+  created_at        timestamptz DEFAULT now(),
+  updated_at        timestamptz DEFAULT now(),
+
+  UNIQUE (tenant_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_charte_tenant ON document.charte (tenant_id);
+
+CREATE TABLE IF NOT EXISTS document.charte_revision (
+  charte_id   text NOT NULL REFERENCES document.charte(id) ON DELETE CASCADE,
+  version     integer NOT NULL,
+  tokens      jsonb NOT NULL,
+  created_at  timestamptz DEFAULT now(),
+  PRIMARY KEY (charte_id, version)
+);
+
+-- ────────────────────────────────────────────────────────
+-- Émetteur (entreprise — pré-requis pour factures/devis)
+-- ────────────────────────────────────────────────────────
+
 CREATE TABLE IF NOT EXISTS document.company (
-  id          SERIAL PRIMARY KEY,
-  tenant_id   TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  name        TEXT NOT NULL,
-  siret       TEXT,
-  tva_intra   TEXT,
-  address     TEXT,
-  city        TEXT,
-  postal_code TEXT,
-  phone       TEXT,
-  email       TEXT,
-  website     TEXT,
-  logo_asset_id UUID,
-  mentions    TEXT,
-  created_at  TIMESTAMPTZ DEFAULT now(),
+  id            serial PRIMARY KEY,
+  tenant_id     text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  name          text NOT NULL,
+  siret         text,
+  tva_intra     text,
+  address       text,
+  city          text,
+  postal_code   text,
+  phone         text,
+  email         text,
+  website       text,
+  logo_asset_id uuid,
+  mentions      text,
+  created_at    timestamptz DEFAULT now(),
   UNIQUE (tenant_id)
 );
 
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'company_tenant_id_key' AND conrelid = 'document.company'::regclass) THEN
-    ALTER TABLE document.company ADD UNIQUE (tenant_id);
-  END IF;
-END $$;
+-- ────────────────────────────────────────────────────────
+-- Document (composition XHTML)
+-- ────────────────────────────────────────────────────────
 
--- Templates de documents (designés via illustrator)
-CREATE TABLE IF NOT EXISTS document.template (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id   TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  name        TEXT NOT NULL,
-  doc_type    TEXT NOT NULL,
-  format      TEXT NOT NULL DEFAULT 'A4',
-  orientation TEXT NOT NULL DEFAULT 'portrait',
-  canvas      JSONB NOT NULL DEFAULT '{}',
-  layout      JSONB NOT NULL DEFAULT '[]',
-  is_default  BOOLEAN DEFAULT false,
-  version     INTEGER DEFAULT 1,
-  created_at  TIMESTAMPTZ DEFAULT now(),
-  updated_at  TIMESTAMPTZ DEFAULT now()
-);
-
--- Documents générés (instance template + données)
 CREATE TABLE IF NOT EXISTS document.document (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id   TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  template_id UUID REFERENCES document.template(id),
-  doc_type    TEXT NOT NULL,
-  ref_module  TEXT,
-  ref_id      TEXT,
-  title       TEXT NOT NULL,
-  data        JSONB DEFAULT '{}',
-  status      TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'generated', 'signed', 'archived')),
-  pdf_path    TEXT,
-  svg_content TEXT,
-  generated_at TIMESTAMPTZ,
-  created_at  TIMESTAMPTZ DEFAULT now()
+  id              text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  tenant_id       text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  name            text NOT NULL,
+  category        text NOT NULL DEFAULT 'general',
+  charte_id       text REFERENCES document.charte(id) ON DELETE SET NULL,
+
+  -- Canvas
+  format          text NOT NULL DEFAULT 'A4'
+                  CHECK (format IN ('A2','A3','A4','A5','HD','MACBOOK','IPAD','MOBILE','CUSTOM')),
+  orientation     text NOT NULL DEFAULT 'portrait'
+                  CHECK (orientation IN ('portrait','landscape')),
+  width           numeric NOT NULL DEFAULT 210,
+  height          numeric NOT NULL DEFAULT 297,
+  bg              text NOT NULL DEFAULT '#ffffff',
+  text_margin     numeric NOT NULL DEFAULT 10,
+
+  -- Meta
+  design_notes    text,
+  team_notes      text,
+  rating          smallint DEFAULT 0 CHECK (rating BETWEEN 0 AND 5),
+
+  -- Email
+  email_to        text,
+  email_cc        text,
+  email_bcc       text,
+  email_subject   text,
+
+  -- Référence externe (ex: devis, facture)
+  ref_module      text,
+  ref_id          text,
+  status          text DEFAULT 'draft'
+                  CHECK (status IN ('draft','generated','signed','archived')),
+
+  -- Pagination
+  active_page     integer NOT NULL DEFAULT 0,
+
+  created_at      timestamptz DEFAULT now(),
+  updated_at      timestamptz DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_doc_tenant ON document.document(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_doc_type ON document.document(tenant_id, doc_type);
-CREATE INDEX IF NOT EXISTS idx_doc_ref ON document.document(ref_module, ref_id);
-CREATE INDEX IF NOT EXISTS idx_tpl_tenant ON document.template(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_tpl_type ON document.template(tenant_id, doc_type);
+CREATE INDEX IF NOT EXISTS idx_doc_tenant ON document.document (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_doc_category ON document.document (tenant_id, category);
+CREATE INDEX IF NOT EXISTS idx_doc_charte ON document.document (charte_id) WHERE charte_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_doc_ref ON document.document (ref_module, ref_id) WHERE ref_module IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_doc_status ON document.document (tenant_id, status);
 
--- Canvas (moteur graphique illustrator)
-CREATE TABLE IF NOT EXISTS document.canvas (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id     TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  template_id   UUID REFERENCES document.template(id) ON DELETE SET NULL,
-  name          TEXT NOT NULL,
-  format        TEXT NOT NULL DEFAULT 'A4'
-                CHECK (format IN ('A2','A3','A4','A5','HD','MACBOOK','IPAD','MOBILE','CUSTOM')),
-  orientation   TEXT NOT NULL DEFAULT 'portrait'
-                CHECK (orientation IN ('portrait','paysage')),
-  width         REAL NOT NULL CHECK (width > 0),
-  height        REAL NOT NULL CHECK (height > 0),
-  background    TEXT NOT NULL DEFAULT '#ffffff',
-  category      TEXT NOT NULL DEFAULT 'general',
-  meta          JSONB NOT NULL DEFAULT '{}',
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+-- ────────────────────────────────────────────────────────
+-- Page (XHTML content per page)
+-- ────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS document.page (
+  doc_id        text NOT NULL REFERENCES document.document(id) ON DELETE CASCADE,
+  page_index    integer NOT NULL,
+  name          text NOT NULL DEFAULT 'Page 1',
+  html          text NOT NULL DEFAULT '',
+
+  -- Per-page canvas override (NULL = inherit from document)
+  format        text,
+  orientation   text,
+  width         numeric,
+  height        numeric,
+  bg            text,
+  text_margin   numeric,
+
+  PRIMARY KEY (doc_id, page_index)
 );
 
-CREATE INDEX IF NOT EXISTS idx_canvas_tenant ON document.canvas (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_canvas_template ON document.canvas (template_id) WHERE template_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_canvas_category ON document.canvas (category);
-
--- Gradient definitions (per canvas)
-CREATE TABLE IF NOT EXISTS document.gradient (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id   TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  canvas_id   UUID NOT NULL REFERENCES document.canvas(id) ON DELETE CASCADE,
-  type        TEXT NOT NULL CHECK (type IN ('linear','radial')),
-  angle       REAL,
-  cx          REAL,
-  cy          REAL,
-  gr          REAL,
-  stops       JSONB NOT NULL DEFAULT '[]',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE IF NOT EXISTS document.page_revision (
+  doc_id        text NOT NULL,
+  page_index    integer NOT NULL,
+  version       integer NOT NULL,
+  html          text NOT NULL,
+  created_at    timestamptz DEFAULT now(),
+  PRIMARY KEY (doc_id, page_index, version)
 );
 
-CREATE INDEX IF NOT EXISTS idx_gradient_canvas ON document.gradient (canvas_id);
+-- ────────────────────────────────────────────────────────
+-- Session (ephemeral workspace state — UNLOGGED, zero WAL)
+-- One row per user: tracks the entire workspace (multi-doc canvas)
+-- ────────────────────────────────────────────────────────
 
--- Elements (graphical primitives on canvas)
-CREATE TABLE IF NOT EXISTS document.element (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  canvas_id    UUID NOT NULL REFERENCES document.canvas(id) ON DELETE CASCADE,
-  tenant_id    TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  type         TEXT NOT NULL
-               CHECK (type IN ('text','rect','line','circle','ellipse','image','path','group')),
-  parent_id    UUID REFERENCES document.element(id) ON DELETE CASCADE,
-  sort_order   INTEGER NOT NULL DEFAULT 0,
-  name         TEXT,
-
-  -- Geometry (typed columns, queryable)
-  x            REAL,
-  y            REAL,
-  width        REAL,
-  height       REAL,
-  x1           REAL,
-  y1           REAL,
-  x2           REAL,
-  y2           REAL,
-  cx           REAL,
-  cy           REAL,
-  r            REAL,
-  rx_          REAL,
-  ry_          REAL,
-
-  -- Visual common (typed columns)
-  opacity      REAL NOT NULL DEFAULT 1 CHECK (opacity >= 0 AND opacity <= 1),
-  rotation     REAL NOT NULL DEFAULT 0,
-  fill         TEXT,
-  stroke       TEXT,
-  stroke_width REAL,
-  stroke_dasharray TEXT,
-
-  -- Type-specific props (JSONB)
-  props        JSONB NOT NULL DEFAULT '{}',
-
-  -- Asset reference (images)
-  asset_id     UUID,
-
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-  -- Constraints
-  CONSTRAINT element_no_self_parent CHECK (parent_id IS NULL OR parent_id != id),
-  CONSTRAINT element_positive_width CHECK (width IS NULL OR width > 0),
-  CONSTRAINT element_positive_height CHECK (height IS NULL OR height > 0),
-  CONSTRAINT element_positive_r CHECK (r IS NULL OR r > 0),
-  CONSTRAINT element_positive_rx CHECK (rx_ IS NULL OR rx_ > 0),
-  CONSTRAINT element_positive_ry CHECK (ry_ IS NULL OR ry_ > 0),
-
-  -- Required geometry per type
-  CONSTRAINT element_geom_text CHECK (type != 'text' OR (x IS NOT NULL AND y IS NOT NULL)),
-  CONSTRAINT element_geom_rect CHECK (type != 'rect' OR (x IS NOT NULL AND y IS NOT NULL AND width IS NOT NULL AND height IS NOT NULL)),
-  CONSTRAINT element_geom_image CHECK (type != 'image' OR (x IS NOT NULL AND y IS NOT NULL AND width IS NOT NULL AND height IS NOT NULL)),
-  CONSTRAINT element_geom_line CHECK (type != 'line' OR (x1 IS NOT NULL AND y1 IS NOT NULL AND x2 IS NOT NULL AND y2 IS NOT NULL)),
-  CONSTRAINT element_geom_circle CHECK (type != 'circle' OR (cx IS NOT NULL AND cy IS NOT NULL AND r IS NOT NULL)),
-  CONSTRAINT element_geom_ellipse CHECK (type != 'ellipse' OR (cx IS NOT NULL AND cy IS NOT NULL AND rx_ IS NOT NULL AND ry_ IS NOT NULL)),
-  CONSTRAINT element_geom_path CHECK (type != 'path' OR (props ? 'd'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_elem_canvas_order ON document.element (canvas_id, sort_order);
-CREATE INDEX IF NOT EXISTS idx_elem_canvas_type ON document.element (canvas_id, type);
-CREATE INDEX IF NOT EXISTS idx_elem_parent ON document.element (parent_id) WHERE parent_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_elem_tenant ON document.element (tenant_id);
-CREATE INDEX IF NOT EXISTS idx_elem_asset ON document.element (asset_id) WHERE asset_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_elem_canvas_name ON document.element (canvas_id, name) WHERE name IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_elem_props ON document.element USING GIN (props);
-
--- Brand guide (charte graphique)
-CREATE TABLE IF NOT EXISTS document.brand_guide (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tenant_id        TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  name             TEXT NOT NULL,
-  primary_color    TEXT NOT NULL DEFAULT '#000000',
-  secondary_color  TEXT DEFAULT '#ffffff',
-  accent_color     TEXT,
-  background_color TEXT DEFAULT '#ffffff',
-  text_color       TEXT DEFAULT '#1C1C1C',
-  font_title       TEXT DEFAULT 'Libre Baskerville',
-  font_title_weight TEXT DEFAULT 'bold',
-  font_title_size  REAL DEFAULT 14,
-  font_body        TEXT DEFAULT 'Source Sans 3',
-  font_body_weight TEXT DEFAULT 'normal',
-  font_body_size   REAL DEFAULT 5,
-  logo_asset_id    UUID,
-  props            JSONB NOT NULL DEFAULT '{}',
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_brand_guide_tenant ON document.brand_guide (tenant_id);
-
--- Add brand_guide_id to canvas (idempotent)
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'document' AND table_name = 'canvas' AND column_name = 'brand_guide_id') THEN
-    ALTER TABLE document.canvas ADD COLUMN brand_guide_id UUID REFERENCES document.brand_guide(id) ON DELETE SET NULL;
-  END IF;
-END $$;
-
--- Session (ephemeral state, UNLOGGED for performance)
 DROP TABLE IF EXISTS document.session;
 CREATE UNLOGGED TABLE document.session (
-  canvas_id    UUID REFERENCES document.canvas(id) ON DELETE CASCADE,
-  user_id      TEXT NOT NULL DEFAULT current_setting('app.user_id', true),
-  tenant_id    TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  selected_ids JSONB DEFAULT '[]',
-  phase        TEXT DEFAULT 'idle' CHECK (phase IN ('idle', 'selected', 'dragging', 'editing_prop')),
-  zoom         REAL DEFAULT 1,
-  toast        JSONB DEFAULT NULL,
-  updated_at   TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (canvas_id, user_id)
+  user_id             text NOT NULL DEFAULT current_setting('app.user_id', true),
+  tenant_id           text NOT NULL DEFAULT current_setting('app.tenant_id', true),
+
+  -- Workspace (what's open on the infinite canvas)
+  workspace_docs      text[] NOT NULL DEFAULT '{}',
+  focused_doc         text,
+
+  -- Pending messages queued for Claude
+  pending             jsonb NOT NULL DEFAULT '[]',
+
+  -- View state
+  zoom                real NOT NULL DEFAULT 100,
+  pan_x               real NOT NULL DEFAULT 0,
+  pan_y               real NOT NULL DEFAULT 0,
+
+  -- Preferences
+  bar_position        text NOT NULL DEFAULT 'bottom' CHECK (bar_position IN ('top', 'bottom')),
+  dark_mode           boolean NOT NULL DEFAULT false,
+
+  updated_at          timestamptz DEFAULT now(),
+  PRIMARY KEY (tenant_id, user_id)
 );
 
+-- ────────────────────────────────────────────────────────
+-- RLS
+-- ────────────────────────────────────────────────────────
+
+ALTER TABLE document.charte ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON document.charte
+  FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
+
+ALTER TABLE document.document ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON document.document
+  FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
+
+ALTER TABLE document.company ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON document.company
+  FOR ALL USING (tenant_id = current_setting('app.tenant_id', true));
