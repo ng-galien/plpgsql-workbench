@@ -79,6 +79,7 @@ AS $function$
 BEGIN
   p_data.id := gen_random_uuid()::text;
   p_data.tenant_id := current_setting('app.tenant_id', true);
+  p_data.slug := pgv.slugify(p_data.name);
   p_data.color_extra := COALESCE(p_data.color_extra, '{}'::jsonb);
   p_data.rules := COALESCE(p_data.rules, '{}'::jsonb);
   p_data.created_at := now();
@@ -87,7 +88,7 @@ BEGIN
   RETURN p_data;
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_create(docs.charte) IS 'Create charte from composite type — override id, tenant_id, timestamps, default NOT NULL jsonb fields';
+COMMENT ON FUNCTION docs.charte_create(docs.charte) IS 'Create charte — auto-slug from name, default NOT NULL jsonb fields';
 
 CREATE OR REPLACE FUNCTION docs.charte_delete(p_id text)
  RETURNS boolean
@@ -97,12 +98,12 @@ DECLARE
   v_deleted int;
 BEGIN
   DELETE FROM docs.charte
-  WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
+  WHERE (slug = p_id OR id = p_id) AND tenant_id = current_setting('app.tenant_id', true);
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted > 0;
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_delete(text) IS 'Delete charte by id (FK SET NULL on documents)';
+COMMENT ON FUNCTION docs.charte_delete(text) IS 'Delete charte by slug or id (FK SET NULL on documents)';
 
 CREATE OR REPLACE FUNCTION docs.charte_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF docs.charte
@@ -125,10 +126,10 @@ CREATE OR REPLACE FUNCTION docs.charte_read(p_id text)
  STABLE
 AS $function$
 BEGIN
-  RETURN (SELECT c FROM docs.charte c WHERE c.id = p_id AND c.tenant_id = current_setting('app.tenant_id', true));
+  RETURN (SELECT c FROM docs.charte c WHERE (c.slug = p_id OR c.id = p_id) AND c.tenant_id = current_setting('app.tenant_id', true));
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_read(text) IS 'Read charte by id — returns full composite row';
+COMMENT ON FUNCTION docs.charte_read(text) IS 'Read charte by slug or id — returns full composite row';
 
 CREATE OR REPLACE FUNCTION docs.charte_tokens_to_css(p_charte_id text)
  RETURNS text
@@ -211,8 +212,13 @@ CREATE OR REPLACE FUNCTION docs.charte_update(p_data docs.charte)
  LANGUAGE plpgsql
 AS $function$
 BEGIN
+  IF p_data.name IS NOT NULL AND p_data.name != '' THEN
+    p_data.slug := pgv.slugify(p_data.name);
+  END IF;
+
   UPDATE docs.charte SET
     name = COALESCE(NULLIF(p_data.name, ''), name),
+    slug = COALESCE(NULLIF(p_data.slug, ''), slug),
     description = COALESCE(p_data.description, description),
     color_bg = COALESCE(NULLIF(p_data.color_bg, ''), color_bg),
     color_main = COALESCE(NULLIF(p_data.color_main, ''), color_main),
@@ -238,19 +244,18 @@ BEGIN
     voice_examples = COALESCE(p_data.voice_examples, voice_examples),
     rules = COALESCE(p_data.rules, rules),
     updated_at = now()
-  WHERE id = p_data.id AND tenant_id = current_setting('app.tenant_id', true)
+  WHERE (slug = p_data.slug OR id = p_data.id) AND tenant_id = current_setting('app.tenant_id', true)
   RETURNING * INTO p_data;
   RETURN p_data;
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_update(docs.charte) IS 'Partial update charte — NULL fields unchanged, empty strings ignored';
+COMMENT ON FUNCTION docs.charte_update(docs.charte) IS 'Partial update charte — resolve by slug, recalculate slug on rename';
 
 CREATE OR REPLACE FUNCTION docs.document_create(p_data docs.document)
  RETURNS docs.document
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  -- Calculate dimensions from format
   CASE COALESCE(p_data.format, 'A4')
     WHEN 'A2' THEN p_data.width := 420; p_data.height := 594;
     WHEN 'A3' THEN p_data.width := 297; p_data.height := 420;
@@ -277,9 +282,10 @@ BEGIN
 
   p_data.id := gen_random_uuid()::text;
   p_data.tenant_id := current_setting('app.tenant_id', true);
+  p_data.category := COALESCE(p_data.category, 'general');
+  p_data.slug := pgv.slugify(p_data.category, p_data.name);
   p_data.format := COALESCE(p_data.format, 'A4');
   p_data.orientation := COALESCE(p_data.orientation, 'portrait');
-  p_data.category := COALESCE(p_data.category, 'general');
   p_data.bg := COALESCE(p_data.bg, '#ffffff');
   p_data.text_margin := COALESCE(p_data.text_margin, 10);
   p_data.status := COALESCE(p_data.status, 'draft');
@@ -290,14 +296,13 @@ BEGIN
 
   INSERT INTO docs.document VALUES (p_data.*) RETURNING * INTO p_data;
 
-  -- Create first page
   INSERT INTO docs.page (doc_id, page_index, name, html)
   VALUES (p_data.id, 0, 'Page 1', '');
 
   RETURN p_data;
 END;
 $function$;
-COMMENT ON FUNCTION docs.document_create(docs.document) IS 'Create document from composite type — calculate dimensions from format, create first page';
+COMMENT ON FUNCTION docs.document_create(docs.document) IS 'Create document — auto-slug from category+name, calculate dimensions from format';
 
 CREATE OR REPLACE FUNCTION docs.document_delete(p_id text)
  RETURNS boolean
@@ -307,12 +312,12 @@ DECLARE
   v_deleted int;
 BEGIN
   DELETE FROM docs.document
-  WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
+  WHERE (slug = p_id OR id = p_id) AND tenant_id = current_setting('app.tenant_id', true);
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted > 0;
 END;
 $function$;
-COMMENT ON FUNCTION docs.document_delete(text) IS 'Delete document (CASCADE pages + revisions)';
+COMMENT ON FUNCTION docs.document_delete(text) IS 'Delete document by slug or id (CASCADE pages + revisions)';
 
 CREATE OR REPLACE FUNCTION docs.document_duplicate(p_source_id text, p_new_name text)
  RETURNS text
@@ -394,18 +399,23 @@ CREATE OR REPLACE FUNCTION docs.document_read(p_id text)
  STABLE
 AS $function$
 BEGIN
-  RETURN (SELECT d FROM docs.document d WHERE d.id = p_id AND d.tenant_id = current_setting('app.tenant_id', true));
+  RETURN (SELECT d FROM docs.document d WHERE (d.slug = p_id OR d.id = p_id) AND d.tenant_id = current_setting('app.tenant_id', true));
 END;
 $function$;
-COMMENT ON FUNCTION docs.document_read(text) IS 'Read document by id — returns full composite row';
+COMMENT ON FUNCTION docs.document_read(text) IS 'Read document by slug or id — returns full composite row';
 
 CREATE OR REPLACE FUNCTION docs.document_update(p_data docs.document)
  RETURNS docs.document
  LANGUAGE plpgsql
 AS $function$
 BEGIN
+  IF p_data.name IS NOT NULL AND p_data.name != '' THEN
+    p_data.slug := pgv.slugify(COALESCE(p_data.category, ''), p_data.name);
+  END IF;
+
   UPDATE docs.document SET
     name = COALESCE(NULLIF(p_data.name, ''), name),
+    slug = COALESCE(NULLIF(p_data.slug, ''), slug),
     category = COALESCE(NULLIF(p_data.category, ''), category),
     charte_id = COALESCE(p_data.charte_id, charte_id),
     bg = COALESCE(NULLIF(p_data.bg, ''), bg),
@@ -423,12 +433,12 @@ BEGIN
     active_page = COALESCE(p_data.active_page, active_page),
     library_id = COALESCE(p_data.library_id, library_id),
     updated_at = now()
-  WHERE id = p_data.id AND tenant_id = current_setting('app.tenant_id', true)
+  WHERE (slug = p_data.slug OR id = p_data.id) AND tenant_id = current_setting('app.tenant_id', true)
   RETURNING * INTO p_data;
   RETURN p_data;
 END;
 $function$;
-COMMENT ON FUNCTION docs.document_update(docs.document) IS 'Partial update document — NULL fields unchanged, empty strings ignored';
+COMMENT ON FUNCTION docs.document_update(docs.document) IS 'Partial update document — resolve by slug, recalculate slug on rename';
 
 CREATE OR REPLACE FUNCTION docs.get_charte(p_id text)
  RETURNS text
@@ -969,12 +979,13 @@ AS $function$
 BEGIN
   p_data.id := gen_random_uuid()::text;
   p_data.tenant_id := current_setting('app.tenant_id', true);
+  p_data.slug := pgv.slugify(p_data.name);
   p_data.created_at := now();
   INSERT INTO docs.library VALUES (p_data.*) RETURNING * INTO p_data;
   RETURN p_data;
 END;
 $function$;
-COMMENT ON FUNCTION docs.library_create(docs.library) IS 'Create library from composite type';
+COMMENT ON FUNCTION docs.library_create(docs.library) IS 'Create library — auto-slug from name';
 
 CREATE OR REPLACE FUNCTION docs.library_delete(p_id text)
  RETURNS boolean
@@ -983,12 +994,12 @@ AS $function$
 DECLARE
   v_deleted int;
 BEGIN
-  DELETE FROM docs.library WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
+  DELETE FROM docs.library WHERE (slug = p_id OR id = p_id) AND tenant_id = current_setting('app.tenant_id', true);
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted > 0;
 END;
 $function$;
-COMMENT ON FUNCTION docs.library_delete(text) IS 'Delete library by id (CASCADE library_asset)';
+COMMENT ON FUNCTION docs.library_delete(text) IS 'Delete library by slug or id (CASCADE library_asset)';
 
 CREATE OR REPLACE FUNCTION docs.library_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF docs.library
@@ -1011,10 +1022,10 @@ CREATE OR REPLACE FUNCTION docs.library_read(p_id text)
  STABLE
 AS $function$
 BEGIN
-  RETURN (SELECT l FROM docs.library l WHERE l.id = p_id AND l.tenant_id = current_setting('app.tenant_id', true));
+  RETURN (SELECT l FROM docs.library l WHERE (l.slug = p_id OR l.id = p_id) AND l.tenant_id = current_setting('app.tenant_id', true));
 END;
 $function$;
-COMMENT ON FUNCTION docs.library_read(text) IS 'Read library by id — returns full composite row';
+COMMENT ON FUNCTION docs.library_read(text) IS 'Read library by slug or id — returns full composite row';
 
 CREATE OR REPLACE FUNCTION docs.library_remove_asset(p_library_id text, p_asset_id uuid)
  RETURNS boolean

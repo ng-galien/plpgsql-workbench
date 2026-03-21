@@ -3,8 +3,13 @@ CREATE OR REPLACE FUNCTION docs.charte_update(p_data docs.charte)
  LANGUAGE plpgsql
 AS $function$
 BEGIN
+  IF p_data.name IS NOT NULL AND p_data.name != '' THEN
+    p_data.slug := pgv.slugify(p_data.name);
+  END IF;
+
   UPDATE docs.charte SET
     name = COALESCE(NULLIF(p_data.name, ''), name),
+    slug = COALESCE(NULLIF(p_data.slug, ''), slug),
     description = COALESCE(p_data.description, description),
     color_bg = COALESCE(NULLIF(p_data.color_bg, ''), color_bg),
     color_main = COALESCE(NULLIF(p_data.color_main, ''), color_main),
@@ -30,7 +35,7 @@ BEGIN
     voice_examples = COALESCE(p_data.voice_examples, voice_examples),
     rules = COALESCE(p_data.rules, rules),
     updated_at = now()
-  WHERE id = p_data.id AND tenant_id = current_setting('app.tenant_id', true)
+  WHERE (slug = p_data.slug OR id = p_data.id) AND tenant_id = current_setting('app.tenant_id', true)
   RETURNING * INTO p_data;
   RETURN p_data;
 END;

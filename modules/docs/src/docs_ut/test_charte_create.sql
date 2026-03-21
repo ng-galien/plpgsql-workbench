@@ -21,6 +21,7 @@ BEGIN
   v_c := docs.charte_create(v_c);
 
   RETURN NEXT ok(v_c.id IS NOT NULL, 'charte_create returns an id');
+  RETURN NEXT is(v_c.slug, 'test-provencal', 'slug auto-generated from name');
 
   SELECT * INTO v_r FROM docs.charte WHERE id = v_c.id;
   RETURN NEXT is(v_r.name, 'Test Provençal', 'name stored');

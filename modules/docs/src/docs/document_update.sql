@@ -3,8 +3,13 @@ CREATE OR REPLACE FUNCTION docs.document_update(p_data docs.document)
  LANGUAGE plpgsql
 AS $function$
 BEGIN
+  IF p_data.name IS NOT NULL AND p_data.name != '' THEN
+    p_data.slug := pgv.slugify(COALESCE(p_data.category, ''), p_data.name);
+  END IF;
+
   UPDATE docs.document SET
     name = COALESCE(NULLIF(p_data.name, ''), name),
+    slug = COALESCE(NULLIF(p_data.slug, ''), slug),
     category = COALESCE(NULLIF(p_data.category, ''), category),
     charte_id = COALESCE(p_data.charte_id, charte_id),
     bg = COALESCE(NULLIF(p_data.bg, ''), bg),
@@ -22,7 +27,7 @@ BEGIN
     active_page = COALESCE(p_data.active_page, active_page),
     library_id = COALESCE(p_data.library_id, library_id),
     updated_at = now()
-  WHERE id = p_data.id AND tenant_id = current_setting('app.tenant_id', true)
+  WHERE (slug = p_data.slug OR id = p_data.id) AND tenant_id = current_setting('app.tenant_id', true)
   RETURNING * INTO p_data;
   RETURN p_data;
 END;

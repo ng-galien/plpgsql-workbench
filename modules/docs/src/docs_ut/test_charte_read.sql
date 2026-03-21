@@ -18,10 +18,14 @@ BEGIN
   v_c.color_extra := '{"olive":"#5C6B3C"}'::jsonb;
   v_c := docs.charte_create(v_c);
 
+  -- Read by id
   v_r := docs.charte_read(v_c.id);
-
-  RETURN NEXT ok(v_r.id IS NOT NULL, 'charte_read returns data');
+  RETURN NEXT ok(v_r.id IS NOT NULL, 'charte_read by id');
   RETURN NEXT is(v_r.name, 'Read Test', 'name in result');
+
+  -- Read by slug
+  v_r := docs.charte_read('read-test');
+  RETURN NEXT ok(v_r.id IS NOT NULL, 'charte_read by slug');
   RETURN NEXT is(v_r.color_bg, '#FAF6F1', 'color_bg');
   RETURN NEXT is(v_r.color_extra->>'olive', '#5C6B3C', 'color_extra olive');
   RETURN NEXT is(v_r.font_heading, 'Cormorant Garamond', 'font_heading');

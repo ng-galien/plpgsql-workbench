@@ -3,7 +3,6 @@ CREATE OR REPLACE FUNCTION docs.document_create(p_data docs.document)
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  -- Calculate dimensions from format
   CASE COALESCE(p_data.format, 'A4')
     WHEN 'A2' THEN p_data.width := 420; p_data.height := 594;
     WHEN 'A3' THEN p_data.width := 297; p_data.height := 420;
@@ -30,9 +29,10 @@ BEGIN
 
   p_data.id := gen_random_uuid()::text;
   p_data.tenant_id := current_setting('app.tenant_id', true);
+  p_data.category := COALESCE(p_data.category, 'general');
+  p_data.slug := pgv.slugify(p_data.category, p_data.name);
   p_data.format := COALESCE(p_data.format, 'A4');
   p_data.orientation := COALESCE(p_data.orientation, 'portrait');
-  p_data.category := COALESCE(p_data.category, 'general');
   p_data.bg := COALESCE(p_data.bg, '#ffffff');
   p_data.text_margin := COALESCE(p_data.text_margin, 10);
   p_data.status := COALESCE(p_data.status, 'draft');
@@ -43,7 +43,6 @@ BEGIN
 
   INSERT INTO docs.document VALUES (p_data.*) RETURNING * INTO p_data;
 
-  -- Create first page
   INSERT INTO docs.page (doc_id, page_index, name, html)
   VALUES (p_data.id, 0, 'Page 1', '');
 

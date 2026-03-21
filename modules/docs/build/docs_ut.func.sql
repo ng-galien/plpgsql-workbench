@@ -68,6 +68,7 @@ BEGIN
   v_c := docs.charte_create(v_c);
 
   RETURN NEXT ok(v_c.id IS NOT NULL, 'charte_create returns an id');
+  RETURN NEXT is(v_c.slug, 'test-provencal', 'slug auto-generated from name');
 
   SELECT * INTO v_r FROM docs.charte WHERE id = v_c.id;
   RETURN NEXT is(v_r.name, 'Test Provençal', 'name stored');
@@ -94,7 +95,7 @@ BEGIN
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_charte_create() IS 'Test charte creation — composite type, 6 mandatory colors, unique name per tenant';
+COMMENT ON FUNCTION docs_ut.test_charte_create() IS 'Test charte creation — composite type, slug auto-gen, unique name per tenant';
 
 CREATE OR REPLACE FUNCTION docs_ut.test_charte_delete()
  RETURNS SETOF text
@@ -194,10 +195,14 @@ BEGIN
   v_c.color_extra := '{"olive":"#5C6B3C"}'::jsonb;
   v_c := docs.charte_create(v_c);
 
+  -- Read by id
   v_r := docs.charte_read(v_c.id);
-
-  RETURN NEXT ok(v_r.id IS NOT NULL, 'charte_read returns data');
+  RETURN NEXT ok(v_r.id IS NOT NULL, 'charte_read by id');
   RETURN NEXT is(v_r.name, 'Read Test', 'name in result');
+
+  -- Read by slug
+  v_r := docs.charte_read('read-test');
+  RETURN NEXT ok(v_r.id IS NOT NULL, 'charte_read by slug');
   RETURN NEXT is(v_r.color_bg, '#FAF6F1', 'color_bg');
   RETURN NEXT is(v_r.color_extra->>'olive', '#5C6B3C', 'color_extra olive');
   RETURN NEXT is(v_r.font_heading, 'Cormorant Garamond', 'font_heading');
@@ -209,7 +214,7 @@ BEGIN
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_charte_read() IS 'Test charte read — returns composite row with all fields';
+COMMENT ON FUNCTION docs_ut.test_charte_read() IS 'Test charte read — by id and by slug, returns composite row';
 
 CREATE OR REPLACE FUNCTION docs_ut.test_document_create()
  RETURNS SETOF text
@@ -232,6 +237,7 @@ BEGIN
   RETURN NEXT is(v_r.height, 297::numeric, 'A4 height = 297');
   RETURN NEXT is(v_r.format, 'A4', 'format stored');
   RETURN NEXT is(v_r.orientation, 'portrait', 'orientation default portrait');
+  RETURN NEXT is(v_d.slug, 'general-test-a4', 'slug from category+name');
 
   -- First page created
   SELECT count(*)::int INTO v_page_cnt FROM docs.page WHERE doc_id = v_d.id;
@@ -263,7 +269,7 @@ BEGIN
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_document_create() IS 'Test document creation — composite type, format→dimensions, landscape swap, charte link';
+COMMENT ON FUNCTION docs_ut.test_document_create() IS 'Test document creation — composite type, slug from category+name, format→dimensions';
 
 CREATE OR REPLACE FUNCTION docs_ut.test_document_duplicate()
  RETURNS SETOF text

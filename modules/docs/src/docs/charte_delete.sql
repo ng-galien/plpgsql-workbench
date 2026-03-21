@@ -6,7 +6,7 @@ DECLARE
   v_deleted int;
 BEGIN
   DELETE FROM docs.charte
-  WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
+  WHERE (slug = p_id OR id = p_id) AND tenant_id = current_setting('app.tenant_id', true);
   GET DIAGNOSTICS v_deleted = ROW_COUNT;
   RETURN v_deleted > 0;
 END;

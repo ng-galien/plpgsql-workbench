@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS docs.charte (
   id                text PRIMARY KEY DEFAULT gen_random_uuid()::text,
   tenant_id         text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   name              text NOT NULL,
+  slug              text NOT NULL,
   description       text,
 
   -- Color socle (obligatoire — le design system minimum)
@@ -54,12 +55,15 @@ CREATE TABLE IF NOT EXISTS docs.charte (
   created_at        timestamptz DEFAULT now(),
   updated_at        timestamptz DEFAULT now(),
 
-  UNIQUE (tenant_id, name)
+  UNIQUE (tenant_id, name),
+  UNIQUE (tenant_id, slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_charte_tenant ON docs.charte (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_charte_slug ON docs.charte (tenant_id, slug);
 
 COMMENT ON TABLE docs.charte IS 'Design tokens — identité visuelle (couleurs, fonts, spacing, voice, rules)';
+COMMENT ON COLUMN docs.charte.slug IS 'URL-safe slug auto-généré depuis name via pgv.slugify()';
 COMMENT ON COLUMN docs.charte.color_bg IS 'Fond de page — 60% de la surface, neutre';
 COMMENT ON COLUMN docs.charte.color_main IS 'Couleur signature — 30%, titres et éléments structurants';
 COMMENT ON COLUMN docs.charte.color_accent IS 'CTA et highlights — 10%, contraste fort avec main';
@@ -115,6 +119,7 @@ CREATE TABLE IF NOT EXISTS docs.document (
   id              text PRIMARY KEY DEFAULT gen_random_uuid()::text,
   tenant_id       text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   name            text NOT NULL,
+  slug            text NOT NULL,
   category        text NOT NULL DEFAULT 'general',
   charte_id       text REFERENCES docs.charte(id) ON DELETE SET NULL,
 
@@ -149,22 +154,25 @@ CREATE TABLE IF NOT EXISTS docs.document (
   active_page     integer NOT NULL DEFAULT 0,
 
   created_at      timestamptz DEFAULT now(),
-  updated_at      timestamptz DEFAULT now()
+  updated_at      timestamptz DEFAULT now(),
+
+  UNIQUE (tenant_id, slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_doc_tenant ON docs.document (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_document_slug ON docs.document (tenant_id, slug);
 CREATE INDEX IF NOT EXISTS idx_doc_category ON docs.document (tenant_id, category);
 CREATE INDEX IF NOT EXISTS idx_doc_charte ON docs.document (charte_id) WHERE charte_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_doc_ref ON docs.document (ref_module, ref_id) WHERE ref_module IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_doc_status ON docs.document (tenant_id, status);
 
 COMMENT ON TABLE docs.document IS 'Document XHTML multi-pages avec canvas dimensionné';
+COMMENT ON COLUMN docs.document.slug IS 'URL-safe slug auto-généré depuis category+name via pgv.slugify()';
 COMMENT ON COLUMN docs.document.format IS 'Format du canvas (A2, A3, A4, A5, HD, MACBOOK, IPAD, MOBILE, CUSTOM)';
 COMMENT ON COLUMN docs.document.orientation IS 'Orientation (portrait, landscape)';
 COMMENT ON COLUMN docs.document.width IS 'Largeur en mm (print) ou px (screen)';
 COMMENT ON COLUMN docs.document.height IS 'Hauteur en mm (print) ou px (screen)';
 COMMENT ON COLUMN docs.document.charte_id IS 'Charte graphique liée — les tokens visuels du document';
-COMMENT ON COLUMN docs.document.library_id IS 'Photothèque liée — les images disponibles pour la composition';
 COMMENT ON COLUMN docs.document.status IS 'Cycle de vie : draft → generated → signed → archived';
 COMMENT ON COLUMN docs.document.ref_module IS 'Module source (quote, crm...) pour les documents liés';
 COMMENT ON COLUMN docs.document.ref_id IS 'ID de la ressource source dans le module';
@@ -243,12 +251,15 @@ CREATE TABLE IF NOT EXISTS docs.library (
   id          text PRIMARY KEY DEFAULT gen_random_uuid()::text,
   tenant_id   text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   name        text NOT NULL,
+  slug        text NOT NULL,
   description text,
   created_at  timestamptz DEFAULT now(),
-  UNIQUE (tenant_id, name)
+  UNIQUE (tenant_id, name),
+  UNIQUE (tenant_id, slug)
 );
 
 CREATE INDEX IF NOT EXISTS idx_library_tenant ON docs.library (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_library_slug ON docs.library (tenant_id, slug);
 
 COMMENT ON TABLE docs.library IS 'Photothèque — sélection curatée d''assets pour la composition';
 
@@ -269,6 +280,8 @@ ALTER TABLE docs.document
   ADD COLUMN IF NOT EXISTS library_id text REFERENCES docs.library(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_doc_library ON docs.document (library_id) WHERE library_id IS NOT NULL;
+
+COMMENT ON COLUMN docs.document.library_id IS 'Photothèque liée — les images disponibles pour la composition';
 
 -- ────────────────────────────────────────────────────────
 -- RLS

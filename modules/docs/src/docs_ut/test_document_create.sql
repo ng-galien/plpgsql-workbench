@@ -19,6 +19,7 @@ BEGIN
   RETURN NEXT is(v_r.height, 297::numeric, 'A4 height = 297');
   RETURN NEXT is(v_r.format, 'A4', 'format stored');
   RETURN NEXT is(v_r.orientation, 'portrait', 'orientation default portrait');
+  RETURN NEXT is(v_d.slug, 'general-test-a4', 'slug from category+name');
 
   -- First page created
   SELECT count(*)::int INTO v_page_cnt FROM docs.page WHERE doc_id = v_d.id;
