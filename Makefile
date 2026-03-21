@@ -148,21 +148,22 @@ sync-modules: ## Run pgm install in every app
 		fi; \
 	done
 
-# --- Agents (one tmux session per module, running claude) ---
+# --- Agents (one tmux session per module, running claude with channel) ---
 
 STRIP_VARS := CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_SESSION_ID \
 	CLAUDE_CODE_CONVERSATION_ID CLAUDE_CODE_TASK_ID \
 	NON_INTERACTIVE MCP_TRANSPORT MCP_SESSION_ID
+CHANNEL_FLAG := --dangerously-load-development-channels server:workbench-channel
 
 .PHONY: agents agents-kill agents-restart agents-status agents-ping agent agent-kill agent-ping agent-log
 
-agents: ## Spawn Claude agents (one tmux session per module)
+agents: ## Spawn Claude agents (one tmux session per module, with channel)
 	@for mod in modules/*/; do \
 		name=$$(basename "$$mod"); \
 		if tmux has-session -t "$$name" 2>/dev/null; then \
 			echo "  OK    $$name (already running)"; \
 		else \
-			printf '#!/bin/sh\nunset $(STRIP_VARS)\nclaude -c 2>/dev/null || exec claude\n' > "/tmp/pgw-spawn-$$name.sh"; \
+			printf '#!/bin/sh\nunset $(STRIP_VARS)\nclaude $(CHANNEL_FLAG) -c 2>/dev/null || exec claude $(CHANNEL_FLAG)\n' > "/tmp/pgw-spawn-$$name.sh"; \
 			chmod 700 "/tmp/pgw-spawn-$$name.sh"; \
 			tmux new-session -d -s "$$name" -c "$$mod" "/tmp/pgw-spawn-$$name.sh"; \
 			tmux set-option -t "$$name" history-limit 50000 2>/dev/null || true; \
@@ -197,23 +198,17 @@ agents-status: ## Show current activity of each agent
 		fi; \
 	done
 
-agents-ping: ## Send "ping" to all agent tmux sessions
-	@for mod in modules/*/; do \
-		name=$$(basename "$$mod"); \
-		if tmux has-session -t "$$name" 2>/dev/null; then \
-			tmux send-keys -t "$$name" "ping" Enter; \
-			echo "  PING  $$name"; \
-		fi; \
-	done
+agents-ping: ## DEPRECATED — agents receive messages via channel, no ping needed
+	@echo "  No ping needed — use pg_msg to send tasks, agents receive via channel"
 
 # --- Single agent control (make agent M=crm, make agent-kill M=crm) ---
 
-agent: ## Spawn one agent (M=name required). Ex: make agent M=catalog
-	@test -n "$(M)" || (echo "Usage: make agent M=crm" && exit 1)
+agent: ## Spawn one agent with channel (M=name). Ex: make agent M=docs
+	@test -n "$(M)" || (echo "Usage: make agent M=docs" && exit 1)
 	@if tmux has-session -t "$(M)" 2>/dev/null; then \
 		echo "  OK    $(M) (already running)"; \
 	else \
-		printf '#!/bin/sh\nunset $(STRIP_VARS)\nclaude -c 2>/dev/null || exec claude\n' > "/tmp/pgw-spawn-$(M).sh"; \
+		printf '#!/bin/sh\nunset $(STRIP_VARS)\nclaude $(CHANNEL_FLAG) -c 2>/dev/null || exec claude $(CHANNEL_FLAG)\n' > "/tmp/pgw-spawn-$(M).sh"; \
 		chmod 700 "/tmp/pgw-spawn-$(M).sh"; \
 		tmux new-session -d -s "$(M)" -c "modules/$(M)" "/tmp/pgw-spawn-$(M).sh"; \
 		tmux set-option -t "$(M)" history-limit 50000 2>/dev/null || true; \
@@ -233,14 +228,8 @@ agent-kill: ## Kill one agent (M=name). Ex: make agent-kill M=crm
 
 agent-restart: agent-kill agent ## Kill then respawn one agent (M=name)
 
-agent-ping: ## Send "go" to one agent (M=name). Ex: make agent-ping M=crm
-	@test -n "$(M)" || (echo "Usage: make agent-ping M=crm" && exit 1)
-	@if tmux has-session -t "$(M)" 2>/dev/null; then \
-		tmux send-keys -t "$(M)" "go" Enter; \
-		echo "  PING  $(M)"; \
-	else \
-		echo "  $(M) not running"; \
-	fi
+agent-ping: ## DEPRECATED — agents receive messages via channel, no ping needed
+	@echo "  No ping needed — use pg_msg to send tasks, agents receive via channel"
 
 agent-log: ## Show last 50 lines from agent tmux (M=name). Ex: make agent-log M=crm
 	@test -n "$(M)" || (echo "Usage: make agent-log M=crm" && exit 1)
