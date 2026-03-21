@@ -59,6 +59,20 @@ CREATE TABLE IF NOT EXISTS docs.charte (
 
 CREATE INDEX IF NOT EXISTS idx_charte_tenant ON docs.charte (tenant_id);
 
+COMMENT ON TABLE docs.charte IS 'Design tokens — identité visuelle (couleurs, fonts, spacing, voice, rules)';
+COMMENT ON COLUMN docs.charte.color_bg IS 'Fond de page — 60% de la surface, neutre';
+COMMENT ON COLUMN docs.charte.color_main IS 'Couleur signature — 30%, titres et éléments structurants';
+COMMENT ON COLUMN docs.charte.color_accent IS 'CTA et highlights — 10%, contraste fort avec main';
+COMMENT ON COLUMN docs.charte.color_text IS 'Corps de texte — jamais noir pur, ratio contraste 4.5:1 min avec bg';
+COMMENT ON COLUMN docs.charte.color_text_light IS 'Texte secondaire — 40-60% opacité du text';
+COMMENT ON COLUMN docs.charte.color_border IS 'Séparateurs — subtil, 10-20% opacité du main';
+COMMENT ON COLUMN docs.charte.color_extra IS 'Tokens couleur libres — noms évocateurs du domaine (ocean, olive, terracotta)';
+COMMENT ON COLUMN docs.charte.font_heading IS 'Font titres — Google Font name';
+COMMENT ON COLUMN docs.charte.font_body IS 'Font corps de texte — Google Font name';
+COMMENT ON COLUMN docs.charte.voice_personality IS 'Traits de personnalité de la marque';
+COMMENT ON COLUMN docs.charte.voice_formality IS 'Niveau de formalité (informel, semi-formel, formel)';
+COMMENT ON COLUMN docs.charte.rules IS 'Contraintes design libres — ce qu''on ne doit PAS faire avec cette charte';
+
 CREATE TABLE IF NOT EXISTS docs.charte_revision (
   charte_id   text NOT NULL REFERENCES docs.charte(id) ON DELETE CASCADE,
   version     integer NOT NULL,
@@ -66,6 +80,8 @@ CREATE TABLE IF NOT EXISTS docs.charte_revision (
   created_at  timestamptz DEFAULT now(),
   PRIMARY KEY (charte_id, version)
 );
+
+COMMENT ON TABLE docs.charte_revision IS 'Historique des tokens de charte (snapshot à chaque modification)';
 
 -- ────────────────────────────────────────────────────────
 -- Émetteur (entreprise — pré-requis pour factures/devis)
@@ -88,6 +104,8 @@ CREATE TABLE IF NOT EXISTS docs.company (
   created_at    timestamptz DEFAULT now(),
   UNIQUE (tenant_id)
 );
+
+COMMENT ON TABLE docs.company IS 'Émetteur (entreprise) — informations légales pour factures/devis';
 
 -- ────────────────────────────────────────────────────────
 -- Document (composition XHTML)
@@ -140,6 +158,17 @@ CREATE INDEX IF NOT EXISTS idx_doc_charte ON docs.document (charte_id) WHERE cha
 CREATE INDEX IF NOT EXISTS idx_doc_ref ON docs.document (ref_module, ref_id) WHERE ref_module IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_doc_status ON docs.document (tenant_id, status);
 
+COMMENT ON TABLE docs.document IS 'Document XHTML multi-pages avec canvas dimensionné';
+COMMENT ON COLUMN docs.document.format IS 'Format du canvas (A2, A3, A4, A5, HD, MACBOOK, IPAD, MOBILE, CUSTOM)';
+COMMENT ON COLUMN docs.document.orientation IS 'Orientation (portrait, landscape)';
+COMMENT ON COLUMN docs.document.width IS 'Largeur en mm (print) ou px (screen)';
+COMMENT ON COLUMN docs.document.height IS 'Hauteur en mm (print) ou px (screen)';
+COMMENT ON COLUMN docs.document.charte_id IS 'Charte graphique liée — les tokens visuels du document';
+COMMENT ON COLUMN docs.document.library_id IS 'Photothèque liée — les images disponibles pour la composition';
+COMMENT ON COLUMN docs.document.status IS 'Cycle de vie : draft → generated → signed → archived';
+COMMENT ON COLUMN docs.document.ref_module IS 'Module source (quote, crm...) pour les documents liés';
+COMMENT ON COLUMN docs.document.ref_id IS 'ID de la ressource source dans le module';
+
 -- ────────────────────────────────────────────────────────
 -- Page (XHTML content per page)
 -- ────────────────────────────────────────────────────────
@@ -161,6 +190,8 @@ CREATE TABLE IF NOT EXISTS docs.page (
   PRIMARY KEY (doc_id, page_index)
 );
 
+COMMENT ON TABLE docs.page IS 'Page XHTML d''un document — contenu + override canvas optionnel';
+
 CREATE TABLE IF NOT EXISTS docs.page_revision (
   doc_id        text NOT NULL,
   page_index    integer NOT NULL,
@@ -169,6 +200,8 @@ CREATE TABLE IF NOT EXISTS docs.page_revision (
   created_at    timestamptz DEFAULT now(),
   PRIMARY KEY (doc_id, page_index, version)
 );
+
+COMMENT ON TABLE docs.page_revision IS 'Historique HTML par page (snapshot à chaque modification)';
 
 -- ────────────────────────────────────────────────────────
 -- Session (ephemeral workspace state — UNLOGGED, zero WAL)
@@ -200,6 +233,8 @@ CREATE UNLOGGED TABLE docs.session (
   PRIMARY KEY (tenant_id, user_id)
 );
 
+COMMENT ON TABLE docs.session IS 'État workspace éphémère (UNLOGGED) — docs ouverts, zoom, pan';
+
 -- ────────────────────────────────────────────────────────
 -- Library (curated asset selection for composition)
 -- ────────────────────────────────────────────────────────
@@ -215,6 +250,8 @@ CREATE TABLE IF NOT EXISTS docs.library (
 
 CREATE INDEX IF NOT EXISTS idx_library_tenant ON docs.library (tenant_id);
 
+COMMENT ON TABLE docs.library IS 'Photothèque — sélection curatée d''assets pour la composition';
+
 CREATE TABLE IF NOT EXISTS docs.library_asset (
   library_id  text NOT NULL REFERENCES docs.library(id) ON DELETE CASCADE,
   asset_id    uuid NOT NULL REFERENCES asset.asset(id) ON DELETE CASCADE,
@@ -223,6 +260,10 @@ CREATE TABLE IF NOT EXISTS docs.library_asset (
   sort_order  integer DEFAULT 0,
   PRIMARY KEY (library_id, asset_id)
 );
+
+COMMENT ON TABLE docs.library_asset IS 'Association library ↔ asset avec rôle et contexte';
+COMMENT ON COLUMN docs.library_asset.role IS 'Rôle dans la composition (hero, portrait, logo, texture, ambiance, produit)';
+COMMENT ON COLUMN docs.library_asset.context IS 'Description de l''image dans le contexte du projet';
 
 ALTER TABLE docs.document
   ADD COLUMN IF NOT EXISTS library_id text REFERENCES docs.library(id) ON DELETE SET NULL;

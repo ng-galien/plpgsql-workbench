@@ -326,6 +326,40 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_card() IS 'Test pgv.card() — article card with optional markdown body';
 
+CREATE OR REPLACE FUNCTION pgv_ut.test_check_crud()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v text;
+BEGIN
+  v := pgv.check_crud('docs');
+
+  -- Header
+  RETURN NEXT ok(v LIKE 'check_crud: docs%', 'header present');
+
+  -- Entities with full CRUD get checkmark
+  RETURN NEXT ok(v LIKE '%✓ charte — create read list delete%', 'charte: full CRUD ok');
+  RETURN NEXT ok(v LIKE '%✓ document — create read list delete%', 'document: full CRUD ok');
+  RETURN NEXT ok(v LIKE '%✓ library — create read list delete%', 'library: full CRUD ok');
+
+  -- Naming warning
+  RETURN NEXT ok(v LIKE '%⚠ naming: page_remove%', 'naming: page_remove detected');
+
+  -- Entities without CRUD get warning
+  RETURN NEXT ok(v LIKE '%⚠ page — no CRUD%', 'page: no CRUD warning');
+  RETURN NEXT ok(v LIKE '%⚠ session — no CRUD%', 'session: no CRUD warning');
+
+  -- Summary
+  RETURN NEXT ok(v LIKE '%warning(s)%', 'summary has warnings');
+
+  -- Schema with no issues (pgv_qa has product table but no CRUD)
+  v := pgv.check_crud('pgv_qa');
+  RETURN NEXT ok(v LIKE '%check_crud: pgv_qa%', 'pgv_qa: runs without error');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_check_crud() IS 'Tests pgv.check_crud() — CRUD convention audit';
+
 CREATE OR REPLACE FUNCTION pgv_ut.test_checkbox()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -1236,6 +1270,51 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_schema_discover() IS 'Tests pgv.schema_discover() — returns tables with columns, FK, comments';
+
+CREATE OR REPLACE FUNCTION pgv_ut.test_schema_inspect()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v text;
+BEGIN
+  -- charte: full inspection
+  v := pgv.schema_inspect('docs', 'charte');
+  RETURN NEXT ok(v LIKE '## charte%', 'charte: header');
+  RETURN NEXT ok(v LIKE '%attributes:%', 'charte: has attributes section');
+  RETURN NEXT ok(v LIKE '%id%text%PK%', 'charte: id is PK');
+  RETURN NEXT ok(v LIKE '%color_extra%jsonb%', 'charte: jsonb column present');
+  RETURN NEXT ok(v LIKE '%voice_personality%text[]%', 'charte: array type formatted as text[]');
+
+  -- CRUD
+  RETURN NEXT ok(v LIKE '%crud:%', 'charte: has crud section');
+  RETURN NEXT ok(v LIKE '%charte_create%', 'charte: create function listed');
+  RETURN NEXT ok(v LIKE '%charte_read%', 'charte: read function listed');
+  RETURN NEXT ok(v LIKE '%charte_list%', 'charte: list function listed');
+  RETURN NEXT ok(v LIKE '%charte_delete%', 'charte: delete function listed');
+
+  -- Methods
+  RETURN NEXT ok(v LIKE '%methods:%', 'charte: has methods section');
+  RETURN NEXT ok(v LIKE '%charte_tokens_to_css%', 'charte: tokens_to_css method');
+  RETURN NEXT ok(v LIKE '%charte_check%', 'charte: check method');
+
+  -- Relations
+  RETURN NEXT ok(v LIKE '%relations:%', 'charte: has relations section');
+  RETURN NEXT ok(v LIKE '%document -> charte_id FK%', 'charte: document FK relation');
+  RETURN NEXT ok(v LIKE '%charte_revision -> charte_id FK%', 'charte: charte_revision FK relation');
+
+  -- document: FK + methods
+  v := pgv.schema_inspect('docs', 'document');
+  RETURN NEXT ok(v LIKE '%charte_id%FK%', 'document: charte_id is FK');
+  RETURN NEXT ok(v LIKE '%document_duplicate%', 'document: duplicate method');
+  RETURN NEXT ok(v LIKE '%document_print_css%', 'document: print_css method');
+
+  -- Missing entity
+  v := pgv.schema_inspect('docs', 'nonexistent');
+  RETURN NEXT ok(v LIKE '%not found%', 'missing entity: error message');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_schema_inspect() IS 'Tests pgv.schema_inspect() — LMNAV entity discovery with attributes, CRUD, methods, relations';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_schema_table()
  RETURNS SETOF text
