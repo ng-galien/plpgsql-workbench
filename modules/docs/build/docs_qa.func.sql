@@ -8,7 +8,8 @@ CREATE OR REPLACE FUNCTION docs_qa.clean()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  -- Reverse FK order: pages → documents → libraries → chartes
+  PERFORM set_config('app.tenant_id', coalesce(current_setting('app.tenant_id', true), 'dev'), true);
+
   DELETE FROM docs.page_revision WHERE doc_id IN (SELECT id FROM docs.document WHERE tenant_id = current_setting('app.tenant_id', true));
   DELETE FROM docs.page WHERE doc_id IN (SELECT id FROM docs.document WHERE tenant_id = current_setting('app.tenant_id', true));
   DELETE FROM docs.library_asset WHERE library_id IN (SELECT id FROM docs.library WHERE tenant_id = current_setting('app.tenant_id', true));
@@ -17,7 +18,7 @@ BEGIN
   DELETE FROM docs.charte WHERE tenant_id = current_setting('app.tenant_id', true);
 END;
 $function$;
-COMMENT ON FUNCTION docs_qa.clean() IS 'Clean all QA data for current tenant — reverse FK order';
+COMMENT ON FUNCTION docs_qa.clean() IS 'Clean all QA data for current tenant — reverse FK order (sets tenant_id if missing)';
 
 CREATE OR REPLACE FUNCTION docs_qa.seed()
  RETURNS void
@@ -30,9 +31,10 @@ DECLARE
   v_lib docs.library;
   v_asset_id uuid;
 BEGIN
+  PERFORM set_config('app.tenant_id', coalesce(current_setting('app.tenant_id', true), 'dev'), true);
+
   -- ── Chartes ──────────────────────────────────────────
 
-  -- 1. Restaurant provençal
   v_charte_provence := jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
     'name', 'L''Olivier Provence',
     'description', 'Charte graphique du restaurant L''Olivier — cuisine provençale de saison',
@@ -51,7 +53,6 @@ BEGIN
   v_charte_provence.rules := '{"color_usage":"primary = titres uniquement","photos":"pleine largeur ou 4:3"}'::jsonb;
   v_charte_provence := docs.charte_create(v_charte_provence);
 
-  -- 2. Cabinet d'architecte
   v_charte_archi := jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
     'name', 'Atelier Béton',
     'description', 'Cabinet d''architecture contemporaine — béton, acier, lumière',
@@ -71,7 +72,6 @@ BEGIN
 
   -- ── Documents ────────────────────────────────────────
 
-  -- 1. Menu restaurant (A4 portrait, 2 pages)
   v_doc := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object(
     'name', 'Menu Printemps 2026', 'category', 'menu', 'charte_id', v_charte_provence.id
   )));
@@ -100,7 +100,6 @@ BEGIN
     || '</div>'
   );
 
-  -- 2. Carte de visite architecte (A5 landscape)
   v_doc := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object(
     'name', 'Carte de visite', 'category', 'identite', 'format', 'A5', 'orientation', 'landscape',
     'charte_id', v_charte_archi.id
@@ -119,7 +118,6 @@ BEGIN
     || '</div>'
   );
 
-  -- 3. Poster événement (A3 portrait)
   v_doc := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object(
     'name', 'Soirée Vendanges', 'category', 'evenement', 'format', 'A3',
     'charte_id', v_charte_provence.id
@@ -139,7 +137,6 @@ BEGIN
     'name', 'Photos L''Olivier', 'description', 'Photothèque du restaurant — terrasse, plats, ambiance'
   )));
 
-  -- Add existing assets if available
   FOR v_asset_id IN SELECT id FROM asset.asset LIMIT 3
   LOOP
     PERFORM docs.library_add_asset(v_lib.id, v_asset_id, 'ambiance', 'Photo d''ambiance restaurant');
@@ -147,7 +144,7 @@ BEGIN
 
 END;
 $function$;
-COMMENT ON FUNCTION docs_qa.seed() IS 'Seed realistic demo data — 2 chartes, 3 documents, 1 library';
+COMMENT ON FUNCTION docs_qa.seed() IS 'Seed realistic demo data — 2 chartes, 3 documents, 1 library (sets tenant_id if missing)';
 
 GRANT USAGE ON SCHEMA docs_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA docs_qa TO anon;

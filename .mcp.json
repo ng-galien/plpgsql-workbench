@@ -4,9 +4,13 @@
       "type": "http",
       "url": "http://localhost:3100/mcp"
     },
-    "illustrator": {
-      "type": "http",
-      "url": "http://localhost:8787/"
+    "workbench-channel": {
+      "command": "npx",
+      "args": ["tsx", "src/channel/workbench-channel.ts"],
+      "env": {
+        "PLPGSQL_CONNECTION": "postgresql://postgres:postgres@localhost:5433/postgres",
+        "CHANNEL_PORT": "8789"
+      }
     }
   }
 }

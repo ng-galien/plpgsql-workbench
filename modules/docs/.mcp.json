@@ -3,6 +3,14 @@
     "plpgsql-workbench": {
       "type": "http",
       "url": "http://localhost:3100/mcp"
+    },
+    "workbench-channel": {
+      "command": "npx",
+      "args": ["tsx", "../../src/channel/workbench-channel.ts"],
+      "env": {
+        "MODULE": "docs",
+        "CHANNEL_PORT": "8790"
+      }
     }
   }
 }

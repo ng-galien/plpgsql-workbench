@@ -24,6 +24,8 @@ const PG_CONNECTION =
   process.env.DATABASE_URL ||
   "postgresql://postgres:postgres@localhost:5433/postgres";
 const HTTP_PORT = parseInt(process.env.CHANNEL_PORT || "8789", 10);
+const MODULE = process.env.MODULE || "lead";
+const PG_CHANNEL = `workbench_channel_${MODULE}`;
 
 // --- MCP Server ---
 const mcp = new Server(
@@ -98,10 +100,10 @@ await mcp.connect(new StdioServerTransport());
 // --- PG LISTEN for agent messages ---
 const pgClient = new pg.Client(PG_CONNECTION);
 await pgClient.connect();
-await pgClient.query("LISTEN workbench_channel");
+await pgClient.query(`LISTEN ${PG_CHANNEL}`);
 
 pgClient.on("notification", async (msg) => {
-  if (msg.channel !== "workbench_channel" || !msg.payload) return;
+  if (msg.channel !== PG_CHANNEL || !msg.payload) return;
   try {
     const data = JSON.parse(msg.payload);
     await mcp.notification({
@@ -163,6 +165,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(HTTP_PORT, "127.0.0.1", () => {
   // stderr so it doesn't interfere with stdio transport
-  console.error(`[workbench-channel] HTTP listening on http://127.0.0.1:${HTTP_PORT}`);
-  console.error(`[workbench-channel] PG LISTEN on workbench_channel`);
+  console.error(`[workbench-channel] module=${MODULE} HTTP=:${HTTP_PORT} PG=${PG_CHANNEL}`);
 });
