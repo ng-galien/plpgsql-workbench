@@ -53,6 +53,7 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
       const fn: WithClient = async <T>(cb: (client: DbClient) => Promise<T>): Promise<T> => {
         const client = await pool.connect();
         try {
+          await client.query("SELECT set_config('app.tenant_id', 'dev', false)");
           return await cb(client);
         } finally {
           // Clean up any aborted transaction before returning to pool
