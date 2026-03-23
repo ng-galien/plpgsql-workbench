@@ -210,8 +210,14 @@ agents-status: ## Show current activity of each agent
 		fi; \
 	done
 
-agents-ping: ## DEPRECATED — agents receive messages via channel, no ping needed
-	@echo "  No ping needed — use pg_msg to send tasks, agents receive via channel"
+agents-ping: ## Send "go" to all agent tmux sessions
+	@for mod in modules/*/; do \
+		name=$$(basename "$$mod"); \
+		if tmux has-session -t "$$name" 2>/dev/null; then \
+			tmux send-keys -t "$$name" "go" Enter; \
+			echo "  PING  $$name"; \
+		fi; \
+	done
 
 # --- Single agent control (make agent M=crm, make agent-kill M=crm) ---
 
@@ -240,8 +246,14 @@ agent-kill: ## Kill one agent (M=name). Ex: make agent-kill M=crm
 
 agent-restart: agent-kill agent ## Kill then respawn one agent (M=name)
 
-agent-ping: ## DEPRECATED — agents receive messages via channel, no ping needed
-	@echo "  No ping needed — use pg_msg to send tasks, agents receive via channel"
+agent-ping: ## Send "go" to one agent (M=name). Ex: make agent-ping M=docs
+	@test -n "$(M)" || (echo "Usage: make agent-ping M=docs" && exit 1)
+	@if tmux has-session -t "$(M)" 2>/dev/null; then \
+		tmux send-keys -t "$(M)" "go" Enter; \
+		echo "  PING  $(M)"; \
+	else \
+		echo "  $(M) not running"; \
+	fi
 
 agent-log: ## Show last 50 lines from agent tmux (M=name). Ex: make agent-log M=crm
 	@test -n "$(M)" || (echo "Usage: make agent-log M=crm" && exit 1)
