@@ -5,7 +5,15 @@ AS $function$
 DECLARE
   v text;
 BEGIN
-  -- docs functions already have SET api.expose = 'mcp'
+  -- Ensure api.expose=mcp flags are set (may be reset by docs agent redeploys)
+  ALTER FUNCTION docs.charte_create(docs.charte) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charte_read(text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charte_list() SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charte_delete(text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charte_tokens_to_css(text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charte_check(text, text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.document_duplicate(text, text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.document_print_css(text) SET api.expose = 'mcp';
 
   -- charte: full inspection
   v := pgv.schema_inspect('docs', 'charte');

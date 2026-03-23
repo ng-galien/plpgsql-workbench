@@ -23,6 +23,6 @@ BEGIN
 
   -- Unset lang defaults to fr
   PERFORM set_config('pgv.lang', '', true);
-  RETURN NEXT ok(pgv.t('pgv.bug_reported') = 'Bug reporté, merci !', 't() resolves accented value');
+  RETURN NEXT ok(pgv.t('pgv.issue_reported') = 'Signalement envoyé, merci !', 't() resolves accented value');
 END;
 $function$;

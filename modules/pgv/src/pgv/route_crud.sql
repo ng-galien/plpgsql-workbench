@@ -66,9 +66,9 @@ BEGIN
           RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
         END IF;
         IF v_filter IS NOT NULL THEN
-          EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(%L) r', v_schema, v_fn, v_filter) INTO v_result;
+          EXECUTE format('SELECT coalesce(jsonb_agg(row_to_json(t)), ''[]''::jsonb) FROM %I.%I(%L) t', v_schema, v_fn, v_filter) INTO v_result;
         ELSE
-          EXECUTE format('SELECT to_jsonb(r) FROM %I.%I() r', v_schema, v_fn) INTO v_result;
+          EXECUTE format('SELECT coalesce(jsonb_agg(row_to_json(t)), ''[]''::jsonb) FROM %I.%I() t', v_schema, v_fn) INTO v_result;
         END IF;
       END IF;
 

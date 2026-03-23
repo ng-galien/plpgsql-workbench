@@ -29,7 +29,10 @@ BEGIN
   v := pgv.route_crud('get', 'docs://charte/nonexistent_id');
   RETURN NEXT ok(v ? 'data', 'read: has data key');
 
-  -- HATEOAS: actions filtered by api.expose=mcp
+  -- HATEOAS: set api.expose=mcp flags for test
+  ALTER FUNCTION docs.charte_delete(text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charte_tokens_to_css(text) SET api.expose = 'mcp';
+
   v := pgv.route_crud('get', 'docs://charte/test');
   RETURN NEXT ok(jsonb_typeof(v->'actions') = 'array', 'hateoas: actions is array');
   RETURN NEXT ok(

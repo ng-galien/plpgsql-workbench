@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { get } from "../lib/api";
+import { supabase } from "../lib/supabase";
 
 interface Page {
-  doc_id: string;
   page_index: number;
   name: string;
   html: string;
@@ -19,6 +18,7 @@ interface DocData {
   height: number;
   bg: string;
   status: string;
+  charte_id: string | null;
 }
 
 export function DocumentView() {
@@ -32,41 +32,39 @@ export function DocumentView() {
   useEffect(() => {
     if (!slug) return;
 
-    // Load document
-    get(`docs://document/${slug}`)
-      .then((res) => {
-        const d = res?.data;
-        if (!d) throw new Error("Document not found");
-        setDoc(d);
+    async function load() {
+      // 1. Load document by slug
+      const { data: docData, error: docErr } = await supabase
+        .schema("docs")
+        .rpc("document_read", { p_id: slug });
 
-        // Load charte CSS if linked
-        if (d.charte_id) {
-          return get(`docs://charte/${d.charte_id}/tokens_to_css`).then((cssRes) => {
-            setCss(cssRes?.data ?? "");
-          });
-        }
-      })
+      if (docErr) throw docErr;
+      if (!docData) throw new Error("Document not found");
+      setDoc(docData);
+
+      // 2. Load pages
+      const { data: pageData } = await supabase
+        .schema("docs")
+        .from("page")
+        .select("page_index, name, html")
+        .eq("doc_id", docData.id)
+        .order("page_index");
+
+      setPages(pageData ?? []);
+
+      // 3. Load charte CSS if linked
+      if (docData.charte_id) {
+        const { data: cssData } = await supabase
+          .schema("docs")
+          .rpc("charte_tokens_to_css", { p_charte_id: docData.charte_id });
+
+        setCss(cssData ?? "");
+      }
+    }
+
+    load()
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
-
-    // Load pages separately (not in route_crud yet — use supabase direct)
-    import("../lib/supabase").then(({ supabase }) => {
-      supabase
-        .schema("docs")
-        .rpc("document_read", { p_id: slug })
-        .then(({ data }) => {
-          // document_read returns the row, we need pages separately
-          // For now, fetch via direct table access
-          supabase
-            .from("page")
-            .select("*")
-            .eq("doc_id", data?.id ?? slug)
-            .order("page_index")
-            .then(({ data: pageData }) => {
-              if (pageData) setPages(pageData);
-            });
-        });
-    });
   }, [slug]);
 
   if (loading) return <p>Chargement...</p>;
@@ -78,11 +76,10 @@ export function DocumentView() {
       <p><Link to="/docs">← Documents</Link></p>
       <h2>{doc.name}</h2>
       <p style={{ color: "#666", fontSize: "0.9rem" }}>
-        {doc.format} {doc.orientation} · {doc.width}×{doc.height}mm ·
+        {doc.format} {doc.orientation} · {doc.width}×{doc.height}mm ·{" "}
         <span style={{
           padding: "0.1rem 0.4rem",
           borderRadius: "3px",
-          marginLeft: "0.3rem",
           background: doc.status === "draft" ? "#e7e5e4" : "#dcfce7",
           fontSize: "0.8rem",
         }}>
@@ -95,19 +92,22 @@ export function DocumentView() {
 
       {/* Pages */}
       {pages.map((page) => (
-        <div
-          key={page.page_index}
-          style={{
-            width: `${doc.width}mm`,
-            height: `${doc.height}mm`,
-            background: doc.bg,
-            margin: "20px auto",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
-            overflow: "hidden",
-            position: "relative",
-          }}
-          dangerouslySetInnerHTML={{ __html: page.html }}
-        />
+        <div key={page.page_index} style={{ marginBottom: "20px" }}>
+          <h4 style={{ color: "#888", fontSize: "0.85rem" }}>
+            Page {page.page_index + 1} — {page.name}
+          </h4>
+          <div
+            style={{
+              width: `${doc.width}mm`,
+              height: `${doc.height}mm`,
+              background: doc.bg,
+              margin: "0 auto",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.12)",
+              overflow: "hidden",
+            }}
+            dangerouslySetInnerHTML={{ __html: page.html }}
+          />
+        </div>
       ))}
     </div>
   );
