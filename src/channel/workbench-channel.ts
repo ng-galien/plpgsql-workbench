@@ -22,7 +22,7 @@ import pg from "pg";
 const PG_CONNECTION =
   process.env.PLPGSQL_CONNECTION ||
   process.env.DATABASE_URL ||
-  "postgresql://postgres:postgres@localhost:5433/postgres";
+  "postgresql://postgres:postgres@localhost:54322/postgres";
 const HTTP_PORT = parseInt(process.env.CHANNEL_PORT || "8789", 10);
 const MODULE = process.env.MODULE || "lead";
 const PG_CHANNEL = `workbench_channel_${MODULE}`;
