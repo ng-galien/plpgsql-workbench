@@ -204,11 +204,74 @@ export async function deployModules(
         break;
       }
     }
+
+    // Post-deploy: bootstrap + seeds (only if all modules succeeded)
+    if (!only && results.every((r) => r.ok)) {
+      await postDeploy(client, modulesDir, plan);
+    }
   } finally {
     await client.end();
   }
 
   return results;
+}
+
+/** Post-deploy: bootstrap SQL, i18n seeds, QA seeds */
+async function postDeploy(client: pg.Client, modulesDir: string, plan: InstallPlan): Promise<void> {
+  // Read workbench.json for bootstrap path
+  const wsRoot = path.resolve(modulesDir, "..");
+  try {
+    const wbJson = JSON.parse(await fs.readFile(path.join(wsRoot, "workbench.json"), "utf-8"));
+
+    // Bootstrap SQL (pre_request, tenant, module registrations)
+    if (wbJson.bootstrap) {
+      const bootstrapPath = path.join(wsRoot, wbJson.bootstrap);
+      try {
+        const sql = await fs.readFile(bootstrapPath, "utf-8");
+        await client.query(sql);
+        console.log("  bootstrap: ok");
+      } catch (err: unknown) {
+        console.error(`  bootstrap: FAILED — ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    // Seed: call i18n_seed() + {qa}.seed() for each module
+    if (wbJson.seed !== false) {
+      await client.query("SET app.tenant_id = 'dev'");
+      for (const manifest of plan.order) {
+        const schema = manifest.schemas.public;
+        if (!schema) continue;
+
+        // i18n_seed
+        try {
+          const { rows } = await client.query(
+            `SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.proname = 'i18n_seed'`,
+            [schema],
+          );
+          if (rows.length > 0) {
+            await client.query(`SELECT ${schema}.i18n_seed()`);
+          }
+        } catch { /* skip */ }
+
+        // QA seed
+        const qaSchema = manifest.schemas.qa;
+        if (qaSchema) {
+          try {
+            const { rows } = await client.query(
+              `SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = $1 AND p.proname = 'seed'`,
+              [qaSchema],
+            );
+            if (rows.length > 0) {
+              await client.query(`SELECT ${qaSchema}.seed()`);
+            }
+          } catch { /* skip */ }
+        }
+      }
+      console.log("  seeds: ok");
+    }
+  } catch {
+    // No workbench.json or no bootstrap — skip silently
+  }
 }
 
 async function deployModule(client: pg.Client, modulesDir: string, manifest: ModuleManifest): Promise<DeployResult> {
@@ -263,6 +326,7 @@ async function deployModule(client: pg.Client, modulesDir: string, manifest: Mod
         try {
           await client.query(`GRANT USAGE ON SCHEMA ${qi(schema)} TO ${qi(role)}`);
           await client.query(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${qi(schema)} TO ${qi(role)}`);
+          await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA ${qi(schema)} TO ${qi(role)}`);
         } catch {
           // Role might not exist yet — non-fatal
         }

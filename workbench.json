@@ -1,0 +1,7 @@
+{
+  "name": "plpgsql-workbench",
+  "modules": ["pgv", "asset", "cad", "catalog", "crm", "docs", "expense", "hr", "quote", "ledger", "project", "planning", "stock", "purchase", "workbench", "ops"],
+  "connection": "postgresql://postgres:postgres@localhost:54322/postgres",
+  "bootstrap": "seed/bootstrap.sql",
+  "seed": true
+}

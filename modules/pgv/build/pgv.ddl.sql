@@ -3,6 +3,12 @@
 
 CREATE SCHEMA IF NOT EXISTS pgv;
 
+-- Domain text/html for PostgREST HTML content negotiation
+DO $$ BEGIN
+  CREATE DOMAIN "text/html" AS TEXT;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
 -- Search result type: convention for module search providers
 -- Each module implements: {schema}.search(p_query text, p_limit int, p_offset int) -> SETOF pgv.search_result
 DO $$ BEGIN
