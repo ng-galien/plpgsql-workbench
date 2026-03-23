@@ -304,7 +304,7 @@ document.addEventListener('alpine:init', () => {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       const conn = {
         ws: null,
-        url: `${proto}://${location.host}/ws/tmux/${mod}`,
+        url: `ws://localhost:3100/ws/tmux/${mod}`,
         attempt: 0,
         reconnectTimer: null,
         heartbeatTimer: null,
@@ -588,7 +588,7 @@ document.addEventListener('alpine:init', () => {
       if (!el) return;
 
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      this._wsUrl = `${proto}://${location.host}/ws/tmux/${mod}`;
+      this._wsUrl = `ws://localhost:3100/ws/tmux/${mod}`;
       console.log('[OPS:detail] connect() — wsUrl:', this._wsUrl);
 
       // Theme observer
@@ -622,7 +622,7 @@ document.addEventListener('alpine:init', () => {
       // Update module + reconnect
       this._module = mod;
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      this._wsUrl = `${proto}://${location.host}/ws/tmux/${mod}`;
+      this._wsUrl = `ws://localhost:3100/ws/tmux/${mod}`;
 
       if (this.term) {
         this.term.clear();
