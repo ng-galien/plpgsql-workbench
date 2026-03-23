@@ -513,7 +513,7 @@ document.addEventListener('alpine:init', () => {
 
     async refresh() {
       try {
-        const res = await fetch('/api/tmux');
+        const res = await fetch('http://localhost:3100/api/tmux');
         if (!res.ok) { this.loading = false; return; }
         const data = await res.json();
         const list = Array.isArray(data) ? data : (data.sessions || []);
