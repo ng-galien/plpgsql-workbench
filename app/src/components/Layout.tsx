@@ -1,41 +1,95 @@
+import { useEffect } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
-
-const nav = [
-  { href: "/", label: "Home" },
-  { href: "/docs", label: "Documents" },
-];
+import { useStore } from "../lib/store";
+import { initRealtime } from "../lib/realtime";
+import { Toast } from "./Toast";
 
 export function Layout() {
   const { pathname } = useLocation();
+  const modules = useStore((s) => s.modules);
+  const loading = useStore((s) => s.loading);
+  const loadModules = useStore((s) => s.loadModules);
+
+  useEffect(() => {
+    loadModules();
+    const cleanup = initRealtime();
+    return cleanup;
+  }, []);
+
+  const currentSchema = pathname.split("/")[1] || "";
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+      {/* App bar */}
       <nav style={{
-        padding: "0.5rem 1rem",
+        padding: "0 1rem",
+        height: "2.5rem",
         borderBottom: "1px solid #e5e5e5",
         display: "flex",
-        gap: "1rem",
+        gap: "0.25rem",
         alignItems: "center",
-        background: "#faf9f6"
+        background: "#faf9f6",
+        fontSize: "0.85rem",
+        overflow: "hidden",
       }}>
-        <strong>Workbench</strong>
-        {nav.map((n) => (
+        <Link to="/" style={{
+          textDecoration: "none",
+          fontWeight: 700,
+          color: "#b45309",
+          marginRight: "0.75rem",
+        }}>
+          ⬡
+        </Link>
+        {!loading && modules.map((m) => (
           <Link
-            key={n.href}
-            to={n.href}
+            key={m.schema}
+            to={`/${m.schema}/`}
             style={{
               textDecoration: "none",
-              fontWeight: pathname === n.href ? 600 : 400,
-              color: pathname === n.href ? "#b45309" : "#555",
+              padding: "0.25rem 0.5rem",
+              borderRadius: "4px",
+              color: currentSchema === m.schema ? "#b45309" : "#555",
+              background: currentSchema === m.schema ? "rgba(180,83,9,0.08)" : "transparent",
+              fontWeight: currentSchema === m.schema ? 600 : 400,
             }}
           >
-            {n.label}
+            {m.brand}
           </Link>
         ))}
       </nav>
+
+      {/* Module nav */}
+      {modules.filter((m) => m.schema === currentSchema).map((m) => (
+        <nav key={m.schema} style={{
+          padding: "0 1rem",
+          height: "2rem",
+          borderBottom: "1px solid #eee",
+          display: "flex",
+          gap: "1rem",
+          alignItems: "center",
+          fontSize: "0.8rem",
+        }}>
+          {m.items.map((item, i) => (
+            <Link
+              key={i}
+              to={`/${m.schema}${item.href || "/"}`}
+              style={{
+                textDecoration: "none",
+                color: "#666",
+              }}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+      ))}
+
+      {/* Content */}
       <main style={{ flex: 1, padding: "1.5rem", maxWidth: "1100px", margin: "0 auto", width: "100%" }}>
         <Outlet />
       </main>
+
+      <Toast />
     </div>
   );
 }

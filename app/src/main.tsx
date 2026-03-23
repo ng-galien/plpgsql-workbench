@@ -15,6 +15,8 @@ createRoot(document.getElementById("root")!).render(
           <Route path="/" element={<Home />} />
           <Route path="/docs" element={<DocumentList />} />
           <Route path="/docs/:slug" element={<DocumentView />} />
+          {/* Maket editor — future */}
+          {/* <Route path="/maket/*" element={<MaketApp />} /> */}
         </Route>
       </Routes>
     </BrowserRouter>
