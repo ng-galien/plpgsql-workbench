@@ -16,7 +16,8 @@ interface Action {
 }
 
 /** Generic list page — driven by route_crud + schema_inspect */
-export function CrudList({ schema, entity }: { schema: string; entity: string }) {
+export function CrudList({ schema, entity, route }: { schema: string; entity: string; route?: string }) {
+  const basePath = `/${schema}/${route || entity}`;
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [columns, setColumns] = useState<Column[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +77,7 @@ export function CrudList({ schema, entity }: { schema: string; entity: string })
                     return (
                       <td key={col.name} style={{ padding: "0.5rem" }}>
                         {isName ? (
-                          <Link to={`/${schema}/${entity}/${slug}`}>
+                          <Link to={`${basePath}/${slug}`}>
                             {String(val ?? "")}
                           </Link>
                         ) : (
@@ -96,7 +97,8 @@ export function CrudList({ schema, entity }: { schema: string; entity: string })
 }
 
 /** Generic detail page */
-export function CrudDetail({ schema, entity }: { schema: string; entity: string }) {
+export function CrudDetail({ schema, entity, route }: { schema: string; entity: string; route?: string }) {
+  const basePath = `/${schema}/${route || entity}`;
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<Record<string, unknown> | null>(null);
@@ -130,7 +132,7 @@ export function CrudDetail({ schema, entity }: { schema: string; entity: string 
   return (
     <div>
       <p>
-        <Link to={`/${schema}/${entity}`}>← {entity}s</Link>
+        <Link to={basePath}>← retour</Link>
       </p>
       <h2>{String(data.name ?? data.slug ?? slug)}</h2>
 

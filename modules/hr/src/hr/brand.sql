@@ -3,5 +3,5 @@ CREATE OR REPLACE FUNCTION hr.brand()
  LANGUAGE sql
  STABLE
 AS $function$
-  SELECT 'RH';
+  SELECT pgv.t('hr.brand');
 $function$;

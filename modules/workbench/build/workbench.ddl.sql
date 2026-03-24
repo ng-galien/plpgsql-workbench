@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS workbench.tenant_module (
   module      TEXT NOT NULL,
   active      BOOLEAN NOT NULL DEFAULT true,
   sort_order  INTEGER NOT NULL DEFAULT 50,
+  nav_group   TEXT NOT NULL DEFAULT 'main',
   activated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (tenant_id, module)
 );

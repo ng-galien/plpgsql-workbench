@@ -37,3 +37,13 @@ INSERT INTO workbench.tenant_module (tenant_id, module, active, sort_order) VALU
   ('dev', 'ledger', true, 60),
   ('dev', 'hr', true, 80)
 ON CONFLICT DO NOTHING;
+
+-- Supabase Realtime — enable CDC for agent messaging
+ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS workbench.agent_message;
+ALTER TABLE workbench.agent_message REPLICA IDENTITY FULL;
+
+-- Grants for browser issue reporting (anon role via PostgREST)
+GRANT INSERT ON workbench.issue_report TO anon;
+GRANT USAGE ON SEQUENCE workbench.issue_report_id_seq TO anon;
+GRANT INSERT ON workbench.agent_message TO anon;
+GRANT USAGE ON SEQUENCE workbench.agent_message_id_seq TO anon;

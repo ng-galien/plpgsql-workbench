@@ -1,7 +1,9 @@
 import { supabase } from "./supabase";
 import { useStore } from "./store";
+import type { ToastLevel } from "./store";
 
-/** Subscribe to AI broadcast channel — toasts + navigation from MCP */
+const validLevels = new Set<ToastLevel>(["success", "error", "warning", "info"]);
+
 export function initRealtime() {
   const channel = supabase.channel("ai-activity");
 
@@ -17,9 +19,10 @@ export function initRealtime() {
     if (p.action === "navigate" && p.href) {
       window.location.href = p.href;
     } else if (p.msg) {
+      const level: ToastLevel = validLevels.has(p.level as ToastLevel) ? (p.level as ToastLevel) : "info";
       useStore.getState().showToast({
         msg: p.msg,
-        level: p.level || "info",
+        level,
         detail: p.detail,
         href: p.href,
       });
@@ -27,6 +30,5 @@ export function initRealtime() {
   });
 
   channel.subscribe();
-
   return () => channel.unsubscribe();
 }

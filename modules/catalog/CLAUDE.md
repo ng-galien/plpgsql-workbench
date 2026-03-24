@@ -1,104 +1,119 @@
-# catalog — Catalogue Produits/Services
+# catalog — Product/Service Catalog
 
-Module catalogue : articles, prestations, tarifs, catégories, unités de mesure.
+Product catalog module: articles, services, pricing, categories, units of measure.
 
-**Dépend de :** pgv (framework UI)
+## Language Rules (STRICT)
 
-**Consommé par :** quote (lignes devis/facture), stock (articles), purchase (lignes commande)
+- **Code** — ALL code in English: function names, parameter names, variable names, column names, JSON keys, comments. No exceptions.
+- **Labels** — ALL user-facing text via `pgv.t('module.key')`. Never hardcode French (or any language) strings in functions. Labels live in `i18n_seed()` only.
+- **CLAUDE.md** — English only.
+- **Commits** — English only.
+- **Examples**: `client_list` not `liste_clients`, `pgv.t('crm.action_send')` not `'Envoyer'`, `status = 'draft'` not `'brouillon'`
 
-**Schemas :** `catalog` (public), `catalog_ut` (tests), `catalog_qa` (seed data)
+**Depends on:** pgv (UI framework)
 
-## Modèle de données
+**Consumed by:** quote (invoice/quote lines), stock (articles), purchase (order lines)
 
-- `catalog.categorie` — catégories arborescentes (parent_id)
-- `catalog.unite` — unités de mesure (m, m2, kg, h, u, forfait...)
-- `catalog.article` — produits/services avec référence, désignation, prix vente/achat HT, TVA, unité, catégorie
+**Schemas:** `catalog` (public), `catalog_ut` (tests), `catalog_qa` (seed data)
 
-## Pages attendues
+## Data Model
 
-- `get_index()` — dashboard : stats (nb articles, catégories), recherche, liste articles avec filtres
-- `get_article(p_id)` — fiche article : détail, modifier, historique prix si disponible
-- `get_categories()` — gestion catégories arborescentes
-- `get_article_form(p_params jsonb)` — formulaire création/édition article
-- `post_article_creer(p_params jsonb)` — créer un article
-- `post_article_modifier(p_params jsonb)` — modifier un article
-- `post_categorie_creer(p_params jsonb)` — créer une catégorie
+- `catalog.categorie` — tree-structured categories (parent_id)
+- `catalog.unite` — units of measure (m, m2, kg, h, u, forfait...)
+- `catalog.article` — products/services with reference, designation, sale/purchase price HT, VAT, unit, category
 
-## Convention routeur
+## Pages (pgView legacy)
 
-**IMPORTANT :** `pgv.route()` supporte max 1 argument par fonction. Utiliser `jsonb` pour les fonctions avec filtres/paramètres multiples :
+- `get_index()` — dashboard: stats (nb articles, categories), search, article list with filters
+- `get_article(p_id)` — article detail: info, edit, disable/enable
+- `get_categories()` — category management with tree display
+- `get_article_form(p_params jsonb)` — create/edit article form
+- `post_article_creer(p_params jsonb)` — create article
+- `post_article_modifier(p_params jsonb)` — update article
+- `post_categorie_creer(p_params jsonb)` — create category
+
+## CRUD Functions (route_crud)
+
+Standard CRUD for each entity, consumed by `route_crud(verb, uri)`:
+- `article_list/read/create/update/delete`
+- `categorie_list/read/create/update/delete`
+
+SDUI views:
+- `article_ui(p_slug)` — list mode (table+datasource) + detail mode (static components)
+- `categorie_ui(p_slug)` — list mode (table+datasource) + detail mode (static components)
+
+## Router Convention
+
+**IMPORTANT:** `pgv.route()` supports max 1 argument per function. Use `jsonb` for functions with multiple filters/parameters:
 ```sql
 CREATE FUNCTION catalog.get_index(p_params jsonb DEFAULT '{}'::jsonb) RETURNS text
--- p_params->>'q' pour recherche, p_params->>'categorie_id' pour filtre
+-- p_params->>'q' for search, p_params->>'categorie_id' for filter
 ```
 
-## Intégration cross-module
+## Cross-Module Integration
 
-Les autres modules appellent catalog via EXECUTE dynamique (pas de hard dependency) :
+Other modules call catalog via dynamic EXECUTE (no hard dependency):
 ```sql
--- Exemple dans quote ou purchase
+-- Example in quote or purchase
 IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'catalog') THEN
   EXECUTE 'SELECT catalog.article_options()' INTO v_options;
 END IF;
 ```
 
-## Workflow dev (STRICT)
+## Dev Workflow (STRICT)
 
-1. DDL → Write dans `build/catalog.ddl.sql` → `pg_schema` pour appliquer
-2. Fonctions → `pg_func_set` pour créer/modifier + `pg_test` pour valider
-3. Exporter → `pg_pack` (→ `build/catalog.func.sql`) + `pg_func_save` (→ `src/`)
-4. `pg_query` → SELECT/DML uniquement, JAMAIS de DDL ou CREATE FUNCTION
-5. JAMAIS écrire de fonctions dans des fichiers SQL
+1. DDL → Write to `build/catalog.ddl.sql` → `pg_schema` to apply
+2. Functions → `pg_func_set` to create/modify + `pg_test` to validate
+3. Export → `pg_pack` (→ `build/catalog.func.sql`) + `pg_func_save` (→ `src/`)
+4. `pg_query` → SELECT/DML only, NEVER DDL or CREATE FUNCTION
+5. NEVER write functions in SQL files
 
-## Conventions pgView
+## pgView Conventions
 
-- Tables via `<md>` blocks, JAMAIS `<table>` HTML
-- CSS classes `pgv-*`, JAMAIS `style="..."`
-- Primitives : `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.action()`
-- POST retourne raw HTML (toast/redirect), jamais wrappé dans `page()`
+- Tables via `<md>` blocks, NEVER raw `<table>` HTML
+- CSS classes `pgv-*`, NEVER `style="..."`
+- Primitives: `pgv.toast()`, `pgv.redirect()`, `pgv.form()`, `pgv.sel()`, `pgv.stat()`, `pgv.badge()`, `pgv.grid()`, `pgv.empty()`, `pgv.action()`
+- POST returns raw HTML (toast/redirect via primitives), never wrapped in `page()`
 
-## Communication inter-modules
+## Inter-Module Communication
 
-- `pg_msg_inbox module:catalog` → lire les messages entrants
-- `pg_msg` → envoyer un message à un autre module
-- **feature_request / bug_report → TOUJOURS via issue_report** : ne jamais envoyer de feature_request ou bug_report directement à un autre module. Créer une issue : `INSERT INTO workbench.issue_report(issue_type, module, description) VALUES ('enhancement|bug', '<module_cible>', '<description>')`. Le lead sera notifié et décidera du dispatch.
-- Chaque module est autonome — ne jamais modifier les fonctions d'un autre module
+- `pg_msg_inbox module:catalog` → read incoming messages
+- `pg_msg` → send message to another module
+- **feature_request / bug_report → ALWAYS via issue_report**: never send feature_request or bug_report directly to another module. Create an issue: `INSERT INTO workbench.issue_report(issue_type, module, description) VALUES ('enhancement|bug', '<target_module>', '<description>')`. The lead will be notified and decide dispatch.
+- Each module is autonomous — never modify another module's functions
 
 ## i18n
 
-Le framework utilise `pgv.t(key)` pour l'internationalisation. Chaque module doit :
-1. Créer `catalog.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) les traductions FR
-2. Clés namespaced : `catalog.nav_xxx`, `catalog.title_xxx`, `catalog.btn_xxx`, etc.
-3. Utiliser `pgv.t('catalog.xxx')` dans nav_items(), brand(), et toutes les fonctions get_*/post_*
-4. `ON CONFLICT DO NOTHING` dans le seed
+The framework uses `pgv.t(key)` for internationalization. Each module must:
+1. Create `catalog.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) with translations
+2. Namespaced keys: `catalog.nav_xxx`, `catalog.title_xxx`, `catalog.btn_xxx`, etc.
+3. Use `pgv.t('catalog.xxx')` in nav_items(), brand(), and all get_*/post_* functions
+4. `ON CONFLICT DO NOTHING` in the seed
 
 ## QA Seed Data
 
-Le schema `catalog_qa` contient uniquement `seed()` et `clean()` — PAS de pages.
-- `catalog_qa.seed()` — INSERT données démo réalistes
-- `catalog_qa.clean()` — DELETE dans l'ordre inverse des FK
-- `ON CONFLICT DO NOTHING`, penser multi-tenant (`current_setting('app.tenant_id', true)`)
+Schema `catalog_qa` contains only `seed()` and `clean()` — NO pages.
+- `catalog_qa.seed()` — INSERT realistic demo data
+- `catalog_qa.clean()` — DELETE in reverse FK order
+- `ON CONFLICT DO NOTHING`, consider multi-tenant (`current_setting('app.tenant_id', true)`)
 
-## Workflow agent
+## Agent Workflow
 
-1. Au démarrage ou quand on te dit "go" : **toujours lire `pg_msg_inbox module:catalog`**
-2. Traiter les messages par priorité (HIGH d'abord)
-3. Ne pas résoudre un message tant que la tâche n'est pas vérifiée
-4. Après chaque tâche : `pg_pack schemas: catalog,catalog_ut,catalog_qa` (les 3 schemas)
-5. Puis `pg_func_save target: plpgsql://catalog` + `plpgsql://catalog_ut` + `plpgsql://catalog_qa`
+1. On startup or when told "go": **always read `pg_msg_inbox module:catalog`**
+2. Process messages by priority (HIGH first)
+3. Do not resolve a message until the task is verified
+4. After each task: `pg_pack schemas: catalog,catalog_ut,catalog_qa` (all 3 schemas)
+5. Then `pg_func_save target: plpgsql://catalog` + `plpgsql://catalog_ut` + `plpgsql://catalog_qa`
 
+## Built-in Documentation
 
-## Documentation intégrée
-
-Le workbench embarque de la documentation accessible via `pg_doc` :
-- `pg_doc topic:testing` — Guide pgTAP : conventions test_*(), assertions, patterns
-- `pg_doc topic:data-convention` — Convention data_*() : cursor pagination, FTS, pgv.table()
-- `pg_doc topic:coverage` — Guide couverture de code
+The workbench embeds documentation accessible via `pg_doc`:
+- `pg_doc topic:testing` — pgTAP guide: test_*() conventions, assertions, patterns
+- `pg_doc topic:data-convention` — data_*() convention: cursor pagination, FTS, pgv.table()
+- `pg_doc topic:coverage` — Code coverage guide
 
 ## Gotchas
 
-- **tenant_id** : toujours `PERFORM set_config('app.tenant_id', 'test', true)` au début de chaque test
-- **pg_test** : découvre les fonctions `test_*()` dans le schema `_ut`
-
-- **Tu es l'agent catalog, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:catalog` pour lire TES messages. Ne traiter que les messages adressés à `catalog`.
-- (a completer au fil du developpement)
+- **tenant_id**: always `PERFORM set_config('app.tenant_id', 'test', true)` at the start of each test
+- **pg_test**: discovers `test_*()` functions in the `_ut` schema
+- **You are the catalog agent, NOT the lead.** Never use `ws_health` to find your tasks — it shows ALL workspace tasks. Use only `pg_msg_inbox module:catalog` to read YOUR messages. Only process messages addressed to `catalog`.

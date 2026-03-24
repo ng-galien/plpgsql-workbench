@@ -19,73 +19,53 @@ export function Layout() {
   const currentSchema = pathname.split("/")[1] || "";
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+    <div className="min-h-screen flex flex-col">
       {/* App bar */}
-      <nav style={{
-        padding: "0 1rem",
-        height: "2.5rem",
-        borderBottom: "1px solid #e5e5e5",
-        display: "flex",
-        gap: "0.25rem",
-        alignItems: "center",
-        background: "#faf9f6",
-        fontSize: "0.85rem",
-        overflow: "hidden",
-      }}>
-        <Link to="/" style={{
-          textDecoration: "none",
-          fontWeight: 700,
-          color: "#b45309",
-          marginRight: "0.75rem",
-        }}>
+      <nav className="px-4 h-11 border-b flex items-center gap-1 bg-background/80 backdrop-blur-sm text-sm overflow-hidden sticky top-0 z-50">
+        <Link
+          to="/"
+          className="no-underline font-bold text-primary mr-3 text-base"
+        >
           ⬡
         </Link>
-        {!loading && modules.map((m) => (
-          <Link
-            key={m.schema}
-            to={`/${m.schema}/`}
-            style={{
-              textDecoration: "none",
-              padding: "0.25rem 0.5rem",
-              borderRadius: "4px",
-              color: currentSchema === m.schema ? "#b45309" : "#555",
-              background: currentSchema === m.schema ? "rgba(180,83,9,0.08)" : "transparent",
-              fontWeight: currentSchema === m.schema ? 600 : 400,
-            }}
-          >
-            {m.brand}
-          </Link>
-        ))}
-      </nav>
-
-      {/* Module nav */}
-      {modules.filter((m) => m.schema === currentSchema).map((m) => (
-        <nav key={m.schema} style={{
-          padding: "0 1rem",
-          height: "2rem",
-          borderBottom: "1px solid #eee",
-          display: "flex",
-          gap: "1rem",
-          alignItems: "center",
-          fontSize: "0.8rem",
-        }}>
-          {m.items.map((item, i) => (
+        {!loading &&
+          modules.map((m) => (
             <Link
-              key={i}
-              to={`/${m.schema}${item.href || "/"}`}
-              style={{
-                textDecoration: "none",
-                color: "#666",
-              }}
+              key={m.schema}
+              to={`/${m.schema}/`}
+              className={`no-underline px-2.5 py-1 rounded-md transition-colors ${
+                currentSchema === m.schema
+                  ? "text-primary bg-primary/8 font-semibold"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              }`}
             >
-              {item.label}
+              {m.brand}
             </Link>
           ))}
-        </nav>
-      ))}
+      </nav>
+
+      {/* Module sub-nav */}
+      {modules
+        .filter((m) => m.schema === currentSchema)
+        .map((m) => (
+          <nav
+            key={m.schema}
+            className="px-4 h-9 border-b flex items-center gap-4 text-xs"
+          >
+            {m.items.map((item, i) => (
+              <Link
+                key={i}
+                to={`/${m.schema}${item.href || "/"}`}
+                className="no-underline text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        ))}
 
       {/* Content */}
-      <main style={{ flex: 1, padding: "1.5rem", maxWidth: "1100px", margin: "0 auto", width: "100%" }}>
+      <main className="flex-1 py-6 px-6 max-w-5xl mx-auto w-full">
         <Outlet />
       </main>
 

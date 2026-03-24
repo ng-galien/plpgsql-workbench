@@ -37,6 +37,7 @@ BEGIN
     ('fr', 'crm.field_search_name_email', 'Recherche nom/email'),
     ('fr', 'crm.field_search_subject', 'Recherche sujet'),
     ('fr', 'crm.field_csv', 'Contenu CSV'),
+    ('fr', 'crm.field_created_at', 'Créé le'),
 
     -- Common values
     ('fr', 'crm.yes', 'Oui'),
@@ -49,11 +50,18 @@ BEGIN
     ('fr', 'crm.period_month', 'Ce mois'),
     ('fr', 'crm.period_3months', '3 derniers mois'),
 
+    -- Entity labels
+    ('fr', 'crm.entity_client', 'Client'),
+    ('fr', 'crm.entity_interaction', 'Interaction'),
+
     -- Stats
     ('fr', 'crm.stat_total_clients', 'Total clients'),
     ('fr', 'crm.stat_new_month', 'Nouveaux ce mois'),
     ('fr', 'crm.stat_interactions_week', 'Interactions cette semaine'),
     ('fr', 'crm.stat_total_interactions', 'Total interactions'),
+    ('fr', 'crm.stat_quotes', 'Devis'),
+    ('fr', 'crm.stat_revenue', 'CA total'),
+    ('fr', 'crm.stat_pending', 'En attente'),
 
     -- Table headers
     ('fr', 'crm.col_client', 'Client'),
@@ -61,7 +69,9 @@ BEGIN
     ('fr', 'crm.col_city', 'Ville'),
     ('fr', 'crm.col_tier', 'Tier'),
     ('fr', 'crm.col_interactions', 'Interactions'),
+    ('fr', 'crm.col_contacts', 'Contacts'),
     ('fr', 'crm.col_active', 'Actif'),
+    ('fr', 'crm.col_date', 'Date'),
     ('fr', 'crm.col_number', 'Numéro'),
     ('fr', 'crm.col_status', 'Statut'),
 
@@ -120,9 +130,27 @@ BEGIN
     ('fr', 'crm.toast_contact_deleted', 'Contact supprimé.'),
     ('fr', 'crm.toast_interaction_added', 'Interaction ajoutée.'),
 
+    -- Actions
+    ('fr', 'crm.action_archive', 'Archiver'),
+    ('fr', 'crm.action_activate', 'Réactiver'),
+    ('fr', 'crm.action_delete', 'Supprimer'),
+
+    -- Form sections
+    ('fr', 'crm.section_identity', 'Identité'),
+    ('fr', 'crm.section_contact', 'Contact'),
+    ('fr', 'crm.section_address', 'Adresse'),
+    ('fr', 'crm.section_notes', 'Notes'),
+    ('fr', 'crm.section_interaction', 'Interaction'),
+
+    -- Related entities
+    ('fr', 'crm.related_quotes', 'Devis'),
+    ('fr', 'crm.related_invoices', 'Factures'),
+
     -- Confirm dialogs
+    ('fr', 'crm.confirm_archive', 'Archiver ce client ?'),
     ('fr', 'crm.confirm_delete_contact', 'Supprimer ce contact ?'),
     ('fr', 'crm.confirm_delete_client', 'Supprimer définitivement ce client et tout son historique ?'),
+    ('fr', 'crm.confirm_delete_interaction', 'Supprimer cette interaction ?'),
 
     -- Import page
     ('fr', 'crm.import_intro', 'Collez votre CSV ci-dessous. Colonnes attendues :'),

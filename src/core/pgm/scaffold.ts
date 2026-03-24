@@ -307,17 +307,6 @@ function claudeSettings(appName: string, ports: Ports): string {
             ],
           },
         ],
-        Stop: [
-          {
-            hooks: [
-              {
-                type: "http",
-                url: `http://localhost:${ports.mcp}/hooks/${appName}/stop`,
-                timeout: 5,
-              },
-            ],
-          },
-        ],
         PreToolUse: [
           {
             matcher:
@@ -393,6 +382,11 @@ export async function scaffoldModule(
           "plpgsql-workbench": {
             type: "http",
             url: `http://localhost:${mcpPort}/mcp`,
+          },
+          "workbench-msg": {
+            command: "npx",
+            args: ["tsx", "../../src/channel/workbench-msg.ts"],
+            env: { MODULE: name },
           },
         },
       },
@@ -578,15 +572,6 @@ function moduleClaudeSettings(moduleName: string, mcpPort: number): string {
         ],
         Stop: [
           {
-            hooks: [
-              {
-                type: "http",
-                url: `http://localhost:${mcpPort}/hooks/${moduleName}/stop`,
-                timeout: 5,
-              },
-            ],
-          },
-        ],
         PreToolUse: [
           {
             matcher:

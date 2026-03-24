@@ -165,7 +165,7 @@ agents-docker-down: ## Stop all containerized agents
 STRIP_VARS := CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_SESSION_ID \
 	CLAUDE_CODE_CONVERSATION_ID CLAUDE_CODE_TASK_ID \
 	NON_INTERACTIVE MCP_TRANSPORT MCP_SESSION_ID
-CHANNEL_FLAG := --dangerously-load-development-channels server:workbench-channel
+CHANNEL_FLAG := --dangerously-load-development-channels server:workbench-msg
 
 .PHONY: agents agents-kill agents-restart agents-status agents-ping agent agent-kill agent-ping agent-log
 

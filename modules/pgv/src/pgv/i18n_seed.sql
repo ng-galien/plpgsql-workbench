@@ -18,7 +18,14 @@ BEGIN
     ('fr', 'pgv.table_empty', 'Aucun résultat'),
     ('fr', 'pgv.table_loading', 'Chargement…'),
     ('fr', 'pgv.table_search', 'Rechercher…'),
-    ('fr', 'pgv.print', 'Télécharger SVG')
+    ('fr', 'pgv.print', 'Télécharger SVG'),
+    ('fr', 'app.group_main', 'Principal'),
+    ('fr', 'app.group_commercial', 'Commercial'),
+    ('fr', 'app.group_operations', 'Opérations'),
+    ('fr', 'app.group_finance', 'Finance'),
+    ('fr', 'app.group_team', 'Équipe'),
+    ('fr', 'app.group_admin', 'Administration'),
+    ('fr', 'app.search', 'Rechercher...')
   ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
 END;
 $function$;

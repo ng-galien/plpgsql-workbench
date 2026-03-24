@@ -131,6 +131,16 @@ pgClient.on("notification", async (msg) => {
 // --- HTTP server for browser annotations ---
 const http = await import("node:http");
 const server = http.createServer(async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   if (req.method !== "POST") {
     res.writeHead(405);
     res.end("Method not allowed");

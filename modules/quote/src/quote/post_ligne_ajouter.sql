@@ -17,6 +17,9 @@ BEGIN
   v_facture_id := (p_data->>'facture_id')::int;
   v_article_id := (p_data->>'article_id')::int;
 
+  -- Initialize v_art to avoid "record not assigned" on field access
+  SELECT NULL::text AS designation, NULL::numeric AS prix_achat, NULL::text AS unite, NULL::numeric AS tva INTO v_art;
+
   -- Vérifier que le parent est brouillon
   IF v_devis_id IS NOT NULL THEN
     IF NOT EXISTS (SELECT 1 FROM quote.devis WHERE id = v_devis_id AND statut = 'brouillon') THEN
@@ -59,20 +62,20 @@ BEGIN
   -- Resolve values: form > article > defaults
   v_description := coalesce(
     nullif(trim(p_data->>'description'), ''),
-    v_art.designation,
+    CASE WHEN v_article_id IS NOT NULL THEN v_art.designation END,
     pgv.t('quote.err_default_description')
   );
   v_prix_unitaire := coalesce(
     nullif((p_data->>'prix_unitaire')::numeric, 0),
-    v_art.prix_achat,
+    CASE WHEN v_article_id IS NOT NULL THEN v_art.prix_achat END,
     0
   );
   v_unite := coalesce(
     nullif(p_data->>'unite', ''),
-    v_art.unite,
+    CASE WHEN v_article_id IS NOT NULL THEN v_art.unite END,
     'u'
   );
-  v_tva_rate := coalesce((p_data->>'tva_rate')::numeric, v_art.tva, 20.00);
+  v_tva_rate := coalesce((p_data->>'tva_rate')::numeric, CASE WHEN v_article_id IS NOT NULL THEN v_art.tva END, 20.00);
 
   INSERT INTO quote.ligne (devis_id, facture_id, description, quantite, unite, prix_unitaire, tva_rate)
   VALUES (

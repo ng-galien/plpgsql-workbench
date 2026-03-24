@@ -1,85 +1,103 @@
-# workbench — Platform Infrastructure & Tour de Controle
+# workbench — Platform Infrastructure & Control Tower
 
-Schema fondation de la plateforme. Tables partagees (tenants, messaging, hooks, sessions, issues) + UI dashboard pour le PO.
+Platform foundation schema. Shared tables (tenants, messaging, hooks, sessions, issues) + PO dashboard UI.
 
-**Depend de :** `pgv`
+**Depends on:** `pgv`
 
-**Schemas :** `workbench` (public)
+**Schemas:** `workbench` (public)
 
-## Responsabilites
+## Language Rules (STRICT)
 
-### Tables (DDL dans build/workbench.ddl.sql)
+- **Code** — ALL code in English: function names, parameter names, variable names, column names, JSON keys, comments. No exceptions.
+- **Labels** — ALL user-facing text via `pgv.t('module.key')`. Never hardcode French (or any language) strings in functions. Labels live in `i18n_seed()` only.
+- **CLAUDE.md** — English only.
+- **Commits** — English only.
+- **Examples**: `client_list` not `liste_clients`, `pgv.t('crm.action_send')` not `'Envoyer'`, `status = 'draft'` not `'brouillon'`
+
+## Responsibilities
+
+### Tables (DDL in build/workbench.ddl.sql)
 
 | Table | Role |
 |-------|------|
-| `toolbox` / `toolbox_tool` | Registre MCP tools (peuple par `npm run sync-tools`) |
-| `tenant` / `tenant_module` | Multi-tenant + modules actifs par tenant (sort_order = ordre nav) |
-| `config` | Config applicative key-value (zero env vars) |
-| `agent_message` | Messaging inter-modules (pg_msg / pg_msg_inbox) |
-| `agent_session` | Sessions agents Claude Code |
-| `hook_log` | Audit des hooks de workflow |
-| `issue_report` | Bug reports et feature requests (dispatch par le lead) |
-| `gotcha` | Regles et pieges documentes par scope |
+| `toolbox` / `toolbox_tool` | MCP tools registry (populated by `npm run sync-tools`) |
+| `tenant` / `tenant_module` | Multi-tenant + active modules per tenant (sort_order = nav order) |
+| `config` | App config key-value (zero env vars) |
+| `agent_message` | Inter-module messaging (pg_msg / pg_msg_inbox) |
+| `agent_session` | Claude Code agent sessions |
+| `hook_log` | Workflow hooks audit |
+| `issue_report` | Bug reports and feature requests (dispatched by lead) |
+| `gotcha` | Documented rules and pitfalls per scope |
 
-### Fonctions infra (pas de UI)
+### Infrastructure functions (no UI)
 
-- `inbox_check()` / `inbox_new()` / `inbox_pending()` — API messaging interne
-- `ack_resolved()` — auto-acknowledge messages resolus
-- `api_hooks()` / `api_messages()` / `api_sessions()` — endpoints API ops
-- `log_hook()` — audit hook calls
-- `on_issue_report_insert()` — trigger notification issue
-- `postgrest_pre_request()` — pre-request hook PostgREST
-- `session_create()` / `session_end()` — lifecycle agent sessions
+- `inbox_check()` / `inbox_new()` / `inbox_pending()` — Internal messaging API
+- `ack_resolved()` — Auto-acknowledge resolved messages
+- `api_hooks()` / `api_messages()` / `api_sessions()` — Ops API endpoints
+- `log_hook()` — Audit hook calls
+- `on_issue_report_insert()` — Issue notification trigger
+- `postgrest_pre_request()` — PostgREST pre-request hook
+- `session_create()` / `session_end()` — Agent session lifecycle
 
-### Pages UI (pgView)
+### CRUD functions
 
-- `get_index()` — Dashboard: stats messages/issues, derniers messages, issues ouvertes
-- `get_messages()` / `get_message(p_id)` — Liste et detail des messages inter-modules
-- `get_issues()` — Liste des issue_report avec statut
-- `get_tools()` — Catalogue MCP tools par pack (tree view)
-- `get_tool(p_name)` — Detail d'un tool (description + parametres)
-- `get_primitives()` — Catalogue UI wrappant les pages pgv_qa (composants, tables, formulaires, etc.)
-- `nav_items()` / `brand()` / `i18n_seed()` — Navigation et i18n
+- `issue_report_list/read/create/update/delete` — Full CRUD for issues
+- `agent_message_list/read/create/update/delete` — Full CRUD for messages
 
-## Framework pgView
+### SDUI functions
 
-Ce module est un **module independant** du framework pgView. Ses dependances sont declarees dans `module.json`.
+- `issue_report_ui(p_slug)` — List + detail UI for issues
+- `agent_message_ui(p_slug)` — List + detail UI for messages
 
-### Conventions PL/pgSQL
+### UI pages (pgView)
 
-- `get_*()` -> pages GET, `post_*()` -> actions POST. Nommage = routing automatique via `pgv.route()`
-- `nav_items() -> jsonb` -> menu du module. Retourne `jsonb` (JAMAIS TABLE)
-- `brand() -> text` -> nom affiche dans la nav
-- `get_index()` -> page d'accueil du module (obligatoire)
-- Parametres via query string : `/message?p_id=42` -> `get_message(p_id integer)`
-- POST retourne raw HTML (templates `<template data-toast>` ou `<template data-redirect>`) — jamais wrappe dans `page()`
-- Tables via `<md>` blocks (markdown), JAMAIS `<table>` HTML. `<md data-page="20">` pour pagination
-- CSS classes `pgv-*`, JAMAIS de `style="..."` inline
-- Primitives UI : `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`, `pgv.tree()`, `pgv.md_esc()`
+- `get_index()` — Dashboard: message/issue stats, recent messages, open issues
+- `get_messages()` / `get_message(p_id)` — Inter-module message list and detail
+- `get_issues()` / `get_issue(p_id)` — Issue list and detail with cross-links
+- `get_tools()` — MCP tools catalog by pack (tree view)
+- `get_tool(p_name)` — Tool detail (description + parameters)
+- `get_primitives()` — UI catalog wrapping pgv_qa pages (components, tables, forms, etc.)
+- `nav_items()` / `brand()` / `i18n_seed()` — Navigation, branding, and i18n
 
-### Workflow dev (STRICT)
+## pgView Framework
 
-1. **DDL** -> Write dans `build/workbench.ddl.sql` -> `pg_schema` pour appliquer
-2. **Fonctions** -> `pg_func_set` pour creer/modifier + `pg_test` pour valider
-3. **Exporter** -> `pg_pack schemas:workbench` (-> `build/workbench.func.sql`) + `pg_func_save target:plpgsql://workbench` (-> `src/`)
-4. `pg_query` -> SELECT/DML uniquement, JAMAIS de DDL ou CREATE FUNCTION
-5. JAMAIS ecrire de fonctions dans des fichiers SQL — le workbench EST l'outil de dev
-6. JAMAIS editer `build/*.func.sql` — genere par `pg_pack`
+This module is an **independent module** of the pgView framework. Dependencies are declared in `module.json`.
+
+### PL/pgSQL Conventions
+
+- `get_*()` -> GET pages, `post_*()` -> POST actions. Naming = automatic routing via `pgv.route()`
+- `nav_items() -> jsonb` -> module menu. Returns `jsonb` (NEVER TABLE)
+- `brand() -> text` -> displayed name in nav
+- `get_index()` -> module home page (required)
+- Parameters via query string: `/message?p_id=42` -> `get_message(p_id integer)`
+- POST returns raw HTML (templates `<template data-toast>` or `<template data-redirect>`) — never wrapped in `page()`
+- Tables via `<md>` blocks (markdown), NEVER `<table>` HTML. `<md data-page="20">` for pagination
+- CSS classes `pgv-*`, NEVER inline `style="..."`
+- UI primitives: `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`, `pgv.tree()`, `pgv.md_esc()`
+
+### Dev Workflow (STRICT)
+
+1. **DDL** -> Write to `build/workbench.ddl.sql` -> `pg_schema` to apply
+2. **Functions** -> `pg_func_set` to create/modify + `pg_test` to validate
+3. **Export** -> `pg_pack schemas:workbench` (-> `build/workbench.func.sql`) + `pg_func_save target:plpgsql://workbench` (-> `src/`)
+4. `pg_query` -> SELECT/DML only, NEVER DDL or CREATE FUNCTION
+5. NEVER write functions in SQL files — the workbench IS the dev tool
+6. NEVER edit `build/*.func.sql` — generated by `pg_pack`
 
 ### Module structure
 
 - `module.json` -> manifest (schemas, dependencies, extensions, sql, grants)
-- `build/` -> artefacts de deploiement (DDL + fonctions packees)
-- `src/` -> sources individuelles versionnees (pg_func_save)
+- `build/` -> deployment artifacts (DDL + packed functions)
+- `src/` -> individually versioned sources (pg_func_save)
 
-### Contenu du DDL — STRICT
+### DDL Content — STRICT
 
-Le DDL (`build/{schema}.ddl.sql`) contient **uniquement de la structure** :
+The DDL (`build/{schema}.ddl.sql`) contains **structure only**:
 
-**DOIT contenir :** CREATE SCHEMA, CREATE TABLE, CREATE INDEX, constraints, RLS policies
+**MUST contain:** CREATE SCHEMA, CREATE TABLE, CREATE INDEX, constraints, RLS policies
 
-**NE DOIT PAS contenir :**
-- `CREATE FUNCTION` → pg_func_set puis pg_pack
-- `CREATE TRIGGER` → pg_pack attache les triggers aux fonctions
-- `GRANT` → pg_pack les ajoute dans .func.sql
-- `INSERT INTO` (seed data) → `build/{schema}.seed.sql` ou `{schema}_qa.seed()`
+**MUST NOT contain:**
+- `CREATE FUNCTION` → pg_func_set then pg_pack
+- `CREATE TRIGGER` → pg_pack attaches triggers to functions
+- `GRANT` → pg_pack adds them in .func.sql
+- `INSERT INTO` (seed data) → `build/{schema}.seed.sql` or `{schema}_qa.seed()`

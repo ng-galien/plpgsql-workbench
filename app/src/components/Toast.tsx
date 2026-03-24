@@ -1,63 +1,35 @@
-import { useStore } from "../lib/store";
-import { useNavigate } from "react-router-dom";
+import { useStore } from "@/lib/store";
 
-const levelColors: Record<string, { bg: string; border: string }> = {
-  success: { bg: "#dcfce7", border: "#166534" },
-  error: { bg: "#fee2e2", border: "#991b1b" },
-  warning: { bg: "#fef3c7", border: "#92400e" },
-  info: { bg: "#dbeafe", border: "#1e40af" },
+const levelStyles: Record<string, string> = {
+  success: "bg-green-50 border-l-green-700 text-green-900",
+  error: "bg-red-50 border-l-red-700 text-red-900",
+  warning: "bg-amber-50 border-l-amber-700 text-amber-900",
+  info: "bg-blue-50 border-l-blue-700 text-blue-900",
 };
 
 export function Toast() {
   const toast = useStore((s) => s.toast);
   const clearToast = useStore((s) => s.clearToast);
-  const navigate = useNavigate();
 
   if (!toast) return null;
 
-  const colors = levelColors[toast.level] ?? levelColors.info;
+  const style = levelStyles[toast.level] ?? levelStyles.info;
 
   return (
     <div
-      style={{
-        position: "fixed",
-        bottom: "1.5rem",
-        right: "1.5rem",
-        background: colors.bg,
-        borderLeft: `4px solid ${colors.border}`,
-        padding: "0.75rem 1rem",
-        borderRadius: "6px",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-        maxWidth: "400px",
-        zIndex: 9999,
-      }}
+      className={`fixed bottom-6 right-6 border-l-4 px-4 py-3 rounded-md shadow-lg max-w-sm z-50 ${style}`}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
-        <strong>{toast.msg}</strong>
+      <div className="flex justify-between items-start gap-2">
+        <span className="text-sm font-medium">{toast.msg}</span>
         <button
           onClick={clearToast}
-          style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem" }}
+          className="text-current opacity-50 hover:opacity-100"
         >
           ×
         </button>
       </div>
       {toast.detail && (
-        <div style={{ fontSize: "0.85rem", color: "#666", marginTop: "0.25rem" }}>
-          {toast.detail}
-        </div>
-      )}
-      {toast.href && (
-        <a
-          href={toast.href}
-          onClick={(e) => {
-            e.preventDefault();
-            clearToast();
-            navigate(toast.href!);
-          }}
-          style={{ fontSize: "0.85rem", marginTop: "0.25rem", display: "inline-block" }}
-        >
-          Ouvrir →
-        </a>
+        <p className="text-xs opacity-70 mt-1">{toast.detail}</p>
       )}
     </div>
   );

@@ -312,6 +312,14 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 - **pgv framework** — `modules/pgv/build/pgv.func.sql` — canonical `pgv.*` + `pgv_ut.*`. Distributed via `pgm install`.
 - **Apps** — `apps/*/sql/` — slot convention: 00=extensions, 01=roles, 02=pgv, 05+=modules, 03-04=app-specific.
 
+## Language Rules (STRICT)
+
+- **Code** — ALL code in English: function names, parameter names, variable names, column names, JSON keys, comments. No exceptions.
+- **Labels** — ALL user-facing text via `pgv.t('module.key')`. Never hardcode French (or any language) strings in functions. Labels live in `i18n_seed()` only.
+- **CLAUDE.md** — English.
+- **Commits** — English.
+- **Examples**: `client_list` (not `liste_clients`), `pgv.t('crm.action_send')` (not `'Envoyer'`), `status = 'draft'` (not `'brouillon'`)
+
 ## Key Conventions
 
 - **ESM project** — `"type": "module"` in package.json, `Node16` module resolution

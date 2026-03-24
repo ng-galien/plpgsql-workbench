@@ -4,12 +4,15 @@
       "type": "http",
       "url": "http://localhost:3100/mcp"
     },
-    "workbench-channel": {
+    "maket": {
+      "type": "http",
+      "url": "http://localhost:3337/mcp"
+    },
+    "workbench-msg": {
       "command": "npx",
-      "args": ["tsx", "src/channel/workbench-channel.ts"],
+      "args": ["tsx", "src/channel/workbench-msg.ts"],
       "env": {
-        "PLPGSQL_CONNECTION": "postgresql://postgres:postgres@localhost:5433/postgres",
-        "CHANNEL_PORT": "8789"
+        "MODULE": "lead"
       }
     }
   }

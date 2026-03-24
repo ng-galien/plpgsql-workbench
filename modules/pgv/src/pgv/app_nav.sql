@@ -11,7 +11,7 @@ DECLARE
   v_items jsonb;
 BEGIN
   FOR v_mod IN
-    SELECT tm.module
+    SELECT tm.module, tm.nav_group
       FROM workbench.tenant_module tm
      WHERE tm.active = true
        AND tm.module <> 'pgv'
@@ -55,10 +55,22 @@ BEGIN
       END;
     END;
 
+    -- Enrich items with uri for entities
+    IF v_items IS NOT NULL AND jsonb_typeof(v_items) = 'array' THEN
+      SELECT coalesce(jsonb_agg(
+        CASE WHEN item->>'entity' IS NOT NULL
+          THEN item || jsonb_build_object('uri', v_schema || '://' || (item->>'entity'))
+          ELSE item
+        END
+      ), '[]'::jsonb) INTO v_items
+      FROM jsonb_array_elements(v_items) item;
+    END IF;
+
     v_result := v_result || jsonb_build_object(
       'module', v_mod.module,
       'brand', v_brand,
       'schema', v_schema,
+      'group', v_mod.nav_group,
       'items', coalesce(v_items, '[]'::jsonb)
     );
   END LOOP;

@@ -24,6 +24,74 @@ Ce module EST le framework pgView — il fournit les primitives utilisees par to
 - CSS classes `pgv-*`, JAMAIS de `style="..."` inline
 - Primitives UI : `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`
 
+## SDUI — Server-Driven UI
+
+Primitives jsonb pour le shell React (MCP CRUD). Les fonctions `pgv.ui_*()` retournent des composants jsonb rendus côté client.
+
+### Primitives UI (pgv.ui_*)
+
+| Fonction | Retourne | Usage |
+|----------|----------|-------|
+| `pgv.ui_text(value)` | `{"type":"text","value":"..."}` | Texte brut |
+| `pgv.ui_link(text, href)` | `{"type":"link","text":"...","href":"..."}` | Lien navigable |
+| `pgv.ui_badge(text, variant?)` | `{"type":"badge","text":"..."}` | Badge coloré |
+| `pgv.ui_color(value)` | `{"type":"color","value":"#hex"}` | Pastille couleur |
+| `pgv.ui_heading(text, level?)` | `{"type":"heading","text":"...","level":2}` | Titre h1-h6 |
+| `pgv.ui_column(VARIADIC children)` | Layout vertical | Stack vertical de composants |
+| `pgv.ui_row(VARIADIC children)` | Layout horizontal | Stack horizontal de composants |
+| `pgv.ui_table(source, columns)` | Table connectée | Table liée à un datasource |
+| `pgv.ui_col(key, label, cell?)` | Définition colonne | Colonne de table (cell = renderer) |
+| `pgv.ui_detail(source, fields)` | Fiche détail | Vue détail connectée à un datasource |
+| `pgv.ui_action(label, verb, uri, variant?, confirm?)` | Bouton action | Déclenche un verbe route_crud |
+| `pgv.ui_datasource(uri, page_size?, searchable?, default_sort?)` | Datasource | Source de données pour table/detail |
+
+### Convention _view() — Entity View Contract
+
+Each module entity exposes `{entity}_view() RETURNS jsonb` — a **template** (not data) declaring how to render at every density level.
+
+```json
+{
+  "uri": "schema://entity",
+  "icon": "◎",
+  "label": "module.entity_label",
+  "template": {
+    "compact":  { "fields": ["name", "city"] },
+    "standard": { "fields": [...], "stats": [...], "related": [...] },
+    "expanded": { "fields": [...all...], "stats": [...], "related": [...] },
+    "form":     { "sections": [{ "label": "i18n.key", "fields": [...] }] }
+  },
+  "actions": {
+    "send":   { "label": "module.action_send", "icon": "→", "variant": "primary" },
+    "delete": { "label": "module.action_delete", "icon": "×", "variant": "danger", "confirm": "module.confirm_delete" }
+  }
+}
+```
+
+Key rules:
+- **ALL labels are i18n keys** — `pgv.t()` server-side. NEVER hardcoded text.
+- **compact/standard/expanded** = card density levels for canvas workspace
+- **form** = create + update (React decides verb based on context)
+- **actions** = catalog of all possible actions. HATEOAS in `_read()` says which are active.
+- **{field} interpolation** in `related[].filter` and `combobox.filter`
+- **Stats computed by _read()** — template only declares display keys
+- Form field types: text, number, textarea, checkbox, date, select, combobox (with source URI)
+- `_view()` replaces `_ui()` (deprecated). `route_crud` auto-detects `_view()` in pg_proc.
+
+### Cards (pgv.ui_card)
+
+- `pgv.ui_card(entity_uri, level, header, body?, related?, actions?)` — 3 levels: compact/standard/expanded
+- `pgv.ui_card_header(icon, title, VARIADIC badges)` — reusable header
+- `pgv.ui_stat(value, label, variant?)` — stat for card body
+
+### Auto-generated forms
+
+- `pgv.ui_form_for(schema, entity, verb?)` — introspects PG types → SDUI form (FK→select, COMMENT→label)
+
+### Reference
+
+- Full SDUI doc: `pg_doc topic:sdui`
+- Examples: `docs.document_view()`, `docs.charte_view()`
+
 ### Workflow dev (STRICT)
 
 1. **DDL** → Write dans `build/{schema}.ddl.sql` → `pg_schema` pour appliquer

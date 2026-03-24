@@ -26,6 +26,8 @@ BEGIN
     ('fr', 'ledger.badge_draft', 'Brouillon'),
     ('fr', 'ledger.badge_closed', 'Clôturé'),
     ('fr', 'ledger.badge_open', 'Ouvert'),
+    ('fr', 'ledger.badge_active', 'Actif'),
+    ('fr', 'ledger.badge_inactive', 'Inactif'),
 
     -- Stats / KPIs
     ('fr', 'ledger.stat_bank_balance', 'Solde banque'),
@@ -66,6 +68,8 @@ BEGIN
     ('fr', 'ledger.col_credit', 'Crédit'),
     ('fr', 'ledger.col_account', 'Compte'),
     ('fr', 'ledger.col_cumulative', 'Solde cumulé'),
+    ('fr', 'ledger.col_active', 'Actif'),
+    ('fr', 'ledger.col_lines', 'Lignes'),
 
     -- Form fields
     ('fr', 'ledger.field_date', 'Date'),

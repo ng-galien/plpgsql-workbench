@@ -3,10 +3,10 @@ CREATE OR REPLACE FUNCTION hr.nav_items()
  LANGUAGE sql
  STABLE
 AS $function$
-  SELECT '[
-    {"href":"/","label":"Salariés","icon":"users"},
-    {"href":"/absences","label":"Absences","icon":"calendar"},
-    {"href":"/timesheet","label":"Heures","icon":"clock"},
-    {"href":"/registre","label":"Registre","icon":"book"}
-  ]'::jsonb;
+  SELECT jsonb_build_array(
+    jsonb_build_object('href', '/', 'label', pgv.t('hr.nav_salaries'), 'icon', 'users', 'entity', 'employee'),
+    jsonb_build_object('href', '/absences', 'label', pgv.t('hr.nav_absences'), 'icon', 'calendar', 'entity', 'absence'),
+    jsonb_build_object('href', '/timesheet', 'label', pgv.t('hr.nav_heures'), 'icon', 'clock', 'entity', 'timesheet'),
+    jsonb_build_object('href', '/registre', 'label', pgv.t('hr.nav_registre'), 'icon', 'book')
+  );
 $function$;

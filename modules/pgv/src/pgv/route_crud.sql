@@ -13,8 +13,8 @@ DECLARE
   v_fn text;
   v_fn_fallback text;
   v_result jsonb;
+  v_ui jsonb;
   v_actions jsonb := '[]';
-  v_rec record;
   v_verb text := lower(p_verb);
 BEGIN
   v_parsed := pgv._parse_uri(p_uri);
@@ -66,9 +66,9 @@ BEGIN
           RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
         END IF;
         IF v_filter IS NOT NULL THEN
-          EXECUTE format('SELECT coalesce(jsonb_agg(row_to_json(t)), ''[]''::jsonb) FROM %I.%I(%L) t', v_schema, v_fn, v_filter) INTO v_result;
+          EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(t)), ''[]''::jsonb) FROM %I.%I(%L) t', v_schema, v_fn, v_filter) INTO v_result;
         ELSE
-          EXECUTE format('SELECT coalesce(jsonb_agg(row_to_json(t)), ''[]''::jsonb) FROM %I.%I() t', v_schema, v_fn) INTO v_result;
+          EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(t)), ''[]''::jsonb) FROM %I.%I() t', v_schema, v_fn) INTO v_result;
         END IF;
       END IF;
 
@@ -128,47 +128,27 @@ BEGIN
       RETURN jsonb_build_object('error', 'bad_request', 'message', format('unsupported verb "%s"', p_verb));
   END CASE;
 
-  -- HATEOAS: discover available actions
-  IF v_id IS NOT NULL THEN
-    -- Standard CRUD actions (only api.expose=mcp)
-    FOR v_rec IN
-      SELECT p.proname FROM pg_proc p
-      JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname = v_schema
-        AND p.proname IN (v_entity || '_update', v_entity || '_delete', v_entity || '_read', v_entity || '_load')
-        AND p.proconfig @> ARRAY['api.expose=mcp']
-    LOOP
-      IF v_rec.proname = v_entity || '_update' THEN
-        v_actions := v_actions || jsonb_build_object('verb', 'patch', 'uri', v_schema || '://' || v_entity || '/' || v_id);
-      ELSIF v_rec.proname = v_entity || '_delete' THEN
-        v_actions := v_actions || jsonb_build_object('verb', 'delete', 'uri', v_schema || '://' || v_entity || '/' || v_id);
-      END IF;
-    END LOOP;
-    -- Custom methods (only api.expose=mcp)
-    FOR v_rec IN
-      SELECT p.proname FROM pg_proc p
-      JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname = v_schema
-        AND p.proname LIKE v_entity || '_%'
-        AND p.proname NOT IN (
-          v_entity || '_list', v_entity || '_read', v_entity || '_load',
-          v_entity || '_create', v_entity || '_update', v_entity || '_delete',
-          v_entity || '_check'
-        )
-        AND p.proconfig @> ARRAY['api.expose=mcp']
-      ORDER BY p.proname
-    LOOP
-      v_actions := v_actions || jsonb_build_object(
-        'method', replace(v_rec.proname, v_entity || '_', ''),
-        'uri', v_schema || '://' || v_entity || '/' || v_id || '/' || replace(v_rec.proname, v_entity || '_', '')
-      );
-    END LOOP;
+  -- HATEOAS: extract actions from _read() response (module is responsible)
+  IF v_result IS NOT NULL AND v_result ? 'actions' THEN
+    v_actions := v_result->'actions';
+    v_result := v_result - 'actions';
+  END IF;
+
+  -- SDUI: check for entity_view() function (replaces _ui)
+  v_fn := v_entity || '_view';
+  IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
+    EXECUTE format('SELECT %I.%I()', v_schema, v_fn) INTO v_ui;
+    -- Validate against JSON Schema (blocking — modules must fix their _view())
+    IF v_ui IS NOT NULL AND NOT jsonb_matches_schema(pgv.view_schema(), v_ui) THEN
+      RETURN jsonb_build_object('error', 'invalid_view', 'message', format('%s.%s() failed JSON Schema validation', v_schema, v_fn), 'result', v_ui);
+    END IF;
   END IF;
 
   RETURN jsonb_build_object(
     'data', coalesce(v_result, 'null'::jsonb),
     'uri', p_uri,
     'actions', v_actions
-  );
+  )
+  || CASE WHEN v_ui IS NOT NULL THEN jsonb_build_object('view', v_ui) ELSE '{}'::jsonb END;
 END;
 $function$;

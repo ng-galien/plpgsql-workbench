@@ -4,12 +4,14 @@
       "type": "http",
       "url": "http://localhost:3100/mcp"
     },
-    "workbench-channel": {
+    "workbench-msg": {
       "command": "npx",
-      "args": ["tsx", "../../src/channel/workbench-channel.ts"],
+      "args": [
+        "tsx",
+        "../../src/channel/workbench-msg.ts"
+      ],
       "env": {
-        "MODULE": "pgv",
-        "CHANNEL_PORT": "8791"
+        "MODULE": "pgv"
       }
     }
   }
