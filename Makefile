@@ -98,7 +98,7 @@ dev-init: dev-up dev-sync ## First start: load all build/*.sql into dev DB
 		schema=$$(python3 -c "import json; print(json.load(open('$${mod}module.json')).get('schemas',{}).get('qa',''))" 2>/dev/null); \
 		if [ -n "$$schema" ]; then \
 			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -c \
-				"GRANT USAGE ON SCHEMA $$schema TO web_anon; GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA $$schema TO web_anon; GRANT SELECT ON ALL TABLES IN SCHEMA $$schema TO web_anon;" -q 2>&1 | grep -v "^$$" || true; \
+				"GRANT USAGE ON SCHEMA $$schema TO anon; GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA $$schema TO anon; GRANT SELECT ON ALL TABLES IN SCHEMA $$schema TO anon;" -q 2>&1 | grep -v "^$$" || true; \
 		fi; \
 	done
 	@echo "Seeding QA data..."

@@ -179,7 +179,13 @@ export function createSetFunction({
     await client.query("COMMIT");
 
     // Re-grant execute to anon (PostgREST) after deploy
-    await client.query(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schema} TO anon`).catch(() => {});
+    try {
+      await client.query(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schema} TO anon`);
+      await client.query(`GRANT USAGE ON SCHEMA ${schema} TO anon`);
+      await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA ${schema} TO anon`);
+    } catch (e: any) {
+      validation += `\n  [warning]\n  problem: GRANT failed: ${e.message}`;
+    }
 
     // Notify PostgREST to reload schema cache
     await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});

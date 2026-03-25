@@ -56,7 +56,8 @@ async function dumpFunctions(client: DbClient, outDir: string, schema?: string, 
   }
 
   const idx = new Map<string, number>();
-  const written: string[] = [];
+  const written = new Set<string>();
+  const removed: string[] = [];
 
   for (const fn of functions) {
     const schemaDir = path.join(outDir, fn.schema);
@@ -75,15 +76,39 @@ async function dumpFunctions(client: DbClient, outDir: string, schema?: string, 
     const filePath = path.join(schemaDir, fileName);
     const content = fn.ddl.trimEnd().endsWith(";") ? fn.ddl : `${fn.ddl.trimEnd()};\n`;
     await fs.writeFile(filePath, content, "utf-8");
-    written.push(`${fn.schema}/${fileName}`);
+    written.add(path.join(fn.schema, fileName));
+  }
+
+  // Clean stale files: remove .sql files in schema dirs that are no longer in DB
+  if (schema && !fnName) {
+    const schemaDir = path.join(outDir, schema);
+    try {
+      const existing = await fs.readdir(schemaDir);
+      for (const file of existing) {
+        if (file.endsWith(".sql") && !written.has(path.join(schema, file))) {
+          await fs.unlink(path.join(schemaDir, file));
+          removed.push(`${schema}/${file}`);
+        }
+      }
+    } catch { /* dir may not exist */ }
   }
 
   const parts: string[] = [];
-  parts.push(`dumped ${written.length} function${written.length !== 1 ? "s" : ""} to ${outDir}`);
+  parts.push(`dumped ${written.size} function${written.size !== 1 ? "s" : ""} to ${outDir}`);
+  if (removed.length > 0) {
+    parts.push(`cleaned ${removed.length} stale file${removed.length !== 1 ? "s" : ""}`);
+  }
   parts.push(`completeness: full`);
   parts.push("");
-  for (const f of written) {
+  for (const f of Array.from(written).sort()) {
     parts.push(`  ${f}`);
+  }
+  if (removed.length > 0) {
+    parts.push("");
+    parts.push("removed:");
+    for (const f of removed) {
+      parts.push(`  ${f}`);
+    }
   }
   return parts.join("\n");
 }

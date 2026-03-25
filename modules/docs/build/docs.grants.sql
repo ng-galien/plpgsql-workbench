@@ -1,7 +1,7 @@
 -- RFC-001: SECURITY DEFINER on all write functions
-ALTER FUNCTION docs.charte_create(docs.charte) SECURITY DEFINER;
-ALTER FUNCTION docs.charte_update(docs.charte) SECURITY DEFINER;
-ALTER FUNCTION docs.charte_delete(text) SECURITY DEFINER;
+ALTER FUNCTION docs.charter_create(docs.charter) SECURITY DEFINER;
+ALTER FUNCTION docs.charter_update(docs.charter) SECURITY DEFINER;
+ALTER FUNCTION docs.charter_delete(text) SECURITY DEFINER;
 ALTER FUNCTION docs.document_create(docs.document) SECURITY DEFINER;
 ALTER FUNCTION docs.document_update(docs.document) SECURITY DEFINER;
 ALTER FUNCTION docs.document_delete(text) SECURITY DEFINER;

@@ -1,49 +1,49 @@
 # pgv — pgView SSR Framework
 
-Framework SSR PostgreSQL. Alpine.js shell + PicoCSS + PostgREST + primitives UI `pgv.*`.
+PostgreSQL SSR framework. Alpine.js shell + PicoCSS + PostgREST + UI primitives `pgv.*`.
 
-**Depend de :** rien (module fondation)
+**Dependencies:** none (foundation module)
 
-**Schemas :** `pgv`, `pgv_ut` (tests + `assert_page()`), `pgv_qa` (demo app)
+**Schemas:** `pgv`, `pgv_ut` (tests + `assert_page()`), `pgv_qa` (demo app)
 
-**Role special :** Referent UI/UX pour tous les modules (review via `diagnose()`)
+**Special role:** UI/UX reference for all modules (review via `diagnose()`)
 
-## Framework pgView
+## pgView Framework
 
-Ce module EST le framework pgView — il fournit les primitives utilisees par tous les autres modules.
+This module IS the pgView framework — it provides the primitives used by all other modules.
 
-### Conventions PL/pgSQL
+### PL/pgSQL Conventions
 
-- `get_*()` → pages GET, `post_*()` → actions POST. Nommage = routing automatique via `pgv.route()`
-- `nav_items() -> jsonb` → menu du module. Retourne `jsonb` (JAMAIS TABLE)
-- `brand() -> text` → nom affiche dans la nav
-- `get_index()` → page d'accueil du module (obligatoire)
-- Parametres via query string : `/drawing?p_id=42` → `get_drawing(p_id int)`
-- POST retourne raw HTML (templates `<template data-toast>` ou `<template data-redirect>`) — jamais wrappe dans `page()`
-- Tables via `<md>` blocks (markdown), JAMAIS `<table>` HTML. `<md data-page="20">` pour pagination
-- CSS classes `pgv-*`, JAMAIS de `style="..."` inline
-- Primitives UI : `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`
+- `get_*()` → GET pages, `post_*()` → POST actions. Naming = automatic routing via `pgv.route()`
+- `nav_items() -> jsonb` → module menu. Returns `jsonb` (NEVER TABLE)
+- `brand() -> text` → display name in nav
+- `get_index()` → module home page (mandatory)
+- Parameters via query string: `/drawing?p_id=42` → `get_drawing(p_id int)`
+- POST returns raw HTML (`<template data-toast>` or `<template data-redirect>`) — never wrapped in `page()`
+- Tables via `<md>` blocks (markdown), NEVER raw `<table>` HTML. `<md data-page="20">` for pagination
+- CSS classes `pgv-*`, NEVER inline `style="..."`
+- UI primitives: `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`
 
 ## SDUI — Server-Driven UI
 
-Primitives jsonb pour le shell React (MCP CRUD). Les fonctions `pgv.ui_*()` retournent des composants jsonb rendus côté client.
+Primitives jsonb for the React shell (MCP CRUD). Functions `pgv.ui_*()` return jsonb components rendered client-side.
 
 ### Primitives UI (pgv.ui_*)
 
-| Fonction | Retourne | Usage |
-|----------|----------|-------|
-| `pgv.ui_text(value)` | `{"type":"text","value":"..."}` | Texte brut |
-| `pgv.ui_link(text, href)` | `{"type":"link","text":"...","href":"..."}` | Lien navigable |
-| `pgv.ui_badge(text, variant?)` | `{"type":"badge","text":"..."}` | Badge coloré |
-| `pgv.ui_color(value)` | `{"type":"color","value":"#hex"}` | Pastille couleur |
-| `pgv.ui_heading(text, level?)` | `{"type":"heading","text":"...","level":2}` | Titre h1-h6 |
-| `pgv.ui_column(VARIADIC children)` | Layout vertical | Stack vertical de composants |
-| `pgv.ui_row(VARIADIC children)` | Layout horizontal | Stack horizontal de composants |
-| `pgv.ui_table(source, columns)` | Table connectée | Table liée à un datasource |
-| `pgv.ui_col(key, label, cell?)` | Définition colonne | Colonne de table (cell = renderer) |
-| `pgv.ui_detail(source, fields)` | Fiche détail | Vue détail connectée à un datasource |
-| `pgv.ui_action(label, verb, uri, variant?, confirm?)` | Bouton action | Déclenche un verbe route_crud |
-| `pgv.ui_datasource(uri, page_size?, searchable?, default_sort?)` | Datasource | Source de données pour table/detail |
+| Function | Returns | Usage |
+|----------|---------|-------|
+| `pgv.ui_text(value)` | `{"type":"text","value":"..."}` | Plain text |
+| `pgv.ui_link(text, href)` | `{"type":"link","text":"...","href":"..."}` | Navigable link |
+| `pgv.ui_badge(text, variant?)` | `{"type":"badge","text":"..."}` | Colored badge |
+| `pgv.ui_color(value)` | `{"type":"color","value":"#hex"}` | Color swatch |
+| `pgv.ui_heading(text, level?)` | `{"type":"heading","text":"...","level":2}` | Heading h1-h6 |
+| `pgv.ui_column(VARIADIC children)` | Vertical layout | Vertical component stack |
+| `pgv.ui_row(VARIADIC children)` | Horizontal layout | Horizontal component stack |
+| `pgv.ui_table(source, columns)` | Connected table | Table bound to a datasource |
+| `pgv.ui_col(key, label, cell?)` | Column definition | Table column (cell = renderer) |
+| `pgv.ui_detail(source, fields)` | Detail view | Detail view connected to a datasource |
+| `pgv.ui_action(label, verb, uri, variant?, confirm?)` | Action button | Triggers a route_crud verb |
+| `pgv.ui_datasource(uri, page_size?, searchable?, default_sort?)` | Datasource | Data source for table/detail |
 
 ### Convention _view() — Entity View Contract
 
@@ -90,90 +90,88 @@ Key rules:
 ### Reference
 
 - Full SDUI doc: `pg_doc topic:sdui`
-- Examples: `docs.document_view()`, `docs.charte_view()`
+- Examples: `docs.document_view()`, `docs.charter_view()`
 
-### Workflow dev (STRICT)
+### Dev Workflow (STRICT)
 
-1. **DDL** → Write dans `build/{schema}.ddl.sql` → `pg_schema` pour appliquer
-2. **Fonctions** → `pg_func_set` pour creer/modifier + `pg_test` pour valider
-3. **Exporter** → `pg_pack` (→ `build/{schema}.func.sql`) + `pg_func_save` (→ `src/`)
-4. `pg_query` → SELECT/DML uniquement, JAMAIS de DDL ou CREATE FUNCTION
-5. JAMAIS ecrire de fonctions dans des fichiers SQL — le workbench EST l'outil de dev
-6. JAMAIS editer `build/*.func.sql` — genere par `pg_pack`
+1. **DDL** → Write to `build/{schema}.ddl.sql` → `pg_schema` to apply
+2. **Functions** → `pg_func_set` to create/modify + `pg_test` to validate
+3. **Export** → `pg_pack` (→ `build/{schema}.func.sql`) + `pg_func_save` (→ `src/`)
+4. `pg_query` → SELECT/DML only, NEVER DDL or CREATE FUNCTION
+5. NEVER write functions in SQL files — the workbench IS the dev tool
+6. NEVER edit `build/*.func.sql` — generated by `pg_pack`
 
-### Module structure
+### Module Structure
 
 - `module.json` → manifest (schemas, dependencies, extensions, sql, grants)
-- `build/` → artefacts de deploiement (DDL + fonctions packees)
-- `src/` → sources individuelles versionnees (pg_func_save)
-- `_ut` schemas → tests pgTAP (`test_*()`)
-- `_qa` schemas → seed data uniquement (`seed()`, `clean()`), PAS de pages
+- `build/` → deployment artifacts (DDL + packed functions)
+- `src/` → individual versioned sources (pg_func_save)
+- `_ut` schemas → pgTAP tests (`test_*()`)
+- `_qa` schemas → seed data only (`seed()`, `clean()`), NO pages
 
-### Contenu du DDL — STRICT
+### DDL Content — STRICT
 
-Le DDL (`build/{schema}.ddl.sql`) contient **uniquement de la structure** :
+DDL (`build/{schema}.ddl.sql`) contains **structure only**:
 
-**DOIT contenir :** CREATE SCHEMA, CREATE TABLE, CREATE INDEX, constraints, RLS policies
+**MUST contain:** CREATE SCHEMA, CREATE TABLE, CREATE INDEX, constraints, RLS policies
 
-**NE DOIT PAS contenir :**
-- `CREATE FUNCTION` → pg_func_set puis pg_pack
-- `CREATE TRIGGER` → pg_pack attache les triggers aux fonctions
-- `GRANT` → pg_pack les ajoute dans .func.sql
-- `INSERT INTO` (seed data) → `build/{schema}.seed.sql` ou `{schema}_qa.seed()`
+**MUST NOT contain:**
+- `CREATE FUNCTION` → pg_func_set then pg_pack
+- `CREATE TRIGGER` → pg_pack attaches triggers to functions
+- `GRANT` → pg_pack adds them in .func.sql
+- `INSERT INTO` (seed data) → `build/{schema}.seed.sql` or `{schema}_qa.seed()`
 
-### Communication inter-modules
+### Inter-module Communication
 
-- `pg_msg_inbox module:pgv` → lire les messages entrants
-- `pg_msg` → envoyer un message a un autre module
-- **feature_request / bug_report → TOUJOURS via issue_report** : ne jamais envoyer de feature_request ou bug_report directement à un autre module. Créer une issue : `INSERT INTO workbench.issue_report(issue_type, module, description) VALUES ('enhancement|bug', '<module_cible>', '<description>')`. Le lead sera notifié et décidera du dispatch.
-- Chaque module est autonome — ne jamais modifier les fonctions d'un autre module
+- `pg_msg_inbox module:pgv` → read incoming messages
+- `pg_msg` → send a message to another module
+- **feature_request / bug_report → ALWAYS via issue_report**: never send feature_request or bug_report directly to another module. Create an issue: `INSERT INTO workbench.issue_report(issue_type, module, description) VALUES ('enhancement|bug', '<target_module>', '<description>')`. The lead will be notified and decide dispatch.
+- Each module is autonomous — never modify another module's functions
 
 ## i18n
 
-Le framework utilise `pgv.t(key)` pour l'internationalisation. Chaque module doit :
-1. Créer `pgv.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) les traductions FR
-2. Clés namespaced : `pgv.nav_xxx`, `pgv.title_xxx`, `pgv.btn_xxx`, etc.
-3. Utiliser `pgv.t('pgv.xxx')` dans nav_items(), brand(), et toutes les fonctions get_*/post_*
-4. `ON CONFLICT DO NOTHING` dans le seed
+The framework uses `pgv.t(key)` for internationalization. Each module must:
+1. Create `pgv.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) with FR translations
+2. Namespaced keys: `pgv.nav_xxx`, `pgv.title_xxx`, `pgv.btn_xxx`, etc.
+3. Use `pgv.t('pgv.xxx')` in nav_items(), brand(), and all get_*/post_* functions
+4. `ON CONFLICT DO NOTHING` in the seed
 
 ## QA Seed Data
 
-Le schema `pgv_qa` est le **design system showcase** — il contient des pages de démonstration de toutes les primitives pgv :
+The `pgv_qa` schema is the **design system showcase** — it contains demo pages for all pgv primitives:
 - `get_atoms()` — badges, stats, cards, dl, money, alerts, progress, workflow, avatar, tabs, accordion, breadcrumb, timeline, tree
-- `get_tables()` — tables markdown simples, paginées, md_table()
-- `get_forms()` — formulaires data-rpc, select_search, inputs, boutons d'action
-- `get_dialogs()` — confirmations, modales, toasts
-- `get_svg()` — svg_canvas avec toolbar zoom/pan
-- `get_errors()` — gestion erreurs 404, RAISE, bad cast
-- `get_diagnostics()` — exécute pgv.diagnose() sur toutes les pages QA
-- `seed()` / `clean()` — données démo pour les tables QA
-- Ces pages sont accessibles via workbench (Primitives tab) qui wrape les fonctions pgv_qa
+- `get_tables()` — simple markdown tables, paginated, md_table()
+- `get_forms()` — data-rpc forms, select_search, inputs, action buttons
+- `get_dialogs()` — confirmations, modals, toasts
+- `get_svg()` — svg_canvas with zoom/pan toolbar
+- `get_errors()` — error handling 404, RAISE, bad cast
+- `get_diagnostics()` — runs pgv.diagnose() on all QA pages
+- `seed()` / `clean()` — demo data for QA tables
+- These pages are accessible via workbench (Primitives tab) which wraps pgv_qa functions
 
-## Workflow agent
+## Agent Workflow
 
-1. Au démarrage ou quand on te dit "go" : **toujours lire `pg_msg_inbox module:pgv`**
-2. Traiter les messages par priorité (HIGH d'abord)
-3. Ne pas résoudre un message tant que la tâche n'est pas vérifiée
-4. Après chaque tâche : `pg_pack schemas: pgv,pgv_ut,pgv_qa` (les 3 schemas)
-5. Puis `pg_func_save target: plpgsql://pgv` + `plpgsql://pgv_ut` + `plpgsql://pgv_qa`
+1. On startup or when told "go": **always read `pg_msg_inbox module:pgv`**
+2. Process messages by priority (HIGH first)
+3. Do not resolve a message until the task is verified
+4. After each task: `pg_pack schemas: pgv,pgv_ut,pgv_qa` (all 3 schemas)
+5. Then `pg_func_save target: plpgsql://pgv` + `plpgsql://pgv_ut` + `plpgsql://pgv_qa`
 
+## Built-in Documentation
 
-## Documentation intégrée
-
-Le workbench embarque de la documentation accessible via `pg_doc` :
-- `pg_doc topic:testing` — Guide pgTAP : conventions test_*(), assertions, patterns
-- `pg_doc topic:data-convention` — Convention data_*() : cursor pagination, FTS, pgv.table()
-- `pg_doc topic:coverage` — Guide couverture de code
+The workbench includes documentation accessible via `pg_doc`:
+- `pg_doc topic:testing` — pgTAP guide: test_*() conventions, assertions, patterns
+- `pg_doc topic:data-convention` — data_*() convention: cursor pagination, FTS, pgv.table()
+- `pg_doc topic:coverage` — Code coverage guide
 
 ## Gotchas
 
-- **tenant_id** : toujours `PERFORM set_config('app.tenant_id', 'test', true)` au début de chaque test
-- **pg_test** : découvre les fonctions `test_*()` dans le schema `_ut`
-
-- **Tu es l'agent pgv, PAS le lead.** Ne jamais utiliser `ws_health` pour trouver tes tâches — il montre TOUTES les tasks du workspace. Utiliser uniquement `pg_msg_inbox module:pgv` pour lire TES messages. Ne traiter que les messages adressés à `pgv`.
-- `call_ref()` ne fonctionne que dans le contexte `route()` (besoin de `pgv.route_prefix`)
-- `route()` auto-prefixe les hrefs nav avec `/{schema}` — ne pas doubler dans `nav_items()`
-- PicoCSS haute specificite — matcher leur pattern pour les `.pgv-*`
-- PostgREST content negotiation — utiliser le domaine `"text/html"` pour les pages
-- Inline styles interdit — `data-*` + JS dans `_enhance()` pour le dynamique
-- POST retourne raw HTML (toast/redirect), jamais wrappe dans `page()`
+- **tenant_id**: always `PERFORM set_config('app.tenant_id', 'test', true)` at the start of each test
+- **pg_test**: discovers `test_*()` functions in the `_ut` schema
+- **You are the pgv agent, NOT the lead.** Never use `ws_health` to find your tasks — it shows ALL workspace tasks. Use only `pg_msg_inbox module:pgv` to read YOUR messages. Only process messages addressed to `pgv`.
+- `call_ref()` only works within the `route()` context (needs `pgv.route_prefix`)
+- `route()` auto-prefixes nav hrefs with `/{schema}` — do not duplicate in `nav_items()`
+- PicoCSS high specificity — match their pattern for `.pgv-*`
+- PostgREST content negotiation — use domain `"text/html"` for pages
+- Inline styles forbidden — `data-*` + JS in `_enhance()` for dynamic behavior
+- POST returns raw HTML (toast/redirect), never wrapped in `page()`

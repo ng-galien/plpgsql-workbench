@@ -5,12 +5,12 @@ CREATE OR REPLACE FUNCTION project.project_read(p_id text)
 AS $function$
 DECLARE v_row jsonb; v_status text; v_actions jsonb := '[]'::jsonb; v_uri text;
 BEGIN
-  SELECT to_jsonb(p) || jsonb_build_object('client_name', cl.name, 'estimate_code', q.numero,
+  SELECT to_jsonb(p) || jsonb_build_object('client_name', cl.name, 'estimate_code', q.number,
     'progress', project._global_progress(p.id),
     'total_hours', (SELECT COALESCE(sum(hours), 0) FROM project.time_entry WHERE project_id = p.id),
     'milestone_count', (SELECT count(*) FROM project.milestone WHERE project_id = p.id)
   ) INTO v_row FROM project.project p JOIN crm.client cl ON cl.id = p.client_id
-  LEFT JOIN quote.devis q ON q.id = p.estimate_id
+  LEFT JOIN quote.estimate q ON q.id = p.estimate_id
   WHERE p.id = p_id::int AND p.tenant_id = current_setting('app.tenant_id', true);
   IF v_row IS NULL THEN RETURN NULL; END IF;
   v_status := v_row ->> 'status'; v_uri := 'project://project/' || p_id;
