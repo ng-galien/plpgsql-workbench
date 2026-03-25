@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION ledger.journal_entry_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_row ledger.journal_entry;

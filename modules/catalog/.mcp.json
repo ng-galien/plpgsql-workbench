@@ -13,6 +13,13 @@
       "env": {
         "MODULE": "catalog"
       }
+    },
+    "maket": {
+      "type": "http",
+      "url": "http://localhost:3337/mcp",
+      "headers": {
+        "X-Session": "catalog"
+      }
     }
   }
 }

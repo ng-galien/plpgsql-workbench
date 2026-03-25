@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION ledger.post_from_expense(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_note_id integer;

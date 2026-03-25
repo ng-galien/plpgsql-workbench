@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION stock.post_article_delete(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE stock.article SET active = false WHERE id = (p_data->>'id')::int;

@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION planning.intervenant_update(p_row planning.intervenant)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE planning.intervenant SET

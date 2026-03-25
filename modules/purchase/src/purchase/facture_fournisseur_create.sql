@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_create(p_row purchase.facture_fournisseur)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   INSERT INTO purchase.facture_fournisseur (tenant_id, commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, date_echeance, notes)

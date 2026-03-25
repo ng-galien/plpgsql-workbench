@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.document_duplicate(p_source_id text, p_new_name text)
  RETURNS text
  LANGUAGE plpgsql
- SET "api.expose" TO 'mcp'
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_src docs.document;

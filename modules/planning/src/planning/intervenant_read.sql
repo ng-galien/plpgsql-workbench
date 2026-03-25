@@ -25,6 +25,20 @@ BEGIN
       WHERE a.intervenant_id = v_row.id AND e.date_fin >= current_date
     ), '[]'::jsonb)
   );
+
+  -- HATEOAS actions based on state
+  IF v_row.actif THEN
+    v_result := v_result || jsonb_build_object('actions', jsonb_build_array(
+      jsonb_build_object('method', 'deactivate', 'uri', 'planning://intervenant/' || p_id || '/deactivate'),
+      jsonb_build_object('method', 'delete', 'uri', 'planning://intervenant/' || p_id)
+    ));
+  ELSE
+    v_result := v_result || jsonb_build_object('actions', jsonb_build_array(
+      jsonb_build_object('method', 'activate', 'uri', 'planning://intervenant/' || p_id || '/activate'),
+      jsonb_build_object('method', 'delete', 'uri', 'planning://intervenant/' || p_id)
+    ));
+  END IF;
+
   RETURN v_result;
 END;
 $function$;

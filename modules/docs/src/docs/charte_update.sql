@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.charte_update(p_data docs.charte)
- RETURNS docs.charte
+ RETURNS jsonb
  LANGUAGE plpgsql
- SET "api.expose" TO 'mcp'
+ SECURITY DEFINER
 AS $function$
 BEGIN
   IF p_data.name IS NOT NULL AND p_data.name != '' THEN
@@ -38,6 +38,6 @@ BEGIN
     updated_at = now()
   WHERE (slug = p_data.slug OR id = p_data.id) AND tenant_id = current_setting('app.tenant_id', true)
   RETURNING * INTO p_data;
-  RETURN p_data;
+  RETURN to_jsonb(p_data);
 END;
 $function$;

@@ -13,7 +13,7 @@ BEGIN
       ),
 
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('type', 'email', 'phone', 'city', 'tier', 'active'),
+        'fields', jsonb_build_array('type', 'email', 'phone', 'city', 'tier'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'quote_count', 'label', 'crm.stat_quotes'),
           jsonb_build_object('key', 'total_revenue', 'label', 'crm.stat_revenue'),
@@ -22,7 +22,7 @@ BEGIN
       ),
 
       'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('type', 'email', 'phone', 'address', 'city', 'postal_code', 'tier', 'tags', 'notes', 'active', 'created_at'),
+        'fields', jsonb_build_array('type', 'email', 'phone', 'address', 'city', 'postal_code', 'tier', 'tags', 'notes', 'created_at'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'quote_count', 'label', 'crm.stat_quotes'),
           jsonb_build_object('key', 'total_revenue', 'label', 'crm.stat_revenue'),

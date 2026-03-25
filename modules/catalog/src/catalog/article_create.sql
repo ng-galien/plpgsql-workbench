@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION catalog.article_create(p_row catalog.article)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.actif := COALESCE(p_row.actif, true);

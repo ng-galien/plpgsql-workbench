@@ -2,7 +2,6 @@ CREATE OR REPLACE FUNCTION docs.layout_check(p_html text, p_width numeric, p_hei
  RETURNS text
  LANGUAGE plpgsql
  STABLE
- SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_overflows text[] := ARRAY[]::text[];

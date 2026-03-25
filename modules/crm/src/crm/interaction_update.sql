@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION crm.interaction_update(p_row crm.interaction)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_result crm.interaction;

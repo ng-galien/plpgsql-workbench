@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION purchase.post_ligne_supprimer(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_ligne_id int := (p_data->>'p_ligne_id')::int;

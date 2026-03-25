@@ -160,16 +160,16 @@ agents-docker: ## Start all containerized agents
 agents-docker-down: ## Stop all containerized agents
 	cd docker/agent && docker compose down
 
-# --- Agents tmux (legacy, prefer docker agents) ---
+# --- Team (one tmux session per module, with channel) ---
 
 STRIP_VARS := CLAUDECODE CLAUDE_CODE_ENTRYPOINT CLAUDE_CODE_SESSION_ID \
 	CLAUDE_CODE_CONVERSATION_ID CLAUDE_CODE_TASK_ID \
 	NON_INTERACTIVE MCP_TRANSPORT MCP_SESSION_ID
 CHANNEL_FLAG := --dangerously-load-development-channels server:workbench-msg
 
-.PHONY: agents agents-kill agents-restart agents-status agents-ping agent agent-kill agent-ping agent-log
+.PHONY: team team-stop team-restart team-status team-ping team-confirm member member-stop member-ping member-log
 
-agents: ## Spawn Claude agents (one tmux session per module, with channel)
+team: ## Start all team members (one tmux session per module)
 	@for mod in modules/*/; do \
 		name=$$(basename "$$mod"); \
 		if tmux has-session -t "$$name" 2>/dev/null; then \
@@ -180,23 +180,32 @@ agents: ## Spawn Claude agents (one tmux session per module, with channel)
 			tmux new-session -d -s "$$name" -c "$$mod" "/tmp/pgw-spawn-$$name.sh"; \
 			tmux set-option -t "$$name" history-limit 50000 2>/dev/null || true; \
 			tmux set-option -t "$$name" remain-on-exit on 2>/dev/null || true; \
-			echo "  START $$name"; \
+			echo "  JOIN  $$name"; \
 		fi; \
 	done
 
-agents-kill: ## Kill all agent tmux sessions
+team-confirm: ## Send Enter to all members (accept channel confirmation)
+	@for mod in modules/*/; do \
+		name=$$(basename "$$mod"); \
+		tmux send-keys -t "$$name" Enter 2>/dev/null && echo "  ENTER $$name"; \
+	done
+
+team-stop: ## Stop all team members
 	@for mod in modules/*/; do \
 		name=$$(basename "$$mod"); \
 		if tmux has-session -t "$$name" 2>/dev/null; then \
 			tmux kill-session -t "$$name"; \
 			rm -f "/tmp/pgw-tmux-$$name.log" "/tmp/pgw-spawn-$$name.sh"; \
-			echo "  KILL  $$name"; \
+			echo "  LEAVE $$name"; \
 		fi; \
 	done
 
-agents-restart: agents-kill agents ## Kill then respawn all agents
+team-restart: team-stop ## Restart all team members
+	@echo "  Waiting 3s for cleanup..."
+	@sleep 3
+	@$(MAKE) team
 
-agents-status: ## Show current activity of each agent
+team-status: ## Show current activity of each team member
 	@for mod in modules/*/; do \
 		name=$$(basename "$$mod"); \
 		if tmux has-session -t "$$name" 2>/dev/null; then \
@@ -210,7 +219,7 @@ agents-status: ## Show current activity of each agent
 		fi; \
 	done
 
-agents-ping: ## Send "go" to all agent tmux sessions
+team-ping: ## Send "go" to all team members
 	@for mod in modules/*/; do \
 		name=$$(basename "$$mod"); \
 		if tmux has-session -t "$$name" 2>/dev/null; then \
@@ -219,10 +228,10 @@ agents-ping: ## Send "go" to all agent tmux sessions
 		fi; \
 	done
 
-# --- Single agent control (make agent M=crm, make agent-kill M=crm) ---
+# --- Single member (make member M=crm, make member-stop M=crm) ---
 
-agent: ## Spawn one agent with channel (M=name). Ex: make agent M=docs
-	@test -n "$(M)" || (echo "Usage: make agent M=docs" && exit 1)
+member: ## Start one team member (M=name). Ex: make member M=docs
+	@test -n "$(M)" || (echo "Usage: make member M=docs" && exit 1)
 	@if tmux has-session -t "$(M)" 2>/dev/null; then \
 		echo "  OK    $(M) (already running)"; \
 	else \
@@ -231,23 +240,23 @@ agent: ## Spawn one agent with channel (M=name). Ex: make agent M=docs
 		tmux new-session -d -s "$(M)" -c "modules/$(M)" "/tmp/pgw-spawn-$(M).sh"; \
 		tmux set-option -t "$(M)" history-limit 50000 2>/dev/null || true; \
 		tmux set-option -t "$(M)" remain-on-exit on 2>/dev/null || true; \
-		echo "  START $(M)"; \
+		echo "  JOIN  $(M)"; \
 	fi
 
-agent-kill: ## Kill one agent (M=name). Ex: make agent-kill M=crm
-	@test -n "$(M)" || (echo "Usage: make agent-kill M=crm" && exit 1)
+member-stop: ## Stop one team member (M=name). Ex: make member-stop M=crm
+	@test -n "$(M)" || (echo "Usage: make member-stop M=crm" && exit 1)
 	@if tmux has-session -t "$(M)" 2>/dev/null; then \
 		tmux kill-session -t "$(M)"; \
 		rm -f "/tmp/pgw-tmux-$(M).log" "/tmp/pgw-spawn-$(M).sh"; \
-		echo "  KILL  $(M)"; \
+		echo "  LEAVE $(M)"; \
 	else \
 		echo "  $(M) not running"; \
 	fi
 
-agent-restart: agent-kill agent ## Kill then respawn one agent (M=name)
+member-restart: member-stop member ## Restart one team member (M=name)
 
-agent-ping: ## Send "go" to one agent (M=name). Ex: make agent-ping M=docs
-	@test -n "$(M)" || (echo "Usage: make agent-ping M=docs" && exit 1)
+member-ping: ## Send "go" to one team member (M=name). Ex: make member-ping M=docs
+	@test -n "$(M)" || (echo "Usage: make member-ping M=docs" && exit 1)
 	@if tmux has-session -t "$(M)" 2>/dev/null; then \
 		tmux send-keys -t "$(M)" "go" Enter; \
 		echo "  PING  $(M)"; \
@@ -255,8 +264,8 @@ agent-ping: ## Send "go" to one agent (M=name). Ex: make agent-ping M=docs
 		echo "  $(M) not running"; \
 	fi
 
-agent-log: ## Show last 50 lines from agent tmux (M=name). Ex: make agent-log M=crm
-	@test -n "$(M)" || (echo "Usage: make agent-log M=crm" && exit 1)
+member-log: ## Show last 50 lines from team member (M=name). Ex: make member-log M=crm
+	@test -n "$(M)" || (echo "Usage: make member-log M=crm" && exit 1)
 	@if tmux has-session -t "$(M)" 2>/dev/null; then \
 		tmux capture-pane -t "$(M)" -p -S -50; \
 	else \

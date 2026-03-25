@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION expense.post_ligne_ajouter(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_note_id int := (p_params->>'note_id')::int;

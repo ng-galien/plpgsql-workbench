@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.library_remove_asset(p_library_id text, p_asset_id uuid)
  RETURNS boolean
  LANGUAGE plpgsql
- SET "api.expose" TO 'mcp'
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_deleted int;

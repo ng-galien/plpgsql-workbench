@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION project.chantier_create(p_row project.chantier)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_result jsonb;

@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION crm.client_update(p_row crm.client)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_result crm.client;

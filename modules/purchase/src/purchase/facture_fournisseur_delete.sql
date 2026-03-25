@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_row purchase.facture_fournisseur;

@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION crm.post_import_csv(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_csv text;

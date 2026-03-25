@@ -9,6 +9,10 @@ BEGIN
     ('fr', 'catalog.nav_articles', 'Articles'),
     ('fr', 'catalog.nav_categories', 'Catégories'),
 
+    -- Entity labels
+    ('fr', 'catalog.entity_article', 'Article'),
+    ('fr', 'catalog.entity_categorie', 'Catégorie'),
+
     -- Stats
     ('fr', 'catalog.stat_articles_actifs', 'Articles actifs'),
     ('fr', 'catalog.stat_categories', 'Catégories'),
@@ -28,6 +32,9 @@ BEGIN
     ('fr', 'catalog.field_categorie_placeholder', '-- Catégorie --'),
     ('fr', 'catalog.field_categorie_parente', 'Catégorie parente'),
     ('fr', 'catalog.field_categorie_parente_placeholder', '-- Aucune (racine) --'),
+    ('fr', 'catalog.field_nom', 'Nom'),
+    ('fr', 'catalog.field_ordre', 'Ordre'),
+    ('fr', 'catalog.field_actif', 'Actif'),
 
     -- Table headers
     ('fr', 'catalog.col_ref', 'Réf.'),
@@ -66,6 +73,23 @@ BEGIN
     ('fr', 'catalog.btn_desactiver', 'Désactiver'),
     ('fr', 'catalog.btn_reactiver', 'Réactiver'),
 
+    -- _view() actions
+    ('fr', 'catalog.action_deactivate', 'Désactiver'),
+    ('fr', 'catalog.action_activate', 'Réactiver'),
+    ('fr', 'catalog.action_delete', 'Supprimer'),
+    ('fr', 'catalog.confirm_deactivate', 'Désactiver cet article ?'),
+    ('fr', 'catalog.confirm_delete', 'Supprimer définitivement ?'),
+
+    -- _view() form sections
+    ('fr', 'catalog.section_identity', 'Identité'),
+    ('fr', 'catalog.section_pricing', 'Tarification'),
+    ('fr', 'catalog.section_classification', 'Classification'),
+
+    -- _view() related
+    ('fr', 'catalog.related_quotes', 'Devis'),
+    ('fr', 'catalog.related_stock', 'Stock'),
+    ('fr', 'catalog.related_purchases', 'Commandes fournisseur'),
+
     -- Titles
     ('fr', 'catalog.title_recent', 'Articles récents'),
     ('fr', 'catalog.title_new_categorie', 'Nouvelle catégorie'),
@@ -87,7 +111,7 @@ BEGIN
     ('fr', 'catalog.toast_article_modified', 'Article modifié'),
     ('fr', 'catalog.toast_categorie_created', 'Catégorie créée'),
 
-    -- Confirm dialogs
+    -- Confirm dialogs (legacy)
     ('fr', 'catalog.confirm_desactiver', 'Désactiver cet article ?')
 
   ON CONFLICT DO NOTHING;

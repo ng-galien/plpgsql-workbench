@@ -10,6 +10,14 @@ BEGIN
     ('fr', 'expense.nav_notes', 'Notes'),
     ('fr', 'expense.nav_categories', 'Catégories'),
 
+    -- Entity labels (_view)
+    ('fr', 'expense.entity_note', 'Note de frais'),
+    ('fr', 'expense.entity_categorie', 'Catégorie de frais'),
+
+    -- Sections (_view)
+    ('fr', 'expense.section_info', 'Informations'),
+    ('fr', 'expense.section_lignes', 'Lignes de dépenses'),
+
     -- Statuts
     ('fr', 'expense.statut_brouillon', 'Brouillon'),
     ('fr', 'expense.statut_soumise', 'Soumise'),
@@ -25,6 +33,8 @@ BEGIN
     ('fr', 'expense.stat_total_ht', 'Total HT'),
     ('fr', 'expense.stat_total_tva', 'Total TVA'),
     ('fr', 'expense.stat_total_ttc', 'Total TTC'),
+    ('fr', 'expense.stat_nb_lignes', 'Lignes'),
+    ('fr', 'expense.stat_total', 'Total'),
 
     -- Table headers
     ('fr', 'expense.col_reference', 'Référence'),
@@ -41,6 +51,10 @@ BEGIN
     ('fr', 'expense.col_tva', 'TVA'),
     ('fr', 'expense.col_ttc', 'TTC'),
     ('fr', 'expense.col_code_comptable', 'Code comptable'),
+    ('fr', 'expense.col_date_debut', 'Date début'),
+    ('fr', 'expense.col_date_fin', 'Date fin'),
+    ('fr', 'expense.col_nb_lignes', 'Nb lignes'),
+    ('fr', 'expense.col_nom', 'Nom'),
 
     -- Field labels
     ('fr', 'expense.field_auteur', 'Auteur'),
@@ -54,6 +68,8 @@ BEGIN
     ('fr', 'expense.field_tva', 'TVA'),
     ('fr', 'expense.field_km', 'Km (si déplacement)'),
     ('fr', 'expense.field_statut', 'Statut'),
+    ('fr', 'expense.field_nom', 'Nom'),
+    ('fr', 'expense.field_code_comptable', 'Code comptable'),
 
     -- DL labels (note detail)
     ('fr', 'expense.dl_reference', 'Référence'),
@@ -74,11 +90,22 @@ BEGIN
     ('fr', 'expense.btn_rejeter', 'Rejeter'),
     ('fr', 'expense.btn_rembourser', 'Rembourser'),
 
+    -- Actions (_view)
+    ('fr', 'expense.action_edit', 'Modifier'),
+    ('fr', 'expense.action_delete', 'Supprimer'),
+    ('fr', 'expense.action_submit', 'Soumettre'),
+    ('fr', 'expense.action_validate', 'Valider'),
+    ('fr', 'expense.action_reject', 'Rejeter'),
+    ('fr', 'expense.action_reimburse', 'Rembourser'),
+    ('fr', 'expense.action_add_ligne', 'Ajouter une ligne'),
+
     -- Confirm dialogs
     ('fr', 'expense.confirm_soumettre', 'Soumettre cette note pour validation ?'),
     ('fr', 'expense.confirm_valider', 'Valider cette note de frais ?'),
     ('fr', 'expense.confirm_rejeter', 'Rejeter cette note de frais ?'),
     ('fr', 'expense.confirm_rembourser', 'Marquer cette note comme remboursée ?'),
+    ('fr', 'expense.confirm_delete', 'Supprimer cette note de frais ?'),
+    ('fr', 'expense.confirm_delete_categorie', 'Supprimer cette catégorie ?'),
 
     -- Filter options
     ('fr', 'expense.filter_tous', 'Tous'),

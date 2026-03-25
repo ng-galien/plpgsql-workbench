@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.timesheet_create(p_row hr.timesheet)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);

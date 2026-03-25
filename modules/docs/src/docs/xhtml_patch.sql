@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.xhtml_patch(p_html text, p_ops jsonb)
  RETURNS text
  LANGUAGE plpgsql
- SET "api.expose" TO 'mcp'
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_html text := p_html;

@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION stock.depot_create(p_row stock.depot)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);

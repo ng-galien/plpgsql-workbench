@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION purchase.commande_create(p_row purchase.commande)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   INSERT INTO purchase.commande (tenant_id, numero, fournisseur_id, objet, notes, date_livraison, conditions_paiement)

@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.page_set_html(p_doc_id text, p_page_index integer, p_html text)
  RETURNS integer
  LANGUAGE plpgsql
- SET "api.expose" TO 'mcp'
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_old_html text;

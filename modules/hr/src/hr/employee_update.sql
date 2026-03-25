@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.employee_update(p_row hr.employee)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE hr.employee SET

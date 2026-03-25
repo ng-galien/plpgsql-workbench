@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION expense.post_note_rembourser(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_params->>'id')::int;

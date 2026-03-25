@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION planning.post_evenement_supprimer(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   DELETE FROM planning.evenement WHERE id = p_id;

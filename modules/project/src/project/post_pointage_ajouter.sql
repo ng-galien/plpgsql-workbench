@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION project.post_pointage_ajouter(p_chantier_id integer, p_heures numeric, p_description text DEFAULT ''::text, p_date date DEFAULT CURRENT_DATE)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM project.chantier WHERE id = p_chantier_id AND statut IN ('preparation','execution')) THEN

@@ -81,3 +81,8 @@ DROP POLICY IF EXISTS tenant_isolation ON crm.interaction;
 CREATE POLICY tenant_isolation ON crm.interaction
   USING (tenant_id = current_setting('app.tenant_id', true));
 
+-- Table grants: SELECT only (writes go through SECURITY DEFINER functions)
+REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA crm FROM anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA crm TO anon;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA crm TO anon;
+

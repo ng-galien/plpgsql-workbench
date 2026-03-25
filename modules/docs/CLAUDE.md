@@ -1,135 +1,156 @@
 # document — XHTML Composition Engine
 
-Moteur de composition de documents visuels en XHTML. Chartes graphiques (design tokens), documents multi-pages, validation charte, layout check. Backend du produit standalone **Maket**.
+Visual document composition engine in XHTML. Design charters (design tokens), multi-page documents, charter validation, layout check. Backend for the standalone product **Maket**.
 
-**Dépend de :** `pgv`, `asset`
+**Depends on:** `pgv`, `asset`
 
-**Schemas :** `document`, `docs_ut` (tests), `docs_qa` (seed data)
+**Schemas:** `docs`, `docs_ut` (tests), `docs_qa` (seed data)
 
-## Domaine
+## Language Rules (STRICT)
 
-### Charte graphique
+- **Code** — ALL code in English: function names, parameter names, variable names, column names, JSON keys, comments. No exceptions.
+- **Labels** — ALL user-facing text via `pgv.t('docs.key')`. Never hardcode French (or any language) strings in functions. Labels live in `i18n_seed()` only.
+- **CLAUDE.md** — English only.
+- **Commits** — English only.
+- **Examples**: `charte_list` not `liste_chartes`, `pgv.t('docs.nav_chartes')` not `'Chartes graphiques'`, `status = 'draft'` not `'brouillon'`
 
-Système de design tokens pour garantir la cohérence visuelle. Une charte = une identité de marque.
+## Domain
 
-**Socle couleur obligatoire (6 tokens) :**
+### Design Charter (Charte)
 
-| Token | Rôle | Proportion |
+Design token system to ensure visual consistency. One charter = one brand identity.
+
+**Mandatory color base (6 tokens):**
+
+| Token | Role | Proportion |
 |-------|------|------------|
-| `color_bg` | Fond de page | ~60% |
-| `color_main` | Titres, éléments forts | ~30% |
+| `color_bg` | Page background | ~60% |
+| `color_main` | Headings, strong elements | ~30% |
 | `color_accent` | CTA, highlights | ~10% |
-| `color_text` | Corps de texte | — |
-| `color_text_light` | Texte secondaire | — |
-| `color_border` | Lignes, séparateurs | — |
+| `color_text` | Body text | — |
+| `color_text_light` | Secondary text | — |
+| `color_border` | Lines, separators | — |
 
-Plus des tokens libres dans `color_extra` jsonb (ex: `{"ocean": "#2E7D9B", "olive": "#5C6B3C"}`).
+Plus free-form tokens in `color_extra` jsonb (e.g. `{"ocean": "#2E7D9B", "olive": "#5C6B3C"}`).
 
-**Font :** `font_heading` + `font_body` (Google Fonts, obligatoires).
+**Font:** `font_heading` + `font_body` (Google Fonts, mandatory).
 
-**Spacing :** `spacing_page`, `spacing_section`, `spacing_gap`, `spacing_card` (valeurs CSS, ex: `"12mm"`).
+**Spacing:** `spacing_page`, `spacing_section`, `spacing_gap`, `spacing_card` (CSS values, e.g. `"12mm"`).
 
-**Shadow / Radius :** `shadow_card`, `shadow_elevated`, `radius_card` (valeurs CSS).
+**Shadow / Radius:** `shadow_card`, `shadow_elevated`, `radius_card` (CSS values).
 
-**Voice :** personnalité (text[]), formalité, do/dont (text[]), vocabulaire, exemples (jsonb).
+**Voice:** personality (text[]), formality, do/dont (text[]), vocabulary, examples (jsonb).
 
-**Rules :** contraintes design libres (jsonb) — ce qu'on ne doit PAS faire avec la charte.
+**Rules:** free-form design constraints (jsonb) — what NOT to do with the charter.
 
-**Révisions :** chaque modification des tokens crée un snapshot dans `charte_revision`.
+**Revisions:** each token modification creates a snapshot in `charte_revision`.
 
 ### Document
 
-Document XHTML multi-pages avec canvas (format, dimensions, fond).
+Multi-page XHTML document with canvas (format, dimensions, background).
 
-**Canvas :** format (`A4`, `A3`, `A5`, `HD`, `MACBOOK`, `IPAD`, `MOBILE`, `CUSTOM`), orientation, dimensions (mm pour print, px pour screen), fond, marge texte.
+**Canvas:** format (`A4`, `A3`, `A5`, `HD`, `MACBOOK`, `IPAD`, `MOBILE`, `CUSTOM`), orientation, dimensions (mm for print, px for screen), background, text margin.
 
-**Pages :** chaque page a son HTML et un override optionnel du canvas (format différent par page). Les pages sont indexées (`page_index`).
+**Pages:** each page has its HTML and an optional canvas override (different format per page). Pages are indexed (`page_index`).
 
-**Charte liée :** un document référence optionnellement une charte. Toute mutation HTML est validée contre la charte (couleurs, fonts, shadows doivent utiliser `var(--charte-*)`).
+**Linked charter:** a document optionally references a charter. Any HTML mutation is validated against the charter (colors, fonts, shadows must use `var(--charte-*)`).
 
-**Status :** `draft` → `generated` → `signed` → `archived`.
+**Status:** `draft` → `generated` → `signed` → `archived`.
 
-**Ref externe :** `ref_module` + `ref_id` pour lier un document à un devis, une facture, un projet.
+**External ref:** `ref_module` + `ref_id` to link a document to a quote, invoice, project.
 
 ### XHTML
 
-Le contenu des pages est du **XHTML strict** (XML bien formé). Conventions :
+Page content is **strict XHTML** (well-formed XML). Conventions:
 
-- Chaque élément visuel a un `data-id` unique
-- Les styles sont **inline** (`style="..."`) car le document est autonome (pas de CSS externe)
-- Les couleurs/fonts/shadows utilisent `var(--charte-*)` quand une charte est active
-- Les dimensions sont en `mm` pour le print, en `px` pour le screen
-- Le XHTML est validé par `xmlparse()` à chaque mutation — malformé = rejeté
+- Each visual element has a unique `data-id`
+- Styles are **inline** (`style="..."`) because the document is self-contained (no external CSS)
+- Colors/fonts/shadows use `var(--charte-*)` when a charter is active
+- Dimensions in `mm` for print, `px` for screen
+- XHTML is validated by `xmlparse()` on every mutation — malformed = rejected
 
 ### Assets
 
-Les images sont gérées par le module transversal `asset`. Supabase Storage + Image Transformations pour le resize à la volée. Le document référence les assets par chemin relatif (`/assets/photo.jpg`).
+Images are managed by the cross-module `asset` module. Supabase Storage + Image Transformations for on-the-fly resizing. Documents reference assets by relative path (`/assets/photo.jpg`).
 
 ## Tables
 
 ```
-docs.charte           — design tokens, voice, rules (6 couleurs NOT NULL)
-docs.charte_revision  — snapshot tokens par version
-docs.company          — émetteur (entreprise, pour factures/devis)
-docs.document         — document XHTML (canvas, meta, charte ref, status)
-docs.page             — pages XHTML (html, canvas override optionnel)
-docs.page_revision    — historique HTML par page
-docs.session          — UNLOGGED workspace (docs ouverts, zoom, pan, pending)
+docs.charte           — design tokens, voice, rules (6 colors NOT NULL)
+docs.charte_revision  — token snapshot per version
+docs.company          — issuer (company, for invoices/quotes)
+docs.document         — XHTML document (canvas, meta, charter ref, status)
+docs.page             — XHTML pages (html, optional canvas override)
+docs.page_revision    — HTML history per page
+docs.library          — asset library (grouped photo collections)
+docs.library_asset    — library ↔ asset junction (role, caption, sort)
+docs.session          — UNLOGGED workspace (open docs, zoom, pan, pending)
 ```
 
-## Fonctions à implémenter
+## Functions
 
-### Charte
-- `charte_create(...)` — INSERT avec validation socle obligatoire
-- `charte_load(name)` — tokens formatés en CSS variables + context_token
-- `charte_list()` — liste avec preview tokens
-- `charte_delete(name)` — DELETE
-- `charte_update_tokens(id, tokens)` — UPDATE + snapshot révision
-- `charte_tokens_to_css(charte)` — génère `:root { --charte-*: value }` + Google Fonts @import
+### Charter CRUD
+- `charte_create(p_data)` — INSERT with mandatory base validation + auto-slug
+- `charte_read(p_id)` — by id or slug, returns composite row
+- `charte_list(p_filter)` — list with preview tokens
+- `charte_update(p_data)` — partial update, recalculate slug on rename
+- `charte_delete(p_id)` — by id or slug
+- `charte_tokens_to_css(p_charte_id)` — generates `:root { --charte-*: value }` + Google Fonts @import
 
-### Document
-- `doc_new(name, canvas, charte_id, html)` — CREATE document + première page
-- `doc_load(id)` — document + pages + charte CSS
-- `doc_list()` — catalogue groupé par catégorie
-- `doc_delete(id)` — CASCADE pages + révisions
-- `doc_duplicate(source_id, new_name)` — deep clone
-- `doc_update(id, args)` — compound (rename, charte change, meta, add/remove page)
+### Document CRUD
+- `document_create(p_data)` — CREATE document + first page, format→dimensions, auto-slug
+- `document_read(p_id)` — by id or slug
+- `document_list(p_filter)` — catalog grouped by category
+- `document_update(p_data)` — partial update
+- `document_delete(p_id)` — CASCADE pages + revisions
+- `document_duplicate(p_id, p_name)` — deep clone
+
+### Library CRUD
+- `library_create(p_data)` — CREATE library + auto-slug
+- `library_read(p_id)` — by id or slug
+- `library_list(p_filter)` — list all libraries
+- `library_delete(p_id)` — CASCADE assets, NULL document refs
+- `library_add_asset(p_library_id, p_asset_id, p_role, p_caption, p_sort)` — upsert
+- `library_remove_asset(p_library_id, p_asset_id)` — remove
 
 ### HTML / XHTML
-- `html_set(doc_id, page_index, html)` — remplacer le HTML, valider charte + layout
-- `html_patch(doc_id, page_index, ops)` — patch chirurgical par data-id (style, content, insert, remove)
-- `style_merge(existing, new_styles)` — merge CSS inline (key-value, last-write-wins)
-- `layout_check(html, width, height)` — détecte les éléments qui dépassent le canvas
-- `charte_check(html, charte_id)` — valide les couleurs/fonts/shadows contre les tokens
-- `normalize_color(raw)` — normalise hex/rgb en #rrggbb pour comparaison
-- `xhtml_validate(html)` — vérifie que le HTML est du XML bien formé
+- `page_set_html(doc_id, page_index, html)` — replace HTML, validate charter + layout
+- `xhtml_patch(html, ops)` — surgical patch by data-id (style, content, insert, remove)
+- `style_merge(existing, new_styles)` — merge inline CSS (key-value, last-write-wins)
+- `layout_check(html, width, height)` — detect elements overflowing the canvas
+- `charte_check(html, charte_id)` — validate colors/fonts/shadows against tokens
+- `normalize_color(raw)` — normalize hex/rgb to #rrggbb for comparison
+- `xhtml_validate(html)` — verify HTML is well-formed XML
 
-### Session
-- `session_sync(...)` — upsert workspace state
-- `session_get(user_id)` — lire l'état workspace
+### Pages
+- `page_add(doc_id, title, html)` — add page, returns new index
+- `page_remove(doc_id, page_index)` — remove page, renumber remaining
 
 ### pgView pages
-- `get_index()` — dashboard documents
-- `get_document(p_id)` — vue document avec pages
-- `get_chartes()` — liste des chartes
-- `get_charte(p_id)` — détail charte
+- `get_index()` — document dashboard
+- `get_document(p_id)` — document view with pages
+- `get_chartes()` — charter list
+- `get_charte(p_id)` — charter detail
+- `get_libraries()` — library list
+- `get_library(p_id)` — library detail
+- `get_print(p_id)` — print-ready HTML
 - `nav_items()`, `brand()`, `i18n_seed()`
 
-## Convention context_token
+## context_token Convention
 
-Mécanisme anti-triche : Claude doit lire une charte (`charte_load`) avant de modifier un document qui l'utilise. Le token est un HMAC des tokens de la charte (via `pgcrypto`). Si la charte change, le token expire.
+Anti-cheat mechanism: Claude must read a charter (`charte_load`) before modifying a document that uses it. The token is an HMAC of the charter's tokens (via `pgcrypto`). If the charter changes, the token expires.
 
 ```sql
--- Génération
+-- Generation
 encode(hmac('charte:' || name || '|' || tokens_hash, secret, 'sha256'), 'hex')
 
 -- Validation
-Le context_token passé par Claude est comparé au token recalculé.
+The context_token passed by Claude is compared to the recalculated token.
 ```
 
-## Lien avec Maket (standalone)
+## Maket Integration (standalone)
 
-Ce module EST le backend de Maket. Le produit standalone est un packaging MCP qui se connecte au même Supabase. Les 4 verbes MCP (`get`, `set`, `patch`, `delete`) routent vers les fonctions PL/pgSQL de ce module.
+This module IS the Maket backend. The standalone product is an MCP packaging that connects to the same Supabase. The 4 MCP verbs (`get`, `set`, `patch`, `delete`) route to the PL/pgSQL functions of this module.
 
 ```
 Maket standalone → Supabase → docs.* functions
@@ -138,71 +159,71 @@ Workbench ERP    → PostgREST → docs.* functions (pgView pages)
 
 ---
 
-## Framework pgView
+## pgView Framework
 
-Ce module est un **module indépendant** du framework pgView. Ses dépendances sont déclarées dans `module.json`.
+This module is an **independent module** of the pgView framework. Dependencies declared in `module.json`.
 
-### Conventions PL/pgSQL
+### PL/pgSQL Conventions
 
-- `get_*()` → pages GET, `post_*()` → actions POST. Nommage = routing automatique via `pgv.route()`
-- `nav_items() -> jsonb` → menu du module. Retourne `jsonb` (JAMAIS TABLE)
-- `brand() -> text` → nom affiché dans la nav
-- `get_index()` → page d'accueil du module (obligatoire)
-- Paramètres via query string : `/page?p_id=42` → `get_page(p_id text)`
-- POST retourne raw HTML (templates `<template data-toast>` ou `<template data-redirect>`) — jamais wrappé dans `page()`
-- Tables via `<md>` blocks (markdown), JAMAIS `<table>` HTML. `<md data-page="20">` pour pagination
-- CSS classes `pgv-*`, JAMAIS de `style="..."` inline dans les pages pgView
-- Primitives UI : `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`
+- `get_*()` → GET pages, `post_*()` → POST actions. Naming = automatic routing via `pgv.route()`
+- `nav_items() -> jsonb` → module menu. Returns `jsonb` (NEVER TABLE)
+- `brand() -> text` → display name in nav
+- `get_index()` → module home page (mandatory)
+- Parameters via query string: `/page?p_id=42` → `get_page(p_id text)`
+- POST returns raw HTML (`<template data-toast>` or `<template data-redirect>`) — never wrapped in `page()`
+- Tables via `<md>` blocks (markdown), NEVER `<table>` HTML. `<md data-page="20">` for pagination
+- CSS classes `pgv-*`, NEVER inline `style="..."` in pgView pages
+- UI primitives: `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`
 
-### Workflow dev (STRICT)
+### Dev Workflow (STRICT)
 
-1. **DDL** → Write dans `build/{schema}.ddl.sql` → `pg_schema` pour appliquer
-2. **Fonctions** → `pg_func_set` pour créer/modifier + `pg_test` pour valider
-3. **Exporter** → `pg_pack` (→ `build/{schema}.func.sql`) + `pg_func_save` (→ `src/`)
-4. `pg_query` → SELECT/DML uniquement, JAMAIS de DDL ou CREATE FUNCTION
-5. JAMAIS écrire de fonctions dans des fichiers SQL — le workbench EST l'outil de dev
-6. JAMAIS éditer `build/*.func.sql` — généré par `pg_pack`
+1. **DDL** → Write to `build/{schema}.ddl.sql` → `pg_schema` to apply
+2. **Functions** → `pg_func_set` to create/modify + `pg_test` to validate
+3. **Export** → `pg_pack` (→ `build/{schema}.func.sql`) + `pg_func_save` (→ `src/`)
+4. `pg_query` → SELECT/DML only, NEVER DDL or CREATE FUNCTION
+5. NEVER write functions in SQL files — the workbench IS the dev tool
+6. NEVER edit `build/*.func.sql` — generated by `pg_pack`
 
-### Module structure
+### Module Structure
 
 - `module.json` → manifest (schemas, dependencies, extensions, sql, grants)
-- `build/` → artefacts de déploiement (DDL + fonctions packées)
-- `src/` → sources individuelles versionnées (pg_func_save)
-- `_ut` schemas → tests pgTAP (`test_*()`)
-- `_qa` schemas → seed data uniquement (`seed()`, `clean()`), PAS de pages
+- `build/` → deployment artifacts (DDL + packed functions)
+- `src/` → individually versioned sources (pg_func_save)
+- `_ut` schemas → pgTAP tests (`test_*()`)
+- `_qa` schemas → seed data only (`seed()`, `clean()`), NO pages
 
-### Contenu du DDL (`build/{schema}.ddl.sql`) — STRICT
+### DDL Content (`build/{schema}.ddl.sql`) — STRICT
 
-Le DDL contient **uniquement de la structure**. Ordre d'application :
+DDL contains **structure only**. Application order:
 ```
-1. Extensions     → migration globale, PAS dans le DDL module
+1. Extensions     → global migration, NOT in module DDL
 2. DDL            → CREATE SCHEMA, CREATE TABLE, indexes, constraints, RLS
-3. Functions      → pg_pack génère build/{schema}.func.sql (+ triggers)
-4. Grants         → pg_pack les ajoute à la fin de chaque .func.sql
-5. Seed référentiel → données de référence dans build/{schema}.seed.sql
+3. Functions      → pg_pack generates build/{schema}.func.sql (+ triggers)
+4. Grants         → pg_pack appends them to each .func.sql
+5. Reference seed → reference data in build/{schema}.seed.sql
 ```
 
-### Communication inter-modules
+### Inter-module Communication
 
-- `pg_msg_inbox module:docs` → lire les messages entrants
-- `pg_msg` → envoyer un message à un autre module
+- `pg_msg_inbox module:docs` → read incoming messages
+- `pg_msg` → send message to another module
 
 ## i18n
 
-- `docs.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) les traductions FR
-- Clés namespaced : `docs.nav_xxx`, `docs.title_xxx`, `docs.btn_xxx`
+- `docs.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) with FR translations
+- Namespaced keys: `docs.nav_xxx`, `docs.title_xxx`, `docs.btn_xxx`
 - `ON CONFLICT DO NOTHING`
 
-## Workflow agent
+## Agent Workflow
 
-1. Au démarrage : **lire `pg_msg_inbox module:docs`**
-2. Traiter les messages par priorité (HIGH d'abord)
-3. Après chaque tâche : `pg_pack schemas: document,docs_ut,docs_qa`
-4. Puis `pg_func_save target: plpgsql://docs` + `plpgsql://docs_ut` + `plpgsql://docs_qa`
+1. On startup: **read `pg_msg_inbox module:docs`**
+2. Process messages by priority (HIGH first)
+3. After each task: `pg_pack schemas: docs,docs_ut,docs_qa`
+4. Then `pg_func_save target: plpgsql://docs` + `plpgsql://docs_ut` + `plpgsql://docs_qa`
 
 ## Gotchas
 
-- **tenant_id** : toujours `PERFORM set_config('app.tenant_id', 'test', true)` au début de chaque test
-- **XHTML strict** : `xmlparse(DOCUMENT html)` rejette le HTML malformé — toujours valider à l'entrée
-- **Style inline** : les pages XHTML utilisent `style="..."` (c'est le contenu du document, pas les pages pgView)
-- **pgcrypto** : nécessaire pour le context_token (HMAC) — vérifier que l'extension est chargée
+- **tenant_id**: always `PERFORM set_config('app.tenant_id', 'test', true)` at the start of each test
+- **XHTML strict**: `xmlparse(DOCUMENT html)` rejects malformed HTML — always validate on input
+- **Inline styles**: XHTML pages use `style="..."` (this is document content, NOT pgView pages)
+- **pgcrypto**: required for context_token (HMAC) — verify the extension is loaded

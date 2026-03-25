@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION docs_ut.test_charte_list()
 AS $function$
 DECLARE
   v_cnt int;
-  v_first docs.charte;
+  v_first jsonb;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.charte WHERE tenant_id = 'test';
@@ -24,9 +24,9 @@ BEGIN
   RETURN NEXT is(v_cnt, 2, '2 chartes listed');
 
   SELECT * INTO v_first FROM docs.charte_list() LIMIT 1;
-  RETURN NEXT is(v_first.name, 'List A', 'first sorted by name');
-  RETURN NEXT ok(v_first.color_bg IS NOT NULL, 'color_bg present');
-  RETURN NEXT ok(v_first.font_heading IS NOT NULL, 'font_heading present');
+  RETURN NEXT is(v_first->>'name', 'List A', 'first sorted by name');
+  RETURN NEXT ok(v_first->>'color_bg' IS NOT NULL, 'color_bg present');
+  RETURN NEXT ok(v_first->>'font_heading' IS NOT NULL, 'font_heading present');
 
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 END;

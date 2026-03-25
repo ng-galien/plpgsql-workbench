@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION stock.post_inventaire_valider(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_depot_id int := (p_data->>'p_depot_id')::int;

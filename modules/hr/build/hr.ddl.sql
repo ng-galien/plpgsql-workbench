@@ -106,3 +106,13 @@ CREATE POLICY tenant_isolation ON hr.timesheet
 DROP POLICY IF EXISTS tenant_isolation ON hr.leave_balance;
 CREATE POLICY tenant_isolation ON hr.leave_balance
   USING (tenant_id = current_setting('app.tenant_id', true));
+
+-- Permissions: SELECT only on tables (writes via SECURITY DEFINER functions)
+GRANT SELECT ON hr.employee TO anon;
+GRANT SELECT ON hr.absence TO anon;
+GRANT SELECT ON hr.timesheet TO anon;
+GRANT SELECT ON hr.leave_balance TO anon;
+GRANT USAGE ON SEQUENCE hr.employee_id_seq TO anon;
+GRANT USAGE ON SEQUENCE hr.absence_id_seq TO anon;
+GRANT USAGE ON SEQUENCE hr.timesheet_id_seq TO anon;
+GRANT USAGE ON SEQUENCE hr.leave_balance_id_seq TO anon;

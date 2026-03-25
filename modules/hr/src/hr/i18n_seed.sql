@@ -154,7 +154,46 @@ BEGIN
     -- Badge labels
     ('fr', 'hr.badge_ok', 'OK'),
     ('fr', 'hr.badge_partiel', 'Partiel'),
-    ('fr', 'hr.badge_vide', 'Vide')
+    ('fr', 'hr.badge_vide', 'Vide'),
+
+    -- Entity labels (_view)
+    ('fr', 'hr.entity_employee', 'Salarié'),
+    ('fr', 'hr.entity_absence', 'Absence'),
+    ('fr', 'hr.entity_timesheet', 'Pointage'),
+
+    -- Section labels (_view form)
+    ('fr', 'hr.section_identity', 'Identité'),
+    ('fr', 'hr.section_position', 'Poste'),
+    ('fr', 'hr.section_contract', 'Contrat'),
+    ('fr', 'hr.section_absence', 'Absence'),
+    ('fr', 'hr.section_timesheet', 'Pointage'),
+
+    -- Action labels (_view HATEOAS)
+    ('fr', 'hr.action_deactivate', 'Désactiver'),
+    ('fr', 'hr.action_activate', 'Réactiver'),
+    ('fr', 'hr.action_delete', 'Supprimer'),
+    ('fr', 'hr.action_validate', 'Valider'),
+    ('fr', 'hr.action_refuse', 'Refuser'),
+    ('fr', 'hr.action_cancel', 'Annuler'),
+
+    -- Stat labels (_view)
+    ('fr', 'hr.stat_cp_remaining', 'CP restants'),
+    ('fr', 'hr.stat_rtt_remaining', 'RTT restants'),
+    ('fr', 'hr.stat_absences', 'Absences'),
+    ('fr', 'hr.stat_balance_remaining', 'Solde restant'),
+
+    -- Related labels (_view)
+    ('fr', 'hr.rel_absences', 'Absences'),
+    ('fr', 'hr.rel_timesheets', 'Pointages'),
+    ('fr', 'hr.rel_employee', 'Salarié'),
+
+    -- Form field labels (_view)
+    ('fr', 'hr.field_employee', 'Salarié'),
+    ('fr', 'hr.field_type_absence', 'Type d''absence'),
+
+    -- Confirm dialogs (_view)
+    ('fr', 'hr.confirm_delete_absence', 'Supprimer cette absence ?'),
+    ('fr', 'hr.confirm_delete_timesheet', 'Supprimer ce pointage ?')
 
   ON CONFLICT DO NOTHING;
 END;

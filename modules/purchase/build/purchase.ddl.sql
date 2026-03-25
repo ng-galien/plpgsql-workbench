@@ -123,3 +123,8 @@ ALTER TABLE purchase.facture_fournisseur ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON purchase.facture_fournisseur;
 CREATE POLICY tenant_isolation ON purchase.facture_fournisseur
   USING (tenant_id = current_setting('app.tenant_id', true));
+
+-- Table security: SELECT only, no direct writes (SECURITY DEFINER functions handle writes)
+REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA purchase FROM anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA purchase TO anon;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA purchase TO anon;

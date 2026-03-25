@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION workbench.agent_message_create(p_row workbench.agent_message)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_row jsonb;

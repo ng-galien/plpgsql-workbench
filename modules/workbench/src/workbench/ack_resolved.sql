@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION workbench.ack_resolved(p_module text)
  RETURNS TABLE(id integer, to_module text, msg_type text, subject text, resolution text)
  LANGUAGE sql
+ SECURITY DEFINER
 AS $function$
   UPDATE workbench.agent_message
     SET acknowledged_at = resolved_at

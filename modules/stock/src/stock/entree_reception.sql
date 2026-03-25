@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION stock.entree_reception(p_data jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_depot_id int := (p_data->>'depot_id')::int;

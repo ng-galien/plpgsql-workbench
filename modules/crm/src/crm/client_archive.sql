@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION crm.client_archive(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_result crm.client;

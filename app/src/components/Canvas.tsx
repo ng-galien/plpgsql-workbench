@@ -2,6 +2,9 @@ import { useStore } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { getDisplayName } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Currency } from "@/components/sdui/Currency";
+import { Workflow } from "@/components/sdui/Workflow";
+import { Timeline } from "@/components/sdui/Timeline";
 import type { PinnedCard, ViewTemplate } from "@/lib/store";
 import { X, Pin } from "lucide-react";
 
@@ -61,7 +64,7 @@ function PinCard({ pin, onClose }: { pin: PinnedCard; onClose: () => void }) {
 
       <div className="px-4 py-3 text-sm flex flex-col gap-2">
         {tpl ? (
-          <TemplateBody data={data} tpl={tpl} t={t} />
+          <TemplateBody data={data} tpl={tpl} view={view} t={t} />
         ) : (
           <FallbackBody data={data} />
         )}
@@ -72,15 +75,31 @@ function PinCard({ pin, onClose }: { pin: PinnedCard; onClose: () => void }) {
   );
 }
 
+function buildFieldLabels(view: ViewTemplate | null): Record<string, string> {
+  const labels: Record<string, string> = {};
+  const sections = view?.template?.form?.sections;
+  if (!sections) return labels;
+  for (const section of sections as Array<{ fields: Array<{ key: string; label: string }> }>) {
+    for (const field of section.fields) {
+      if (field.key && field.label) labels[field.key] = field.label;
+    }
+  }
+  return labels;
+}
+
 function TemplateBody({
   data,
   tpl,
+  view,
   t,
 }: {
   data: Record<string, unknown>;
   tpl: NonNullable<NonNullable<ViewTemplate["template"]>["standard"]>;
+  view: ViewTemplate | null;
   t: (key: string) => string;
 }) {
+  const fieldLabels = buildFieldLabels(view);
+
   return (
     <>
       <div className="flex flex-col gap-1">
@@ -88,7 +107,7 @@ function TemplateBody({
           .filter((key) => data[key] != null && data[key] !== "")
           .map((key) => (
             <div key={key} className="flex justify-between gap-2">
-              <span className="text-muted-foreground text-xs">{key}</span>
+              <span className="text-muted-foreground text-xs">{fieldLabels[key] ? t(fieldLabels[key]) : key}</span>
               <span className="text-xs text-right truncate max-w-[60%]">
                 <FieldValue value={data[key]} />
               </span>
@@ -151,6 +170,9 @@ function FieldValue({ value }: { value: unknown }) {
         <code className="text-[10px]">{value}</code>
       </span>
     );
+  }
+  if (typeof value === "number" && Math.abs(value) >= 100) {
+    return <Currency amount={value} />;
   }
   return <>{String(value)}</>;
 }

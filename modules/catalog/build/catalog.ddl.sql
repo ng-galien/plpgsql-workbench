@@ -40,3 +40,10 @@ CREATE INDEX IF NOT EXISTS idx_article_designation ON catalog.article USING gin 
 CREATE INDEX IF NOT EXISTS idx_article_categorie ON catalog.article(categorie_id);
 CREATE INDEX IF NOT EXISTS idx_article_reference ON catalog.article(reference);
 
+-- Grants: SELECT only, no DML for anon
+GRANT USAGE ON SCHEMA catalog TO anon;
+GRANT USAGE ON SCHEMA catalog_ut TO anon;
+GRANT USAGE ON SCHEMA catalog_qa TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA catalog TO anon;
+REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA catalog FROM anon;
+

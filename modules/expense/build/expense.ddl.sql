@@ -46,3 +46,9 @@ CREATE INDEX IF NOT EXISTS idx_note_auteur ON expense.note(auteur);
 CREATE INDEX IF NOT EXISTS idx_ligne_note ON expense.ligne(note_id);
 CREATE INDEX IF NOT EXISTS idx_ligne_date ON expense.ligne(date_depense);
 
+-- Grants: SELECT only (writes via SECURITY DEFINER functions)
+GRANT USAGE ON SCHEMA expense TO anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA expense TO anon;
+REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA expense FROM anon;
+GRANT USAGE ON SCHEMA expense_ut TO anon;
+GRANT USAGE ON SCHEMA expense_qa TO anon;

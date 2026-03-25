@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION crm.post_interaction_add(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_client_id int := (p_data->>'client_id')::int;

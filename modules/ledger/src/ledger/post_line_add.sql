@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION ledger.post_line_add(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_entry_id integer;

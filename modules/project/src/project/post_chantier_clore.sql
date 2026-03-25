@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION project.post_chantier_clore(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE project.chantier

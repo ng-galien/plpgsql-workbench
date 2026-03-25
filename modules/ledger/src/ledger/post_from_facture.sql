@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION ledger.post_from_facture(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_facture_id integer;

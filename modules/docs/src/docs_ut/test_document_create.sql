@@ -3,8 +3,8 @@ CREATE OR REPLACE FUNCTION docs_ut.test_document_create()
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_d docs.document;
-  v_c docs.charte;
+  v_j jsonb;
+  v_jc jsonb;
   v_r record;
   v_page_cnt int;
 BEGIN
@@ -13,39 +13,38 @@ BEGIN
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 
   -- A4 portrait
-  v_d := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"Test A4"}'::jsonb));
-  SELECT * INTO v_r FROM docs.document WHERE id = v_d.id;
+  v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"Test A4"}'::jsonb));
+  SELECT * INTO v_r FROM docs.document WHERE id = v_j->>'id';
   RETURN NEXT is(v_r.width, 210::numeric, 'A4 width = 210');
   RETURN NEXT is(v_r.height, 297::numeric, 'A4 height = 297');
   RETURN NEXT is(v_r.format, 'A4', 'format stored');
   RETURN NEXT is(v_r.orientation, 'portrait', 'orientation default portrait');
-  RETURN NEXT is(v_d.slug, 'general-test-a4', 'slug from category+name');
+  RETURN NEXT is(v_j->>'slug', 'general-test-a4', 'slug from category+name');
 
-  -- First page created
-  SELECT count(*)::int INTO v_page_cnt FROM docs.page WHERE doc_id = v_d.id;
+  SELECT count(*)::int INTO v_page_cnt FROM docs.page WHERE doc_id = v_j->>'id';
   RETURN NEXT is(v_page_cnt, 1, 'first page auto-created');
 
-  -- A3 landscape (swap)
-  v_d := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"Test A3 L","format":"A3","orientation":"landscape"}'::jsonb));
-  SELECT * INTO v_r FROM docs.document WHERE id = v_d.id;
+  -- A3 landscape
+  v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"Test A3 L","format":"A3","orientation":"landscape"}'::jsonb));
+  SELECT * INTO v_r FROM docs.document WHERE id = v_j->>'id';
   RETURN NEXT is(v_r.width, 420::numeric, 'A3 landscape width = 420');
   RETURN NEXT is(v_r.height, 297::numeric, 'A3 landscape height = 297');
 
-  -- HD (no swap for screen)
-  v_d := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"Test HD","format":"HD"}'::jsonb));
-  SELECT * INTO v_r FROM docs.document WHERE id = v_d.id;
+  -- HD
+  v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"Test HD","format":"HD"}'::jsonb));
+  SELECT * INTO v_r FROM docs.document WHERE id = v_j->>'id';
   RETURN NEXT is(v_r.width, 1920::numeric, 'HD width = 1920');
   RETURN NEXT is(v_r.height, 1080::numeric, 'HD height = 1080');
 
   -- With charte
-  v_c := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  v_jc := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
     'name', 'Test DC', 'color_bg', '#fff', 'color_main', '#000', 'color_accent', '#f00',
     'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
     'font_heading', 'Inter', 'font_body', 'Inter'
   )));
-  v_d := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'With Charte', 'charte_id', v_c.id)));
-  SELECT * INTO v_r FROM docs.document WHERE id = v_d.id;
-  RETURN NEXT is(v_r.charte_id, v_c.id, 'charte linked');
+  v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'With Charte', 'charte_id', v_jc->>'id')));
+  SELECT * INTO v_r FROM docs.document WHERE id = v_j->>'id';
+  RETURN NEXT is(v_r.charte_id, v_jc->>'id', 'charte linked');
 
   DELETE FROM docs.document WHERE tenant_id = 'test';
   DELETE FROM docs.charte WHERE tenant_id = 'test';

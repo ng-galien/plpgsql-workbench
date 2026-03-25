@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.post_employee_save(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int;

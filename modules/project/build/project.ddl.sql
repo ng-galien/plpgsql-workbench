@@ -110,3 +110,8 @@ DO $$ BEGIN
     CREATE POLICY tenant_note_chantier ON project.note_chantier USING (tenant_id = current_setting('app.tenant_id', true));
   END IF;
 END $$;
+
+-- Grants: SELECT only, writes via SECURITY DEFINER functions
+REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA project FROM anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA project TO anon;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA project TO anon;

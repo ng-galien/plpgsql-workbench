@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION planning.evenement_create(p_row planning.evenement)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);

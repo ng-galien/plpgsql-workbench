@@ -21,6 +21,12 @@ BEGIN
       WHERE a.evenement_id = v_row.id
     ), '[]'::jsonb)
   );
+
+  -- HATEOAS actions
+  v_result := v_result || jsonb_build_object('actions', jsonb_build_array(
+    jsonb_build_object('method', 'delete', 'uri', 'planning://evenement/' || p_id)
+  ));
+
   RETURN v_result;
 END;
 $function$;

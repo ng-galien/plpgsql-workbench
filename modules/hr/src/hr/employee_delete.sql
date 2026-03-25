@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.employee_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_deleted jsonb;

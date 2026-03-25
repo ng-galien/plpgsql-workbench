@@ -67,3 +67,8 @@ CREATE POLICY tenant_isolation ON planning.evenement
 DROP POLICY IF EXISTS tenant_isolation ON planning.affectation;
 CREATE POLICY tenant_isolation ON planning.affectation
   USING (tenant_id = current_setting('app.tenant_id', true));
+
+-- Table grants: SELECT only (writes via SECURITY DEFINER functions)
+REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA planning FROM anon;
+GRANT SELECT ON ALL TABLES IN SCHEMA planning TO anon;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA planning TO anon;

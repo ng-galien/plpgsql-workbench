@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION project.post_jalon_avancer(p_id integer, p_pct numeric)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_chantier_id int;

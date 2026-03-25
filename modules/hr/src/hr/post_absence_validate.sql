@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.post_absence_validate(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_data->>'id')::int;
@@ -20,7 +21,6 @@ BEGIN
     RETURN pgv.toast('Action invalide.', 'error');
   END IF;
 
-  -- Fetch absence details before update
   SELECT a.employee_id, a.type_absence, a.nb_jours, a.statut
     INTO v_absence
     FROM hr.absence a WHERE a.id = v_id;
@@ -33,7 +33,6 @@ BEGIN
     RETURN pgv.toast('Absence déjà traitée.', 'error');
   END IF;
 
-  -- Check leave balance before validating (only for types with balance)
   IF v_action = 'valider' AND v_absence.type_absence IN ('conge_paye', 'rtt') THEN
     SELECT (lb.allocated - lb.used) INTO v_balance
       FROM hr.leave_balance lb
@@ -45,7 +44,6 @@ BEGIN
     END IF;
   END IF;
 
-  -- Update absence status
   UPDATE hr.absence SET statut = v_new_statut
     WHERE id = v_id AND statut = 'demande'
     RETURNING employee_id INTO v_employee_id;
@@ -54,7 +52,6 @@ BEGIN
     RETURN pgv.toast('Absence introuvable ou déjà traitée.', 'error');
   END IF;
 
-  -- Decrement leave balance on validation
   IF v_action = 'valider' THEN
     UPDATE hr.leave_balance
        SET used = used + v_absence.nb_jours

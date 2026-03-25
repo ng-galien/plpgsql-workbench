@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION stock.article_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_row stock.article;

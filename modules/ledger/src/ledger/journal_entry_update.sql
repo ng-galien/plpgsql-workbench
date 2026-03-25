@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION ledger.journal_entry_update(p_row ledger.journal_entry)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE ledger.journal_entry

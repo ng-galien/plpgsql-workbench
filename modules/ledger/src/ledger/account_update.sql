@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION ledger.account_update(p_row ledger.account)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE ledger.account

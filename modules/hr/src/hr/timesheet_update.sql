@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.timesheet_update(p_row hr.timesheet)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE hr.timesheet SET

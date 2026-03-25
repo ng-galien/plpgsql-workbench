@@ -16,6 +16,17 @@ BEGIN
     AND a.tenant_id = current_setting('app.tenant_id', true)
   GROUP BY a.id;
 
+  IF v_result IS NULL THEN RETURN NULL; END IF;
+
+  -- HATEOAS actions based on state
+  IF (v_result->>'line_count')::int = 0 THEN
+    v_result := v_result || jsonb_build_object('actions', jsonb_build_array(
+      jsonb_build_object('method', 'delete', 'uri', 'ledger://account/' || (v_result->>'id'))
+    ));
+  ELSE
+    v_result := v_result || jsonb_build_object('actions', '[]'::jsonb);
+  END IF;
+
   RETURN v_result;
 END;
 $function$;

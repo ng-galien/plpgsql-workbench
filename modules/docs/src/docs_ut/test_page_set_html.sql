@@ -3,7 +3,7 @@ CREATE OR REPLACE FUNCTION docs_ut.test_page_set_html()
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_d docs.document;
+  v_j jsonb;
   v_cnt int;
   v_rev_cnt int;
   v_html text;
@@ -11,24 +11,24 @@ BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
 
-  v_d := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"HTML Test"}'::jsonb));
-  PERFORM docs.page_set_html(v_d.id, 0, '<div data-id="v1">Version 1</div>');
+  v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"HTML Test"}'::jsonb));
+  PERFORM docs.page_set_html(v_j->>'id', 0, '<div data-id="v1">Version 1</div>');
 
-  v_cnt := docs.page_set_html(v_d.id, 0, '<div data-id="v2">Version 2</div><span data-id="s1">Span</span>');
+  v_cnt := docs.page_set_html(v_j->>'id', 0, '<div data-id="v2">Version 2</div><span data-id="s1">Span</span>');
   RETURN NEXT is(v_cnt, 2, 'returns 2 data-id elements');
 
-  SELECT html INTO v_html FROM docs.page WHERE doc_id = v_d.id AND page_index = 0;
+  SELECT html INTO v_html FROM docs.page WHERE doc_id = v_j->>'id' AND page_index = 0;
   RETURN NEXT ok(v_html LIKE '%Version 2%', 'HTML updated');
 
-  SELECT count(*)::int INTO v_rev_cnt FROM docs.page_revision WHERE doc_id = v_d.id AND page_index = 0;
+  SELECT count(*)::int INTO v_rev_cnt FROM docs.page_revision WHERE doc_id = v_j->>'id' AND page_index = 0;
   RETURN NEXT is(v_rev_cnt, 1, '1 revision saved');
 
   RETURN NEXT is(
-    (SELECT html FROM docs.page_revision WHERE doc_id = v_d.id AND page_index = 0 AND version = 1),
+    (SELECT html FROM docs.page_revision WHERE doc_id = v_j->>'id' AND page_index = 0 AND version = 1),
     '<div data-id="v1">Version 1</div>', 'revision has old HTML');
 
-  v_cnt := docs.page_set_html(v_d.id, 0, '<p data-id="v3">V3</p>');
-  SELECT count(*)::int INTO v_rev_cnt FROM docs.page_revision WHERE doc_id = v_d.id AND page_index = 0;
+  v_cnt := docs.page_set_html(v_j->>'id', 0, '<p data-id="v3">V3</p>');
+  SELECT count(*)::int INTO v_rev_cnt FROM docs.page_revision WHERE doc_id = v_j->>'id' AND page_index = 0;
   RETURN NEXT is(v_rev_cnt, 2, '2 revisions after second update');
 
   DELETE FROM docs.document WHERE tenant_id = 'test';

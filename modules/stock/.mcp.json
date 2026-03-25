@@ -13,6 +13,13 @@
       "env": {
         "MODULE": "stock"
       }
+    },
+    "maket": {
+      "type": "http",
+      "url": "http://localhost:3337/mcp",
+      "headers": {
+        "X-Session": "stock"
+      }
     }
   }
 }

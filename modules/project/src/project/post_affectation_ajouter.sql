@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION project.post_affectation_ajouter(p_chantier_id integer, p_nom_intervenant text, p_role text DEFAULT ''::text, p_heures_prevues numeric DEFAULT NULL::numeric)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_statut text;

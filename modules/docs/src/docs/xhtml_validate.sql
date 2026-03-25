@@ -2,7 +2,6 @@ CREATE OR REPLACE FUNCTION docs.xhtml_validate(p_html text)
  RETURNS boolean
  LANGUAGE plpgsql
  IMMUTABLE
- SET "api.expose" TO 'mcp'
 AS $function$
 BEGIN
   RETURN xml_is_well_formed('<root>' || COALESCE(p_html, '') || '</root>');

@@ -178,6 +178,9 @@ export function createSetFunction({
 
     await client.query("COMMIT");
 
+    // Re-grant execute to anon (PostgREST) after deploy
+    await client.query(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schema} TO anon`).catch(() => {});
+
     // Notify PostgREST to reload schema cache
     await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
 

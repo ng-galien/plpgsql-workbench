@@ -2,7 +2,6 @@ CREATE OR REPLACE FUNCTION docs.normalize_color(p_raw text)
  RETURNS text
  LANGUAGE plpgsql
  IMMUTABLE
- SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_raw text;

@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION docs_ut.test_charte_read()
 AS $function$
 DECLARE
   v_c docs.charte;
-  v_r docs.charte;
+  v_j jsonb;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.charte WHERE tenant_id = 'test';
@@ -16,23 +16,23 @@ BEGIN
     'spacing_page', '15mm', 'shadow_card', '0 1mm 4mm rgba(0,0,0,0.08)'
   ));
   v_c.color_extra := '{"olive":"#5C6B3C"}'::jsonb;
-  v_c := docs.charte_create(v_c);
+  v_j := docs.charte_create(v_c);
 
   -- Read by id
-  v_r := docs.charte_read(v_c.id);
-  RETURN NEXT ok(v_r.id IS NOT NULL, 'charte_read by id');
-  RETURN NEXT is(v_r.name, 'Read Test', 'name in result');
+  v_j := docs.charte_read(v_j->>'id');
+  RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'charte_read by id');
+  RETURN NEXT is(v_j->>'name', 'Read Test', 'name in result');
 
   -- Read by slug
-  v_r := docs.charte_read('read-test');
-  RETURN NEXT ok(v_r.id IS NOT NULL, 'charte_read by slug');
-  RETURN NEXT is(v_r.color_bg, '#FAF6F1', 'color_bg');
-  RETURN NEXT is(v_r.color_extra->>'olive', '#5C6B3C', 'color_extra olive');
-  RETURN NEXT is(v_r.font_heading, 'Cormorant Garamond', 'font_heading');
-  RETURN NEXT is(v_r.spacing_page, '15mm', 'spacing_page');
+  v_j := docs.charte_read('read-test');
+  RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'charte_read by slug');
+  RETURN NEXT is(v_j->>'color_bg', '#FAF6F1', 'color_bg');
+  RETURN NEXT is(v_j->'color_extra'->>'olive', '#5C6B3C', 'color_extra olive');
+  RETURN NEXT is(v_j->>'font_heading', 'Cormorant Garamond', 'font_heading');
+  RETURN NEXT is(v_j->>'spacing_page', '15mm', 'spacing_page');
 
   -- Not found
-  RETURN NEXT ok((docs.charte_read('nonexistent')).id IS NULL, 'returns NULL for unknown charte');
+  RETURN NEXT ok(docs.charte_read('nonexistent') IS NULL, 'returns NULL for unknown charte');
 
   DELETE FROM docs.charte WHERE tenant_id = 'test';
 END;

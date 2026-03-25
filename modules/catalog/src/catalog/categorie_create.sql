@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION catalog.categorie_create(p_row catalog.categorie)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.ordre := COALESCE(p_row.ordre, 0);

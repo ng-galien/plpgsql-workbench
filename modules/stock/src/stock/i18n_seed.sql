@@ -13,6 +13,10 @@ BEGIN
     ('fr', 'stock.nav_valorisation', 'Valorisation'),
     ('fr', 'stock.nav_inventaire', 'Inventaire'),
 
+    -- Entity labels
+    ('fr', 'stock.entity_article', 'Article'),
+    ('fr', 'stock.entity_depot', 'Dépôt'),
+
     -- Movement types
     ('fr', 'stock.type_entree', 'Entrée'),
     ('fr', 'stock.type_sortie', 'Sortie'),
@@ -115,6 +119,7 @@ BEGIN
     ('fr', 'stock.stat_valeur_totale', 'Valeur totale'),
     ('fr', 'stock.stat_articles_stock', 'Articles en stock'),
     ('fr', 'stock.stat_en_alerte', 'En alerte'),
+    ('fr', 'stock.stat_nb_articles', 'Nb articles'),
 
     -- Section titles
     ('fr', 'stock.title_stock_bas', 'Stock bas'),
@@ -126,6 +131,11 @@ BEGIN
     ('fr', 'stock.title_par_depot', 'Par dépôt'),
     ('fr', 'stock.title_par_categorie', 'Par catégorie'),
     ('fr', 'stock.title_select_depot', 'Sélectionnez le dépôt à inventorier :'),
+    ('fr', 'stock.title_infos', 'Informations'),
+    ('fr', 'stock.section_identity', 'Identification'),
+    ('fr', 'stock.section_pricing', 'Tarification & seuils'),
+    ('fr', 'stock.section_links', 'Liens'),
+    ('fr', 'stock.section_location', 'Localisation'),
 
     -- Buttons / Actions
     ('fr', 'stock.btn_nouveau_mvt', 'Nouveau mouvement'),
@@ -136,6 +146,13 @@ BEGIN
     ('fr', 'stock.btn_enregistrer', 'Enregistrer'),
     ('fr', 'stock.btn_valider_inventaire', 'Valider l''inventaire'),
     ('fr', 'stock.btn_desactiver', 'Désactiver'),
+    ('fr', 'stock.action_deactivate', 'Désactiver'),
+    ('fr', 'stock.action_activate', 'Réactiver'),
+    ('fr', 'stock.action_delete', 'Supprimer'),
+    ('fr', 'stock.action_new_movement', 'Nouveau mouvement'),
+    ('fr', 'stock.action_inventory', 'Inventaire'),
+    ('fr', 'stock.confirm_deactivate', 'Désactiver cet élément ?'),
+    ('fr', 'stock.confirm_delete', 'Supprimer définitivement ?'),
 
     -- Confirm dialogs
     ('fr', 'stock.confirm_desactiver', 'Désactiver cet article ?'),
@@ -188,7 +205,18 @@ BEGIN
 
     -- Cross-module
     ('fr', 'stock.cross_catalog_voir', 'Voir fiche catalog'),
-    ('fr', 'stock.cross_catalog_unavailable', 'catalog non disponible')
+    ('fr', 'stock.cross_catalog_unavailable', 'catalog non disponible'),
+
+    -- _view() related
+    ('fr', 'stock.rel_movements', 'Mouvements'),
+    ('fr', 'stock.rel_fournisseur', 'Fournisseur'),
+    ('fr', 'stock.rel_catalog', 'Article catalog'),
+    ('fr', 'stock.rel_articles', 'Articles en stock'),
+
+    -- Category options key
+    ('fr', 'stock.categorie_options', 'Options catégorie'),
+    ('fr', 'stock.unite_options', 'Options unité'),
+    ('fr', 'stock.depot_type_options', 'Options type dépôt')
 
   ON CONFLICT DO NOTHING;
 END;

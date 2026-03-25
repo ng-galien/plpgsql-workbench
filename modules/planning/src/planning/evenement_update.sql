@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION planning.evenement_update(p_row planning.evenement)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE planning.evenement SET

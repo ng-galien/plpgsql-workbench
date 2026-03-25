@@ -153,9 +153,13 @@ export const useStore = create<AppState>((set, get) => ({
       }
 
       if (fullData) {
+        const actions = res.actions as unknown[] | undefined;
+        const enriched = actions?.length
+          ? { ...fullData, actions }
+          : fullData;
         set((s) => ({
           pins: s.pins.map((p) =>
-            p.id === id ? { ...p, data: fullData, view } : p
+            p.id === id ? { ...p, data: enriched, view } : p
           ),
         }));
       }

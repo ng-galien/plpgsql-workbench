@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION purchase.commande_update(p_row purchase.commande)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE purchase.commande SET

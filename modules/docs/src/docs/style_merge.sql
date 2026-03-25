@@ -2,7 +2,6 @@ CREATE OR REPLACE FUNCTION docs.style_merge(p_existing text, p_new text)
  RETURNS text
  LANGUAGE plpgsql
  IMMUTABLE
- SET "api.expose" TO 'mcp'
 AS $function$
 DECLARE
   v_props jsonb := '{}'::jsonb;

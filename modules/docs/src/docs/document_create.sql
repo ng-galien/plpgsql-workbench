@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.document_create(p_data docs.document)
- RETURNS docs.document
+ RETURNS jsonb
  LANGUAGE plpgsql
- SET "api.expose" TO 'mcp'
+ SECURITY DEFINER
 AS $function$
 BEGIN
   CASE COALESCE(p_data.format, 'A4')
@@ -47,6 +47,6 @@ BEGIN
   INSERT INTO docs.page (doc_id, page_index, name, html)
   VALUES (p_data.id, 0, 'Page 1', '');
 
-  RETURN p_data;
+  RETURN to_jsonb(p_data);
 END;
 $function$;

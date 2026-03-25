@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION purchase.post_reception_creer(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_commande_id int := (p_data->>'p_commande_id')::int;

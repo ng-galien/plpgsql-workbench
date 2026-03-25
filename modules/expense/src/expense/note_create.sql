@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION expense.note_create(p_row expense.note)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_ref text;

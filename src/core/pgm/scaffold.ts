@@ -388,6 +388,10 @@ export async function scaffoldModule(
             args: ["tsx", "../../src/channel/workbench-msg.ts"],
             env: { MODULE: name },
           },
+          maket: {
+            type: "http",
+            url: "http://localhost:3337/mcp",
+          },
         },
       },
       null,
@@ -570,8 +574,6 @@ function moduleClaudeSettings(moduleName: string, mcpPort: number): string {
             ],
           },
         ],
-        Stop: [
-          {
         PreToolUse: [
           {
             matcher:

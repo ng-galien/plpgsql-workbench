@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION project.post_jalon_ajouter(p_chantier_id integer, p_label text)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_order int;

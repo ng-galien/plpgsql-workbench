@@ -89,7 +89,22 @@ BEGIN
 
     -- Toast messages
     ('fr', 'cad.toast_shape_added', 'Shape #%s ajoutée'),
-    ('fr', 'cad.toast_shape_deleted', 'Shape #%s supprimée')
+    ('fr', 'cad.toast_shape_deleted', 'Shape #%s supprimée'),
+
+    -- Entity / _view()
+    ('fr', 'cad.entity_drawing', 'Dessin'),
+    ('fr', 'cad.field_scale', 'Échelle'),
+    ('fr', 'cad.field_unit', 'Unité'),
+    ('fr', 'cad.field_width', 'Largeur'),
+    ('fr', 'cad.field_height', 'Hauteur'),
+    ('fr', 'cad.section_general', 'Général'),
+    ('fr', 'cad.section_canvas', 'Canvas'),
+    ('fr', 'cad.action_delete', 'Supprimer'),
+    ('fr', 'cad.action_duplicate', 'Dupliquer'),
+    ('fr', 'cad.action_export_bom', 'Exporter nomenclature'),
+    ('fr', 'cad.confirm_delete', 'Supprimer ce dessin et tout son contenu ?'),
+    ('fr', 'cad.rel_shapes', 'Shapes'),
+    ('fr', 'cad.rel_pieces', 'Pièces')
 
   ON CONFLICT DO NOTHING;
 END;

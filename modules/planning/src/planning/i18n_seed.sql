@@ -111,7 +111,27 @@ BEGIN
 
     -- Confirm dialogs
     ('fr', 'planning.confirm_delete_intervenant', 'Supprimer cet intervenant ?'),
-    ('fr', 'planning.confirm_delete_evenement', 'Supprimer cet événement ?')
+    ('fr', 'planning.confirm_delete_evenement', 'Supprimer cet événement ?'),
+    ('fr', 'planning.confirm_deactivate', 'Désactiver cet intervenant ?'),
+
+    -- Entity labels
+    ('fr', 'planning.entity_intervenant', 'Intervenant'),
+    ('fr', 'planning.entity_evenement', 'Événement'),
+
+    -- Actions (_view)
+    ('fr', 'planning.action_deactivate', 'Désactiver'),
+    ('fr', 'planning.action_activate', 'Activer'),
+    ('fr', 'planning.action_delete', 'Supprimer'),
+
+    -- Sections (_view form)
+    ('fr', 'planning.section_identity', 'Identité'),
+    ('fr', 'planning.section_general', 'Général'),
+    ('fr', 'planning.section_schedule', 'Planification'),
+    ('fr', 'planning.section_location', 'Localisation'),
+
+    -- Stats / Related
+    ('fr', 'planning.stat_evt_actifs', 'Événements actifs'),
+    ('fr', 'planning.rel_chantier', 'Chantier lié')
 
   ON CONFLICT DO NOTHING;
 END;

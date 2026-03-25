@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION catalog.post_article_modifier(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_params->>'id')::int;
@@ -9,7 +10,6 @@ BEGIN
     RETURN pgv.toast(pgv.t('catalog.err_id_missing'), 'error');
   END IF;
 
-  -- Modification partielle (toggle actif) ou complète
   IF p_params ? 'designation' THEN
     UPDATE catalog.article SET
       reference = nullif(trim(p_params->>'reference'), ''),

@@ -123,3 +123,7 @@ ALTER TABLE cad.piece_group ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON cad.piece_group;
 CREATE POLICY tenant_isolation ON cad.piece_group
   USING (tenant_id = COALESCE(current_setting('app.tenant_id', true), 'dev'));
+
+-- Grants: SELECT only (writes go through SECURITY DEFINER functions)
+GRANT SELECT ON ALL TABLES IN SCHEMA cad TO anon;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA cad TO anon;

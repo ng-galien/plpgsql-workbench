@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.post_employee_delete(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_data->>'id')::int;

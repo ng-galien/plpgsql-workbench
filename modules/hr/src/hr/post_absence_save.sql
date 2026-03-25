@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.post_absence_save(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_employee_id int := (p_data->>'employee_id')::int;
@@ -28,7 +29,6 @@ BEGIN
     RETURN pgv.toast('La date de fin doit être après la date de début.', 'error');
   END IF;
 
-  -- Check leave balance warning (CP, RTT only)
   IF v_type IN ('conge_paye', 'rtt') THEN
     SELECT (lb.allocated - lb.used) INTO v_balance
       FROM hr.leave_balance lb

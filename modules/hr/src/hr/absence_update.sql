@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.absence_update(p_row hr.absence)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE hr.absence SET

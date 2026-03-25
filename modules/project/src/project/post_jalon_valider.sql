@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION project.post_jalon_valider(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_chantier_id int;

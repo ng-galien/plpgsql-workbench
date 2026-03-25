@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION planning.post_affecter(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_evenement_id int := (p_data->>'p_evenement_id')::int;

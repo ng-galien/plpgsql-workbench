@@ -80,6 +80,7 @@ BEGIN
     ('fr', 'ledger.field_debit', 'Débit'),
     ('fr', 'ledger.field_credit', 'Crédit'),
     ('fr', 'ledger.field_label', 'Libellé'),
+    ('fr', 'ledger.field_parent_code', 'Code parent'),
 
     -- Buttons / Actions
     ('fr', 'ledger.btn_new_entry', 'Nouvelle écriture'),
@@ -140,6 +141,7 @@ BEGIN
     ('fr', 'ledger.confirm_post_entry', 'Valider cette écriture ? Elle deviendra immutable.'),
     ('fr', 'ledger.confirm_delete_draft', 'Supprimer ce brouillon ?'),
     ('fr', 'ledger.confirm_delete_line', 'Supprimer cette ligne ?'),
+    ('fr', 'ledger.confirm_delete_account', 'Supprimer ce compte ?'),
     ('fr', 'ledger.confirm_close_exercice', 'Clôturer définitivement l''exercice'),
     ('fr', 'ledger.confirm_close_suffix', '? Cette action est irréversible.'),
 
@@ -150,7 +152,15 @@ BEGIN
     ('fr', 'ledger.err_already_closed', 'est déjà clôturé'),
     ('fr', 'ledger.err_drafts_remaining', 'écriture(s) brouillon — validez-les avant clôture'),
     ('fr', 'ledger.total_revenue', 'Total produits'),
-    ('fr', 'ledger.total_expenses', 'Total charges')
+    ('fr', 'ledger.total_expenses', 'Total charges'),
+
+    -- Entity labels (_view)
+    ('fr', 'ledger.entity_journal_entry', 'Écriture comptable'),
+    ('fr', 'ledger.entity_account', 'Compte'),
+    ('fr', 'ledger.section_entry', 'Écriture'),
+    ('fr', 'ledger.section_account', 'Compte'),
+    ('fr', 'ledger.related_facture', 'Facture associée'),
+    ('fr', 'ledger.related_expense_note', 'Note de frais associée')
 
   ON CONFLICT DO NOTHING;
 END;

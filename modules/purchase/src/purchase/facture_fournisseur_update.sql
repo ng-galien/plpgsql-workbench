@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_update(p_row purchase.facture_fournisseur)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE purchase.facture_fournisseur SET

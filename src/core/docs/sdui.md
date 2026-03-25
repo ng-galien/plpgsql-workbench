@@ -153,13 +153,38 @@ nav_items() must include `uri` and `entity` for each CRUD item:
 
 The URI is the single key linking navigation, templates, and data.
 
+## Entity Types
+
+Two kinds of entities:
+
+- **crud** (default) — full lifecycle: create, read, update, delete. Has form section in _view().
+- **event** — immutable records (stock.mouvement, ledger.entry_line). No form, no edit, no delete. Add `"readonly": true` at top level of _view(). Shell renders as timeline, not editable cards.
+
+## Two-Step Forms
+
+Some entities need "create header first, then add children" (ledger.journal_entry, quote.devis).
+The form section in _view() handles the header. Children (lines) are added via ui_line_items after creation.
+The shell detects this pattern when the _view() has both form.sections AND a line_items reference in expanded.
+
 ## Deprecated
 
-`_ui()` is deprecated. Use `_view()` instead. The _ui() pattern mixed data and presentation. The _view() pattern separates them cleanly: template (static) vs data (dynamic via route_crud).
+`_ui()` is deprecated. Use `_view()` instead.
 
 ## Primitives pgv.ui_*
 
-Low-level SDUI primitives (still available for custom compositions):
+### Tier 1 — Universal (RFC-001 approved)
+
+    pgv.ui_timeline(events jsonb) -> {"type":"timeline","events":[{"date":"...","label":"...","variant":"info"}]}
+    Chronological event list. Used by: CRM, Quote, Stock, HR, Project, Workbench.
+
+    pgv.ui_currency(amount numeric, currency text DEFAULT 'EUR') -> {"type":"currency","amount":5200.00,"currency":"EUR"}
+    Locale-aware monetary display. Used by: Quote, Ledger, Purchase, Expense, Catalog.
+
+    pgv.ui_workflow(states text[], current text) -> {"type":"workflow","states":["brouillon","envoye","accepte"],"current":"envoye"}
+    Visual state machine stepper. Used by: Quote, Expense, Purchase, Project.
+
+    pgv.ui_line_items(source text, columns jsonb, totals jsonb) -> {"type":"line_items","source":"lignes","columns":[...],"totals":{"ht":...,"tva":...,"ttc":...}}
+    Child table with summary footer. Used by: Quote, Purchase, Expense.
 
 ### Display
     pgv.ui_text(value) -> {"type":"text","value":"..."}
@@ -178,6 +203,7 @@ Low-level SDUI primitives (still available for custom compositions):
 ### Form
     pgv.ui_form(uri, verb, fields) -> {"type":"form","uri":"...","verb":"set","fields":[...]}
     pgv.ui_field(key, type, label, required?, options?) -> {"type":"field",...}
+    Field types: text, email, tel, number, date, select, textarea, checkbox, combobox
 
 ### Connected
     pgv.ui_table(source, columns) -> connected to datasource

@@ -4,6 +4,7 @@ CREATE OR REPLACE FUNCTION docs_ut.test_charte_create()
 AS $function$
 DECLARE
   v_c docs.charte;
+  v_j jsonb;
   v_r record;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
@@ -18,12 +19,12 @@ BEGIN
   ));
   v_c.color_extra := '{"olive":"#5C6B3C","lavande":"#9B8EC1"}'::jsonb;
   v_c.voice_personality := ARRAY['chaleureux','authentique'];
-  v_c := docs.charte_create(v_c);
+  v_j := docs.charte_create(v_c);
 
-  RETURN NEXT ok(v_c.id IS NOT NULL, 'charte_create returns an id');
-  RETURN NEXT is(v_c.slug, 'test-provencal', 'slug auto-generated from name');
+  RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'charte_create returns an id');
+  RETURN NEXT is(v_j->>'slug', 'test-provencal', 'slug auto-generated from name');
 
-  SELECT * INTO v_r FROM docs.charte WHERE id = v_c.id;
+  SELECT * INTO v_r FROM docs.charte WHERE id = v_j->>'id';
   RETURN NEXT is(v_r.name, 'Test Provençal', 'name stored');
   RETURN NEXT is(v_r.color_bg, '#FAF6F1', 'color_bg stored');
   RETURN NEXT is(v_r.color_main, '#2C3E2D', 'color_main stored');
@@ -33,7 +34,6 @@ BEGIN
   RETURN NEXT is(v_r.spacing_page, '15mm', 'spacing_page stored');
   RETURN NEXT is(v_r.voice_personality[1], 'chaleureux', 'voice personality stored');
 
-  -- Unique name per tenant
   BEGIN
     PERFORM docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
       'name', 'Test Provençal', 'color_bg', '#fff', 'color_main', '#000',

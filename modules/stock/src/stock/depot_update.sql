@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION stock.depot_update(p_row stock.depot)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE stock.depot SET

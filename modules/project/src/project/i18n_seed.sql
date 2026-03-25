@@ -181,6 +181,31 @@ BEGIN
     ('fr', 'project.err_note_non_modifiable', 'Note introuvable ou projet non modifiable'),
     ('fr', 'project.err_pointage_non_modifiable', 'Pointage introuvable ou projet non modifiable'),
 
+    -- Entity
+    ('fr', 'project.entity_chantier', 'Projet'),
+
+    -- Sections (view)
+    ('fr', 'project.section_identity', 'Identification'),
+    ('fr', 'project.section_dates', 'Dates'),
+    ('fr', 'project.section_details', 'Détails'),
+
+    -- Actions (view)
+    ('fr', 'project.action_demarrer', 'Démarrer'),
+    ('fr', 'project.action_reception', 'Réception'),
+    ('fr', 'project.action_clore', 'Clore'),
+    ('fr', 'project.action_supprimer', 'Supprimer'),
+    ('fr', 'project.action_edit', 'Modifier'),
+
+    -- Related
+    ('fr', 'project.rel_client', 'Client'),
+    ('fr', 'project.rel_devis', 'Devis'),
+    ('fr', 'project.rel_planning', 'Planning'),
+
+    -- Stats (view)
+    ('fr', 'project.stat_avancement', 'Avancement'),
+    ('fr', 'project.stat_jalons', 'Jalons'),
+    ('fr', 'project.stat_heures', 'Heures'),
+
     -- Expense statuses (cross-module)
     ('fr', 'project.expense_brouillon', 'Brouillon'),
     ('fr', 'project.expense_soumise', 'Soumise'),

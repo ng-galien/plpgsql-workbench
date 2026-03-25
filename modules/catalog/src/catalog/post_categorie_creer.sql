@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION catalog.post_categorie_creer(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   INSERT INTO catalog.categorie (nom, parent_id)

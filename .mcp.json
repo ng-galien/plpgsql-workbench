@@ -6,7 +6,8 @@
     },
     "maket": {
       "type": "http",
-      "url": "http://localhost:3337/mcp"
+      "url": "http://localhost:3337/mcp",
+      "headers": { "X-Session": "lead" }
     },
     "workbench-msg": {
       "command": "npx",

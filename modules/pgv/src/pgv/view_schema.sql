@@ -11,10 +11,12 @@ AS $function$
       "uri": { "type": "string", "pattern": "^[a-z_]+://[a-z_]+$" },
       "icon": { "type": "string" },
       "label": { "type": "string", "pattern": "^[a-z_]+\\." },
+      "readonly": { "type": "boolean" },
+      "entity_type": { "type": "string", "enum": ["crud", "event"] },
 
       "template": {
         "type": "object",
-        "required": ["compact", "standard", "form"],
+        "required": ["compact", "standard"],
         "additionalProperties": false,
         "properties": {
 

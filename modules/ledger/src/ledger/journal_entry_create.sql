@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION ledger.journal_entry_create(p_row ledger.journal_entry)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);

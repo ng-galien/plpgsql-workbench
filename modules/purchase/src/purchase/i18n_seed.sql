@@ -225,7 +225,42 @@ BEGIN
     ('fr', 'purchase.badge_14j', '> 14j'),
     ('fr', 'purchase.badge_ecart', 'écart'),
     ('fr', 'purchase.badge_ok', 'OK'),
-    ('fr', 'purchase.badge_comptabilisee', 'comptabilisée')
+    ('fr', 'purchase.badge_comptabilisee', 'comptabilisée'),
+
+    -- Entity labels (SDUI)
+    ('fr', 'purchase.entity_commande', 'Commande fournisseur'),
+    ('fr', 'purchase.entity_facture_fournisseur', 'Facture fournisseur'),
+
+    -- Stats (SDUI)
+    ('fr', 'purchase.stat_total_ht', 'Total HT'),
+    ('fr', 'purchase.stat_total_tva', 'Total TVA'),
+    ('fr', 'purchase.stat_total_ttc', 'Total TTC'),
+    ('fr', 'purchase.stat_nb_lignes', 'Lignes'),
+    ('fr', 'purchase.stat_nb_receptions', 'Réceptions'),
+    ('fr', 'purchase.stat_montant_ht', 'Montant HT'),
+    ('fr', 'purchase.stat_montant_ttc', 'Montant TTC'),
+    ('fr', 'purchase.stat_commande_ttc', 'Commande TTC'),
+    ('fr', 'purchase.stat_ecart', 'Écart'),
+
+    -- Related (SDUI)
+    ('fr', 'purchase.rel_fournisseur', 'Fournisseur'),
+    ('fr', 'purchase.rel_factures', 'Factures'),
+    ('fr', 'purchase.rel_commande', 'Commande'),
+
+    -- Form sections (SDUI)
+    ('fr', 'purchase.section_commande', 'Commande'),
+    ('fr', 'purchase.section_facture', 'Facture'),
+
+    -- Actions (SDUI/HATEOAS)
+    ('fr', 'purchase.action_envoyer', 'Envoyer'),
+    ('fr', 'purchase.action_recevoir', 'Réceptionner'),
+    ('fr', 'purchase.action_annuler', 'Annuler'),
+    ('fr', 'purchase.action_delete', 'Supprimer'),
+    ('fr', 'purchase.action_valider', 'Valider'),
+    ('fr', 'purchase.action_payer', 'Marquer payée'),
+    ('fr', 'purchase.action_comptabiliser', 'Comptabiliser'),
+    ('fr', 'purchase.confirm_delete', 'Supprimer cette commande ?'),
+    ('fr', 'purchase.confirm_delete_facture', 'Supprimer cette facture ?')
 
   ON CONFLICT DO NOTHING;
 END;

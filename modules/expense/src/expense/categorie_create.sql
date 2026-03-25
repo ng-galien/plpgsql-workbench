@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION expense.categorie_create(p_row expense.categorie)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_result expense.categorie;

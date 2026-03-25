@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION docs.charte_create(p_data docs.charte)
- RETURNS docs.charte
+ RETURNS jsonb
  LANGUAGE plpgsql
- SET "api.expose" TO 'mcp'
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_data.id := gen_random_uuid()::text;
@@ -12,6 +12,6 @@ BEGIN
   p_data.created_at := now();
   p_data.updated_at := now();
   INSERT INTO docs.charte VALUES (p_data.*) RETURNING * INTO p_data;
-  RETURN p_data;
+  RETURN to_jsonb(p_data);
 END;
 $function$;

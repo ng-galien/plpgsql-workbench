@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION workbench.issue_report_create(p_row workbench.issue_report)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_row jsonb;

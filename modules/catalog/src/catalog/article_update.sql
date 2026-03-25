@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION catalog.article_update(p_row catalog.article)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE catalog.article SET

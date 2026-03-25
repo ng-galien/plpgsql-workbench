@@ -3,5 +3,5 @@ CREATE OR REPLACE FUNCTION workbench.brand()
  LANGUAGE sql
  STABLE
 AS $function$
-  SELECT 'Workbench'::text;
+  SELECT pgv.t('workbench.brand');
 $function$;

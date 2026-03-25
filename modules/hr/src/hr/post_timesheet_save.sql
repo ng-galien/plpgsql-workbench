@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION hr.post_timesheet_save(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_employee_id int := (p_data->>'employee_id')::int;
