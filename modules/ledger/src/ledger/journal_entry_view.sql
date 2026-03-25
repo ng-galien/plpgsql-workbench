@@ -30,8 +30,8 @@ BEGIN
           jsonb_build_object('key', 'total_credit', 'label', 'ledger.col_credit')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'quote://facture', 'filter', 'id={facture_id}', 'label', 'ledger.related_facture'),
-          jsonb_build_object('entity', 'expense://note', 'filter', 'id={expense_note_id}', 'label', 'ledger.related_expense_note')
+          jsonb_build_object('entity', 'quote://invoice', 'filter', 'id={invoice_id}', 'label', 'ledger.related_invoice'),
+          jsonb_build_object('entity', 'expense://expense_report', 'filter', 'id={expense_note_id}', 'label', 'ledger.related_expense_note')
         )
       ),
 

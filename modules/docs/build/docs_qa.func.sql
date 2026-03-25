@@ -15,7 +15,7 @@ BEGIN
   DELETE FROM docs.library_asset WHERE library_id IN (SELECT id FROM docs.library WHERE tenant_id = current_setting('app.tenant_id', true));
   DELETE FROM docs.document WHERE tenant_id = current_setting('app.tenant_id', true);
   DELETE FROM docs.library WHERE tenant_id = current_setting('app.tenant_id', true);
-  DELETE FROM docs.charte WHERE tenant_id = current_setting('app.tenant_id', true);
+  DELETE FROM docs.charter WHERE tenant_id = current_setting('app.tenant_id', true);
 END;
 $function$;
 COMMENT ON FUNCTION docs_qa.clean() IS 'Clean all QA data for current tenant — reverse FK order (sets tenant_id if missing)';
@@ -29,14 +29,14 @@ DECLARE
   v_archi jsonb;
   v_doc jsonb;
   v_lib jsonb;
-  v_c docs.charte;
+  v_c docs.charter;
   v_asset_id uuid;
 BEGIN
   PERFORM set_config('app.tenant_id', coalesce(current_setting('app.tenant_id', true), 'dev'), true);
 
   -- ── Chartes ──────────────────────────────────────────
 
-  v_c := jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  v_c := jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'L''Olivier Provence',
     'description', 'Charte graphique du restaurant L''Olivier — cuisine provençale de saison',
     'color_bg', '#FAF6F1', 'color_main', '#2C1810', 'color_accent', '#C4652A',
@@ -52,9 +52,9 @@ BEGIN
   v_c.voice_dont := ARRAY['jargon technique','superlatifs creux'];
   v_c.voice_vocabulary := ARRAY['savoir-faire','terroir','authenticité'];
   v_c.rules := '{"color_usage":"primary = titres uniquement","photos":"pleine largeur ou 4:3"}'::jsonb;
-  v_provence := docs.charte_create(v_c);
+  v_provence := docs.charter_create(v_c);
 
-  v_c := jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  v_c := jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'Atelier Béton',
     'description', 'Cabinet d''architecture contemporaine — béton, acier, lumière',
     'color_bg', '#FAFAFA', 'color_main', '#1A1A1A', 'color_accent', '#4A90D9',
@@ -69,12 +69,12 @@ BEGIN
   v_c.voice_dont := ARRAY['émotionnel','familier','superlatifs'];
   v_c.voice_vocabulary := ARRAY['structure','matérialité','lumière naturelle','proportion'];
   v_c.rules := '{"layout":"grille stricte 12 colonnes","photos":"noir et blanc ou désaturé"}'::jsonb;
-  v_archi := docs.charte_create(v_c);
+  v_archi := docs.charter_create(v_c);
 
   -- ── Documents ────────────────────────────────────────
 
   v_doc := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object(
-    'name', 'Menu Printemps 2026', 'category', 'menu', 'charte_id', v_provence->>'id'
+    'name', 'Menu Printemps 2026', 'category', 'menu', 'charter_id', v_provence->>'id'
   )));
   PERFORM docs.page_set_html(v_doc->>'id', 0,
     '<div data-id="header" style="text-align:center;padding:var(--charte-spacing-page)">'
@@ -102,8 +102,8 @@ BEGIN
   );
 
   v_doc := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object(
-    'name', 'Carte de visite', 'category', 'identite', 'format', 'A5', 'orientation', 'landscape',
-    'charte_id', v_archi->>'id'
+    'name', 'Carte de visite', 'category', 'identity', 'format', 'A5', 'orientation', 'landscape',
+    'charter_id', v_archi->>'id'
   )));
   PERFORM docs.page_set_html(v_doc->>'id', 0,
     '<div data-id="card" style="display:flex;height:100%;align-items:center;justify-content:space-between;padding:var(--charte-spacing-page)">'
@@ -120,8 +120,8 @@ BEGIN
   );
 
   v_doc := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object(
-    'name', 'Soirée Vendanges', 'category', 'evenement', 'format', 'A3',
-    'charte_id', v_provence->>'id'
+    'name', 'Soirée Vendanges', 'category', 'event', 'format', 'A3',
+    'charter_id', v_provence->>'id'
   )));
   PERFORM docs.page_set_html(v_doc->>'id', 0,
     '<div data-id="poster" style="text-align:center;padding:var(--charte-spacing-page);background:var(--charte-color-bg)">'

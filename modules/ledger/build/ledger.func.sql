@@ -558,7 +558,7 @@ BEGIN
     v_total_debit := v_total_debit + r.total_debit;
     v_total_credit := v_total_credit + r.total_credit;
     v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', (SELECT id FROM ledger.account WHERE code = r.code), 'p_year', v_year)), pgv.esc(r.code)),
+      format('<a href="%s">%s</a>', pgv.call_ref('get_general_ledger', jsonb_build_object('p_account_id', (SELECT id FROM ledger.account WHERE code = r.code), 'p_year', v_year)), pgv.esc(r.code)),
       pgv.esc(r.label),
       to_char(r.total_debit, 'FM999 990.00') || ' €',
       to_char(r.total_credit, 'FM999 990.00') || ' €',
@@ -588,7 +588,7 @@ END;
 $function$;
 COMMENT ON FUNCTION ledger.get_balance(integer) IS 'Balance de vérification : total débit/crédit/solde par compte, avec filtres année';
 
-CREATE OR REPLACE FUNCTION ledger.get_bilan(p_year integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION ledger.get_balance_sheet(p_year integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
@@ -608,16 +608,14 @@ BEGIN
   v_start := make_date(v_year, 1, 1);
   v_end := make_date(v_year, 12, 31);
 
-  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_bilan')]);
+  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_balance_sheet')]);
 
-  -- Sélecteur année
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
-    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), v_year::text),
-    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text, 'outline')
+    pgv.link_button(pgv.call_ref('get_balance_sheet', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
+    pgv.link_button(pgv.call_ref('get_balance_sheet', jsonb_build_object('p_year', v_year)), v_year::text),
+    pgv.link_button(pgv.call_ref('get_balance_sheet', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text, 'outline')
   ]);
 
-  -- Produits (revenue = classe 7)
   v_rows_r := ARRAY[]::text[];
   FOR r IN
     SELECT a.code, a.label,
@@ -640,7 +638,6 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- Charges (expense = classe 6)
   v_rows_e := ARRAY[]::text[];
   FOR r IN
     SELECT a.code, a.label,
@@ -665,7 +662,6 @@ BEGIN
 
   v_resultat := v_total_revenue - v_total_expense;
 
-  -- Stats résumé
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
     pgv.stat(pgv.t('ledger.stat_revenue'), to_char(v_total_revenue, 'FM999 990.00') || ' €'),
     pgv.stat(pgv.t('ledger.stat_expenses'), to_char(v_total_expense, 'FM999 990.00') || ' €'),
@@ -673,7 +669,6 @@ BEGIN
       CASE WHEN v_resultat >= 0 THEN pgv.t('ledger.stat_benefit') ELSE pgv.t('ledger.stat_deficit') END)
   ]);
 
-  -- Tables détail
   v_body := v_body || pgv.tabs(VARIADIC ARRAY[
     pgv.t('ledger.title_revenue'),
     CASE WHEN array_length(v_rows_r, 1) IS NULL
@@ -692,7 +687,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION ledger.get_bilan(integer) IS 'Bilan P&L : produits vs charges par compte, résultat net. Filtre par année.';
+COMMENT ON FUNCTION ledger.get_balance_sheet(integer) IS 'P&L balance sheet: revenue vs expenses by account, net result, filtered by year';
 
 CREATE OR REPLACE FUNCTION ledger.get_entries()
  RETURNS text
@@ -910,7 +905,7 @@ END;
 $function$;
 COMMENT ON FUNCTION ledger.get_entry_form(integer) IS 'Formulaire création/édition écriture comptable';
 
-CREATE OR REPLACE FUNCTION ledger.get_exercice(p_year integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION ledger.get_fiscal_year(p_year integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
@@ -919,7 +914,7 @@ DECLARE
   v_start date;
   v_end date;
   v_body text;
-  v_exercice record;
+  v_fy record;
   v_total_revenue numeric;
   v_total_expense numeric;
   v_resultat numeric;
@@ -930,19 +925,16 @@ BEGIN
   v_start := make_date(v_year, 1, 1);
   v_end := make_date(v_year, 12, 31);
 
-  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_exercice') || ' ' || v_year]);
+  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_fiscal_year') || ' ' || v_year]);
 
-  -- Year selector
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.link_button(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
-    pgv.link_button(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)), v_year::text),
-    pgv.link_button(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text, 'outline')
+    pgv.link_button(pgv.call_ref('get_fiscal_year', jsonb_build_object('p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
+    pgv.link_button(pgv.call_ref('get_fiscal_year', jsonb_build_object('p_year', v_year)), v_year::text),
+    pgv.link_button(pgv.call_ref('get_fiscal_year', jsonb_build_object('p_year', v_year + 1)), (v_year + 1)::text, 'outline')
   ]);
 
-  -- Exercice status
-  SELECT * INTO v_exercice FROM ledger.exercice WHERE year = v_year;
+  SELECT * INTO v_fy FROM ledger.fiscal_year WHERE year = v_year;
 
-  -- Compute totals from posted entries
   SELECT coalesce(sum(CASE WHEN a.type = 'revenue' THEN el.credit - el.debit ELSE 0 END), 0),
          coalesce(sum(CASE WHEN a.type = 'expense' THEN el.debit - el.credit ELSE 0 END), 0)
     INTO v_total_revenue, v_total_expense
@@ -959,10 +951,9 @@ BEGIN
     FROM ledger.journal_entry
    WHERE entry_date >= v_start AND entry_date <= v_end;
 
-  -- Stats
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
     pgv.stat(pgv.t('ledger.stat_status'),
-      CASE WHEN v_exercice.closed THEN pgv.badge(pgv.t('ledger.badge_closed'), 'success')
+      CASE WHEN v_fy.closed THEN pgv.badge(pgv.t('ledger.badge_closed'), 'success')
            ELSE pgv.badge(pgv.t('ledger.badge_open'), 'warning') END),
     pgv.stat(pgv.t('ledger.stat_revenue'), to_char(v_total_revenue, 'FM999 990.00') || ' €'),
     pgv.stat(pgv.t('ledger.stat_expenses'), to_char(v_total_expense, 'FM999 990.00') || ' €'),
@@ -970,39 +961,36 @@ BEGIN
       CASE WHEN v_resultat >= 0 THEN pgv.t('ledger.stat_benefit') ELSE pgv.t('ledger.stat_deficit') END)
   ]);
 
-  -- Entries summary
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
     pgv.stat(pgv.t('ledger.stat_entries'), v_entry_count::text),
     pgv.stat(pgv.t('ledger.stat_drafts'), v_draft_count::text,
       CASE WHEN v_draft_count > 0 THEN pgv.t('ledger.stat_drafts_hint') ELSE NULL END)
   ]);
 
-  -- Links
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
     pgv.link_button(pgv.call_ref('get_balance', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_balance_check'), 'outline'),
-    pgv.link_button(pgv.call_ref('get_bilan', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_bilan_pl'), 'outline')
+    pgv.link_button(pgv.call_ref('get_balance_sheet', jsonb_build_object('p_year', v_year)), pgv.t('ledger.btn_bilan_pl'), 'outline')
   ]);
 
-  -- Clôture action
-  IF NOT coalesce(v_exercice.closed, false) THEN
+  IF NOT coalesce(v_fy.closed, false) THEN
     v_body := v_body || pgv.action(
-      'post_cloture',
+      'post_close_year',
       pgv.t('ledger.btn_close_exercice') || ' ' || v_year,
       jsonb_build_object('year', v_year),
       pgv.t('ledger.confirm_close_exercice') || ' ' || v_year || ' ' || pgv.t('ledger.confirm_close_suffix')
     );
   ELSE
     v_body := v_body || '<p>' || pgv.t('ledger.closed_on') || ' '
-      || to_char(v_exercice.closed_at, 'DD/MM/YYYY à HH24:MI')
-      || ' — ' || pgv.t('ledger.result_recorded') || ' : ' || to_char(v_exercice.result, 'FM999 990.00') || ' €</p>';
+      || to_char(v_fy.closed_at, 'DD/MM/YYYY à HH24:MI')
+      || ' — ' || pgv.t('ledger.result_recorded') || ' : ' || to_char(v_fy.result, 'FM999 990.00') || ' €</p>';
   END IF;
 
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION ledger.get_exercice(integer) IS 'Vue synthétique exercice : produits, charges, résultat, statut (ouvert/clos), action clôture';
+COMMENT ON FUNCTION ledger.get_fiscal_year(integer) IS 'Fiscal year overview: revenue, expenses, result, status, close action';
 
-CREATE OR REPLACE FUNCTION ledger.get_grand_livre(p_params jsonb DEFAULT '{}'::jsonb)
+CREATE OR REPLACE FUNCTION ledger.get_general_ledger(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
@@ -1034,11 +1022,10 @@ BEGIN
     v_account.code || ' — ' || v_account.label
   ]);
 
-  -- Year selector
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.link_button(pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
-    pgv.link_button(pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year)), v_year::text),
-    pgv.link_button(pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year + 1)), (v_year + 1)::text, 'outline')
+    pgv.link_button(pgv.call_ref('get_general_ledger', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year - 1)), (v_year - 1)::text, 'outline'),
+    pgv.link_button(pgv.call_ref('get_general_ledger', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year)), v_year::text),
+    pgv.link_button(pgv.call_ref('get_general_ledger', jsonb_build_object('p_account_id', v_account_id, 'p_year', v_year + 1)), (v_year + 1)::text, 'outline')
   ]);
 
   v_rows := ARRAY[]::text[];
@@ -1065,7 +1052,6 @@ BEGIN
     ];
   END LOOP;
 
-  -- Stats
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
     pgv.stat(pgv.t('ledger.stat_total_debit'), to_char(v_total_debit, 'FM999 990.00') || ' €'),
     pgv.stat(pgv.t('ledger.stat_total_credit'), to_char(v_total_credit, 'FM999 990.00') || ' €'),
@@ -1084,7 +1070,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION ledger.get_grand_livre(jsonb) IS 'Grand livre : détail des écritures d''un compte avec solde cumulé, filtre par année';
+COMMENT ON FUNCTION ledger.get_general_ledger(jsonb) IS 'General ledger: account movements with running balance, filtered by year';
 
 CREATE OR REPLACE FUNCTION ledger.get_index()
  RETURNS text
@@ -1162,7 +1148,7 @@ END;
 $function$;
 COMMENT ON FUNCTION ledger.get_index() IS 'Dashboard comptabilité : KPIs (banque, CA, charges, résultat) + écritures récentes';
 
-CREATE OR REPLACE FUNCTION ledger.get_tva(p_params jsonb DEFAULT '{}'::jsonb)
+CREATE OR REPLACE FUNCTION ledger.get_vat(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
@@ -1184,20 +1170,18 @@ BEGIN
   v_start := make_date(v_year, (v_quarter - 1) * 3 + 1, 1);
   v_end := (v_start + interval '3 months' - interval '1 day')::date;
 
-  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_tva')]);
+  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('ledger.nav_vat')]);
 
-  -- Sélecteur période
   v_body := v_body || pgv.grid(VARIADIC ARRAY[
-    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 1)), 'T1', 'outline'),
-    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 2)), 'T2', 'outline'),
-    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 3)), 'T3', 'outline'),
-    pgv.link_button(pgv.call_ref('get_tva', jsonb_build_object('p_year', v_year, 'p_quarter', 4)), 'T4', 'outline')
+    pgv.link_button(pgv.call_ref('get_vat', jsonb_build_object('p_year', v_year, 'p_quarter', 1)), 'T1', 'outline'),
+    pgv.link_button(pgv.call_ref('get_vat', jsonb_build_object('p_year', v_year, 'p_quarter', 2)), 'T2', 'outline'),
+    pgv.link_button(pgv.call_ref('get_vat', jsonb_build_object('p_year', v_year, 'p_quarter', 3)), 'T3', 'outline'),
+    pgv.link_button(pgv.call_ref('get_vat', jsonb_build_object('p_year', v_year, 'p_quarter', 4)), 'T4', 'outline')
   ]);
 
   v_body := v_body || '<p>' || pgv.t('ledger.title_period') || ' : T' || v_quarter || ' ' || v_year
     || ' (' || to_char(v_start, 'DD/MM/YYYY') || ' — ' || to_char(v_end, 'DD/MM/YYYY') || ')</p>';
 
-  -- TVA collectée (4457)
   SELECT coalesce(sum(el.credit) - sum(el.debit), 0) INTO v_collectee
     FROM ledger.entry_line el
     JOIN ledger.journal_entry je ON je.id = el.journal_entry_id
@@ -1205,7 +1189,6 @@ BEGIN
    WHERE a.code = '4457' AND je.posted = true
      AND je.entry_date >= v_start AND je.entry_date <= v_end;
 
-  -- TVA déductible (4456)
   SELECT coalesce(sum(el.debit) - sum(el.credit), 0) INTO v_deductible
     FROM ledger.entry_line el
     JOIN ledger.journal_entry je ON je.id = el.journal_entry_id
@@ -1224,7 +1207,6 @@ BEGIN
     )
   ]);
 
-  -- Détail par écriture
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT je.entry_date, je.reference, je.id AS entry_id,
@@ -1255,7 +1237,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION ledger.get_tva(jsonb) IS 'Déclaration TVA : collectée, déductible, solde. Filtre par trimestre/année.';
+COMMENT ON FUNCTION ledger.get_vat(jsonb) IS 'VAT declaration: collected vs deductible, balance, filtered by quarter/year';
 
 CREATE OR REPLACE FUNCTION ledger.i18n_seed()
  RETURNS void
@@ -1270,8 +1252,11 @@ BEGIN
     ('fr', 'ledger.nav_accounts', 'Plan comptable'),
     ('fr', 'ledger.nav_balance', 'Balance'),
     ('fr', 'ledger.nav_exercice', 'Exercice'),
+    ('fr', 'ledger.nav_fiscal_year', 'Exercice'),
     ('fr', 'ledger.nav_tva', 'TVA'),
+    ('fr', 'ledger.nav_vat', 'TVA'),
     ('fr', 'ledger.nav_bilan', 'Bilan'),
+    ('fr', 'ledger.nav_balance_sheet', 'Bilan'),
 
     -- Account types
     ('fr', 'ledger.type_asset', 'Actif'),
@@ -1394,6 +1379,7 @@ BEGIN
     ('fr', 'ledger.toast_line_deleted', 'Ligne supprimée'),
     ('fr', 'ledger.toast_exercice_closed', 'Exercice clôturé'),
     ('fr', 'ledger.toast_entry_from_facture', 'Écriture créée depuis facture'),
+    ('fr', 'ledger.toast_entry_from_invoice', 'Écriture créée depuis facture'),
     ('fr', 'ledger.toast_entry_from_expense', 'Écriture NDF créée'),
 
     -- Confirm dialogs
@@ -1419,6 +1405,7 @@ BEGIN
     ('fr', 'ledger.section_entry', 'Écriture'),
     ('fr', 'ledger.section_account', 'Compte'),
     ('fr', 'ledger.related_facture', 'Facture associée'),
+    ('fr', 'ledger.related_invoice', 'Facture associée'),
     ('fr', 'ledger.related_expense_note', 'Note de frais associée')
 
   ON CONFLICT DO NOTHING;
@@ -1651,8 +1638,8 @@ BEGIN
           jsonb_build_object('key', 'total_credit', 'label', 'ledger.col_credit')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'quote://facture', 'filter', 'id={facture_id}', 'label', 'ledger.related_facture'),
-          jsonb_build_object('entity', 'expense://note', 'filter', 'id={expense_note_id}', 'label', 'ledger.related_expense_note')
+          jsonb_build_object('entity', 'quote://invoice', 'filter', 'id={invoice_id}', 'label', 'ledger.related_invoice'),
+          jsonb_build_object('entity', 'expense://expense_report', 'filter', 'id={expense_note_id}', 'label', 'ledger.related_expense_note')
         )
       ),
 
@@ -1686,14 +1673,14 @@ AS $function$
     jsonb_build_object('href', '/entries', 'label', pgv.t('ledger.nav_entries'), 'icon', 'list', 'entity', 'journal_entry', 'uri', 'ledger://journal_entry'),
     jsonb_build_object('href', '/accounts', 'label', pgv.t('ledger.nav_accounts'), 'icon', 'book', 'entity', 'account', 'uri', 'ledger://account'),
     jsonb_build_object('href', '/balance', 'label', pgv.t('ledger.nav_balance'), 'icon', 'scale'),
-    jsonb_build_object('href', '/exercice', 'label', pgv.t('ledger.nav_exercice'), 'icon', 'calendar'),
-    jsonb_build_object('href', '/tva', 'label', pgv.t('ledger.nav_tva'), 'icon', 'percent'),
-    jsonb_build_object('href', '/bilan', 'label', pgv.t('ledger.nav_bilan'), 'icon', 'bar-chart')
+    jsonb_build_object('href', '/fiscal_year', 'label', pgv.t('ledger.nav_fiscal_year'), 'icon', 'calendar'),
+    jsonb_build_object('href', '/vat', 'label', pgv.t('ledger.nav_vat'), 'icon', 'percent'),
+    jsonb_build_object('href', '/balance_sheet', 'label', pgv.t('ledger.nav_balance_sheet'), 'icon', 'bar-chart')
   );
 $function$;
 COMMENT ON FUNCTION ledger.nav_items() IS 'Navigation items for Ledger module';
 
-CREATE OR REPLACE FUNCTION ledger.post_cloture(p_data jsonb)
+CREATE OR REPLACE FUNCTION ledger.post_close_year(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -1710,17 +1697,15 @@ DECLARE
   v_account_120 integer;
 BEGIN
   v_year := (p_data->>'year')::integer;
-  IF v_year IS NULL THEN RAISE EXCEPTION 'Année requise'; END IF;
+  IF v_year IS NULL THEN RAISE EXCEPTION 'Year required'; END IF;
 
-  -- Guard: pas de double clôture
-  IF EXISTS (SELECT 1 FROM ledger.exercice WHERE year = v_year AND closed = true) THEN
-    RETURN pgv.toast(pgv.t('ledger.nav_exercice') || ' ' || v_year || ' ' || pgv.t('ledger.err_already_closed'), 'error');
+  IF EXISTS (SELECT 1 FROM ledger.fiscal_year WHERE year = v_year AND closed = true) THEN
+    RETURN pgv.toast(pgv.t('ledger.nav_fiscal_year') || ' ' || v_year || ' ' || pgv.t('ledger.err_already_closed'), 'error');
   END IF;
 
   v_start := make_date(v_year, 1, 1);
   v_end := make_date(v_year, 12, 31);
 
-  -- Guard: pas d'écritures brouillon sur la période
   SELECT count(*) INTO v_draft_count
     FROM ledger.journal_entry
    WHERE posted = false
@@ -1730,7 +1715,6 @@ BEGIN
     RETURN pgv.toast(v_draft_count || ' ' || pgv.t('ledger.err_drafts_remaining'), 'error');
   END IF;
 
-  -- Calcul résultat : produits - charges (écritures postées)
   SELECT coalesce(sum(CASE WHEN a.type = 'revenue' THEN el.credit - el.debit ELSE 0 END), 0),
          coalesce(sum(CASE WHEN a.type = 'expense' THEN el.debit - el.credit ELSE 0 END), 0)
     INTO v_total_revenue, v_total_expense
@@ -1742,17 +1726,15 @@ BEGIN
 
   v_resultat := v_total_revenue - v_total_expense;
 
-  -- Écriture de résultat (compte 120)
   SELECT id INTO v_account_120 FROM ledger.account WHERE code = '120';
-  IF v_account_120 IS NULL THEN RAISE EXCEPTION 'Compte 120 (Résultat) introuvable dans le plan comptable'; END IF;
+  IF v_account_120 IS NULL THEN RAISE EXCEPTION 'Account 120 (Result) not found'; END IF;
 
   INSERT INTO ledger.journal_entry (entry_date, reference, description)
-  VALUES (v_end, 'CLO-' || v_year, 'Clôture exercice ' || v_year || ' — résultat ' || to_char(v_resultat, 'FM999 990.00') || ' €')
+  VALUES (v_end, 'CLO-' || v_year, 'Fiscal year close ' || v_year || ' — result ' || to_char(v_resultat, 'FM999 990.00') || ' EUR')
   RETURNING id INTO v_entry_id;
 
-  -- Zero out revenue accounts
   INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-  SELECT v_entry_id, a.id, coalesce(sum(el.credit - el.debit), 0), 0, 'Solde ' || a.label
+  SELECT v_entry_id, a.id, coalesce(sum(el.credit - el.debit), 0), 0, 'Close ' || a.label
     FROM ledger.account a
     JOIN ledger.entry_line el ON el.account_id = a.id
     JOIN ledger.journal_entry je ON je.id = el.journal_entry_id
@@ -1762,9 +1744,8 @@ BEGIN
    GROUP BY a.id, a.label
   HAVING coalesce(sum(el.credit - el.debit), 0) <> 0;
 
-  -- Zero out expense accounts
   INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-  SELECT v_entry_id, a.id, 0, coalesce(sum(el.debit - el.credit), 0), 'Solde ' || a.label
+  SELECT v_entry_id, a.id, 0, coalesce(sum(el.debit - el.credit), 0), 'Close ' || a.label
     FROM ledger.account a
     JOIN ledger.entry_line el ON el.account_id = a.id
     JOIN ledger.journal_entry je ON je.id = el.journal_entry_id
@@ -1774,27 +1755,26 @@ BEGIN
    GROUP BY a.id, a.label
   HAVING coalesce(sum(el.debit - el.credit), 0) <> 0;
 
-  -- Result to account 120
   IF v_resultat >= 0 THEN
     INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-    VALUES (v_entry_id, v_account_120, 0, v_resultat, 'Résultat bénéficiaire ' || v_year);
+    VALUES (v_entry_id, v_account_120, 0, v_resultat, 'Profit ' || v_year);
   ELSE
     INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-    VALUES (v_entry_id, v_account_120, abs(v_resultat), 0, 'Résultat déficitaire ' || v_year);
+    VALUES (v_entry_id, v_account_120, abs(v_resultat), 0, 'Loss ' || v_year);
   END IF;
 
   UPDATE ledger.journal_entry SET posted = true WHERE id = v_entry_id;
 
-  INSERT INTO ledger.exercice (year, closed, closed_at, result)
+  INSERT INTO ledger.fiscal_year (year, closed, closed_at, result)
   VALUES (v_year, true, now(), v_resultat)
-  ON CONFLICT ON CONSTRAINT exercice_tenant_year_key
+  ON CONFLICT ON CONSTRAINT fiscal_year_tenant_year_key
   DO UPDATE SET closed = true, closed_at = now(), result = v_resultat;
 
   RETURN pgv.toast(pgv.t('ledger.toast_exercice_closed') || ' ' || v_year || ' — ' || pgv.t('ledger.stat_result') || ' : ' || to_char(v_resultat, 'FM999 990.00') || ' €')
-    || pgv.redirect(pgv.call_ref('get_exercice', jsonb_build_object('p_year', v_year)));
+    || pgv.redirect(pgv.call_ref('get_fiscal_year', jsonb_build_object('p_year', v_year)));
 END;
 $function$;
-COMMENT ON FUNCTION ledger.post_cloture(jsonb) IS 'Clôture d''exercice : vérifie écritures postées, calcule résultat, crée écriture de résultat (120), marque exercice clos';
+COMMENT ON FUNCTION ledger.post_close_year(jsonb) IS 'Close fiscal year: verify all entries posted, compute result, create CLO entry, mark year closed';
 
 CREATE OR REPLACE FUNCTION ledger.post_entry_delete(p_data jsonb)
  RETURNS text
@@ -1948,14 +1928,14 @@ END;
 $function$;
 COMMENT ON FUNCTION ledger.post_from_expense(jsonb) IS 'Créer écriture comptable de remboursement note de frais (6xx/4456/421)';
 
-CREATE OR REPLACE FUNCTION ledger.post_from_facture(p_data jsonb)
+CREATE OR REPLACE FUNCTION ledger.post_from_invoice(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_facture_id integer;
-  v_facture record;
+  v_invoice_id integer;
+  v_invoice record;
   v_entry_id integer;
   v_total_ht numeric(12,2);
   v_total_tva numeric(12,2);
@@ -1964,60 +1944,53 @@ DECLARE
   v_account_4457 integer;
   v_account_706 integer;
 BEGIN
-  v_facture_id := (p_data->>'facture_id')::integer;
+  v_invoice_id := (p_data->>'invoice_id')::integer;
 
-  SELECT * INTO v_facture FROM quote.facture WHERE id = v_facture_id;
-  IF NOT FOUND THEN RAISE EXCEPTION 'Facture % introuvable', v_facture_id; END IF;
+  SELECT * INTO v_invoice FROM quote.invoice WHERE id = v_invoice_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Invoice % not found', v_invoice_id; END IF;
 
-  -- Guard: doublon interdit
-  IF EXISTS (SELECT 1 FROM ledger.journal_entry WHERE facture_id = v_facture_id) THEN
+  IF EXISTS (SELECT 1 FROM ledger.journal_entry WHERE invoice_id = v_invoice_id) THEN
     RETURN pgv.toast(pgv.t('ledger.err_duplicate_facture'), 'error');
   END IF;
 
-  -- Totaux
-  SELECT coalesce(sum(round(l.quantite * l.prix_unitaire, 2)), 0),
-         coalesce(sum(round(l.quantite * l.prix_unitaire * l.tva_rate / 100, 2)), 0)
+  SELECT coalesce(sum(round(l.quantity * l.unit_price, 2)), 0),
+         coalesce(sum(round(l.quantity * l.unit_price * l.tva_rate / 100, 2)), 0)
     INTO v_total_ht, v_total_tva
-    FROM quote.ligne l
-   WHERE l.facture_id = v_facture_id;
+    FROM quote.line_item l
+   WHERE l.invoice_id = v_invoice_id;
 
   v_total_ttc := v_total_ht + v_total_tva;
 
-  IF v_total_ttc = 0 THEN RAISE EXCEPTION 'Facture sans montant'; END IF;
+  IF v_total_ttc = 0 THEN RAISE EXCEPTION 'Invoice has no amount'; END IF;
 
-  -- Resolve account IDs
   SELECT id INTO v_account_411 FROM ledger.account WHERE code = '411';
   SELECT id INTO v_account_4457 FROM ledger.account WHERE code = '4457';
   SELECT id INTO v_account_706 FROM ledger.account WHERE code = '706';
 
-  -- Create journal entry with facture_id
-  INSERT INTO ledger.journal_entry (entry_date, reference, description, facture_id)
+  INSERT INTO ledger.journal_entry (entry_date, reference, description, invoice_id)
   VALUES (
-    coalesce(v_facture.paid_at::date, CURRENT_DATE),
-    'FAC-' || v_facture.numero,
-    'Facture ' || v_facture.numero || ' — ' || v_facture.objet,
-    v_facture_id
+    coalesce(v_invoice.paid_at::date, CURRENT_DATE),
+    'INV-' || v_invoice.number,
+    'Invoice ' || v_invoice.number || ' — ' || v_invoice.subject,
+    v_invoice_id
   ) RETURNING id INTO v_entry_id;
 
-  -- 411 Clients — débit TTC
   INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-  VALUES (v_entry_id, v_account_411, v_total_ttc, 0, 'Client facture ' || v_facture.numero);
+  VALUES (v_entry_id, v_account_411, v_total_ttc, 0, 'Client invoice ' || v_invoice.number);
 
-  -- 4457 TVA collectée — crédit TVA
   IF v_total_tva > 0 THEN
     INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-    VALUES (v_entry_id, v_account_4457, 0, v_total_tva, 'TVA collectée facture ' || v_facture.numero);
+    VALUES (v_entry_id, v_account_4457, 0, v_total_tva, 'VAT collected invoice ' || v_invoice.number);
   END IF;
 
-  -- 706 Prestations — crédit HT
   INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-  VALUES (v_entry_id, v_account_706, 0, v_total_ht, 'Prestation facture ' || v_facture.numero);
+  VALUES (v_entry_id, v_account_706, 0, v_total_ht, 'Service invoice ' || v_invoice.number);
 
-  RETURN pgv.toast(pgv.t('ledger.toast_entry_from_facture') || ' ' || pgv.esc(v_facture.numero))
+  RETURN pgv.toast(pgv.t('ledger.toast_entry_from_invoice') || ' ' || pgv.esc(v_invoice.number))
     || pgv.redirect(pgv.call_ref('get_entry', jsonb_build_object('p_id', v_entry_id)));
 END;
 $function$;
-COMMENT ON FUNCTION ledger.post_from_facture(jsonb) IS 'Créer écriture comptable de vente depuis une facture quote (411/4457/706-707)';
+COMMENT ON FUNCTION ledger.post_from_invoice(jsonb) IS 'Create journal entry from sales invoice (411/4457/706)';
 
 CREATE OR REPLACE FUNCTION ledger.post_line_add(p_data jsonb)
  RETURNS text

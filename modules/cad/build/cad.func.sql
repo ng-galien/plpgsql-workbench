@@ -666,6 +666,7 @@ COMMENT ON FUNCTION cad.delete_shape(integer) IS 'Supprimer une shape 2D.';
 CREATE OR REPLACE FUNCTION cad.drawing_create(p_row cad.drawing)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);
@@ -690,6 +691,7 @@ COMMENT ON FUNCTION cad.drawing_create(cad.drawing) IS 'Create drawing with defa
 CREATE OR REPLACE FUNCTION cad.drawing_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_row jsonb;
@@ -761,6 +763,7 @@ COMMENT ON FUNCTION cad.drawing_read(text) IS 'Read single drawing by id with en
 CREATE OR REPLACE FUNCTION cad.drawing_update(p_row cad.drawing)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE cad.drawing SET
@@ -2001,6 +2004,7 @@ COMMENT ON FUNCTION cad.post_shape_add(integer,integer,text,text,text,text) IS '
 CREATE OR REPLACE FUNCTION cad.post_shape_delete(shape_id integer, drawing_id integer)
  RETURNS "text/html"
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   IF shape_id IS NULL THEN
@@ -2013,7 +2017,7 @@ BEGIN
     || pgv.redirect(format('/drawing?p_id=%s', drawing_id));
 END;
 $function$;
-COMMENT ON FUNCTION cad.post_shape_delete(integer,integer) IS 'Supprimer une shape d''un dessin via RPC.';
+COMMENT ON FUNCTION cad.post_shape_delete(integer,integer) IS 'Delete a shape from a drawing via RPC';
 
 CREATE OR REPLACE FUNCTION cad.remove_group(p_group_id integer, p_keep_pieces boolean DEFAULT false)
  RETURNS text

@@ -6,15 +6,15 @@ AS $function$
 DECLARE
   v_d docs.document;
   v_body text;
-  v_charte_name text;
+  v_charter_name text;
   v_rows text[];
   r record;
 BEGIN
   SELECT * INTO v_d FROM docs.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
   IF v_d IS NULL THEN RETURN pgv.empty(pgv.t('docs.err_not_found')); END IF;
 
-  IF v_d.charte_id IS NOT NULL THEN
-    SELECT name INTO v_charte_name FROM docs.charte WHERE id = v_d.charte_id;
+  IF v_d.charter_id IS NOT NULL THEN
+    SELECT name INTO v_charter_name FROM docs.charter WHERE id = v_d.charter_id;
   END IF;
 
   v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('docs.brand'), '/', pgv.esc(v_d.name)]);
@@ -23,7 +23,7 @@ BEGIN
     || v_d.format || ' ' || v_d.orientation
     || ' · ' || v_d.width::int::text || '×' || v_d.height::int::text
     || ' · ' || pgv.badge(v_d.status, CASE v_d.status WHEN 'draft' THEN 'secondary' WHEN 'generated' THEN 'primary' WHEN 'signed' THEN 'success' ELSE 'muted' END)
-    || CASE WHEN v_charte_name IS NOT NULL THEN ' · Charte: ' || pgv.esc(v_charte_name) ELSE '' END
+    || CASE WHEN v_charter_name IS NOT NULL THEN ' · Charter: ' || pgv.esc(v_charter_name) ELSE '' END
     || '</small></p>';
 
   -- Pages table

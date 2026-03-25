@@ -5,7 +5,7 @@ CREATE OR REPLACE FUNCTION docs.nav_items()
 AS $function$
   SELECT jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('docs.nav_documents'), 'icon', 'file-text', 'entity', 'document'),
-    jsonb_build_object('href', '/chartes', 'label', pgv.t('docs.nav_chartes'), 'icon', 'palette', 'entity', 'charte'),
+    jsonb_build_object('href', '/charters', 'label', pgv.t('docs.nav_chartes'), 'icon', 'palette', 'entity', 'charter'),
     jsonb_build_object('href', '/libraries', 'label', pgv.t('docs.nav_libraries'), 'icon', 'image', 'entity', 'library')
   );
 $function$;

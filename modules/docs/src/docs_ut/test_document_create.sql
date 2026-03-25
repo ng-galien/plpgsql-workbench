@@ -10,7 +10,7 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 
   -- A4 portrait
   v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"Test A4"}'::jsonb));
@@ -37,16 +37,16 @@ BEGIN
   RETURN NEXT is(v_r.height, 1080::numeric, 'HD height = 1080');
 
   -- With charte
-  v_jc := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  v_jc := docs.charter_create(jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'Test DC', 'color_bg', '#fff', 'color_main', '#000', 'color_accent', '#f00',
     'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
     'font_heading', 'Inter', 'font_body', 'Inter'
   )));
-  v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'With Charte', 'charte_id', v_jc->>'id')));
+  v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'With Charter', 'charter_id', v_jc->>'id')));
   SELECT * INTO v_r FROM docs.document WHERE id = v_j->>'id';
-  RETURN NEXT is(v_r.charte_id, v_jc->>'id', 'charte linked');
+  RETURN NEXT is(v_r.charter_id, v_jc->>'id', 'charter linked');
 
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 END;
 $function$;

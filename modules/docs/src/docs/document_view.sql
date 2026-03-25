@@ -11,26 +11,26 @@ BEGIN
 
     'template', jsonb_build_object(
       'compact', jsonb_build_object(
-        'fields', jsonb_build_array('name', 'format', 'status', 'charte_name')
+        'fields', jsonb_build_array('name', 'format', 'status', 'charter_name')
       ),
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('name', 'category', 'format', 'status', 'charte_name', 'updated_at'),
+        'fields', jsonb_build_array('name', 'category', 'format', 'status', 'charter_name', 'updated_at'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'page_count', 'label', 'docs.stat_pages')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'docs://charte', 'label', 'docs.rel_charte', 'filter', 'id={charte_id}'),
+          jsonb_build_object('entity', 'docs://charter', 'label', 'docs.rel_charter', 'filter', 'id={charter_id}'),
           jsonb_build_object('entity', 'docs://library', 'label', 'docs.rel_library', 'filter', 'id={library_id}')
         )
       ),
       'expanded', jsonb_build_object(
         'fields', jsonb_build_array('name', 'category', 'format', 'orientation', 'width', 'height',
-          'status', 'bg', 'charte_name', 'design_notes', 'team_notes', 'email_to', 'ref_module', 'ref_id'),
+          'status', 'bg', 'charter_name', 'design_notes', 'team_notes', 'email_to', 'ref_module', 'ref_id'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'page_count', 'label', 'docs.stat_pages')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'docs://charte', 'label', 'docs.rel_charte', 'filter', 'id={charte_id}'),
+          jsonb_build_object('entity', 'docs://charter', 'label', 'docs.rel_charter', 'filter', 'id={charter_id}'),
           jsonb_build_object('entity', 'docs://library', 'label', 'docs.rel_library', 'filter', 'id={library_id}')
         )
       ),
@@ -39,7 +39,7 @@ BEGIN
           jsonb_build_object('label', 'docs.section_identity', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'name', 'type', 'text', 'label', 'docs.col_name', 'required', true),
             jsonb_build_object('key', 'category', 'type', 'select', 'label', 'docs.col_category', 'options', 'docs.category_options'),
-            jsonb_build_object('key', 'charte_id', 'type', 'combobox', 'label', 'docs.col_charte', 'source', 'docs://charte', 'display', 'name'),
+            jsonb_build_object('key', 'charter_id', 'type', 'combobox', 'label', 'docs.col_charte', 'source', 'docs://charter', 'display', 'name'),
             jsonb_build_object('key', 'library_id', 'type', 'combobox', 'label', 'docs.rel_library', 'source', 'docs://library', 'display', 'name')
           )),
           jsonb_build_object('label', 'docs.section_canvas', 'fields', jsonb_build_array(

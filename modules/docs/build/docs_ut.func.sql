@@ -3,62 +3,51 @@
 
 CREATE SCHEMA IF NOT EXISTS docs_ut;
 
-CREATE OR REPLACE FUNCTION docs_ut.test_charte_check()
+CREATE OR REPLACE FUNCTION docs_ut.test_charter_check()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_j jsonb;
-  v_html text;
-  v_result text;
+DECLARE v_j jsonb; v_html text; v_result text;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
-
-  v_j := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
+  v_j := docs.charter_create(jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'Check Test', 'color_bg', '#fff', 'color_main', '#000', 'color_accent', '#f00',
     'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
-    'font_heading', 'Inter', 'font_body', 'Inter'
-  )));
-
+    'font_heading', 'Inter', 'font_body', 'Inter')));
   v_html := '<div data-id="a" style="color:var(--charte-color-text);font-family:var(--charte-font-heading)">OK</div>';
-  v_result := docs.charte_check(v_html, v_j->>'id');
+  v_result := docs.charter_check(v_html, v_j->>'id');
   RETURN NEXT ok(v_result IS NULL, 'compliant HTML returns NULL');
-
   v_html := '<div data-id="a" style="color:transparent;background:inherit">OK</div>';
-  v_result := docs.charte_check(v_html, v_j->>'id');
+  v_result := docs.charter_check(v_html, v_j->>'id');
   RETURN NEXT ok(v_result IS NULL, 'transparent/inherit are allowed');
-
   v_html := '<div data-id="bad" style="color:#ff0000">Bad</div>';
-  v_result := docs.charte_check(v_html, v_j->>'id');
+  v_result := docs.charter_check(v_html, v_j->>'id');
   RETURN NEXT ok(v_result IS NOT NULL, 'hardcoded color detected');
   RETURN NEXT ok(v_result LIKE '%[bad]%', 'violation references data-id');
-
   v_html := '<p data-id="f" style="font-family:Arial">Bad</p>';
-  v_result := docs.charte_check(v_html, v_j->>'id');
+  v_result := docs.charter_check(v_html, v_j->>'id');
   RETURN NEXT ok(v_result LIKE '%font-family%', 'hardcoded font detected');
-
-  RETURN NEXT ok(docs.charte_check(v_html, NULL) IS NULL, 'NULL charte_id skips check');
-
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  RETURN NEXT ok(docs.charter_check(v_html, NULL) IS NULL, 'NULL charter_id skips check');
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_charte_check() IS 'Test charte_check — compliant vs violations, jsonb create';
+COMMENT ON FUNCTION docs_ut.test_charter_check() IS 'Test charter_check — compliant vs violations, jsonb create';
 
-CREATE OR REPLACE FUNCTION docs_ut.test_charte_create()
+CREATE OR REPLACE FUNCTION docs_ut.test_charter_create()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_c docs.charte;
+  v_c docs.charter;
   v_j jsonb;
   v_r record;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 
-  v_c := jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
-    'name', 'Test Provençal', 'description', 'Charte gîte provençal',
+  v_c := jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
+    'name', 'Test Provençal', 'description', 'Charter gîte provençal',
     'color_bg', '#FAF6F1', 'color_main', '#2C3E2D', 'color_accent', '#C4956A',
     'color_text', '#3D3D3D', 'color_text_light', '#8A8A8A', 'color_border', '#E8E0D8',
     'font_heading', 'Cormorant Garamond', 'font_body', 'Source Sans 3',
@@ -66,12 +55,12 @@ BEGIN
   ));
   v_c.color_extra := '{"olive":"#5C6B3C","lavande":"#9B8EC1"}'::jsonb;
   v_c.voice_personality := ARRAY['chaleureux','authentique'];
-  v_j := docs.charte_create(v_c);
+  v_j := docs.charter_create(v_c);
 
-  RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'charte_create returns an id');
+  RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'charter_create returns an id');
   RETURN NEXT is(v_j->>'slug', 'test-provencal', 'slug auto-generated from name');
 
-  SELECT * INTO v_r FROM docs.charte WHERE id = v_j->>'id';
+  SELECT * INTO v_r FROM docs.charter WHERE id = v_j->>'id';
   RETURN NEXT is(v_r.name, 'Test Provençal', 'name stored');
   RETURN NEXT is(v_r.color_bg, '#FAF6F1', 'color_bg stored');
   RETURN NEXT is(v_r.color_main, '#2C3E2D', 'color_main stored');
@@ -82,7 +71,7 @@ BEGIN
   RETURN NEXT is(v_r.voice_personality[1], 'chaleureux', 'voice personality stored');
 
   BEGIN
-    PERFORM docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+    PERFORM docs.charter_create(jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
       'name', 'Test Provençal', 'color_bg', '#fff', 'color_main', '#000',
       'color_accent', '#f00', 'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
       'font_heading', 'Inter', 'font_body', 'Inter'
@@ -92,127 +81,96 @@ BEGIN
     RETURN NEXT pass('duplicate name raises unique_violation');
   END;
 
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_charte_create() IS 'Test charte creation — jsonb return, slug auto-gen, unique name';
+COMMENT ON FUNCTION docs_ut.test_charter_create() IS 'Test charter creation — jsonb return, slug auto-gen, unique name';
 
-CREATE OR REPLACE FUNCTION docs_ut.test_charte_delete()
+CREATE OR REPLACE FUNCTION docs_ut.test_charter_delete()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_j jsonb;
-  v_cnt int;
+DECLARE v_j jsonb; v_cnt int;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
-
-  v_j := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
+  v_j := docs.charter_create(jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'To Delete', 'color_bg', '#fff', 'color_main', '#000', 'color_accent', '#f00',
     'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
-    'font_heading', 'Inter', 'font_body', 'Inter'
-  )));
-
-  INSERT INTO docs.document (name, charte_id, category) VALUES ('Linked Doc', v_j->>'id', 'general');
-
-  v_j := docs.charte_delete(v_j->>'id');
-  RETURN NEXT ok(v_j IS NOT NULL, 'charte_delete returns deleted row');
-
-  SELECT count(*)::int INTO v_cnt FROM docs.charte WHERE id = v_j->>'id';
-  RETURN NEXT is(v_cnt, 0, 'charte removed');
-
+    'font_heading', 'Inter', 'font_body', 'Inter')));
+  INSERT INTO docs.document (name, charter_id, category) VALUES ('Linked Doc', v_j->>'id', 'general');
+  v_j := docs.charter_delete(v_j->>'id');
+  RETURN NEXT ok(v_j IS NOT NULL, 'charter_delete returns deleted row');
+  SELECT count(*)::int INTO v_cnt FROM docs.charter WHERE id = v_j->>'id';
+  RETURN NEXT is(v_cnt, 0, 'charter removed');
   SELECT count(*)::int INTO v_cnt FROM docs.document WHERE name = 'Linked Doc' AND tenant_id = 'test';
   RETURN NEXT is(v_cnt, 1, 'linked document still exists');
-  RETURN NEXT ok(
-    (SELECT charte_id IS NULL FROM docs.document WHERE name = 'Linked Doc' AND tenant_id = 'test'),
-    'charte_id set to NULL on document'
-  );
-
-  RETURN NEXT ok(docs.charte_delete('nonexistent-id') IS NULL, 'returns NULL for unknown charte');
-
+  RETURN NEXT ok((SELECT charter_id IS NULL FROM docs.document WHERE name = 'Linked Doc' AND tenant_id = 'test'), 'charter_id set to NULL on document');
+  RETURN NEXT ok(docs.charter_delete('nonexistent-id') IS NULL, 'returns NULL for unknown charter');
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_charte_delete() IS 'Test charte delete — removes charte, FK SET NULL, jsonb return';
+COMMENT ON FUNCTION docs_ut.test_charter_delete() IS 'Test charter delete — removes charter, FK SET NULL, jsonb return';
 
-CREATE OR REPLACE FUNCTION docs_ut.test_charte_list()
+CREATE OR REPLACE FUNCTION docs_ut.test_charter_list()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_cnt int;
-  v_first jsonb;
+DECLARE v_cnt int; v_first jsonb;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
-
-  PERFORM docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
+  PERFORM docs.charter_create(jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'List A', 'color_bg', '#fff', 'color_main', '#000', 'color_accent', '#f00',
     'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
-    'font_heading', 'Inter', 'font_body', 'Inter'
-  )));
-  PERFORM docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+    'font_heading', 'Inter', 'font_body', 'Inter')));
+  PERFORM docs.charter_create(jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'List B', 'color_bg', '#eee', 'color_main', '#111', 'color_accent', '#0f0',
     'color_text', '#222', 'color_text_light', '#777', 'color_border', '#ddd',
-    'font_heading', 'Oswald', 'font_body', 'Lato'
-  )));
-
-  SELECT count(*)::int INTO v_cnt FROM docs.charte_list();
-  RETURN NEXT is(v_cnt, 2, '2 chartes listed');
-
-  SELECT * INTO v_first FROM docs.charte_list() LIMIT 1;
+    'font_heading', 'Oswald', 'font_body', 'Lato')));
+  SELECT count(*)::int INTO v_cnt FROM docs.charter_list();
+  RETURN NEXT is(v_cnt, 2, '2 charters listed');
+  SELECT * INTO v_first FROM docs.charter_list() LIMIT 1;
   RETURN NEXT is(v_first->>'name', 'List A', 'first sorted by name');
   RETURN NEXT ok(v_first->>'color_bg' IS NOT NULL, 'color_bg present');
   RETURN NEXT ok(v_first->>'font_heading' IS NOT NULL, 'font_heading present');
-
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_charte_list() IS 'Test charte list — count and sort order (jsonb)';
+COMMENT ON FUNCTION docs_ut.test_charter_list() IS 'Test charter list — count and sort order (jsonb)';
 
-CREATE OR REPLACE FUNCTION docs_ut.test_charte_read()
+CREATE OR REPLACE FUNCTION docs_ut.test_charter_read()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_c docs.charte;
-  v_j jsonb;
+DECLARE v_c docs.charter; v_j jsonb;
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
-
-  v_c := jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
+  v_c := jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'Read Test', 'color_bg', '#FAF6F1', 'color_main', '#2C3E2D', 'color_accent', '#C4956A',
     'color_text', '#3D3D3D', 'color_text_light', '#8A8A8A', 'color_border', '#E8E0D8',
     'font_heading', 'Cormorant Garamond', 'font_body', 'Source Sans 3',
     'spacing_page', '15mm', 'shadow_card', '0 1mm 4mm rgba(0,0,0,0.08)'
   ));
   v_c.color_extra := '{"olive":"#5C6B3C"}'::jsonb;
-  v_j := docs.charte_create(v_c);
-
-  -- Read by id
-  v_j := docs.charte_read(v_j->>'id');
-  RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'charte_read by id');
+  v_j := docs.charter_create(v_c);
+  v_j := docs.charter_read(v_j->>'id');
+  RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'charter_read by id');
   RETURN NEXT is(v_j->>'name', 'Read Test', 'name in result');
-
-  -- Read by slug
-  v_j := docs.charte_read('read-test');
-  RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'charte_read by slug');
+  v_j := docs.charter_read('read-test');
+  RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'charter_read by slug');
   RETURN NEXT is(v_j->>'color_bg', '#FAF6F1', 'color_bg');
   RETURN NEXT is(v_j->'color_extra'->>'olive', '#5C6B3C', 'color_extra olive');
   RETURN NEXT is(v_j->>'font_heading', 'Cormorant Garamond', 'font_heading');
   RETURN NEXT is(v_j->>'spacing_page', '15mm', 'spacing_page');
-
-  -- Not found
-  RETURN NEXT ok(docs.charte_read('nonexistent') IS NULL, 'returns NULL for unknown charte');
-
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  RETURN NEXT ok(docs.charter_read('nonexistent') IS NULL, 'returns NULL for unknown charter');
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 END;
 $function$;
-COMMENT ON FUNCTION docs_ut.test_charte_read() IS 'Test charte read — by id and slug, jsonb return';
+COMMENT ON FUNCTION docs_ut.test_charter_read() IS 'Test charter read — by id and slug, jsonb return';
 
 CREATE OR REPLACE FUNCTION docs_ut.test_document_create()
  RETURNS SETOF text
@@ -226,7 +184,7 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 
   -- A4 portrait
   v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, '{"name":"Test A4"}'::jsonb));
@@ -253,17 +211,17 @@ BEGIN
   RETURN NEXT is(v_r.height, 1080::numeric, 'HD height = 1080');
 
   -- With charte
-  v_jc := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  v_jc := docs.charter_create(jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'Test DC', 'color_bg', '#fff', 'color_main', '#000', 'color_accent', '#f00',
     'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
     'font_heading', 'Inter', 'font_body', 'Inter'
   )));
-  v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'With Charte', 'charte_id', v_jc->>'id')));
+  v_j := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'With Charter', 'charter_id', v_jc->>'id')));
   SELECT * INTO v_r FROM docs.document WHERE id = v_j->>'id';
-  RETURN NEXT is(v_r.charte_id, v_jc->>'id', 'charte linked');
+  RETURN NEXT is(v_r.charter_id, v_jc->>'id', 'charter linked');
 
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 END;
 $function$;
 COMMENT ON FUNCTION docs_ut.test_document_create() IS 'Test document creation — jsonb returns, format→dimensions';
@@ -348,15 +306,15 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 
-  v_jc := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  v_jc := docs.charter_create(jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'Read Charte', 'color_bg', '#FAF6F1', 'color_main', '#2C3E2D', 'color_accent', '#C4956A',
     'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
     'font_heading', 'Inter', 'font_body', 'Inter'
   )));
 
-  v_jd := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'Read Test', 'charte_id', v_jc->>'id')));
+  v_jd := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'Read Test', 'charter_id', v_jc->>'id')));
   PERFORM docs.page_add(v_jd->>'id', 'Page 2', '<p data-id="p2">Page two</p>');
 
   v_j := docs.document_read(v_jd->>'id');
@@ -364,13 +322,13 @@ BEGIN
   RETURN NEXT ok(v_j->>'id' IS NOT NULL, 'document_read returns data');
   RETURN NEXT is(v_j->>'name', 'Read Test', 'name');
   RETURN NEXT is(v_j->>'format', 'A4', 'format');
-  RETURN NEXT is(v_j->>'charte_id', v_jc->>'id', 'charte_id');
+  RETURN NEXT is(v_j->>'charter_id', v_jc->>'id', 'charter_id');
   RETURN NEXT is((v_j->>'width')::numeric, 210::numeric, 'width');
 
   RETURN NEXT ok(docs.document_read('nonexistent') IS NULL, 'NULL for unknown doc');
 
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 END;
 $function$;
 COMMENT ON FUNCTION docs_ut.test_document_read() IS 'Test document read — jsonb return with charte resolved';
@@ -386,15 +344,15 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 
-  v_jc := docs.charte_create(jsonb_populate_record(NULL::docs.charte, jsonb_build_object(
+  v_jc := docs.charter_create(jsonb_populate_record(NULL::docs.charter, jsonb_build_object(
     'name', 'Print Charte', 'color_bg', '#FAF6F1', 'color_main', '#2C3E2D', 'color_accent', '#C4956A',
     'color_text', '#333', 'color_text_light', '#888', 'color_border', '#eee',
     'font_heading', 'Inter', 'font_body', 'Inter'
   )));
 
-  v_jd := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'Print Doc', 'charte_id', v_jc->>'id')));
+  v_jd := docs.document_create(jsonb_populate_record(NULL::docs.document, jsonb_build_object('name', 'Print Doc', 'charter_id', v_jc->>'id')));
   PERFORM docs.page_set_html(v_jd->>'id', 0, '<p data-id="p1">Page 1</p>');
   PERFORM docs.page_add(v_jd->>'id', 'Page 2', '<p data-id="p2">Page 2</p>');
 
@@ -408,7 +366,7 @@ BEGIN
   RETURN NEXT ok(v_html LIKE '%window.print()%', 'auto-print script');
 
   DELETE FROM docs.document WHERE tenant_id = 'test';
-  DELETE FROM docs.charte WHERE tenant_id = 'test';
+  DELETE FROM docs.charter WHERE tenant_id = 'test';
 END;
 $function$;
 COMMENT ON FUNCTION docs_ut.test_get_print() IS 'Test get_print — charte CSS + pages + auto-print, jsonb create';

@@ -6,11 +6,11 @@ DECLARE
   v jsonb;
   f jsonb;
 BEGIN
-  v := pgv.ui_form_for('docs', 'charte');
+  v := pgv.ui_form_for('docs', 'charter');
 
   -- Structure
   RETURN NEXT is(v->>'type', 'form', 'type is form');
-  RETURN NEXT is(v->>'uri', 'docs://charte', 'uri is docs://charte');
+  RETURN NEXT is(v->>'uri', 'docs://charter', 'uri is docs://charter');
   RETURN NEXT is(v->>'verb', 'set', 'default verb is set');
   RETURN NEXT ok(jsonb_array_length(v->'fields') > 5, 'has multiple fields');
 
@@ -39,15 +39,15 @@ BEGIN
 
   -- Document: FK → select, numeric → number
   v := pgv.ui_form_for('docs', 'document');
-  SELECT item INTO f FROM jsonb_array_elements(v->'fields') item WHERE item->>'key' = 'charte_id';
+  SELECT item INTO f FROM jsonb_array_elements(v->'fields') item WHERE item->>'key' = 'charter_id';
   RETURN NEXT is(f->>'fieldType', 'select', 'FK → select');
-  RETURN NEXT ok(f->'options'->>'source' LIKE '%://charte', 'FK select has source');
+  RETURN NEXT ok(f->'options'->>'source' LIKE '%://charter', 'FK select has source');
 
   SELECT item INTO f FROM jsonb_array_elements(v->'fields') item WHERE item->>'key' = 'width';
   RETURN NEXT is(f->>'fieldType', 'number', 'numeric → number');
 
   -- Verb override
-  v := pgv.ui_form_for('docs', 'charte', 'patch');
+  v := pgv.ui_form_for('docs', 'charter', 'patch');
   RETURN NEXT is(v->>'verb', 'patch', 'verb override works');
 END;
 $function$;

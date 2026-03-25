@@ -263,8 +263,8 @@ BEGIN
   DELETE FROM ledger.journal_entry;
 
   SELECT f.id INTO v_facture_id
-    FROM quote.facture f
-    JOIN quote.ligne l ON l.facture_id = f.id
+    FROM quote.invoice f
+    JOIN quote.line_item l ON l.invoice_id = f.id
    GROUP BY f.id
    HAVING count(*) > 0
    LIMIT 1;
@@ -274,7 +274,7 @@ BEGIN
     RETURN;
   END IF;
 
-  PERFORM ledger.post_from_facture(jsonb_build_object('facture_id', v_facture_id));
+  PERFORM ledger.post_from_invoice(jsonb_build_object('invoice_id', v_facture_id));
 
   SELECT id INTO v_entry_id FROM ledger.journal_entry ORDER BY id DESC LIMIT 1;
 
@@ -286,8 +286,8 @@ BEGIN
   RETURN NEXT is(v_total_debit, v_total_credit, 'Écriture facture équilibrée : débit = crédit');
 
   RETURN NEXT ok(
-    EXISTS (SELECT 1 FROM ledger.journal_entry WHERE id = v_entry_id AND reference LIKE 'FAC-%'),
-    'Référence commence par FAC-'
+    EXISTS (SELECT 1 FROM ledger.journal_entry WHERE id = v_entry_id AND reference LIKE 'INV-%'),
+    'Reference starts with INV-'
   );
 
   RETURN NEXT ok(
@@ -319,7 +319,7 @@ BEGIN
   UPDATE ledger.journal_entry SET posted = false WHERE posted = true;
   DELETE FROM ledger.entry_line;
   DELETE FROM ledger.journal_entry;
-  DELETE FROM ledger.exercice;
+  DELETE FROM ledger.fiscal_year;
 
   v_html := ledger.get_index();
   RETURN NEXT ok(length(v_html) > 50, 'get_index() retourne du HTML');
@@ -333,24 +333,24 @@ BEGIN
   v_html := ledger.get_entry_form();
   RETURN NEXT ok(length(v_html) > 50, 'get_entry_form() retourne du HTML');
 
-  v_html := ledger.get_tva();
-  RETURN NEXT ok(length(v_html) > 50, 'get_tva() retourne du HTML');
+  v_html := ledger.get_vat();
+  RETURN NEXT ok(length(v_html) > 50, 'get_vat() retourne du HTML');
 
-  v_html := ledger.get_bilan();
-  RETURN NEXT ok(length(v_html) > 50, 'get_bilan() retourne du HTML');
+  v_html := ledger.get_balance_sheet();
+  RETURN NEXT ok(length(v_html) > 50, 'get_balance_sheet() retourne du HTML');
 
   v_html := ledger.get_balance();
   RETURN NEXT ok(length(v_html) > 50, 'get_balance() retourne du HTML');
 
-  v_html := ledger.get_exercice();
-  RETURN NEXT ok(length(v_html) > 50, 'get_exercice() retourne du HTML');
+  v_html := ledger.get_fiscal_year();
+  RETURN NEXT ok(length(v_html) > 50, 'get_fiscal_year() retourne du HTML');
 
   SELECT id INTO v_acc_id FROM ledger.account LIMIT 1;
   v_html := ledger.get_account(v_acc_id);
   RETURN NEXT ok(length(v_html) > 50, 'get_account(id) retourne du HTML');
 
-  v_html := ledger.get_grand_livre(jsonb_build_object('p_account_id', v_acc_id));
-  RETURN NEXT ok(length(v_html) > 50, 'get_grand_livre(id) retourne du HTML');
+  v_html := ledger.get_general_ledger(jsonb_build_object('p_account_id', v_acc_id));
+  RETURN NEXT ok(length(v_html) > 50, 'get_general_ledger(id) retourne du HTML');
 
   PERFORM ledger.post_entry_save(jsonb_build_object(
     'reference', 'TEST-PAGE', 'description', 'Test pages'
@@ -386,7 +386,7 @@ BEGIN
   UPDATE ledger.journal_entry SET posted = false WHERE posted = true;
   DELETE FROM ledger.entry_line;
   DELETE FROM ledger.journal_entry;
-  DELETE FROM ledger.exercice;
+  DELETE FROM ledger.fiscal_year;
 
   -- Create a revenue entry in 2025
   INSERT INTO ledger.journal_entry (entry_date, reference, description)
@@ -412,11 +412,11 @@ BEGIN
   UPDATE ledger.journal_entry SET posted = true WHERE id = v_entry_id;
 
   -- Clôturer 2025
-  v_result := ledger.post_cloture('{"year": 2025}'::jsonb);
+  v_result := ledger.post_close_year('{"year": 2025}'::jsonb);
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'Clôture 2025 réussie');
 
   -- Vérifier exercice
-  SELECT * INTO v_exercice FROM ledger.exercice WHERE year = 2025;
+  SELECT * INTO v_exercice FROM ledger.fiscal_year WHERE year = 2025;
   RETURN NEXT ok(v_exercice.closed, 'Exercice 2025 marqué clos');
   RETURN NEXT is(v_exercice.result, 700.00, 'Résultat = 1000 - 300 = 700');
 
@@ -430,14 +430,14 @@ BEGIN
   RETURN NEXT is(v_total_debit, v_total_credit, 'Écriture clôture équilibrée');
 
   -- Double clôture bloquée
-  v_result := ledger.post_cloture('{"year": 2025}'::jsonb);
+  v_result := ledger.post_close_year('{"year": 2025}'::jsonb);
   RETURN NEXT ok(v_result LIKE '%déjà clôturé%', 'Double clôture bloquée');
 
   -- Cleanup
   UPDATE ledger.journal_entry SET posted = false WHERE posted = true;
   DELETE FROM ledger.entry_line;
   DELETE FROM ledger.journal_entry;
-  DELETE FROM ledger.exercice;
+  DELETE FROM ledger.fiscal_year;
 END;
 $function$;
 COMMENT ON FUNCTION ledger_ut.test_post_cloture() IS 'Test clôture exercice : résultat correct, double clôture bloquée, écriture de résultat équilibrée';
@@ -547,7 +547,7 @@ BEGIN
   ));
   PERFORM ledger.post_entry_post(jsonb_build_object('id', v_entry_id));
 
-  v_html := ledger.get_tva(jsonb_build_object('p_year', extract(year FROM CURRENT_DATE)::integer, 'p_quarter', extract(quarter FROM CURRENT_DATE)::integer));
+  v_html := ledger.get_vat(jsonb_build_object('p_year', extract(year FROM CURRENT_DATE)::integer, 'p_quarter', extract(quarter FROM CURRENT_DATE)::integer));
   RETURN NEXT ok(v_html LIKE '%20.00%', 'TVA collectée = 20.00');
   RETURN NEXT ok(v_html LIKE '%10.00%', 'TVA déductible = 10.00');
   RETURN NEXT ok(v_html LIKE '%reverser%', 'TVA à reverser (solde positif)');

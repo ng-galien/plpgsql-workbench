@@ -11,8 +11,11 @@ BEGIN
     ('fr', 'ledger.nav_accounts', 'Plan comptable'),
     ('fr', 'ledger.nav_balance', 'Balance'),
     ('fr', 'ledger.nav_exercice', 'Exercice'),
+    ('fr', 'ledger.nav_fiscal_year', 'Exercice'),
     ('fr', 'ledger.nav_tva', 'TVA'),
+    ('fr', 'ledger.nav_vat', 'TVA'),
     ('fr', 'ledger.nav_bilan', 'Bilan'),
+    ('fr', 'ledger.nav_balance_sheet', 'Bilan'),
 
     -- Account types
     ('fr', 'ledger.type_asset', 'Actif'),
@@ -135,6 +138,7 @@ BEGIN
     ('fr', 'ledger.toast_line_deleted', 'Ligne supprimée'),
     ('fr', 'ledger.toast_exercice_closed', 'Exercice clôturé'),
     ('fr', 'ledger.toast_entry_from_facture', 'Écriture créée depuis facture'),
+    ('fr', 'ledger.toast_entry_from_invoice', 'Écriture créée depuis facture'),
     ('fr', 'ledger.toast_entry_from_expense', 'Écriture NDF créée'),
 
     -- Confirm dialogs
@@ -160,6 +164,7 @@ BEGIN
     ('fr', 'ledger.section_entry', 'Écriture'),
     ('fr', 'ledger.section_account', 'Compte'),
     ('fr', 'ledger.related_facture', 'Facture associée'),
+    ('fr', 'ledger.related_invoice', 'Facture associée'),
     ('fr', 'ledger.related_expense_note', 'Note de frais associée')
 
   ON CONFLICT DO NOTHING;

@@ -13,7 +13,7 @@ BEGIN
   UPDATE ledger.journal_entry SET posted = false WHERE posted = true;
   DELETE FROM ledger.entry_line;
   DELETE FROM ledger.journal_entry;
-  DELETE FROM ledger.exercice;
+  DELETE FROM ledger.fiscal_year;
 
   -- Create a revenue entry in 2025
   INSERT INTO ledger.journal_entry (entry_date, reference, description)
@@ -39,11 +39,11 @@ BEGIN
   UPDATE ledger.journal_entry SET posted = true WHERE id = v_entry_id;
 
   -- Clôturer 2025
-  v_result := ledger.post_cloture('{"year": 2025}'::jsonb);
+  v_result := ledger.post_close_year('{"year": 2025}'::jsonb);
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'Clôture 2025 réussie');
 
   -- Vérifier exercice
-  SELECT * INTO v_exercice FROM ledger.exercice WHERE year = 2025;
+  SELECT * INTO v_exercice FROM ledger.fiscal_year WHERE year = 2025;
   RETURN NEXT ok(v_exercice.closed, 'Exercice 2025 marqué clos');
   RETURN NEXT is(v_exercice.result, 700.00, 'Résultat = 1000 - 300 = 700');
 
@@ -57,13 +57,13 @@ BEGIN
   RETURN NEXT is(v_total_debit, v_total_credit, 'Écriture clôture équilibrée');
 
   -- Double clôture bloquée
-  v_result := ledger.post_cloture('{"year": 2025}'::jsonb);
+  v_result := ledger.post_close_year('{"year": 2025}'::jsonb);
   RETURN NEXT ok(v_result LIKE '%déjà clôturé%', 'Double clôture bloquée');
 
   -- Cleanup
   UPDATE ledger.journal_entry SET posted = false WHERE posted = true;
   DELETE FROM ledger.entry_line;
   DELETE FROM ledger.journal_entry;
-  DELETE FROM ledger.exercice;
+  DELETE FROM ledger.fiscal_year;
 END;
 $function$;

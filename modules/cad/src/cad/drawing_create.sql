@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION cad.drawing_create(p_row cad.drawing)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);

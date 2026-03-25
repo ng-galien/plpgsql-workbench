@@ -12,7 +12,7 @@ BEGIN
     name = COALESCE(NULLIF(p_data.name, ''), name),
     slug = COALESCE(NULLIF(p_data.slug, ''), slug),
     category = COALESCE(NULLIF(p_data.category, ''), category),
-    charte_id = COALESCE(p_data.charte_id, charte_id),
+    charter_id = COALESCE(p_data.charter_id, charter_id),
     bg = COALESCE(NULLIF(p_data.bg, ''), bg),
     text_margin = COALESCE(p_data.text_margin, text_margin),
     design_notes = COALESCE(p_data.design_notes, design_notes),

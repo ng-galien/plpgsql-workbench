@@ -68,7 +68,7 @@ CREATE UNIQUE INDEX idx_entry_expense_note ON ledger.journal_entry(expense_note_
 CREATE INDEX idx_entry_line_entry ON ledger.entry_line(journal_entry_id);
 CREATE INDEX idx_entry_line_account ON ledger.entry_line(account_id);
 CREATE INDEX idx_entry_line_tenant ON ledger.entry_line(tenant_id);
-CREATE INDEX idx_exercice_tenant ON ledger.exercice(tenant_id);
+CREATE INDEX idx_fiscal_year_tenant ON ledger.fiscal_year(tenant_id);
 
 -- RLS
 ALTER TABLE ledger.account ENABLE ROW LEVEL SECURITY;

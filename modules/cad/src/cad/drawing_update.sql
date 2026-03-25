@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION cad.drawing_update(p_row cad.drawing)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE cad.drawing SET

@@ -6,7 +6,7 @@ AS $function$
 DECLARE
   v_d docs.document;
   v_page_cnt int;
-  v_charte_name text;
+  v_charter_name text;
 BEGIN
   -- List mode
   IF p_slug IS NULL THEN
@@ -16,7 +16,7 @@ BEGIN
         pgv.ui_table('documents', jsonb_build_array(
           pgv.ui_col('name', pgv.t('docs.col_name'), pgv.ui_link('{name}', '/docs/document/{slug}')),
           pgv.ui_col('category', pgv.t('docs.col_category'), pgv.ui_badge('{category}')),
-          pgv.ui_col('charte_name', pgv.t('docs.col_charte'), pgv.ui_link('{charte_name}', '/docs/chartes/{charte_slug}')),
+          pgv.ui_col('charter_name', pgv.t('docs.col_charte'), pgv.ui_link('{charter_name}', '/docs/charters/{charter_slug}')),
           pgv.ui_col('format', pgv.t('docs.col_format')),
           pgv.ui_col('status', pgv.t('docs.col_status'), pgv.ui_badge('{status}'))
         ))
@@ -34,7 +34,7 @@ BEGIN
   END IF;
 
   SELECT count(*)::int INTO v_page_cnt FROM docs.page WHERE doc_id = v_d.id;
-  SELECT name INTO v_charte_name FROM docs.charte WHERE id = v_d.charte_id;
+  SELECT name INTO v_charter_name FROM docs.charter WHERE id = v_d.charter_id;
 
   RETURN jsonb_build_object(
     'ui', pgv.ui_column(
@@ -56,7 +56,7 @@ BEGIN
       pgv.ui_heading(pgv.t('docs.title_meta'), 3),
       pgv.ui_row(
         pgv.ui_text(pgv.t('docs.col_category') || ': ' || coalesce(v_d.category, '—')),
-        pgv.ui_text(pgv.t('docs.col_charte') || ': ' || coalesce(v_charte_name, '—'))
+        pgv.ui_text(pgv.t('docs.col_charte') || ': ' || coalesce(v_charter_name, '—'))
       ),
 
       -- Stats

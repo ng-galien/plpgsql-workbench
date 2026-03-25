@@ -5,7 +5,7 @@ CREATE OR REPLACE FUNCTION docs.get_print(p_id text)
 AS $function$
 DECLARE
   v_d docs.document;
-  v_charte_css text := '';
+  v_charter_css text := '';
   v_print_css text;
   v_body text;
   r record;
@@ -13,13 +13,13 @@ BEGIN
   SELECT * INTO v_d FROM docs.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
   IF v_d IS NULL THEN RETURN pgv.empty(pgv.t('docs.err_not_found')); END IF;
 
-  IF v_d.charte_id IS NOT NULL THEN
-    v_charte_css := docs.charte_tokens_to_css(v_d.charte_id);
+  IF v_d.charter_id IS NOT NULL THEN
+    v_charter_css := docs.charter_tokens_to_css(v_d.charter_id);
   END IF;
 
   v_print_css := docs.document_print_css(p_id);
 
-  v_body := '<style>' || v_charte_css || chr(10) || v_print_css || '</style>';
+  v_body := '<style>' || v_charter_css || chr(10) || v_print_css || '</style>';
 
   FOR r IN
     SELECT page_index, html, bg,

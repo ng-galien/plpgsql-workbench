@@ -339,7 +339,7 @@ BEGIN
   RETURN NEXT ok(v LIKE 'check_crud: docs%', 'header present');
 
   -- Entities with CRUD detected
-  RETURN NEXT ok(v LIKE '%charte — create read list%delete%', 'charte: CRUD detected');
+  RETURN NEXT ok(v LIKE '%charter — create read list%delete%', 'charter: CRUD detected');
   RETURN NEXT ok(v LIKE '%document — create read list%delete%', 'document: CRUD detected');
   RETURN NEXT ok(v LIKE '%library — create read list%delete%', 'library: CRUD detected');
 
@@ -1216,43 +1216,43 @@ DECLARE
   v text;
 BEGIN
   -- Ensure api.expose=mcp flags are set (may be reset by docs agent redeploys)
-  ALTER FUNCTION docs.charte_create(docs.charte) SET api.expose = 'mcp';
-  ALTER FUNCTION docs.charte_read(text) SET api.expose = 'mcp';
-  ALTER FUNCTION docs.charte_list() SET api.expose = 'mcp';
-  ALTER FUNCTION docs.charte_delete(text) SET api.expose = 'mcp';
-  ALTER FUNCTION docs.charte_tokens_to_css(text) SET api.expose = 'mcp';
-  ALTER FUNCTION docs.charte_check(text, text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charter_create(docs.charter) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charter_read(text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charter_list() SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charter_delete(text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charter_tokens_to_css(text) SET api.expose = 'mcp';
+  ALTER FUNCTION docs.charter_check(text, text) SET api.expose = 'mcp';
   ALTER FUNCTION docs.document_duplicate(text, text) SET api.expose = 'mcp';
   ALTER FUNCTION docs.document_print_css(text) SET api.expose = 'mcp';
 
-  -- charte: full inspection
-  v := pgv.schema_inspect('docs', 'charte');
-  RETURN NEXT ok(v LIKE '## charte%', 'charte: header');
-  RETURN NEXT ok(v LIKE '%attributes:%', 'charte: has attributes section');
-  RETURN NEXT ok(v LIKE '%id%text%PK%', 'charte: id is PK');
-  RETURN NEXT ok(v LIKE '%color_extra%jsonb%', 'charte: jsonb column present');
-  RETURN NEXT ok(v LIKE '%voice_personality%text[]%', 'charte: array type formatted as text[]');
+  -- charter: full inspection
+  v := pgv.schema_inspect('docs', 'charter');
+  RETURN NEXT ok(v LIKE '## charter%', 'charter: header');
+  RETURN NEXT ok(v LIKE '%attributes:%', 'charter: has attributes section');
+  RETURN NEXT ok(v LIKE '%id%text%PK%', 'charter: id is PK');
+  RETURN NEXT ok(v LIKE '%color_extra%jsonb%', 'charter: jsonb column present');
+  RETURN NEXT ok(v LIKE '%voice_personality%text[]%', 'charter: array type formatted as text[]');
 
   -- CRUD
-  RETURN NEXT ok(v LIKE '%crud:%', 'charte: has crud section');
-  RETURN NEXT ok(v LIKE '%charte_create%', 'charte: create function listed');
-  RETURN NEXT ok(v LIKE '%charte_read%', 'charte: read function listed');
-  RETURN NEXT ok(v LIKE '%charte_list%', 'charte: list function listed');
-  RETURN NEXT ok(v LIKE '%charte_delete%', 'charte: delete function listed');
+  RETURN NEXT ok(v LIKE '%crud:%', 'charter: has crud section');
+  RETURN NEXT ok(v LIKE '%charter_create%', 'charter: create function listed');
+  RETURN NEXT ok(v LIKE '%charter_read%', 'charter: read function listed');
+  RETURN NEXT ok(v LIKE '%charter_list%', 'charter: list function listed');
+  RETURN NEXT ok(v LIKE '%charter_delete%', 'charter: delete function listed');
 
   -- Methods
-  RETURN NEXT ok(v LIKE '%methods:%', 'charte: has methods section');
-  RETURN NEXT ok(v LIKE '%charte_tokens_to_css%', 'charte: tokens_to_css method');
-  RETURN NEXT ok(v LIKE '%charte_check%', 'charte: check method');
+  RETURN NEXT ok(v LIKE '%methods:%', 'charter: has methods section');
+  RETURN NEXT ok(v LIKE '%charter_tokens_to_css%', 'charter: tokens_to_css method');
+  RETURN NEXT ok(v LIKE '%charter_check%', 'charter: check method');
 
   -- Relations
-  RETURN NEXT ok(v LIKE '%relations:%', 'charte: has relations section');
-  RETURN NEXT ok(v LIKE '%document -> charte_id FK%', 'charte: document FK relation');
-  RETURN NEXT ok(v LIKE '%charte_revision -> charte_id FK%', 'charte: charte_revision FK relation');
+  RETURN NEXT ok(v LIKE '%relations:%', 'charter: has relations section');
+  RETURN NEXT ok(v LIKE '%document -> charter_id FK%', 'charter: document FK relation');
+  RETURN NEXT ok(v LIKE '%charter_revision -> charter_id FK%', 'charter: charter_revision FK relation');
 
   -- document: FK + methods
   v := pgv.schema_inspect('docs', 'document');
-  RETURN NEXT ok(v LIKE '%charte_id%FK%', 'document: charte_id is FK');
+  RETURN NEXT ok(v LIKE '%charter_id%FK%', 'document: charter_id is FK');
   RETURN NEXT ok(v LIKE '%document_duplicate%', 'document: duplicate method');
   RETURN NEXT ok(v LIKE '%document_print_css%', 'document: print_css method');
 
@@ -1664,11 +1664,11 @@ DECLARE
   v jsonb;
   f jsonb;
 BEGIN
-  v := pgv.ui_form_for('docs', 'charte');
+  v := pgv.ui_form_for('docs', 'charter');
 
   -- Structure
   RETURN NEXT is(v->>'type', 'form', 'type is form');
-  RETURN NEXT is(v->>'uri', 'docs://charte', 'uri is docs://charte');
+  RETURN NEXT is(v->>'uri', 'docs://charter', 'uri is docs://charter');
   RETURN NEXT is(v->>'verb', 'set', 'default verb is set');
   RETURN NEXT ok(jsonb_array_length(v->'fields') > 5, 'has multiple fields');
 
@@ -1697,15 +1697,15 @@ BEGIN
 
   -- Document: FK → select, numeric → number
   v := pgv.ui_form_for('docs', 'document');
-  SELECT item INTO f FROM jsonb_array_elements(v->'fields') item WHERE item->>'key' = 'charte_id';
+  SELECT item INTO f FROM jsonb_array_elements(v->'fields') item WHERE item->>'key' = 'charter_id';
   RETURN NEXT is(f->>'fieldType', 'select', 'FK → select');
-  RETURN NEXT ok(f->'options'->>'source' LIKE '%://charte', 'FK select has source');
+  RETURN NEXT ok(f->'options'->>'source' LIKE '%://charter', 'FK select has source');
 
   SELECT item INTO f FROM jsonb_array_elements(v->'fields') item WHERE item->>'key' = 'width';
   RETURN NEXT is(f->>'fieldType', 'number', 'numeric → number');
 
   -- Verb override
-  v := pgv.ui_form_for('docs', 'charte', 'patch');
+  v := pgv.ui_form_for('docs', 'charter', 'patch');
   RETURN NEXT is(v->>'verb', 'patch', 'verb override works');
 END;
 $function$;
@@ -1838,22 +1838,21 @@ BEGIN
   RETURN NEXT ok(jsonb_typeof(v->'data') = 'array', 'discover: returns array');
 
   -- get schema://entity#schema → schema_table
-  v := pgv.route_crud('get', 'docs://charte#schema');
-  RETURN NEXT is(v->'data'->>'table', 'charte', 'schema: returns table detail');
+  v := pgv.route_crud('get', 'docs://charter#schema');
+  RETURN NEXT is(v->'data'->>'table', 'charter', 'schema: returns table detail');
 
   -- get schema://entity → list
-  v := pgv.route_crud('get', 'docs://charte');
+  v := pgv.route_crud('get', 'docs://charter');
   RETURN NEXT ok(v ? 'data', 'list: has data key');
-  RETURN NEXT is(v->>'uri', 'docs://charte', 'list: uri preserved');
+  RETURN NEXT is(v->>'uri', 'docs://charter', 'list: uri preserved');
 
   -- get schema://entity/{id} → read (fallback to _load)
-  v := pgv.route_crud('get', 'docs://charte/nonexistent_id');
+  v := pgv.route_crud('get', 'docs://charter/nonexistent_id');
   RETURN NEXT ok(v ? 'data', 'read: has data key');
 
   -- HATEOAS: actions extracted from _read() response (module is responsible)
-  v := pgv.route_crud('get', 'docs://charte/test');
+  v := pgv.route_crud('get', 'docs://charter/test');
   RETURN NEXT ok(jsonb_typeof(v->'actions') = 'array', 'hateoas: actions is array');
-  -- Actions come from _read() — empty if module doesn't return them yet
   RETURN NEXT ok(v ? 'actions', 'hateoas: actions key always present');
 
   -- Error: nonexistent schema
@@ -1865,17 +1864,17 @@ BEGIN
   RETURN NEXT is(v->>'error', 'not_found', 'error: bad entity');
 
   -- Error: bad verb
-  v := pgv.route_crud('badverb', 'docs://charte');
+  v := pgv.route_crud('badverb', 'docs://charter');
   RETURN NEXT is(v->>'error', 'bad_request', 'error: bad verb');
 
   -- Error: POST without method
-  v := pgv.route_crud('post', 'docs://charte/test');
+  v := pgv.route_crud('post', 'docs://charter/test');
   RETURN NEXT is(v->>'error', 'bad_request', 'error: post without method');
 
   -- Slug-based read
-  v := pgv.route_crud('get', 'docs://charte/my-slug-name');
+  v := pgv.route_crud('get', 'docs://charter/my-slug-name');
   RETURN NEXT ok(v ? 'data', 'slug: read passes segment to _read');
-  RETURN NEXT is(v->>'uri', 'docs://charte/my-slug-name', 'slug: uri preserved with slug');
+  RETURN NEXT is(v->>'uri', 'docs://charter/my-slug-name', 'slug: uri preserved with slug');
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_route_crud() IS 'Tests pgv.route_crud() — CRUD router dispatch, HATEOAS with api.expose=mcp, errors';

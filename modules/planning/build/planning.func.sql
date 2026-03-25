@@ -3,51 +3,34 @@
 
 CREATE SCHEMA IF NOT EXISTS planning;
 
-CREATE OR REPLACE FUNCTION planning._evenement_form_inputs(p_id integer DEFAULT NULL::integer, p_titre text DEFAULT NULL::text, p_type text DEFAULT NULL::text, p_date_debut date DEFAULT NULL::date, p_date_fin date DEFAULT NULL::date, p_heure_debut time without time zone DEFAULT NULL::time without time zone, p_heure_fin time without time zone DEFAULT NULL::time without time zone, p_lieu text DEFAULT NULL::text, p_chantier_id integer DEFAULT NULL::integer, p_notes text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION planning._event_form_inputs(p_id integer DEFAULT NULL::integer, p_title text DEFAULT NULL::text, p_type text DEFAULT NULL::text, p_start_date date DEFAULT NULL::date, p_end_date date DEFAULT NULL::date, p_start_time time without time zone DEFAULT NULL::time without time zone, p_end_time time without time zone DEFAULT NULL::time without time zone, p_location text DEFAULT NULL::text, p_project_id integer DEFAULT NULL::integer, p_notes text DEFAULT NULL::text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
 AS $function$
 BEGIN
   RETURN format('<input type="hidden" name="id" value="%s">', COALESCE(p_id::text, ''))
-    || pgv.input('titre', 'text', pgv.t('planning.field_titre') || ' *', p_titre, true)
+    || pgv.input('title', 'text', pgv.t('planning.field_title') || ' *', p_title, true)
     || pgv.sel('type', pgv.t('planning.field_type'), jsonb_build_array(
-         jsonb_build_object('label', pgv.t('planning.type_chantier'), 'value', 'chantier'),
-         jsonb_build_object('label', pgv.t('planning.type_livraison'), 'value', 'livraison'),
-         jsonb_build_object('label', pgv.t('planning.type_reunion'), 'value', 'reunion'),
-         jsonb_build_object('label', pgv.t('planning.type_conge'), 'value', 'conge'),
-         jsonb_build_object('label', pgv.t('planning.type_autre'), 'value', 'autre')
-       ), COALESCE(p_type, 'chantier'))
+         jsonb_build_object('label', pgv.t('planning.type_job_site'), 'value', 'job_site'),
+         jsonb_build_object('label', pgv.t('planning.type_delivery'), 'value', 'delivery'),
+         jsonb_build_object('label', pgv.t('planning.type_meeting'), 'value', 'meeting'),
+         jsonb_build_object('label', pgv.t('planning.type_leave'), 'value', 'leave'),
+         jsonb_build_object('label', pgv.t('planning.type_other'), 'value', 'other')
+       ), COALESCE(p_type, 'job_site'))
     || '<div class="grid">'
-    || pgv.input('date_debut', 'date', pgv.t('planning.field_date_debut') || ' *', COALESCE(p_date_debut::text, current_date::text), true)
-    || pgv.input('date_fin', 'date', pgv.t('planning.field_date_fin') || ' *', COALESCE(p_date_fin::text, current_date::text), true)
+    || pgv.input('start_date', 'date', pgv.t('planning.field_start_date') || ' *', COALESCE(p_start_date::text, current_date::text), true)
+    || pgv.input('end_date', 'date', pgv.t('planning.field_end_date') || ' *', COALESCE(p_end_date::text, current_date::text), true)
+    || '</div><div class="grid">'
+    || pgv.input('start_time', 'time', pgv.t('planning.field_start_time'), COALESCE(p_start_time::text, '08:00'))
+    || pgv.input('end_time', 'time', pgv.t('planning.field_end_time'), COALESCE(p_end_time::text, '17:00'))
     || '</div>'
-    || '<div class="grid">'
-    || pgv.input('heure_debut', 'time', pgv.t('planning.field_heure_debut'), COALESCE(p_heure_debut::text, '08:00'))
-    || pgv.input('heure_fin', 'time', pgv.t('planning.field_heure_fin'), COALESCE(p_heure_fin::text, '17:00'))
-    || '</div>'
-    || pgv.input('lieu', 'text', pgv.t('planning.field_lieu'), p_lieu)
-    || pgv.select_search('chantier_id', pgv.t('planning.field_chantier'), 'chantier_options', 'Rechercher un chantier...', p_chantier_id::text)
+    || pgv.input('location', 'text', pgv.t('planning.field_location'), p_location)
+    || pgv.select_search('project_id', pgv.t('planning.field_project'), 'project_options', 'Search project...', p_project_id::text)
     || pgv.textarea('notes', pgv.t('planning.field_notes'), p_notes);
 END;
 $function$;
-COMMENT ON FUNCTION planning._evenement_form_inputs(integer,text,text,date,date,time without time zone,time without time zone,text,integer,text) IS 'Form inputs for evenement create/edit';
-
-CREATE OR REPLACE FUNCTION planning._intervenant_form_inputs(p_id integer DEFAULT NULL::integer, p_nom text DEFAULT NULL::text, p_role text DEFAULT NULL::text, p_telephone text DEFAULT NULL::text, p_couleur text DEFAULT NULL::text, p_actif boolean DEFAULT true)
- RETURNS text
- LANGUAGE plpgsql
- STABLE
-AS $function$
-BEGIN
-  RETURN format('<input type="hidden" name="id" value="%s">', COALESCE(p_id::text, ''))
-    || pgv.input('nom', 'text', pgv.t('planning.field_nom') || ' *', p_nom, true)
-    || pgv.input('role', 'text', pgv.t('planning.field_role') || ' (' || pgv.t('planning.field_role_hint') || ')', p_role)
-    || pgv.input('telephone', 'tel', pgv.t('planning.field_telephone'), p_telephone)
-    || pgv.input('couleur', 'color', pgv.t('planning.field_couleur'), COALESCE(p_couleur, '#3b82f6'))
-    || pgv.toggle('actif', pgv.t('planning.field_actif'), COALESCE(p_actif, true));
-END;
-$function$;
-COMMENT ON FUNCTION planning._intervenant_form_inputs(integer,text,text,text,text,boolean) IS 'Form inputs for intervenant create/edit';
+COMMENT ON FUNCTION planning._event_form_inputs(integer,text,text,date,date,time without time zone,time without time zone,text,integer,text) IS 'Form inputs for event create/edit';
 
 CREATE OR REPLACE FUNCTION planning._type_badge(p_type text)
  RETURNS text
@@ -56,22 +39,38 @@ CREATE OR REPLACE FUNCTION planning._type_badge(p_type text)
 AS $function$
   SELECT pgv.badge(
     CASE p_type
-      WHEN 'chantier'  THEN pgv.t('planning.type_chantier')
-      WHEN 'livraison' THEN pgv.t('planning.type_livraison')
-      WHEN 'reunion'   THEN pgv.t('planning.type_reunion')
-      WHEN 'conge'     THEN pgv.t('planning.type_conge')
-      ELSE pgv.t('planning.type_autre')
+      WHEN 'job_site' THEN pgv.t('planning.type_job_site')
+      WHEN 'delivery' THEN pgv.t('planning.type_delivery')
+      WHEN 'meeting'  THEN pgv.t('planning.type_meeting')
+      WHEN 'leave'    THEN pgv.t('planning.type_leave')
+      ELSE pgv.t('planning.type_other')
     END,
     CASE p_type
-      WHEN 'chantier'  THEN 'info'
-      WHEN 'livraison' THEN 'warning'
-      WHEN 'reunion'   THEN 'default'
-      WHEN 'conge'     THEN 'error'
+      WHEN 'job_site' THEN 'info'
+      WHEN 'delivery' THEN 'warning'
+      WHEN 'meeting'  THEN 'default'
+      WHEN 'leave'    THEN 'error'
       ELSE 'default'
     END
   );
 $function$;
 COMMENT ON FUNCTION planning._type_badge(text) IS 'Type badge via i18n';
+
+CREATE OR REPLACE FUNCTION planning._worker_form_inputs(p_id integer DEFAULT NULL::integer, p_name text DEFAULT NULL::text, p_role text DEFAULT NULL::text, p_phone text DEFAULT NULL::text, p_color text DEFAULT NULL::text, p_active boolean DEFAULT true)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN format('<input type="hidden" name="id" value="%s">', COALESCE(p_id::text, ''))
+    || pgv.input('name', 'text', pgv.t('planning.field_name') || ' *', p_name, true)
+    || pgv.input('role', 'text', pgv.t('planning.field_role') || ' (' || pgv.t('planning.field_role_hint') || ')', p_role)
+    || pgv.input('phone', 'tel', pgv.t('planning.field_phone'), p_phone)
+    || pgv.input('color', 'color', pgv.t('planning.field_color'), COALESCE(p_color, '#3b82f6'))
+    || pgv.toggle('active', pgv.t('planning.field_active'), COALESCE(p_active, true));
+END;
+$function$;
+COMMENT ON FUNCTION planning._worker_form_inputs(integer,text,text,text,text,boolean) IS 'Form inputs for worker create/edit';
 
 CREATE OR REPLACE FUNCTION planning.brand()
  RETURNS text
@@ -82,696 +81,338 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION planning.brand() IS 'Brand name via i18n';
 
-CREATE OR REPLACE FUNCTION planning.evenement_create(p_row planning.evenement)
+CREATE OR REPLACE FUNCTION planning.event_create(p_row planning.event)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);
-  p_row.type := COALESCE(p_row.type, 'chantier');
-  p_row.heure_debut := COALESCE(p_row.heure_debut, '08:00');
-  p_row.heure_fin := COALESCE(p_row.heure_fin, '17:00');
-  p_row.lieu := COALESCE(p_row.lieu, '');
+  p_row.type := COALESCE(p_row.type, 'job_site');
+  p_row.start_time := COALESCE(p_row.start_time, '08:00');
+  p_row.end_time := COALESCE(p_row.end_time, '17:00');
+  p_row.location := COALESCE(p_row.location, '');
   p_row.notes := COALESCE(p_row.notes, '');
   p_row.created_at := now();
-
-  INSERT INTO planning.evenement (tenant_id, titre, type, chantier_id, date_debut, date_fin, heure_debut, heure_fin, lieu, notes, created_at)
-  VALUES (p_row.tenant_id, p_row.titre, p_row.type, p_row.chantier_id, p_row.date_debut, p_row.date_fin, p_row.heure_debut, p_row.heure_fin, p_row.lieu, p_row.notes, p_row.created_at)
-  RETURNING * INTO p_row;
-
+  INSERT INTO planning.event (tenant_id, title, type, project_id, start_date, end_date, start_time, end_time, location, notes, created_at) VALUES (p_row.tenant_id, p_row.title, p_row.type, p_row.project_id, p_row.start_date, p_row.end_date, p_row.start_time, p_row.end_time, p_row.location, p_row.notes, p_row.created_at) RETURNING * INTO p_row;
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION planning.evenement_create(planning.evenement) IS 'Create evenement — returns jsonb';
+COMMENT ON FUNCTION planning.event_create(planning.event) IS 'Create event — returns jsonb';
 
-CREATE OR REPLACE FUNCTION planning.evenement_delete(p_id text)
+CREATE OR REPLACE FUNCTION planning.event_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
-DECLARE
-  v_row planning.evenement;
+DECLARE v_row planning.event;
 BEGIN
-  DELETE FROM planning.evenement
-  WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true)
-  RETURNING * INTO v_row;
+  DELETE FROM planning.event WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true) RETURNING * INTO v_row;
   IF NOT FOUND THEN RETURN NULL; END IF;
   RETURN to_jsonb(v_row);
 END;
 $function$;
-COMMENT ON FUNCTION planning.evenement_delete(text) IS 'Delete evenement by id — returns deleted row as jsonb';
+COMMENT ON FUNCTION planning.event_delete(text) IS 'Delete event by id — returns deleted row as jsonb';
 
-CREATE OR REPLACE FUNCTION planning.evenement_list(p_filter text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION planning.event_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF jsonb
  LANGUAGE plpgsql
- STABLE
+ STABLE SECURITY DEFINER
 AS $function$
 BEGIN
   IF p_filter IS NULL THEN
     RETURN QUERY
-      SELECT to_jsonb(e) || jsonb_build_object(
-        'chantier_numero', ch.numero,
-        'intervenants', COALESCE((
-          SELECT jsonb_agg(jsonb_build_object('id', i.id, 'nom', i.nom, 'couleur', i.couleur) ORDER BY i.nom)
-          FROM planning.affectation a JOIN planning.intervenant i ON i.id = a.intervenant_id
-          WHERE a.evenement_id = e.id
-        ), '[]'::jsonb)
-      )
-      FROM planning.evenement e
-      LEFT JOIN project.chantier ch ON ch.id = e.chantier_id
-      WHERE e.tenant_id = current_setting('app.tenant_id', true)
-      ORDER BY e.date_debut DESC;
+      SELECT to_jsonb(e) || jsonb_build_object('project_code', p.code, 'workers', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', w.id, 'name', w.name, 'color', w.color) ORDER BY w.name) FROM planning.assignment a JOIN planning.worker w ON w.id = a.worker_id WHERE a.event_id = e.id), '[]'::jsonb))
+      FROM planning.event e LEFT JOIN project.project p ON p.id = e.project_id
+      WHERE e.tenant_id = current_setting('app.tenant_id', true) ORDER BY e.start_date DESC;
   ELSE
     RETURN QUERY EXECUTE
-      'SELECT to_jsonb(e) || jsonb_build_object(
-        ''chantier_numero'', ch.numero,
-        ''intervenants'', COALESCE((
-          SELECT jsonb_agg(jsonb_build_object(''id'', i.id, ''nom'', i.nom, ''couleur'', i.couleur) ORDER BY i.nom)
-          FROM planning.affectation a JOIN planning.intervenant i ON i.id = a.intervenant_id
-          WHERE a.evenement_id = e.id
-        ), ''[]''::jsonb)
-      )
-      FROM planning.evenement e
-      LEFT JOIN project.chantier ch ON ch.id = e.chantier_id
-      WHERE e.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
-      || ' AND ' || pgv.rsql_to_where(p_filter, 'planning', 'evenement')
-      || ' ORDER BY e.date_debut DESC';
+      'SELECT to_jsonb(e) || jsonb_build_object(''project_code'', p.code, ''workers'', COALESCE((SELECT jsonb_agg(jsonb_build_object(''id'', w.id, ''name'', w.name, ''color'', w.color) ORDER BY w.name) FROM planning.assignment a JOIN planning.worker w ON w.id = a.worker_id WHERE a.event_id = e.id), ''[]''::jsonb)) FROM planning.event e LEFT JOIN project.project p ON p.id = e.project_id WHERE e.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true)) || ' AND ' || pgv.rsql_to_where(p_filter, 'planning', 'event') || ' ORDER BY e.start_date DESC';
   END IF;
 END;
 $function$;
-COMMENT ON FUNCTION planning.evenement_list(text) IS 'List evenements with chantier name and intervenants — optional RSQL filter';
+COMMENT ON FUNCTION planning.event_list(text) IS 'List events with project code and workers — optional RSQL filter';
 
-CREATE OR REPLACE FUNCTION planning.evenement_read(p_id text)
+CREATE OR REPLACE FUNCTION planning.event_read(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
- STABLE
+ STABLE SECURITY DEFINER
 AS $function$
-DECLARE
-  v_row planning.evenement;
-  v_result jsonb;
+DECLARE v_row planning.event; v_result jsonb;
 BEGIN
-  SELECT * INTO v_row FROM planning.evenement
-  WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
+  SELECT * INTO v_row FROM planning.event WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
   IF NOT FOUND THEN RETURN NULL; END IF;
-
   v_result := to_jsonb(v_row) || jsonb_build_object(
-    'chantier_numero', (SELECT ch.numero FROM project.chantier ch WHERE ch.id = v_row.chantier_id),
-    'intervenants', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object(
-        'id', i.id, 'nom', i.nom, 'role', i.role, 'couleur', i.couleur
-      ) ORDER BY i.nom)
-      FROM planning.affectation a JOIN planning.intervenant i ON i.id = a.intervenant_id
-      WHERE a.evenement_id = v_row.id
-    ), '[]'::jsonb)
+    'project_code', (SELECT p.code FROM project.project p WHERE p.id = v_row.project_id),
+    'workers', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', w.id, 'name', w.name, 'role', w.role, 'color', w.color) ORDER BY w.name) FROM planning.assignment a JOIN planning.worker w ON w.id = a.worker_id WHERE a.event_id = v_row.id), '[]'::jsonb)
   );
-
-  -- HATEOAS actions
-  v_result := v_result || jsonb_build_object('actions', jsonb_build_array(
-    jsonb_build_object('method', 'delete', 'uri', 'planning://evenement/' || p_id)
-  ));
-
+  v_result := v_result || jsonb_build_object('actions', jsonb_build_array(jsonb_build_object('method', 'delete', 'uri', 'planning://event/' || p_id)));
   RETURN v_result;
 END;
 $function$;
-COMMENT ON FUNCTION planning.evenement_read(text) IS 'Read evenement by id with chantier and intervenants';
+COMMENT ON FUNCTION planning.event_read(text) IS 'Read event by id with project and workers and HATEOAS actions';
 
-CREATE OR REPLACE FUNCTION planning.evenement_ui(p_slug text DEFAULT NULL::text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v record;
-  v_intervenants jsonb;
-BEGIN
-  -- List mode
-  IF p_slug IS NULL THEN
-    RETURN jsonb_build_object(
-      'ui', pgv.ui_column(
-        pgv.ui_heading(pgv.t('planning.nav_evenements')),
-        pgv.ui_table('evenements', jsonb_build_array(
-          pgv.ui_col('titre', pgv.t('planning.col_evenement'), pgv.ui_link('{titre}', '/planning/evenements/{id}')),
-          pgv.ui_col('type', pgv.t('planning.col_type'), pgv.ui_badge('{type}')),
-          pgv.ui_col('date_debut', pgv.t('planning.field_date_debut')),
-          pgv.ui_col('date_fin', pgv.t('planning.field_date_fin')),
-          pgv.ui_col('lieu', pgv.t('planning.col_lieu')),
-          pgv.ui_col('chantier_numero', pgv.t('planning.col_chantier'))
-        ))
-      ),
-      'datasources', jsonb_build_object(
-        'evenements', pgv.ui_datasource('planning://evenement', 20, true, '-date_debut')
-      )
-    );
-  END IF;
-
-  -- Detail mode
-  SELECT e.*, ch.numero AS chantier_numero INTO v
-  FROM planning.evenement e
-  LEFT JOIN project.chantier ch ON ch.id = e.chantier_id
-  WHERE e.id = p_slug::int AND e.tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
-
-  SELECT COALESCE(jsonb_agg(jsonb_build_object('nom', i.nom, 'role', i.role, 'couleur', i.couleur) ORDER BY i.nom), '[]'::jsonb)
-  INTO v_intervenants
-  FROM planning.affectation a JOIN planning.intervenant i ON i.id = a.intervenant_id
-  WHERE a.evenement_id = v.id;
-
-  RETURN jsonb_build_object(
-    'ui', pgv.ui_column(
-      pgv.ui_row(
-        pgv.ui_link(E'\u2190 ' || pgv.t('planning.nav_evenements'), '/planning/evenements'),
-        pgv.ui_heading(v.titre)
-      ),
-      pgv.ui_row(
-        pgv.ui_badge(v.type),
-        pgv.ui_text(to_char(v.date_debut, 'DD/MM/YYYY') || ' -> ' || to_char(v.date_fin, 'DD/MM/YYYY')),
-        pgv.ui_text(to_char(v.heure_debut, 'HH24:MI') || ' – ' || to_char(v.heure_fin, 'HH24:MI'))
-      ),
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('planning.field_lieu') || ': ' || COALESCE(NULLIF(v.lieu, ''), '—')),
-        pgv.ui_text(pgv.t('planning.col_chantier') || ': ' || COALESCE(v.chantier_numero, '—'))
-      ),
-      pgv.ui_text(pgv.t('planning.field_notes') || ': ' || COALESCE(NULLIF(v.notes, ''), '—')),
-
-      pgv.ui_heading(pgv.t('planning.title_equipe_affectee'), 3),
-      pgv.ui_text(COALESCE(NULLIF((SELECT string_agg(i->>'nom', ', ' ORDER BY i->>'nom') FROM jsonb_array_elements(v_intervenants) i), ''), '—'))
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION planning.evenement_ui(text) IS 'SDUI view: evenement list + detail';
-
-CREATE OR REPLACE FUNCTION planning.evenement_update(p_row planning.evenement)
+CREATE OR REPLACE FUNCTION planning.event_update(p_row planning.event)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 BEGIN
-  UPDATE planning.evenement SET
-    titre = COALESCE(NULLIF(p_row.titre, ''), titre),
-    type = COALESCE(NULLIF(p_row.type, ''), type),
-    chantier_id = COALESCE(p_row.chantier_id, chantier_id),
-    date_debut = COALESCE(p_row.date_debut, date_debut),
-    date_fin = COALESCE(p_row.date_fin, date_fin),
-    heure_debut = COALESCE(p_row.heure_debut, heure_debut),
-    heure_fin = COALESCE(p_row.heure_fin, heure_fin),
-    lieu = COALESCE(p_row.lieu, lieu),
-    notes = COALESCE(p_row.notes, notes)
-  WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
-  RETURNING * INTO p_row;
+  UPDATE planning.event SET title = COALESCE(NULLIF(p_row.title, ''), title), type = COALESCE(NULLIF(p_row.type, ''), type), project_id = COALESCE(p_row.project_id, project_id), start_date = COALESCE(p_row.start_date, start_date), end_date = COALESCE(p_row.end_date, end_date), start_time = COALESCE(p_row.start_time, start_time), end_time = COALESCE(p_row.end_time, end_time), location = COALESCE(p_row.location, location), notes = COALESCE(p_row.notes, notes)
+  WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true) RETURNING * INTO p_row;
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION planning.evenement_update(planning.evenement) IS 'Update evenement by id — returns jsonb';
+COMMENT ON FUNCTION planning.event_update(planning.event) IS 'Update event by id — returns jsonb';
 
-CREATE OR REPLACE FUNCTION planning.evenement_view()
+CREATE OR REPLACE FUNCTION planning.event_view()
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
 AS $function$
 BEGIN
   RETURN jsonb_build_object(
-    'uri', 'planning://evenement',
-    'label', 'planning.entity_evenement',
-
+    'uri', 'planning://event', 'label', 'planning.entity_event',
     'template', jsonb_build_object(
-      'compact', jsonb_build_object(
-        'fields', jsonb_build_array('titre', 'type', 'date_debut', 'date_fin')
-      ),
-
-      'standard', jsonb_build_object(
-        'fields', jsonb_build_array('titre', 'type', 'date_debut', 'date_fin', 'heure_debut', 'heure_fin', 'lieu'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'nb_intervenants', 'label', 'planning.stat_intervenants')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'project://chantier', 'filter', 'id={chantier_id}', 'label', 'planning.rel_chantier')
-        )
-      ),
-
-      'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('titre', 'type', 'date_debut', 'date_fin', 'heure_debut', 'heure_fin', 'lieu', 'notes', 'created_at'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'nb_intervenants', 'label', 'planning.stat_intervenants')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'project://chantier', 'filter', 'id={chantier_id}', 'label', 'planning.rel_chantier'),
-          jsonb_build_object('entity', 'planning://intervenant', 'filter', 'evenement_id={id}', 'label', 'planning.title_equipe_affectee')
-        )
-      ),
-
-      'form', jsonb_build_object(
-        'sections', jsonb_build_array(
-          jsonb_build_object('label', 'planning.section_general', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'titre', 'label', 'planning.field_titre', 'type', 'text', 'required', true),
-            jsonb_build_object('key', 'type', 'label', 'planning.field_type', 'type', 'select',
-              'options', jsonb_build_array(
-                jsonb_build_object('label', 'planning.type_chantier', 'value', 'chantier'),
-                jsonb_build_object('label', 'planning.type_livraison', 'value', 'livraison'),
-                jsonb_build_object('label', 'planning.type_reunion', 'value', 'reunion'),
-                jsonb_build_object('label', 'planning.type_conge', 'value', 'conge'),
-                jsonb_build_object('label', 'planning.type_autre', 'value', 'autre')
-              ))
-          )),
-          jsonb_build_object('label', 'planning.section_schedule', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'date_debut', 'label', 'planning.field_date_debut', 'type', 'date', 'required', true),
-            jsonb_build_object('key', 'date_fin', 'label', 'planning.field_date_fin', 'type', 'date', 'required', true),
-            jsonb_build_object('key', 'heure_debut', 'label', 'planning.field_heure_debut', 'type', 'text'),
-            jsonb_build_object('key', 'heure_fin', 'label', 'planning.field_heure_fin', 'type', 'text')
-          )),
-          jsonb_build_object('label', 'planning.section_location', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'lieu', 'label', 'planning.field_lieu', 'type', 'text'),
-            jsonb_build_object('key', 'chantier_id', 'label', 'planning.field_chantier', 'type', 'combobox',
-              'source', 'project://chantier', 'display', 'numero'),
-            jsonb_build_object('key', 'notes', 'label', 'planning.field_notes', 'type', 'textarea')
-          ))
-        )
-      )
+      'compact', jsonb_build_object('fields', jsonb_build_array('title', 'type', 'start_date', 'end_date')),
+      'standard', jsonb_build_object('fields', jsonb_build_array('title', 'type', 'start_date', 'end_date', 'start_time', 'end_time', 'location'), 'stats', jsonb_build_array(jsonb_build_object('key', 'worker_count', 'label', 'planning.stat_workers')), 'related', jsonb_build_array(jsonb_build_object('entity', 'project://project', 'filter', 'id={project_id}', 'label', 'planning.rel_project'))),
+      'expanded', jsonb_build_object('fields', jsonb_build_array('title', 'type', 'start_date', 'end_date', 'start_time', 'end_time', 'location', 'notes', 'created_at'), 'stats', jsonb_build_array(jsonb_build_object('key', 'worker_count', 'label', 'planning.stat_workers')), 'related', jsonb_build_array(jsonb_build_object('entity', 'project://project', 'filter', 'id={project_id}', 'label', 'planning.rel_project'), jsonb_build_object('entity', 'planning://worker', 'filter', 'event_id={id}', 'label', 'planning.title_assigned_team'))),
+      'form', jsonb_build_object('sections', jsonb_build_array(
+        jsonb_build_object('label', 'planning.section_general', 'fields', jsonb_build_array(jsonb_build_object('key', 'title', 'label', 'planning.field_title', 'type', 'text', 'required', true), jsonb_build_object('key', 'type', 'label', 'planning.field_type', 'type', 'select', 'options', jsonb_build_array(jsonb_build_object('label', 'planning.type_job_site', 'value', 'job_site'), jsonb_build_object('label', 'planning.type_delivery', 'value', 'delivery'), jsonb_build_object('label', 'planning.type_meeting', 'value', 'meeting'), jsonb_build_object('label', 'planning.type_leave', 'value', 'leave'), jsonb_build_object('label', 'planning.type_other', 'value', 'other'))))),
+        jsonb_build_object('label', 'planning.section_schedule', 'fields', jsonb_build_array(jsonb_build_object('key', 'start_date', 'label', 'planning.field_start_date', 'type', 'date', 'required', true), jsonb_build_object('key', 'end_date', 'label', 'planning.field_end_date', 'type', 'date', 'required', true), jsonb_build_object('key', 'start_time', 'label', 'planning.field_start_time', 'type', 'text'), jsonb_build_object('key', 'end_time', 'label', 'planning.field_end_time', 'type', 'text'))),
+        jsonb_build_object('label', 'planning.section_location', 'fields', jsonb_build_array(jsonb_build_object('key', 'location', 'label', 'planning.field_location', 'type', 'text'), jsonb_build_object('key', 'project_id', 'label', 'planning.field_project', 'type', 'combobox', 'source', 'project://project', 'display', 'code'), jsonb_build_object('key', 'notes', 'label', 'planning.field_notes', 'type', 'textarea')))))
     ),
-
-    'actions', jsonb_build_object(
-      'delete', jsonb_build_object('label', 'planning.action_delete', 'variant', 'danger', 'confirm', 'planning.confirm_delete_evenement')
-    )
+    'actions', jsonb_build_object('delete', jsonb_build_object('label', 'planning.action_delete', 'variant', 'danger', 'confirm', 'planning.confirm_delete_event'))
   );
 END;
 $function$;
-COMMENT ON FUNCTION planning.evenement_view() IS 'View template for evenement entity: compact, standard, expanded, form, actions';
+COMMENT ON FUNCTION planning.event_view() IS 'View template for event entity';
 
-CREATE OR REPLACE FUNCTION planning.get_evenement(p_id integer)
+CREATE OR REPLACE FUNCTION planning.get_event(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v record;
-  v_body text;
-  v_rows text[];
-  r record;
-  v_chantier_label text;
-  v_intervenants_options text;
+DECLARE v record; v_body text; v_rows text[]; r record; v_project_label text; v_worker_options text;
 BEGIN
-  SELECT e.*, ch.numero AS chantier_numero
-    INTO v
-    FROM planning.evenement e
-    LEFT JOIN project.chantier ch ON ch.id = e.chantier_id
-   WHERE e.id = p_id;
-  IF NOT FOUND THEN
-    RETURN pgv.error('404', pgv.t('planning.err_evenement_not_found'));
-  END IF;
-
-  v_chantier_label := COALESCE(v.chantier_numero, '—');
-
+  SELECT e.*, p.code AS project_code INTO v FROM planning.event e LEFT JOIN project.project p ON p.id = e.project_id WHERE e.id = p_id;
+  IF NOT FOUND THEN RETURN pgv.error('404', pgv.t('planning.err_event_not_found')); END IF;
+  v_project_label := COALESCE(v.project_code, '—');
   v_body := pgv.dl(
-    pgv.t('planning.field_titre'), pgv.esc(v.titre),
+    pgv.t('planning.field_title'), pgv.esc(v.title),
     pgv.t('planning.field_type'), planning._type_badge(v.type),
-    pgv.t('planning.col_dates'), to_char(v.date_debut, 'DD/MM/YYYY') || ' -> ' || to_char(v.date_fin, 'DD/MM/YYYY'),
-    pgv.t('planning.field_heure_debut') || ' – ' || pgv.t('planning.field_heure_fin'), to_char(v.heure_debut, 'HH24:MI') || ' – ' || to_char(v.heure_fin, 'HH24:MI'),
-    pgv.t('planning.field_lieu'), COALESCE(NULLIF(v.lieu, ''), '—'),
-    pgv.t('planning.col_chantier'), v_chantier_label,
+    pgv.t('planning.col_dates'), to_char(v.start_date, 'DD/MM/YYYY') || ' -> ' || to_char(v.end_date, 'DD/MM/YYYY'),
+    pgv.t('planning.field_start_time') || ' – ' || pgv.t('planning.field_end_time'), to_char(v.start_time, 'HH24:MI') || ' – ' || to_char(v.end_time, 'HH24:MI'),
+    pgv.t('planning.field_location'), COALESCE(NULLIF(v.location, ''), '—'),
+    pgv.t('planning.col_project'), v_project_label,
     pgv.t('planning.field_notes'), COALESCE(NULLIF(v.notes, ''), '—')
   );
-
   v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT i.id, i.nom, i.role, a.id AS affectation_id
-      FROM planning.affectation a
-      JOIN planning.intervenant i ON i.id = a.intervenant_id
-     WHERE a.evenement_id = p_id
-     ORDER BY i.nom
+  FOR r IN SELECT w.id, w.name, w.role, a.id AS assignment_id FROM planning.assignment a JOIN planning.worker w ON w.id = a.worker_id WHERE a.event_id = p_id ORDER BY w.name
   LOOP
-    v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_intervenant', jsonb_build_object('p_id', r.id)), pgv.esc(r.nom)),
-      COALESCE(NULLIF(r.role, ''), '—'),
-      pgv.action('post_desaffecter', pgv.t('planning.btn_retirer'), jsonb_build_object('p_id', r.affectation_id, 'p_evenement_id', p_id), NULL, 'secondary')
-    ];
+    v_rows := v_rows || ARRAY[format('<a href="%s">%s</a>', pgv.call_ref('get_worker', jsonb_build_object('p_id', r.id)), pgv.esc(r.name)), COALESCE(NULLIF(r.role, ''), '—'), pgv.action('post_unassign', pgv.t('planning.btn_remove'), jsonb_build_object('p_id', r.assignment_id, 'p_event_id', p_id), NULL, 'secondary')];
   END LOOP;
-
-  v_body := v_body || '<h4>' || pgv.t('planning.title_equipe_affectee') || '</h4>';
+  v_body := v_body || '<h4>' || pgv.t('planning.title_assigned_team') || '</h4>';
   IF cardinality(v_rows) > 0 THEN
-    v_body := v_body || pgv.md_table(ARRAY[pgv.t('planning.col_intervenant'), pgv.t('planning.col_role'), ''], v_rows);
+    v_body := v_body || pgv.md_table(ARRAY[pgv.t('planning.col_worker'), pgv.t('planning.col_role'), ''], v_rows);
   ELSE
-    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_affectation'));
+    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_assignment'));
   END IF;
-
-  SELECT string_agg(
-    format('<option value="%s">%s (%s)</option>', i.id, pgv.esc(i.nom), pgv.esc(i.role)),
-    '' ORDER BY i.nom
-  ) INTO v_intervenants_options
-    FROM planning.intervenant i
-   WHERE i.actif
-     AND i.id NOT IN (SELECT a.intervenant_id FROM planning.affectation a WHERE a.evenement_id = p_id);
-
-  IF v_intervenants_options IS NOT NULL THEN
-    v_body := v_body || pgv.form('post_affecter',
-      format('<input type="hidden" name="p_evenement_id" value="%s">', p_id)
-      || '<div class="grid"><label>' || pgv.t('planning.btn_ajouter_intervenant')
-      || '<select name="p_intervenant_id">' || v_intervenants_options || '</select></label></div>'
-    , pgv.t('planning.btn_affecter'));
+  SELECT string_agg(format('<option value="%s">%s (%s)</option>', w.id, pgv.esc(w.name), pgv.esc(w.role)), '' ORDER BY w.name) INTO v_worker_options
+  FROM planning.worker w WHERE w.active AND w.id NOT IN (SELECT a.worker_id FROM planning.assignment a WHERE a.event_id = p_id);
+  IF v_worker_options IS NOT NULL THEN
+    v_body := v_body || pgv.form('post_assign', format('<input type="hidden" name="p_event_id" value="%s">', p_id) || '<div class="grid"><label>' || pgv.t('planning.btn_add_worker') || '<select name="p_worker_id">' || v_worker_options || '</select></label></div>', pgv.t('planning.btn_assign'));
   END IF;
-
-  v_body := v_body || '<p>'
-    || pgv.form_dialog('dlg-edit-evenement', pgv.t('planning.btn_modifier'), planning._evenement_form_inputs(v.id, v.titre, v.type, v.date_debut, v.date_fin, v.heure_debut, v.heure_fin, v.lieu, v.chantier_id, v.notes), 'post_evenement_save')
-    || ' '
-    || pgv.action('post_evenement_supprimer', pgv.t('planning.btn_supprimer'), jsonb_build_object('p_id', p_id), pgv.t('planning.confirm_delete_evenement'), 'error')
-    || '</p>';
-
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-edit-event', pgv.t('planning.btn_edit'), planning._event_form_inputs(v.id, v.title, v.type, v.start_date, v.end_date, v.start_time, v.end_time, v.location, v.project_id, v.notes), 'post_event_save') || ' ' || pgv.action('post_event_delete', pgv.t('planning.btn_delete'), jsonb_build_object('p_id', p_id), pgv.t('planning.confirm_delete_event'), 'error') || '</p>';
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION planning.get_evenement(integer) IS 'Fiche événement avec i18n';
+COMMENT ON FUNCTION planning.get_event(integer) IS 'Event detail page';
 
-CREATE OR REPLACE FUNCTION planning.get_evenement_form(p_id integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION planning.get_event_form(p_id integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v planning.evenement;
-  v_body text;
+DECLARE v planning.event; v_body text;
 BEGIN
   IF p_id IS NOT NULL THEN
-    SELECT * INTO v FROM planning.evenement WHERE id = p_id;
-    IF NOT FOUND THEN
-      RETURN pgv.error('404', pgv.t('planning.err_evenement_not_found'));
-    END IF;
+    SELECT * INTO v FROM planning.event WHERE id = p_id;
+    IF NOT FOUND THEN RETURN pgv.error('404', pgv.t('planning.err_event_not_found')); END IF;
   END IF;
-
-  v_body := pgv.form('post_evenement_save',
-    planning._evenement_form_inputs(p_id, v.titre, v.type, v.date_debut, v.date_fin, v.heure_debut, v.heure_fin, v.lieu, v.chantier_id, v.notes)
-  , pgv.t('planning.btn_enregistrer'));
-
+  v_body := pgv.form('post_event_save', planning._event_form_inputs(p_id, v.title, v.type, v.start_date, v.end_date, v.start_time, v.end_time, v.location, v.project_id, v.notes), pgv.t('planning.btn_save'));
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION planning.get_evenement_form(integer) IS 'Formulaire événement avec i18n';
+COMMENT ON FUNCTION planning.get_event_form(integer) IS 'Event form page';
 
-CREATE OR REPLACE FUNCTION planning.get_evenements(p_params jsonb DEFAULT '{}'::jsonb)
+CREATE OR REPLACE FUNCTION planning.get_events(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_q text;
-  v_type text;
-  v_from date;
-  v_rows text[];
-  v_body text;
-  r record;
+DECLARE v_q text; v_type text; v_from date; v_rows text[]; v_body text; r record;
 BEGIN
   v_q := NULLIF(trim(COALESCE(p_params->>'q', '')), '');
   v_type := NULLIF(trim(COALESCE(p_params->>'type', '')), '');
   v_from := COALESCE(NULLIF(trim(COALESCE(p_params->>'from', '')), '')::date, current_date - 30);
-
   v_body := '<form><div class="grid">'
-    || pgv.input('q', 'search', pgv.t('planning.filter_recherche_titre'), v_q)
+    || pgv.input('q', 'search', pgv.t('planning.filter_search_title'), v_q)
     || pgv.sel('type', pgv.t('planning.field_type'), jsonb_build_array(
-         jsonb_build_object('label', pgv.t('planning.filter_tous'), 'value', ''),
-         jsonb_build_object('label', pgv.t('planning.type_chantier'), 'value', 'chantier'),
-         jsonb_build_object('label', pgv.t('planning.type_livraison'), 'value', 'livraison'),
-         jsonb_build_object('label', pgv.t('planning.type_reunion'), 'value', 'reunion'),
-         jsonb_build_object('label', pgv.t('planning.type_conge'), 'value', 'conge'),
-         jsonb_build_object('label', pgv.t('planning.type_autre'), 'value', 'autre')
+         jsonb_build_object('label', pgv.t('planning.filter_all'), 'value', ''),
+         jsonb_build_object('label', pgv.t('planning.type_job_site'), 'value', 'job_site'),
+         jsonb_build_object('label', pgv.t('planning.type_delivery'), 'value', 'delivery'),
+         jsonb_build_object('label', pgv.t('planning.type_meeting'), 'value', 'meeting'),
+         jsonb_build_object('label', pgv.t('planning.type_leave'), 'value', 'leave'),
+         jsonb_build_object('label', pgv.t('planning.type_other'), 'value', 'other')
        ), COALESCE(v_type, ''))
-    || pgv.input('from', 'date', pgv.t('planning.filter_a_partir_du'), v_from::text)
-    || '</div><button type="submit" class="secondary">' || pgv.t('planning.btn_filtrer') || '</button></form>';
-
+    || pgv.input('from', 'date', pgv.t('planning.filter_from_date'), v_from::text)
+    || '</div><button type="submit" class="secondary">' || pgv.t('planning.btn_filter') || '</button></form>';
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT e.id, e.titre, e.type, e.date_debut, e.date_fin, e.lieu,
-           (SELECT string_agg(i.nom, ', ' ORDER BY i.nom)
-              FROM planning.affectation a JOIN planning.intervenant i ON i.id = a.intervenant_id
-             WHERE a.evenement_id = e.id) AS intervenants,
-           ch.numero AS chantier_numero
-      FROM planning.evenement e
-      LEFT JOIN project.chantier ch ON ch.id = e.chantier_id
-     WHERE e.date_fin >= v_from
-       AND (v_q IS NULL OR e.titre ILIKE '%' || v_q || '%' OR e.lieu ILIKE '%' || v_q || '%')
-       AND (v_type IS NULL OR e.type = v_type)
-     ORDER BY e.date_debut DESC
+    SELECT e.id, e.title, e.type, e.start_date, e.end_date, e.location,
+           (SELECT string_agg(w.name, ', ' ORDER BY w.name) FROM planning.assignment a JOIN planning.worker w ON w.id = a.worker_id WHERE a.event_id = e.id) AS workers,
+           p.code AS project_code
+    FROM planning.event e LEFT JOIN project.project p ON p.id = e.project_id
+    WHERE e.end_date >= v_from AND (v_q IS NULL OR e.title ILIKE '%' || v_q || '%' OR e.location ILIKE '%' || v_q || '%') AND (v_type IS NULL OR e.type = v_type)
+    ORDER BY e.start_date DESC
   LOOP
-    v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_evenement', jsonb_build_object('p_id', r.id)), pgv.esc(r.titre)),
-      planning._type_badge(r.type),
-      to_char(r.date_debut, 'DD/MM') || ' -> ' || to_char(r.date_fin, 'DD/MM'),
-      COALESCE(NULLIF(r.lieu, ''), '—'),
-      COALESCE(r.intervenants, '—'),
-      COALESCE(r.chantier_numero, '—')
-    ];
+    v_rows := v_rows || ARRAY[format('<a href="%s">%s</a>', pgv.call_ref('get_event', jsonb_build_object('p_id', r.id)), pgv.esc(r.title)), planning._type_badge(r.type), to_char(r.start_date, 'DD/MM') || ' -> ' || to_char(r.end_date, 'DD/MM'), COALESCE(NULLIF(r.location, ''), '—'), COALESCE(r.workers, '—'), COALESCE(r.project_code, '—')];
   END LOOP;
-
   IF cardinality(v_rows) = 0 THEN
-    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_evenement'));
+    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_event'));
   ELSE
-    v_body := v_body || pgv.md_table(
-      ARRAY[pgv.t('planning.col_evenement'), pgv.t('planning.col_type'), pgv.t('planning.col_dates'), pgv.t('planning.col_lieu'), pgv.t('planning.col_intervenants'), pgv.t('planning.col_chantier')],
-      v_rows, 20
-    );
+    v_body := v_body || pgv.md_table(ARRAY[pgv.t('planning.col_event'), pgv.t('planning.col_type'), pgv.t('planning.col_dates'), pgv.t('planning.col_location'), pgv.t('planning.col_workers'), pgv.t('planning.col_project')], v_rows, 20);
   END IF;
-
-  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-evenement', pgv.t('planning.btn_nouvel_evenement'), planning._evenement_form_inputs(), 'post_evenement_save') || '</p>';
-
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-event', pgv.t('planning.btn_new_event'), planning._event_form_inputs(), 'post_event_save') || '</p>';
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION planning.get_evenements(jsonb) IS 'Liste événements avec i18n';
+COMMENT ON FUNCTION planning.get_events(jsonb) IS 'Events list page';
 
 CREATE OR REPLACE FUNCTION planning.get_index(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_date date;
-  v_lundi date;
-  v_body text;
-  v_total_intervenants int;
-  v_total_evenements_semaine int;
-  v_total_affectations_semaine int;
-  v_jour date;
-  v_rows text[];
-  r record;
-  v_evts text;
+DECLARE v_date date; v_monday date; v_body text; v_total_workers int; v_total_events_week int; v_total_assignments_week int; v_day date; v_rows text[]; r record; v_evts text;
 BEGIN
   v_date := COALESCE((p_params->>'date')::date, current_date);
-  v_lundi := v_date - extract(isodow FROM v_date)::int + 1;
-
-  SELECT count(*)::int INTO v_total_intervenants FROM planning.intervenant WHERE actif;
-  SELECT count(*)::int INTO v_total_evenements_semaine
-    FROM planning.evenement WHERE date_debut <= v_lundi + 6 AND date_fin >= v_lundi;
-  SELECT count(*)::int INTO v_total_affectations_semaine
-    FROM planning.affectation a
-    JOIN planning.evenement e ON e.id = a.evenement_id
-   WHERE e.date_debut <= v_lundi + 6 AND e.date_fin >= v_lundi;
-
-  v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat(pgv.t('planning.stat_intervenants'), v_total_intervenants::text),
-    pgv.stat(pgv.t('planning.stat_evenements_semaine'), v_total_evenements_semaine::text),
-    pgv.stat(pgv.t('planning.stat_affectations_semaine'), v_total_affectations_semaine::text)
-  ]);
-
-  v_body := v_body || '<nav class="pgv-week-nav">'
-    || pgv.link_button(pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi - 7)::text)), '&larr;', 'outline')
-    || ' <strong>' || pgv.t('planning.title_semaine_du') || ' ' || to_char(v_lundi, 'DD/MM') || ' au ' || to_char(v_lundi + 6, 'DD/MM/YYYY') || '</strong> '
-    || pgv.link_button(pgv.call_ref('get_index', jsonb_build_object('date', (v_lundi + 7)::text)), '&rarr;', 'outline')
-    || '</nav>';
-
+  v_monday := v_date - extract(isodow FROM v_date)::int + 1;
+  SELECT count(*)::int INTO v_total_workers FROM planning.worker WHERE active;
+  SELECT count(*)::int INTO v_total_events_week FROM planning.event WHERE start_date <= v_monday + 6 AND end_date >= v_monday;
+  SELECT count(*)::int INTO v_total_assignments_week FROM planning.assignment a JOIN planning.event e ON e.id = a.event_id WHERE e.start_date <= v_monday + 6 AND e.end_date >= v_monday;
+  v_body := pgv.grid(VARIADIC ARRAY[pgv.stat(pgv.t('planning.stat_workers'), v_total_workers::text), pgv.stat(pgv.t('planning.stat_events_week'), v_total_events_week::text), pgv.stat(pgv.t('planning.stat_assignments_week'), v_total_assignments_week::text)]);
+  v_body := v_body || '<nav class="pgv-week-nav">' || pgv.link_button(pgv.call_ref('get_index', jsonb_build_object('date', (v_monday - 7)::text)), '&larr;', 'outline') || ' <strong>' || pgv.t('planning.title_week_of') || ' ' || to_char(v_monday, 'DD/MM') || ' au ' || to_char(v_monday + 6, 'DD/MM/YYYY') || '</strong> ' || pgv.link_button(pgv.call_ref('get_index', jsonb_build_object('date', (v_monday + 7)::text)), '&rarr;', 'outline') || '</nav>';
   v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT i.id, i.nom, i.role, i.couleur
-      FROM planning.intervenant i
-     WHERE i.actif
-     ORDER BY i.nom
+  FOR r IN SELECT w.id, w.name, w.role, w.color FROM planning.worker w WHERE w.active ORDER BY w.name
   LOOP
-    v_rows := v_rows || ARRAY[
-      format('<strong>%s</strong><br><small>%s</small>', pgv.esc(r.nom), pgv.esc(r.role))
-    ];
+    v_rows := v_rows || ARRAY[format('<strong>%s</strong><br><small>%s</small>', pgv.esc(r.name), pgv.esc(r.role))];
     FOR d IN 0..6 LOOP
-      v_jour := v_lundi + d;
-      SELECT string_agg(
-        format('<a href="%s" class="pgv-event-chip" style="border-left:3px solid %s">%s</a>',
-          pgv.call_ref('get_evenement', jsonb_build_object('p_id', e.id)),
-          r.couleur,
-          pgv.esc(CASE WHEN length(e.titre) > 15 THEN left(e.titre, 12) || '...' ELSE e.titre END)
-        ), '' ORDER BY e.heure_debut
-      ) INTO v_evts
-        FROM planning.evenement e
-        JOIN planning.affectation af ON af.evenement_id = e.id
-       WHERE af.intervenant_id = r.id
-         AND e.date_debut <= v_jour AND e.date_fin >= v_jour;
+      v_day := v_monday + d;
+      SELECT string_agg(format('<a href="%s" class="pgv-event-chip" style="border-left:3px solid %s">%s</a>', pgv.call_ref('get_event', jsonb_build_object('p_id', e.id)), r.color, pgv.esc(CASE WHEN length(e.title) > 15 THEN left(e.title, 12) || '...' ELSE e.title END)), '' ORDER BY e.start_time) INTO v_evts
+      FROM planning.event e JOIN planning.assignment af ON af.event_id = e.id WHERE af.worker_id = r.id AND e.start_date <= v_day AND e.end_date >= v_day;
       v_rows := v_rows || ARRAY[COALESCE(v_evts, '')];
     END LOOP;
   END LOOP;
-
-  IF v_total_intervenants = 0 THEN
-    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_intervenant'), pgv.t('planning.empty_first_intervenant'));
+  IF v_total_workers = 0 THEN
+    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_worker'), pgv.t('planning.empty_first_worker'));
   ELSE
-    v_body := v_body || pgv.md_table(
-      ARRAY[
-        pgv.t('planning.col_intervenant'),
-        to_char(v_lundi, 'Dy DD'),
-        to_char(v_lundi + 1, 'Dy DD'),
-        to_char(v_lundi + 2, 'Dy DD'),
-        to_char(v_lundi + 3, 'Dy DD'),
-        to_char(v_lundi + 4, 'Dy DD'),
-        to_char(v_lundi + 5, 'Dy DD'),
-        to_char(v_lundi + 6, 'Dy DD')
-      ],
-      v_rows
-    );
+    v_body := v_body || pgv.md_table(ARRAY[pgv.t('planning.col_worker'), to_char(v_monday, 'Dy DD'), to_char(v_monday+1, 'Dy DD'), to_char(v_monday+2, 'Dy DD'), to_char(v_monday+3, 'Dy DD'), to_char(v_monday+4, 'Dy DD'), to_char(v_monday+5, 'Dy DD'), to_char(v_monday+6, 'Dy DD')], v_rows);
   END IF;
-
-  v_body := v_body || '<p>'
-    || pgv.form_dialog('dlg-new-evenement', pgv.t('planning.btn_nouvel_evenement'), planning._evenement_form_inputs(), 'post_evenement_save')
-    || ' '
-    || pgv.link_button(pgv.call_ref('get_intervenants'), pgv.t('planning.btn_gerer_equipe'), 'secondary')
-    || '</p>';
-
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-event', pgv.t('planning.btn_new_event'), planning._event_form_inputs(), 'post_event_save') || ' ' || pgv.link_button(pgv.call_ref('get_workers'), pgv.t('planning.btn_manage_team'), 'secondary') || '</p>';
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION planning.get_index(jsonb) IS 'Planning dashboard with i18n';
+COMMENT ON FUNCTION planning.get_index(jsonb) IS 'Planning dashboard with weekly grid';
 
-CREATE OR REPLACE FUNCTION planning.get_intervenant(p_id integer)
+CREATE OR REPLACE FUNCTION planning.get_worker(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v record;
-  v_body text;
-  v_rows text[];
-  r record;
+DECLARE v record; v_body text; v_rows text[]; r record;
 BEGIN
-  SELECT * INTO v FROM planning.intervenant WHERE id = p_id;
-  IF NOT FOUND THEN
-    RETURN pgv.error('404', pgv.t('planning.err_intervenant_not_found'));
-  END IF;
-
+  SELECT * INTO v FROM planning.worker WHERE id = p_id;
+  IF NOT FOUND THEN RETURN pgv.error('404', pgv.t('planning.err_worker_not_found')); END IF;
   v_body := pgv.dl(
-    pgv.t('planning.field_nom'), pgv.esc(v.nom),
+    pgv.t('planning.field_name'), pgv.esc(v.name),
     pgv.t('planning.field_role'), COALESCE(NULLIF(v.role, ''), '—'),
-    pgv.t('planning.field_telephone'), COALESCE(v.telephone, '—'),
-    pgv.t('planning.field_couleur'), format('<span class="pgv-color-dot" style="background:%s"></span> %s', v.couleur, v.couleur),
-    pgv.t('planning.col_statut'), CASE WHEN v.actif THEN pgv.badge(pgv.t('planning.statut_actif'), 'success') ELSE pgv.badge(pgv.t('planning.statut_inactif'), 'default') END,
-    pgv.t('planning.field_ajoute_le'), to_char(v.created_at, 'DD/MM/YYYY')
+    pgv.t('planning.field_phone'), COALESCE(v.phone, '—'),
+    pgv.t('planning.field_color'), format('<span class="pgv-color-dot" style="background:%s"></span> %s', v.color, v.color),
+    pgv.t('planning.col_status'), CASE WHEN v.active THEN pgv.badge(pgv.t('planning.status_active'), 'success') ELSE pgv.badge(pgv.t('planning.status_inactive'), 'default') END,
+    pgv.t('planning.field_created_at'), to_char(v.created_at, 'DD/MM/YYYY')
   );
-
   v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT e.id, e.titre, e.type, e.date_debut, e.date_fin, e.lieu
-      FROM planning.evenement e
-      JOIN planning.affectation a ON a.evenement_id = e.id
-     WHERE a.intervenant_id = p_id AND e.date_fin >= current_date
-     ORDER BY e.date_debut
+  FOR r IN SELECT e.id, e.title, e.type, e.start_date, e.end_date, e.location FROM planning.event e JOIN planning.assignment a ON a.event_id = e.id WHERE a.worker_id = p_id AND e.end_date >= current_date ORDER BY e.start_date
   LOOP
-    v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_evenement', jsonb_build_object('p_id', r.id)), pgv.esc(r.titre)),
-      planning._type_badge(r.type),
-      to_char(r.date_debut, 'DD/MM') || ' -> ' || to_char(r.date_fin, 'DD/MM'),
-      COALESCE(NULLIF(r.lieu, ''), '—')
-    ];
+    v_rows := v_rows || ARRAY[format('<a href="%s">%s</a>', pgv.call_ref('get_event', jsonb_build_object('p_id', r.id)), pgv.esc(r.title)), planning._type_badge(r.type), to_char(r.start_date, 'DD/MM') || ' -> ' || to_char(r.end_date, 'DD/MM'), COALESCE(NULLIF(r.location, ''), '—')];
   END LOOP;
-
   IF cardinality(v_rows) > 0 THEN
-    v_body := v_body || '<h4>' || pgv.t('planning.title_evenements_venir') || '</h4>'
-      || pgv.md_table(ARRAY[pgv.t('planning.col_evenement'), pgv.t('planning.col_type'), pgv.t('planning.col_dates'), pgv.t('planning.col_lieu')], v_rows);
+    v_body := v_body || '<h4>' || pgv.t('planning.title_upcoming_events') || '</h4>' || pgv.md_table(ARRAY[pgv.t('planning.col_event'), pgv.t('planning.col_type'), pgv.t('planning.col_dates'), pgv.t('planning.col_location')], v_rows);
   ELSE
-    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_evt_venir'));
+    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_upcoming_event'));
   END IF;
-
-  v_body := v_body || '<p>'
-    || pgv.form_dialog('dlg-edit-intervenant', pgv.t('planning.btn_modifier'), planning._intervenant_form_inputs(v.id, v.nom, v.role, v.telephone, v.couleur, v.actif), 'post_intervenant_save')
-    || ' '
-    || pgv.action('post_intervenant_supprimer', pgv.t('planning.btn_supprimer'), jsonb_build_object('p_id', p_id), pgv.t('planning.confirm_delete_intervenant'), 'error')
-    || '</p>';
-
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-edit-worker', pgv.t('planning.btn_edit'), planning._worker_form_inputs(v.id, v.name, v.role, v.phone, v.color, v.active), 'post_worker_save') || ' ' || pgv.action('post_worker_delete', pgv.t('planning.btn_delete'), jsonb_build_object('p_id', p_id), pgv.t('planning.confirm_delete_worker'), 'error') || '</p>';
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION planning.get_intervenant(integer) IS 'Fiche intervenant avec i18n';
+COMMENT ON FUNCTION planning.get_worker(integer) IS 'Worker detail page';
 
-CREATE OR REPLACE FUNCTION planning.get_intervenant_form(p_id integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION planning.get_worker_form(p_id integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v planning.intervenant;
-  v_body text;
+DECLARE v planning.worker; v_body text;
 BEGIN
   IF p_id IS NOT NULL THEN
-    SELECT * INTO v FROM planning.intervenant WHERE id = p_id;
-    IF NOT FOUND THEN
-      RETURN pgv.error('404', pgv.t('planning.err_intervenant_not_found'));
-    END IF;
+    SELECT * INTO v FROM planning.worker WHERE id = p_id;
+    IF NOT FOUND THEN RETURN pgv.error('404', pgv.t('planning.err_worker_not_found')); END IF;
   END IF;
-
-  v_body := pgv.form('post_intervenant_save',
-    planning._intervenant_form_inputs(p_id, v.nom, v.role, v.telephone, v.couleur, v.actif)
-  , pgv.t('planning.btn_enregistrer'));
-
+  v_body := pgv.form('post_worker_save', planning._worker_form_inputs(p_id, v.name, v.role, v.phone, v.color, v.active), pgv.t('planning.btn_save'));
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION planning.get_intervenant_form(integer) IS 'Formulaire intervenant avec i18n';
+COMMENT ON FUNCTION planning.get_worker_form(integer) IS 'Worker form page';
 
-CREATE OR REPLACE FUNCTION planning.get_intervenants(p_params jsonb DEFAULT '{}'::jsonb)
+CREATE OR REPLACE FUNCTION planning.get_workers(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_q text;
-  v_actif text;
-  v_rows text[];
-  v_body text;
-  r record;
+DECLARE v_q text; v_active text; v_rows text[]; v_body text; r record;
 BEGIN
   v_q := NULLIF(trim(COALESCE(p_params->>'q', '')), '');
-  v_actif := NULLIF(trim(COALESCE(p_params->>'actif', '')), '');
-
+  v_active := NULLIF(trim(COALESCE(p_params->>'active', '')), '');
   v_body := '<form><div class="grid">'
-    || pgv.input('q', 'search', pgv.t('planning.filter_recherche_nom'), v_q)
-    || pgv.sel('actif', pgv.t('planning.filter_statut'), jsonb_build_array(
-         jsonb_build_object('label', pgv.t('planning.filter_tous'), 'value', ''),
-         jsonb_build_object('label', pgv.t('planning.filter_actifs'), 'value', 'true'),
-         jsonb_build_object('label', pgv.t('planning.filter_inactifs'), 'value', 'false')
-       ), COALESCE(v_actif, ''))
-    || '</div><button type="submit" class="secondary">' || pgv.t('planning.btn_filtrer') || '</button></form>';
-
+    || pgv.input('q', 'search', pgv.t('planning.filter_search_name'), v_q)
+    || pgv.sel('active', pgv.t('planning.filter_status'), jsonb_build_array(
+         jsonb_build_object('label', pgv.t('planning.filter_all'), 'value', ''),
+         jsonb_build_object('label', pgv.t('planning.filter_active'), 'value', 'true'),
+         jsonb_build_object('label', pgv.t('planning.filter_inactive'), 'value', 'false')
+       ), COALESCE(v_active, ''))
+    || '</div><button type="submit" class="secondary">' || pgv.t('planning.btn_filter') || '</button></form>';
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT i.id, i.nom, i.role, i.telephone, i.couleur, i.actif,
-           (SELECT count(*)::int FROM planning.affectation a
-              JOIN planning.evenement e ON e.id = a.evenement_id
-             WHERE a.intervenant_id = i.id
-               AND e.date_fin >= current_date) AS nb_evt_actifs
-      FROM planning.intervenant i
-     WHERE (v_q IS NULL OR i.nom ILIKE '%' || v_q || '%' OR i.role ILIKE '%' || v_q || '%')
-       AND (v_actif IS NULL OR i.actif = (v_actif = 'true'))
-     ORDER BY i.actif DESC, i.nom
+    SELECT w.id, w.name, w.role, w.phone, w.color, w.active,
+           (SELECT count(*)::int FROM planning.assignment a JOIN planning.event e ON e.id = a.event_id WHERE a.worker_id = w.id AND e.end_date >= current_date) AS active_event_count
+    FROM planning.worker w
+    WHERE (v_q IS NULL OR w.name ILIKE '%' || v_q || '%' OR w.role ILIKE '%' || v_q || '%')
+      AND (v_active IS NULL OR w.active = (v_active = 'true'))
+    ORDER BY w.active DESC, w.name
   LOOP
     v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_intervenant', jsonb_build_object('p_id', r.id)), pgv.esc(r.nom)),
-      COALESCE(r.role, '—'),
-      COALESCE(r.telephone, '—'),
-      format('<span class="pgv-color-dot" style="background:%s"></span>', r.couleur),
-      r.nb_evt_actifs::text,
-      CASE WHEN r.actif THEN pgv.badge(pgv.t('planning.statut_actif'), 'success') ELSE pgv.badge(pgv.t('planning.statut_inactif'), 'default') END
+      format('<a href="%s">%s</a>', pgv.call_ref('get_worker', jsonb_build_object('p_id', r.id)), pgv.esc(r.name)),
+      COALESCE(r.role, '—'), COALESCE(r.phone, '—'),
+      format('<span class="pgv-color-dot" style="background:%s"></span>', r.color),
+      r.active_event_count::text,
+      CASE WHEN r.active THEN pgv.badge(pgv.t('planning.status_active'), 'success') ELSE pgv.badge(pgv.t('planning.status_inactive'), 'default') END
     ];
   END LOOP;
-
   IF cardinality(v_rows) = 0 THEN
-    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_intervenant'), pgv.t('planning.empty_equipe'));
+    v_body := v_body || pgv.empty(pgv.t('planning.empty_no_worker'), pgv.t('planning.empty_add_team'));
   ELSE
-    v_body := v_body || pgv.md_table(
-      ARRAY[pgv.t('planning.col_nom'), pgv.t('planning.col_role'), pgv.t('planning.col_telephone'), pgv.t('planning.col_couleur'), pgv.t('planning.col_evt_actifs'), pgv.t('planning.col_statut')],
-      v_rows, 20
-    );
+    v_body := v_body || pgv.md_table(ARRAY[pgv.t('planning.col_name'), pgv.t('planning.col_role'), pgv.t('planning.col_phone'), pgv.t('planning.col_color'), pgv.t('planning.col_active_events'), pgv.t('planning.col_status')], v_rows, 20);
   END IF;
-
-  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-intervenant', pgv.t('planning.btn_nouvel_intervenant'), planning._intervenant_form_inputs(), 'post_intervenant_save') || '</p>';
-
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-worker', pgv.t('planning.btn_new_worker'), planning._worker_form_inputs(), 'post_worker_save') || '</p>';
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION planning.get_intervenants(jsonb) IS 'Liste intervenants avec i18n';
+COMMENT ON FUNCTION planning.get_workers(jsonb) IS 'Workers list page';
 
 CREATE OR REPLACE FUNCTION planning.i18n_seed()
  RETURNS void
@@ -782,563 +423,331 @@ BEGIN
     -- Brand / Navigation
     ('fr', 'planning.brand', 'Planning'),
     ('fr', 'planning.nav_agenda', 'Agenda'),
-    ('fr', 'planning.nav_equipe', 'Équipe'),
-    ('fr', 'planning.nav_evenements', 'Événements'),
-
+    ('fr', 'planning.nav_team', 'Équipe'),
+    ('fr', 'planning.nav_events', 'Événements'),
     -- Event types
-    ('fr', 'planning.type_chantier', 'Chantier'),
-    ('fr', 'planning.type_livraison', 'Livraison'),
-    ('fr', 'planning.type_reunion', 'Réunion'),
-    ('fr', 'planning.type_conge', 'Congé'),
-    ('fr', 'planning.type_autre', 'Autre'),
-
+    ('fr', 'planning.type_job_site', 'Chantier'),
+    ('fr', 'planning.type_delivery', 'Livraison'),
+    ('fr', 'planning.type_meeting', 'Réunion'),
+    ('fr', 'planning.type_leave', 'Congé'),
+    ('fr', 'planning.type_other', 'Autre'),
     -- Status
-    ('fr', 'planning.statut_actif', 'Actif'),
-    ('fr', 'planning.statut_inactif', 'Inactif'),
-
+    ('fr', 'planning.status_active', 'Actif'),
+    ('fr', 'planning.status_inactive', 'Inactif'),
     -- Field labels
-    ('fr', 'planning.field_nom', 'Nom'),
+    ('fr', 'planning.field_name', 'Nom'),
     ('fr', 'planning.field_role', 'Rôle'),
-    ('fr', 'planning.field_telephone', 'Téléphone'),
-    ('fr', 'planning.field_couleur', 'Couleur agenda'),
-    ('fr', 'planning.field_actif', 'Actif'),
-    ('fr', 'planning.field_titre', 'Titre'),
+    ('fr', 'planning.field_phone', 'Téléphone'),
+    ('fr', 'planning.field_color', 'Couleur agenda'),
+    ('fr', 'planning.field_active', 'Actif'),
+    ('fr', 'planning.field_title', 'Titre'),
     ('fr', 'planning.field_type', 'Type'),
-    ('fr', 'planning.field_date_debut', 'Date début'),
-    ('fr', 'planning.field_date_fin', 'Date fin'),
-    ('fr', 'planning.field_heure_debut', 'Heure début'),
-    ('fr', 'planning.field_heure_fin', 'Heure fin'),
-    ('fr', 'planning.field_lieu', 'Lieu'),
-    ('fr', 'planning.field_chantier', 'Chantier (optionnel)'),
+    ('fr', 'planning.field_start_date', 'Date début'),
+    ('fr', 'planning.field_end_date', 'Date fin'),
+    ('fr', 'planning.field_start_time', 'Heure début'),
+    ('fr', 'planning.field_end_time', 'Heure fin'),
+    ('fr', 'planning.field_location', 'Lieu'),
+    ('fr', 'planning.field_project', 'Projet (optionnel)'),
     ('fr', 'planning.field_notes', 'Notes'),
     ('fr', 'planning.field_role_hint', 'ex: charpentier, électricien'),
-    ('fr', 'planning.field_ajoute_le', 'Ajouté le'),
-
+    ('fr', 'planning.field_created_at', 'Ajouté le'),
     -- Stats
-    ('fr', 'planning.stat_intervenants', 'Intervenants actifs'),
-    ('fr', 'planning.stat_evenements_semaine', 'Événements semaine'),
-    ('fr', 'planning.stat_affectations_semaine', 'Affectations semaine'),
-
+    ('fr', 'planning.stat_workers', 'Intervenants actifs'),
+    ('fr', 'planning.stat_events_week', 'Événements semaine'),
+    ('fr', 'planning.stat_assignments_week', 'Affectations semaine'),
+    ('fr', 'planning.stat_active_events', 'Événements actifs'),
     -- Table headers
-    ('fr', 'planning.col_intervenant', 'Intervenant'),
-    ('fr', 'planning.col_nom', 'Nom'),
+    ('fr', 'planning.col_worker', 'Intervenant'),
+    ('fr', 'planning.col_name', 'Nom'),
     ('fr', 'planning.col_role', 'Rôle'),
-    ('fr', 'planning.col_telephone', 'Téléphone'),
-    ('fr', 'planning.col_couleur', 'Couleur'),
-    ('fr', 'planning.col_evt_actifs', 'Évén. actifs'),
-    ('fr', 'planning.col_statut', 'Statut'),
-    ('fr', 'planning.col_evenement', 'Événement'),
+    ('fr', 'planning.col_phone', 'Téléphone'),
+    ('fr', 'planning.col_color', 'Couleur'),
+    ('fr', 'planning.col_active_events', 'Évén. actifs'),
+    ('fr', 'planning.col_status', 'Statut'),
+    ('fr', 'planning.col_event', 'Événement'),
     ('fr', 'planning.col_type', 'Type'),
     ('fr', 'planning.col_dates', 'Dates'),
-    ('fr', 'planning.col_lieu', 'Lieu'),
-    ('fr', 'planning.col_intervenants', 'Intervenants'),
-    ('fr', 'planning.col_chantier', 'Chantier'),
-
+    ('fr', 'planning.col_location', 'Lieu'),
+    ('fr', 'planning.col_workers', 'Intervenants'),
+    ('fr', 'planning.col_project', 'Projet'),
     -- Buttons / Actions
-    ('fr', 'planning.btn_filtrer', 'Filtrer'),
-    ('fr', 'planning.btn_enregistrer', 'Enregistrer'),
-    ('fr', 'planning.btn_modifier', 'Modifier'),
-    ('fr', 'planning.btn_supprimer', 'Supprimer'),
-    ('fr', 'planning.btn_affecter', 'Affecter'),
-    ('fr', 'planning.btn_retirer', 'Retirer'),
-    ('fr', 'planning.btn_nouvel_evenement', 'Nouvel événement'),
-    ('fr', 'planning.btn_nouvel_intervenant', 'Nouvel intervenant'),
-    ('fr', 'planning.btn_gerer_equipe', 'Gérer l''équipe'),
-    ('fr', 'planning.btn_ajouter_intervenant', 'Ajouter un intervenant'),
-
+    ('fr', 'planning.btn_filter', 'Filtrer'),
+    ('fr', 'planning.btn_save', 'Enregistrer'),
+    ('fr', 'planning.btn_edit', 'Modifier'),
+    ('fr', 'planning.btn_delete', 'Supprimer'),
+    ('fr', 'planning.btn_assign', 'Affecter'),
+    ('fr', 'planning.btn_remove', 'Retirer'),
+    ('fr', 'planning.btn_new_event', 'Nouvel événement'),
+    ('fr', 'planning.btn_new_worker', 'Nouvel intervenant'),
+    ('fr', 'planning.btn_manage_team', 'Gérer l''équipe'),
+    ('fr', 'planning.btn_add_worker', 'Ajouter un intervenant'),
     -- Section titles
-    ('fr', 'planning.title_equipe_affectee', 'Équipe affectée'),
-    ('fr', 'planning.title_evenements_venir', 'Événements à venir'),
-    ('fr', 'planning.title_semaine_du', 'Semaine du'),
-
+    ('fr', 'planning.title_assigned_team', 'Équipe affectée'),
+    ('fr', 'planning.title_upcoming_events', 'Événements à venir'),
+    ('fr', 'planning.title_week_of', 'Semaine du'),
     -- Filter labels
-    ('fr', 'planning.filter_recherche_nom', 'Recherche nom/rôle'),
-    ('fr', 'planning.filter_recherche_titre', 'Recherche titre/lieu'),
-    ('fr', 'planning.filter_statut', 'Statut'),
-    ('fr', 'planning.filter_tous', 'Tous'),
-    ('fr', 'planning.filter_actifs', 'Actifs'),
-    ('fr', 'planning.filter_inactifs', 'Inactifs'),
-    ('fr', 'planning.filter_a_partir_du', 'À partir du'),
-
+    ('fr', 'planning.filter_search_name', 'Recherche nom/rôle'),
+    ('fr', 'planning.filter_search_title', 'Recherche titre/lieu'),
+    ('fr', 'planning.filter_status', 'Statut'),
+    ('fr', 'planning.filter_all', 'Tous'),
+    ('fr', 'planning.filter_active', 'Actifs'),
+    ('fr', 'planning.filter_inactive', 'Inactifs'),
+    ('fr', 'planning.filter_from_date', 'À partir du'),
     -- Empty states
-    ('fr', 'planning.empty_no_intervenant', 'Aucun intervenant'),
-    ('fr', 'planning.empty_first_intervenant', 'Ajoutez des membres à votre équipe pour commencer.'),
-    ('fr', 'planning.empty_equipe', 'Ajoutez des membres à votre équipe.'),
-    ('fr', 'planning.empty_no_evenement', 'Aucun événement'),
-    ('fr', 'planning.empty_no_affectation', 'Aucun intervenant affecté'),
-    ('fr', 'planning.empty_no_evt_venir', 'Aucun événement à venir'),
-
+    ('fr', 'planning.empty_no_worker', 'Aucun intervenant'),
+    ('fr', 'planning.empty_first_worker', 'Ajoutez des membres à votre équipe pour commencer.'),
+    ('fr', 'planning.empty_add_team', 'Ajoutez des membres à votre équipe.'),
+    ('fr', 'planning.empty_no_event', 'Aucun événement'),
+    ('fr', 'planning.empty_no_assignment', 'Aucun intervenant affecté'),
+    ('fr', 'planning.empty_no_upcoming_event', 'Aucun événement à venir'),
     -- Toast messages
-    ('fr', 'planning.toast_intervenant_saved', 'Intervenant enregistré'),
-    ('fr', 'planning.toast_intervenant_deleted', 'Intervenant supprimé'),
-    ('fr', 'planning.toast_evenement_saved', 'Événement enregistré'),
-    ('fr', 'planning.toast_evenement_deleted', 'Événement supprimé'),
-    ('fr', 'planning.toast_affecte', 'Intervenant affecté'),
-    ('fr', 'planning.toast_desaffecte', 'Intervenant retiré'),
-    ('fr', 'planning.toast_affectation_not_found', 'Affectation introuvable'),
-
+    ('fr', 'planning.toast_worker_saved', 'Intervenant enregistré'),
+    ('fr', 'planning.toast_worker_deleted', 'Intervenant supprimé'),
+    ('fr', 'planning.toast_event_saved', 'Événement enregistré'),
+    ('fr', 'planning.toast_event_deleted', 'Événement supprimé'),
+    ('fr', 'planning.toast_assigned', 'Intervenant affecté'),
+    ('fr', 'planning.toast_unassigned', 'Intervenant retiré'),
+    ('fr', 'planning.toast_assignment_not_found', 'Affectation introuvable'),
     -- Error messages
-    ('fr', 'planning.err_nom_required', 'Le nom est obligatoire'),
-    ('fr', 'planning.err_titre_required', 'Le titre est obligatoire'),
+    ('fr', 'planning.err_name_required', 'Le nom est obligatoire'),
+    ('fr', 'planning.err_title_required', 'Le titre est obligatoire'),
     ('fr', 'planning.err_date_order', 'La date de fin doit être >= date de début'),
-    ('fr', 'planning.err_intervenant_not_found', 'Intervenant introuvable'),
-    ('fr', 'planning.err_evenement_not_found', 'Événement introuvable'),
-
+    ('fr', 'planning.err_worker_not_found', 'Intervenant introuvable'),
+    ('fr', 'planning.err_event_not_found', 'Événement introuvable'),
     -- Confirm dialogs
-    ('fr', 'planning.confirm_delete_intervenant', 'Supprimer cet intervenant ?'),
-    ('fr', 'planning.confirm_delete_evenement', 'Supprimer cet événement ?'),
+    ('fr', 'planning.confirm_delete_worker', 'Supprimer cet intervenant ?'),
+    ('fr', 'planning.confirm_delete_event', 'Supprimer cet événement ?'),
     ('fr', 'planning.confirm_deactivate', 'Désactiver cet intervenant ?'),
-
     -- Entity labels
-    ('fr', 'planning.entity_intervenant', 'Intervenant'),
-    ('fr', 'planning.entity_evenement', 'Événement'),
-
+    ('fr', 'planning.entity_worker', 'Intervenant'),
+    ('fr', 'planning.entity_event', 'Événement'),
     -- Actions (_view)
     ('fr', 'planning.action_deactivate', 'Désactiver'),
     ('fr', 'planning.action_activate', 'Activer'),
     ('fr', 'planning.action_delete', 'Supprimer'),
-
     -- Sections (_view form)
     ('fr', 'planning.section_identity', 'Identité'),
     ('fr', 'planning.section_general', 'Général'),
     ('fr', 'planning.section_schedule', 'Planification'),
     ('fr', 'planning.section_location', 'Localisation'),
-
-    -- Stats / Related
-    ('fr', 'planning.stat_evt_actifs', 'Événements actifs'),
-    ('fr', 'planning.rel_chantier', 'Chantier lié')
-
+    -- Related
+    ('fr', 'planning.rel_project', 'Projet lié')
   ON CONFLICT DO NOTHING;
 END;
 $function$;
 COMMENT ON FUNCTION planning.i18n_seed() IS 'Seed French i18n translations for planning module';
-
-CREATE OR REPLACE FUNCTION planning.intervenant_create(p_row planning.intervenant)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  p_row.tenant_id := current_setting('app.tenant_id', true);
-  p_row.actif := COALESCE(p_row.actif, true);
-  p_row.couleur := COALESCE(p_row.couleur, '#3b82f6');
-  p_row.created_at := now();
-
-  INSERT INTO planning.intervenant (tenant_id, nom, role, telephone, couleur, actif, created_at)
-  VALUES (p_row.tenant_id, p_row.nom, COALESCE(p_row.role, ''), p_row.telephone, p_row.couleur, p_row.actif, p_row.created_at)
-  RETURNING * INTO p_row;
-
-  RETURN to_jsonb(p_row);
-END;
-$function$;
-COMMENT ON FUNCTION planning.intervenant_create(planning.intervenant) IS 'Create intervenant — returns jsonb';
-
-CREATE OR REPLACE FUNCTION planning.intervenant_delete(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_row planning.intervenant;
-BEGIN
-  DELETE FROM planning.intervenant
-  WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true)
-  RETURNING * INTO v_row;
-  IF NOT FOUND THEN RETURN NULL; END IF;
-  RETURN to_jsonb(v_row);
-END;
-$function$;
-COMMENT ON FUNCTION planning.intervenant_delete(text) IS 'Delete intervenant by id — returns deleted row as jsonb';
-
-CREATE OR REPLACE FUNCTION planning.intervenant_list(p_filter text DEFAULT NULL::text)
- RETURNS SETOF jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-BEGIN
-  IF p_filter IS NULL THEN
-    RETURN QUERY
-      SELECT to_jsonb(i) || jsonb_build_object(
-        'nb_evt_actifs', (SELECT count(*)::int FROM planning.affectation a
-                          JOIN planning.evenement e ON e.id = a.evenement_id
-                          WHERE a.intervenant_id = i.id AND e.date_fin >= current_date)
-      )
-      FROM planning.intervenant i
-      WHERE i.tenant_id = current_setting('app.tenant_id', true)
-      ORDER BY i.actif DESC, i.nom;
-  ELSE
-    RETURN QUERY EXECUTE
-      'SELECT to_jsonb(i) || jsonb_build_object(
-        ''nb_evt_actifs'', (SELECT count(*)::int FROM planning.affectation a
-                            JOIN planning.evenement e ON e.id = a.evenement_id
-                            WHERE a.intervenant_id = i.id AND e.date_fin >= current_date)
-      )
-      FROM planning.intervenant i
-      WHERE i.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
-      || ' AND ' || pgv.rsql_to_where(p_filter, 'planning', 'intervenant')
-      || ' ORDER BY i.actif DESC, i.nom';
-  END IF;
-END;
-$function$;
-COMMENT ON FUNCTION planning.intervenant_list(text) IS 'List intervenants with active event count — optional RSQL filter';
-
-CREATE OR REPLACE FUNCTION planning.intervenant_read(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_row planning.intervenant;
-  v_result jsonb;
-BEGIN
-  SELECT * INTO v_row FROM planning.intervenant
-  WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN RETURN NULL; END IF;
-
-  v_result := to_jsonb(v_row) || jsonb_build_object(
-    'nb_evt_actifs', (SELECT count(*)::int FROM planning.affectation a
-                      JOIN planning.evenement e ON e.id = a.evenement_id
-                      WHERE a.intervenant_id = v_row.id AND e.date_fin >= current_date),
-    'evenements', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object(
-        'id', e.id, 'titre', e.titre, 'type', e.type,
-        'date_debut', e.date_debut, 'date_fin', e.date_fin, 'lieu', e.lieu
-      ) ORDER BY e.date_debut)
-      FROM planning.evenement e
-      JOIN planning.affectation a ON a.evenement_id = e.id
-      WHERE a.intervenant_id = v_row.id AND e.date_fin >= current_date
-    ), '[]'::jsonb)
-  );
-
-  -- HATEOAS actions based on state
-  IF v_row.actif THEN
-    v_result := v_result || jsonb_build_object('actions', jsonb_build_array(
-      jsonb_build_object('method', 'deactivate', 'uri', 'planning://intervenant/' || p_id || '/deactivate'),
-      jsonb_build_object('method', 'delete', 'uri', 'planning://intervenant/' || p_id)
-    ));
-  ELSE
-    v_result := v_result || jsonb_build_object('actions', jsonb_build_array(
-      jsonb_build_object('method', 'activate', 'uri', 'planning://intervenant/' || p_id || '/activate'),
-      jsonb_build_object('method', 'delete', 'uri', 'planning://intervenant/' || p_id)
-    ));
-  END IF;
-
-  RETURN v_result;
-END;
-$function$;
-COMMENT ON FUNCTION planning.intervenant_read(text) IS 'Read intervenant by id with active events';
-
-CREATE OR REPLACE FUNCTION planning.intervenant_ui(p_slug text DEFAULT NULL::text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v record;
-BEGIN
-  -- List mode
-  IF p_slug IS NULL THEN
-    RETURN jsonb_build_object(
-      'ui', pgv.ui_column(
-        pgv.ui_heading(pgv.t('planning.nav_equipe')),
-        pgv.ui_table('intervenants', jsonb_build_array(
-          pgv.ui_col('nom', pgv.t('planning.col_nom'), pgv.ui_link('{nom}', '/planning/intervenants/{id}')),
-          pgv.ui_col('role', pgv.t('planning.col_role')),
-          pgv.ui_col('telephone', pgv.t('planning.col_telephone')),
-          pgv.ui_col('couleur', pgv.t('planning.col_couleur'), pgv.ui_color('{couleur}')),
-          pgv.ui_col('nb_evt_actifs', pgv.t('planning.col_evt_actifs')),
-          pgv.ui_col('actif', pgv.t('planning.col_statut'), pgv.ui_badge('{actif}'))
-        ))
-      ),
-      'datasources', jsonb_build_object(
-        'intervenants', pgv.ui_datasource('planning://intervenant', 20, true, 'nom')
-      )
-    );
-  END IF;
-
-  -- Detail mode
-  SELECT * INTO v FROM planning.intervenant WHERE id = p_slug::int AND tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
-
-  RETURN jsonb_build_object(
-    'ui', pgv.ui_column(
-      pgv.ui_row(
-        pgv.ui_link(E'\u2190 ' || pgv.t('planning.nav_equipe'), '/planning/intervenants'),
-        pgv.ui_heading(v.nom)
-      ),
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('planning.field_role') || ': ' || COALESCE(NULLIF(v.role, ''), '—')),
-        pgv.ui_text(pgv.t('planning.field_telephone') || ': ' || COALESCE(v.telephone, '—'))
-      ),
-      pgv.ui_row(
-        pgv.ui_color(v.couleur),
-        CASE WHEN v.actif THEN pgv.ui_badge(pgv.t('planning.statut_actif'), 'success') ELSE pgv.ui_badge(pgv.t('planning.statut_inactif')) END
-      ),
-      pgv.ui_text(pgv.t('planning.field_ajoute_le') || ': ' || to_char(v.created_at, 'DD/MM/YYYY'))
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION planning.intervenant_ui(text) IS 'SDUI view: intervenant list + detail';
-
-CREATE OR REPLACE FUNCTION planning.intervenant_update(p_row planning.intervenant)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  UPDATE planning.intervenant SET
-    nom = COALESCE(NULLIF(p_row.nom, ''), nom),
-    role = COALESCE(p_row.role, role),
-    telephone = COALESCE(p_row.telephone, telephone),
-    couleur = COALESCE(NULLIF(p_row.couleur, ''), couleur),
-    actif = COALESCE(p_row.actif, actif)
-  WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
-  RETURNING * INTO p_row;
-  RETURN to_jsonb(p_row);
-END;
-$function$;
-COMMENT ON FUNCTION planning.intervenant_update(planning.intervenant) IS 'Update intervenant by id — returns jsonb';
-
-CREATE OR REPLACE FUNCTION planning.intervenant_view()
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-BEGIN
-  RETURN jsonb_build_object(
-    'uri', 'planning://intervenant',
-    'label', 'planning.entity_intervenant',
-
-    'template', jsonb_build_object(
-      'compact', jsonb_build_object(
-        'fields', jsonb_build_array('nom', 'role', 'actif')
-      ),
-
-      'standard', jsonb_build_object(
-        'fields', jsonb_build_array('nom', 'role', 'telephone', 'couleur'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'nb_evt_actifs', 'label', 'planning.stat_evt_actifs')
-        )
-      ),
-
-      'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('nom', 'role', 'telephone', 'couleur', 'actif', 'created_at'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'nb_evt_actifs', 'label', 'planning.stat_evt_actifs')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'planning://evenement', 'filter', 'intervenant_id={id}', 'label', 'planning.title_evenements_venir')
-        )
-      ),
-
-      'form', jsonb_build_object(
-        'sections', jsonb_build_array(
-          jsonb_build_object('label', 'planning.section_identity', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'nom', 'label', 'planning.field_nom', 'type', 'text', 'required', true),
-            jsonb_build_object('key', 'role', 'label', 'planning.field_role', 'type', 'text'),
-            jsonb_build_object('key', 'telephone', 'label', 'planning.field_telephone', 'type', 'tel'),
-            jsonb_build_object('key', 'couleur', 'label', 'planning.field_couleur', 'type', 'text'),
-            jsonb_build_object('key', 'actif', 'label', 'planning.field_actif', 'type', 'checkbox')
-          ))
-        )
-      )
-    ),
-
-    'actions', jsonb_build_object(
-      'deactivate', jsonb_build_object('label', 'planning.action_deactivate', 'variant', 'warning', 'confirm', 'planning.confirm_deactivate'),
-      'activate', jsonb_build_object('label', 'planning.action_activate'),
-      'delete', jsonb_build_object('label', 'planning.action_delete', 'variant', 'danger', 'confirm', 'planning.confirm_delete_intervenant')
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION planning.intervenant_view() IS 'View template for intervenant entity: compact, standard, expanded, form, actions';
 
 CREATE OR REPLACE FUNCTION planning.nav_items()
  RETURNS jsonb
  LANGUAGE sql
  STABLE
 AS $function$
-  SELECT jsonb_build_array(
+SELECT jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('planning.nav_agenda'), 'icon', 'calendar'),
-    jsonb_build_object('href', '/intervenants', 'label', pgv.t('planning.nav_equipe'), 'icon', 'users', 'entity', 'intervenant', 'uri', 'planning://intervenant'),
-    jsonb_build_object('href', '/evenements', 'label', pgv.t('planning.nav_evenements'), 'icon', 'list', 'entity', 'evenement', 'uri', 'planning://evenement')
+    jsonb_build_object('href', '/workers', 'label', pgv.t('planning.nav_team'), 'icon', 'users', 'entity', 'worker', 'uri', 'planning://worker'),
+    jsonb_build_object('href', '/events', 'label', pgv.t('planning.nav_events'), 'icon', 'list', 'entity', 'event', 'uri', 'planning://event')
+  )
+$function$;
+COMMENT ON FUNCTION planning.nav_items() IS 'Navigation items with entity mapping';
+
+CREATE OR REPLACE FUNCTION planning.post_assign(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_event_id int := (p_data->>'p_event_id')::int; v_worker_id int := (p_data->>'p_worker_id')::int;
+BEGIN
+  INSERT INTO planning.assignment (event_id, worker_id) VALUES (v_event_id, v_worker_id) ON CONFLICT (event_id, worker_id) DO NOTHING;
+  RETURN pgv.toast(pgv.t('planning.toast_assigned')) || pgv.redirect(pgv.call_ref('get_event', jsonb_build_object('p_id', v_event_id)));
+END;
+$function$;
+COMMENT ON FUNCTION planning.post_assign(jsonb) IS 'Assign worker to event';
+
+CREATE OR REPLACE FUNCTION planning.post_event_delete(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  DELETE FROM planning.event WHERE id = p_id;
+  IF NOT FOUND THEN RETURN pgv.toast(pgv.t('planning.err_event_not_found'), 'error'); END IF;
+  RETURN pgv.toast(pgv.t('planning.toast_event_deleted')) || pgv.redirect(pgv.call_ref('get_events'));
+END;
+$function$;
+COMMENT ON FUNCTION planning.post_event_delete(integer) IS 'Delete event and redirect to list';
+
+CREATE OR REPLACE FUNCTION planning.post_event_save(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_id int := NULLIF(p_data->>'id', '')::int; v_title text := trim(p_data->>'title'); v_start date := (p_data->>'start_date')::date; v_end date := (p_data->>'end_date')::date;
+BEGIN
+  IF v_title IS NULL OR v_title = '' THEN RETURN pgv.toast(pgv.t('planning.err_title_required'), 'error'); END IF;
+  IF v_end < v_start THEN RETURN pgv.toast(pgv.t('planning.err_date_order'), 'error'); END IF;
+  IF v_id IS NOT NULL THEN
+    UPDATE planning.event SET title = v_title, type = COALESCE(NULLIF(trim(p_data->>'type'), ''), type), start_date = v_start, end_date = v_end, start_time = COALESCE(NULLIF(trim(p_data->>'start_time'), '')::time, start_time), end_time = COALESCE(NULLIF(trim(p_data->>'end_time'), '')::time, end_time), location = COALESCE(trim(p_data->>'location'), location), project_id = NULLIF(trim(p_data->>'project_id'), '')::int, notes = COALESCE(trim(p_data->>'notes'), notes) WHERE id = v_id;
+  ELSE
+    INSERT INTO planning.event (title, type, start_date, end_date, start_time, end_time, location, project_id, notes) VALUES (v_title, COALESCE(NULLIF(trim(p_data->>'type'), ''), 'job_site'), v_start, v_end, COALESCE(NULLIF(trim(p_data->>'start_time'), '')::time, '08:00'), COALESCE(NULLIF(trim(p_data->>'end_time'), '')::time, '17:00'), COALESCE(trim(p_data->>'location'), ''), NULLIF(trim(p_data->>'project_id'), '')::int, COALESCE(trim(p_data->>'notes'), '')) RETURNING id INTO v_id;
+  END IF;
+  RETURN pgv.toast(pgv.t('planning.toast_event_saved')) || pgv.redirect(pgv.call_ref('get_event', jsonb_build_object('p_id', v_id)));
+END;
+$function$;
+COMMENT ON FUNCTION planning.post_event_save(jsonb) IS 'Save event from form';
+
+CREATE OR REPLACE FUNCTION planning.post_unassign(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_id int := (p_data->>'p_id')::int; v_event_id int := (p_data->>'p_event_id')::int;
+BEGIN
+  DELETE FROM planning.assignment WHERE id = v_id;
+  IF NOT FOUND THEN RETURN pgv.toast(pgv.t('planning.toast_assignment_not_found'), 'error'); END IF;
+  RETURN pgv.toast(pgv.t('planning.toast_unassigned')) || pgv.redirect(pgv.call_ref('get_event', jsonb_build_object('p_id', v_event_id)));
+END;
+$function$;
+COMMENT ON FUNCTION planning.post_unassign(jsonb) IS 'Unassign worker from event';
+
+CREATE OR REPLACE FUNCTION planning.post_worker_delete(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  DELETE FROM planning.worker WHERE id = p_id;
+  IF NOT FOUND THEN RETURN pgv.toast(pgv.t('planning.err_worker_not_found'), 'error'); END IF;
+  RETURN pgv.toast(pgv.t('planning.toast_worker_deleted')) || pgv.redirect(pgv.call_ref('get_workers'));
+END;
+$function$;
+COMMENT ON FUNCTION planning.post_worker_delete(integer) IS 'Delete worker and redirect to list';
+
+CREATE OR REPLACE FUNCTION planning.post_worker_save(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_id int := NULLIF(p_data->>'id', '')::int; v_name text := trim(p_data->>'name');
+BEGIN
+  IF v_name IS NULL OR v_name = '' THEN RETURN pgv.toast(pgv.t('planning.err_name_required'), 'error'); END IF;
+  IF v_id IS NOT NULL THEN
+    UPDATE planning.worker SET name = v_name, role = COALESCE(trim(p_data->>'role'), role), phone = COALESCE(trim(p_data->>'phone'), phone), color = COALESCE(NULLIF(trim(p_data->>'color'), ''), color), active = COALESCE((p_data->>'active')::boolean, active) WHERE id = v_id;
+  ELSE
+    INSERT INTO planning.worker (name, role, phone, color, active) VALUES (v_name, COALESCE(trim(p_data->>'role'), ''), trim(p_data->>'phone'), COALESCE(NULLIF(trim(p_data->>'color'), ''), '#3b82f6'), COALESCE((p_data->>'active')::boolean, true)) RETURNING id INTO v_id;
+  END IF;
+  RETURN pgv.toast(pgv.t('planning.toast_worker_saved')) || pgv.redirect(pgv.call_ref('get_worker', jsonb_build_object('p_id', v_id)));
+END;
+$function$;
+COMMENT ON FUNCTION planning.post_worker_save(jsonb) IS 'Save worker from form';
+
+CREATE OR REPLACE FUNCTION planning.worker_create(p_row planning.worker)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  p_row.tenant_id := current_setting('app.tenant_id', true);
+  p_row.active := COALESCE(p_row.active, true);
+  p_row.color := COALESCE(p_row.color, '#3b82f6');
+  p_row.created_at := now();
+  INSERT INTO planning.worker (tenant_id, name, role, phone, color, active, created_at) VALUES (p_row.tenant_id, p_row.name, COALESCE(p_row.role, ''), p_row.phone, p_row.color, p_row.active, p_row.created_at) RETURNING * INTO p_row;
+  RETURN to_jsonb(p_row);
+END;
+$function$;
+COMMENT ON FUNCTION planning.worker_create(planning.worker) IS 'Create worker — returns jsonb';
+
+CREATE OR REPLACE FUNCTION planning.worker_delete(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_row planning.worker;
+BEGIN
+  DELETE FROM planning.worker WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true) RETURNING * INTO v_row;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  RETURN to_jsonb(v_row);
+END;
+$function$;
+COMMENT ON FUNCTION planning.worker_delete(text) IS 'Delete worker by id — returns deleted row as jsonb';
+
+CREATE OR REPLACE FUNCTION planning.worker_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+BEGIN
+  IF p_filter IS NULL THEN
+    RETURN QUERY
+      SELECT to_jsonb(w) || jsonb_build_object(
+        'active_event_count', (SELECT count(*)::int FROM planning.assignment a JOIN planning.event e ON e.id = a.event_id WHERE a.worker_id = w.id AND e.end_date >= current_date)
+      ) FROM planning.worker w WHERE w.tenant_id = current_setting('app.tenant_id', true) ORDER BY w.active DESC, w.name;
+  ELSE
+    RETURN QUERY EXECUTE
+      'SELECT to_jsonb(w) || jsonb_build_object(''active_event_count'', (SELECT count(*)::int FROM planning.assignment a JOIN planning.event e ON e.id = a.event_id WHERE a.worker_id = w.id AND e.end_date >= current_date)) FROM planning.worker w WHERE w.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true)) || ' AND ' || pgv.rsql_to_where(p_filter, 'planning', 'worker') || ' ORDER BY w.active DESC, w.name';
+  END IF;
+END;
+$function$;
+COMMENT ON FUNCTION planning.worker_list(text) IS 'List workers with active event count — optional RSQL filter';
+
+CREATE OR REPLACE FUNCTION planning.worker_read(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE v_row planning.worker; v_result jsonb;
+BEGIN
+  SELECT * INTO v_row FROM planning.worker WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  v_result := to_jsonb(v_row) || jsonb_build_object(
+    'active_event_count', (SELECT count(*)::int FROM planning.assignment a JOIN planning.event e ON e.id = a.event_id WHERE a.worker_id = v_row.id AND e.end_date >= current_date),
+    'events', COALESCE((SELECT jsonb_agg(jsonb_build_object('id', e.id, 'title', e.title, 'type', e.type, 'start_date', e.start_date, 'end_date', e.end_date, 'location', e.location) ORDER BY e.start_date) FROM planning.event e JOIN planning.assignment a ON a.event_id = e.id WHERE a.worker_id = v_row.id AND e.end_date >= current_date), '[]'::jsonb)
   );
-$function$;
-COMMENT ON FUNCTION planning.nav_items() IS 'Nav items via i18n';
-
-CREATE OR REPLACE FUNCTION planning.post_affecter(p_data jsonb)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_evenement_id int := (p_data->>'p_evenement_id')::int;
-  v_intervenant_id int := (p_data->>'p_intervenant_id')::int;
-BEGIN
-  INSERT INTO planning.affectation (evenement_id, intervenant_id)
-  VALUES (v_evenement_id, v_intervenant_id)
-  ON CONFLICT (evenement_id, intervenant_id) DO NOTHING;
-
-  RETURN pgv.toast(pgv.t('planning.toast_affecte'))
-      || pgv.redirect(pgv.call_ref('get_evenement', jsonb_build_object('p_id', v_evenement_id)));
-END;
-$function$;
-COMMENT ON FUNCTION planning.post_affecter(jsonb) IS 'Affecter un intervenant a un evenement';
-
-CREATE OR REPLACE FUNCTION planning.post_desaffecter(p_data jsonb)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_id int := (p_data->>'p_id')::int;
-  v_evenement_id int := (p_data->>'p_evenement_id')::int;
-BEGIN
-  DELETE FROM planning.affectation WHERE id = v_id;
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('planning.toast_affectation_not_found'), 'error');
-  END IF;
-  RETURN pgv.toast(pgv.t('planning.toast_desaffecte'))
-      || pgv.redirect(pgv.call_ref('get_evenement', jsonb_build_object('p_id', v_evenement_id)));
-END;
-$function$;
-COMMENT ON FUNCTION planning.post_desaffecter(jsonb) IS 'Retirer un intervenant d''un evenement';
-
-CREATE OR REPLACE FUNCTION planning.post_evenement_save(p_data jsonb)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_id int;
-  v_titre text;
-  v_date_debut date;
-  v_date_fin date;
-BEGIN
-  v_titre := trim(COALESCE(p_data->>'titre', ''));
-  IF v_titre = '' THEN
-    RETURN pgv.toast(pgv.t('planning.err_titre_required'), 'error');
-  END IF;
-
-  v_date_debut := (p_data->>'date_debut')::date;
-  v_date_fin := (p_data->>'date_fin')::date;
-  IF v_date_fin < v_date_debut THEN
-    RETURN pgv.toast(pgv.t('planning.err_date_order'), 'error');
-  END IF;
-
-  v_id := NULLIF(trim(COALESCE(p_data->>'id', '')), '')::int;
-
-  IF v_id IS NOT NULL THEN
-    UPDATE planning.evenement SET
-      titre = v_titre,
-      type = COALESCE(NULLIF(trim(p_data->>'type'), ''), 'chantier'),
-      date_debut = v_date_debut,
-      date_fin = v_date_fin,
-      heure_debut = COALESCE(NULLIF(trim(p_data->>'heure_debut'), '')::time, '08:00'),
-      heure_fin = COALESCE(NULLIF(trim(p_data->>'heure_fin'), '')::time, '17:00'),
-      lieu = COALESCE(trim(p_data->>'lieu'), ''),
-      chantier_id = NULLIF(trim(COALESCE(p_data->>'chantier_id', '')), '')::int,
-      notes = COALESCE(trim(p_data->>'notes'), '')
-    WHERE id = v_id;
+  IF v_row.active THEN
+    v_result := v_result || jsonb_build_object('actions', jsonb_build_array(jsonb_build_object('method', 'deactivate', 'uri', 'planning://worker/' || p_id || '/deactivate'), jsonb_build_object('method', 'delete', 'uri', 'planning://worker/' || p_id)));
   ELSE
-    INSERT INTO planning.evenement (titre, type, date_debut, date_fin, heure_debut, heure_fin, lieu, chantier_id, notes)
-    VALUES (
-      v_titre,
-      COALESCE(NULLIF(trim(p_data->>'type'), ''), 'chantier'),
-      v_date_debut,
-      v_date_fin,
-      COALESCE(NULLIF(trim(p_data->>'heure_debut'), '')::time, '08:00'),
-      COALESCE(NULLIF(trim(p_data->>'heure_fin'), '')::time, '17:00'),
-      COALESCE(trim(p_data->>'lieu'), ''),
-      NULLIF(trim(COALESCE(p_data->>'chantier_id', '')), '')::int,
-      COALESCE(trim(p_data->>'notes'), '')
+    v_result := v_result || jsonb_build_object('actions', jsonb_build_array(jsonb_build_object('method', 'activate', 'uri', 'planning://worker/' || p_id || '/activate'), jsonb_build_object('method', 'delete', 'uri', 'planning://worker/' || p_id)));
+  END IF;
+  RETURN v_result;
+END;
+$function$;
+COMMENT ON FUNCTION planning.worker_read(text) IS 'Read worker by id with events and HATEOAS actions';
+
+CREATE OR REPLACE FUNCTION planning.worker_update(p_row planning.worker)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  UPDATE planning.worker SET name = COALESCE(NULLIF(p_row.name, ''), name), role = COALESCE(p_row.role, role), phone = COALESCE(p_row.phone, phone), color = COALESCE(NULLIF(p_row.color, ''), color), active = COALESCE(p_row.active, active)
+  WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true) RETURNING * INTO p_row;
+  RETURN to_jsonb(p_row);
+END;
+$function$;
+COMMENT ON FUNCTION planning.worker_update(planning.worker) IS 'Update worker by id — returns jsonb';
+
+CREATE OR REPLACE FUNCTION planning.worker_view()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN jsonb_build_object(
+    'uri', 'planning://worker', 'label', 'planning.entity_worker',
+    'template', jsonb_build_object(
+      'compact', jsonb_build_object('fields', jsonb_build_array('name', 'role', 'active')),
+      'standard', jsonb_build_object('fields', jsonb_build_array('name', 'role', 'phone', 'color'), 'stats', jsonb_build_array(jsonb_build_object('key', 'active_event_count', 'label', 'planning.stat_active_events'))),
+      'expanded', jsonb_build_object('fields', jsonb_build_array('name', 'role', 'phone', 'color', 'active', 'created_at'), 'stats', jsonb_build_array(jsonb_build_object('key', 'active_event_count', 'label', 'planning.stat_active_events')), 'related', jsonb_build_array(jsonb_build_object('entity', 'planning://event', 'filter', 'worker_id={id}', 'label', 'planning.title_upcoming_events'))),
+      'form', jsonb_build_object('sections', jsonb_build_array(jsonb_build_object('label', 'planning.section_identity', 'fields', jsonb_build_array(jsonb_build_object('key', 'name', 'label', 'planning.field_name', 'type', 'text', 'required', true), jsonb_build_object('key', 'role', 'label', 'planning.field_role', 'type', 'text'), jsonb_build_object('key', 'phone', 'label', 'planning.field_phone', 'type', 'tel'), jsonb_build_object('key', 'color', 'label', 'planning.field_color', 'type', 'text'), jsonb_build_object('key', 'active', 'label', 'planning.field_active', 'type', 'checkbox')))))
+    ),
+    'actions', jsonb_build_object(
+      'deactivate', jsonb_build_object('label', 'planning.action_deactivate', 'variant', 'warning', 'confirm', 'planning.confirm_deactivate'),
+      'activate', jsonb_build_object('label', 'planning.action_activate'),
+      'delete', jsonb_build_object('label', 'planning.action_delete', 'variant', 'danger', 'confirm', 'planning.confirm_delete_worker')
     )
-    RETURNING id INTO v_id;
-  END IF;
-
-  RETURN pgv.toast(pgv.t('planning.toast_evenement_saved'))
-      || pgv.redirect(pgv.call_ref('get_evenement', jsonb_build_object('p_id', v_id)));
+  );
 END;
 $function$;
-COMMENT ON FUNCTION planning.post_evenement_save(jsonb) IS 'Save événement avec i18n';
-
-CREATE OR REPLACE FUNCTION planning.post_evenement_supprimer(p_id integer)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  DELETE FROM planning.evenement WHERE id = p_id;
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('planning.err_evenement_not_found'), 'error');
-  END IF;
-  RETURN pgv.toast(pgv.t('planning.toast_evenement_deleted'))
-      || pgv.redirect(pgv.call_ref('get_evenements'));
-END;
-$function$;
-COMMENT ON FUNCTION planning.post_evenement_supprimer(integer) IS 'Delete événement avec i18n';
-
-CREATE OR REPLACE FUNCTION planning.post_intervenant_save(p_data jsonb)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_id int;
-  v_nom text;
-BEGIN
-  v_nom := trim(COALESCE(p_data->>'nom', ''));
-  IF v_nom = '' THEN
-    RETURN pgv.toast(pgv.t('planning.err_nom_required'), 'error');
-  END IF;
-
-  v_id := NULLIF(trim(COALESCE(p_data->>'id', '')), '')::int;
-
-  IF v_id IS NOT NULL THEN
-    UPDATE planning.intervenant SET
-      nom = v_nom,
-      role = COALESCE(trim(p_data->>'role'), ''),
-      telephone = NULLIF(trim(COALESCE(p_data->>'telephone', '')), ''),
-      couleur = COALESCE(NULLIF(trim(p_data->>'couleur'), ''), '#3b82f6'),
-      actif = COALESCE((p_data->>'actif')::boolean, true)
-    WHERE id = v_id;
-  ELSE
-    INSERT INTO planning.intervenant (nom, role, telephone, couleur, actif)
-    VALUES (
-      v_nom,
-      COALESCE(trim(p_data->>'role'), ''),
-      NULLIF(trim(COALESCE(p_data->>'telephone', '')), ''),
-      COALESCE(NULLIF(trim(p_data->>'couleur'), ''), '#3b82f6'),
-      COALESCE((p_data->>'actif')::boolean, true)
-    )
-    RETURNING id INTO v_id;
-  END IF;
-
-  RETURN pgv.toast(pgv.t('planning.toast_intervenant_saved'))
-      || pgv.redirect(pgv.call_ref('get_intervenant', jsonb_build_object('p_id', v_id)));
-END;
-$function$;
-COMMENT ON FUNCTION planning.post_intervenant_save(jsonb) IS 'Save intervenant avec i18n';
-
-CREATE OR REPLACE FUNCTION planning.post_intervenant_supprimer(p_id integer)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  DELETE FROM planning.intervenant WHERE id = p_id;
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('planning.err_intervenant_not_found'), 'error');
-  END IF;
-  RETURN pgv.toast(pgv.t('planning.toast_intervenant_deleted'))
-      || pgv.redirect(pgv.call_ref('get_intervenants'));
-END;
-$function$;
-COMMENT ON FUNCTION planning.post_intervenant_supprimer(integer) IS 'Delete intervenant avec i18n';
+COMMENT ON FUNCTION planning.worker_view() IS 'View template for worker entity';
 
 GRANT USAGE ON SCHEMA planning TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA planning TO anon;

@@ -10,11 +10,11 @@ AS $function$
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
-  DELETE FROM planning.affectation WHERE tenant_id = 'dev';
-  DELETE FROM planning.evenement WHERE tenant_id = 'dev';
-  DELETE FROM planning.intervenant WHERE tenant_id = 'dev';
+  DELETE FROM planning.assignment WHERE tenant_id = 'dev';
+  DELETE FROM planning.event WHERE tenant_id = 'dev';
+  DELETE FROM planning.worker WHERE tenant_id = 'dev';
 
-  RETURN '<template data-toast="success">Données planning supprimées.</template>';
+  RETURN '<template data-toast="success">Planning data cleaned.</template>';
 END;
 $function$;
 COMMENT ON FUNCTION planning_qa.clean() IS 'Clean QA data in FK order';
@@ -30,58 +30,58 @@ BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
   -- Clean existing QA data
-  DELETE FROM planning.affectation WHERE tenant_id = 'dev';
-  DELETE FROM planning.evenement WHERE tenant_id = 'dev';
-  DELETE FROM planning.intervenant WHERE tenant_id = 'dev';
+  DELETE FROM planning.assignment WHERE tenant_id = 'dev';
+  DELETE FROM planning.event WHERE tenant_id = 'dev';
+  DELETE FROM planning.worker WHERE tenant_id = 'dev';
 
   -- 5 intervenants réalistes
-  INSERT INTO planning.intervenant (nom, role, telephone, couleur)
+  INSERT INTO planning.worker (name, role, phone, color)
   VALUES ('Dupont Marie', 'Chef de chantier', '06 12 34 56 78', '#3b82f6')
   RETURNING id INTO v_i1;
 
-  INSERT INTO planning.intervenant (nom, role, telephone, couleur)
+  INSERT INTO planning.worker (name, role, phone, color)
   VALUES ('Martin Thomas', 'Charpentier', '06 23 45 67 89', '#10b981')
   RETURNING id INTO v_i2;
 
-  INSERT INTO planning.intervenant (nom, role, telephone, couleur)
+  INSERT INTO planning.worker (name, role, phone, color)
   VALUES ('Lefebvre Paul', 'Électricien', '06 34 56 78 90', '#f59e0b')
   RETURNING id INTO v_i3;
 
-  INSERT INTO planning.intervenant (nom, role, telephone, couleur)
+  INSERT INTO planning.worker (name, role, phone, color)
   VALUES ('Moreau Lucas', 'Apprenti couvreur', '06 45 67 89 01', '#8b5cf6')
   RETURNING id INTO v_i4;
 
-  INSERT INTO planning.intervenant (nom, role, telephone, couleur, actif)
+  INSERT INTO planning.worker (name, role, phone, color, active)
   VALUES ('Garcia Antoine', 'Menuisier', '06 56 78 90 12', '#ef4444', false)
   RETURNING id INTO v_i5;
 
   -- 6 événements (semaine en cours + semaine prochaine)
-  INSERT INTO planning.evenement (titre, type, date_debut, date_fin, heure_debut, heure_fin, lieu, notes)
-  VALUES ('Charpente maison Durand', 'chantier', current_date, current_date + 4, '07:30', '16:30', '12 rue des Lilas, Lyon 3e', 'Pose charpente traditionnelle')
+  INSERT INTO planning.event (title, type, start_date, end_date, start_time, end_time, location, notes)
+  VALUES ('Charpente maison Durand', 'job_site', current_date, current_date + 4, '07:30', '16:30', '12 rue des Lilas, Lyon 3e', 'Pose charpente traditionnelle')
   RETURNING id INTO v_e1;
 
-  INSERT INTO planning.evenement (titre, type, date_debut, date_fin, heure_debut, heure_fin, lieu)
-  VALUES ('Rénovation toiture Mercier', 'chantier', current_date + 2, current_date + 8, '08:00', '17:00', '5 impasse du Clos, Villeurbanne')
+  INSERT INTO planning.event (title, type, start_date, end_date, start_time, end_time, location)
+  VALUES ('Rénovation toiture Mercier', 'job_site', current_date + 2, current_date + 8, '08:00', '17:00', '5 impasse du Clos, Villeurbanne')
   RETURNING id INTO v_e2;
 
-  INSERT INTO planning.evenement (titre, type, date_debut, date_fin, heure_debut, heure_fin, lieu, notes)
-  VALUES ('Livraison bois chantier Durand', 'livraison', current_date + 1, current_date + 1, '08:00', '10:00', '12 rue des Lilas, Lyon 3e', 'Camion grue nécessaire')
+  INSERT INTO planning.event (title, type, start_date, end_date, start_time, end_time, location, notes)
+  VALUES ('Livraison bois chantier Durand', 'delivery', current_date + 1, current_date + 1, '08:00', '10:00', '12 rue des Lilas, Lyon 3e', 'Camion grue nécessaire')
   RETURNING id INTO v_e3;
 
-  INSERT INTO planning.evenement (titre, type, date_debut, date_fin, heure_debut, heure_fin, lieu)
-  VALUES ('Réunion hebdo équipe', 'reunion', current_date - extract(isodow FROM current_date)::int + 1, current_date - extract(isodow FROM current_date)::int + 1, '08:00', '09:00', 'Bureau — salle de réunion')
+  INSERT INTO planning.event (title, type, start_date, end_date, start_time, end_time, location)
+  VALUES ('Réunion hebdo équipe', 'meeting', current_date - extract(isodow FROM current_date)::int + 1, current_date - extract(isodow FROM current_date)::int + 1, '08:00', '09:00', 'Bureau — salle de réunion')
   RETURNING id INTO v_e4;
 
-  INSERT INTO planning.evenement (titre, type, date_debut, date_fin, notes)
-  VALUES ('Congé Moreau', 'conge', current_date + 7, current_date + 11, 'Congés payés')
+  INSERT INTO planning.event (title, type, start_date, end_date, notes)
+  VALUES ('Congé Moreau', 'leave', current_date + 7, current_date + 11, 'Congés payés')
   RETURNING id INTO v_e5;
 
-  INSERT INTO planning.evenement (titre, type, date_debut, date_fin, heure_debut, heure_fin, lieu)
-  VALUES ('Câblage cuisine Petit', 'chantier', current_date + 3, current_date + 5, '08:00', '16:00', '8 avenue Berthelot, Lyon 7e')
+  INSERT INTO planning.event (title, type, start_date, end_date, start_time, end_time, location)
+  VALUES ('Câblage cuisine Petit', 'job_site', current_date + 3, current_date + 5, '08:00', '16:00', '8 avenue Berthelot, Lyon 7e')
   RETURNING id INTO v_e6;
 
   -- Affectations
-  INSERT INTO planning.affectation (evenement_id, intervenant_id) VALUES
+  INSERT INTO planning.assignment (event_id, worker_id) VALUES
     (v_e1, v_i1),  -- Dupont sur charpente Durand
     (v_e1, v_i2),  -- Martin sur charpente Durand
     (v_e1, v_i4),  -- Moreau (apprenti) sur charpente Durand
@@ -93,7 +93,7 @@ BEGIN
     (v_e5, v_i4),  -- Moreau en congé
     (v_e6, v_i3);  -- Lefebvre sur câblage
 
-  RETURN '<template data-toast="success">5 intervenants, 6 événements, 10 affectations créés.</template>';
+  RETURN '<template data-toast="success">5 workers, 6 events, 10 assignments created.</template>';
 END;
 $function$;
 COMMENT ON FUNCTION planning_qa.seed() IS 'Seed données démo réalistes pour planning';

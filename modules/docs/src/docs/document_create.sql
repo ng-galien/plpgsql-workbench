@@ -22,9 +22,9 @@ BEGIN
     p_data.width := p_data.width - p_data.height;
   END IF;
 
-  IF p_data.charte_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM docs.charte WHERE id = p_data.charte_id AND tenant_id = current_setting('app.tenant_id', true)) THEN
-      RAISE EXCEPTION 'Charte not found: %', p_data.charte_id;
+  IF p_data.charter_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM docs.charter WHERE id = p_data.charter_id AND tenant_id = current_setting('app.tenant_id', true)) THEN
+      RAISE EXCEPTION 'Charter not found: %', p_data.charter_id;
     END IF;
   END IF;
 

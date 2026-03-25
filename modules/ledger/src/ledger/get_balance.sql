@@ -43,7 +43,7 @@ BEGIN
     v_total_debit := v_total_debit + r.total_debit;
     v_total_credit := v_total_credit + r.total_credit;
     v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_grand_livre', jsonb_build_object('p_account_id', (SELECT id FROM ledger.account WHERE code = r.code), 'p_year', v_year)), pgv.esc(r.code)),
+      format('<a href="%s">%s</a>', pgv.call_ref('get_general_ledger', jsonb_build_object('p_account_id', (SELECT id FROM ledger.account WHERE code = r.code), 'p_year', v_year)), pgv.esc(r.code)),
       pgv.esc(r.label),
       to_char(r.total_debit, 'FM999 990.00') || ' €',
       to_char(r.total_credit, 'FM999 990.00') || ' €',

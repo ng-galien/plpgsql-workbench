@@ -12,67 +12,44 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION docs.brand() IS 'Brand name for document module (i18n)';
 
-CREATE OR REPLACE FUNCTION docs.charte_check(p_html text, p_charte_id text)
+CREATE OR REPLACE FUNCTION docs.charter_check(p_html text, p_charter_id text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
 AS $function$
 DECLARE
   v_violations text[] := ARRAY[]::text[];
-  v_style_match text[];
-  v_style text;
-  v_prop text;
-  v_val text;
-  v_pair text;
-  v_data_id text;
+  v_prop text; v_val text; v_pair text;
   v_color_props constant text[] := ARRAY['color','background-color','border-color','background','fill','stroke'];
   v_font_props constant text[] := ARRAY['font-family'];
   v_ok_vals constant text[] := ARRAY['transparent','inherit','none','initial','unset','currentColor'];
   r record;
 BEGIN
-  IF p_charte_id IS NULL THEN RETURN NULL; END IF;
-  IF NOT EXISTS (SELECT 1 FROM docs.charte WHERE id = p_charte_id) THEN
-    RETURN 'Charte not found: ' || p_charte_id;
+  IF p_charter_id IS NULL THEN RETURN NULL; END IF;
+  IF NOT EXISTS (SELECT 1 FROM docs.charter WHERE id = p_charter_id) THEN
+    RETURN 'Charter not found: ' || p_charter_id;
   END IF;
-
-  -- Extract all style attributes with their data-id context
-  FOR r IN
-    SELECT m[1] AS data_id, m[2] AS style_val
-    FROM regexp_matches(p_html, 'data-id="([^"]*)"[^>]*style="([^"]*)"', 'g') AS m
+  FOR r IN SELECT m[1] AS data_id, m[2] AS style_val FROM regexp_matches(p_html, 'data-id="([^"]*)"[^>]*style="([^"]*)"', 'g') AS m
   LOOP
-    FOREACH v_pair IN ARRAY string_to_array(r.style_val, ';')
-    LOOP
-      v_pair := trim(v_pair);
-      IF v_pair = '' THEN CONTINUE; END IF;
+    FOREACH v_pair IN ARRAY string_to_array(r.style_val, ';') LOOP
+      v_pair := trim(v_pair); IF v_pair = '' THEN CONTINUE; END IF;
       v_prop := lower(trim(split_part(v_pair, ':', 1)));
       v_val := trim(substring(v_pair from position(':' in v_pair) + 1));
-
-      -- Check color properties
-      IF v_prop = ANY(v_color_props) THEN
-        IF v_val NOT LIKE 'var(--charte-%' AND NOT (lower(v_val) = ANY(v_ok_vals)) THEN
-          v_violations := v_violations || format('[%s] %s: %s (should use var(--charte-*))', r.data_id, v_prop, v_val);
-        END IF;
+      IF v_prop = ANY(v_color_props) AND v_val NOT LIKE 'var(--charte-%' AND NOT (lower(v_val) = ANY(v_ok_vals)) THEN
+        v_violations := v_violations || format('[%s] %s: %s (should use var(--charte-*))', r.data_id, v_prop, v_val);
       END IF;
-
-      -- Check font properties
-      IF v_prop = ANY(v_font_props) THEN
-        IF v_val NOT LIKE 'var(--charte-%' AND NOT (lower(v_val) = ANY(v_ok_vals)) THEN
-          v_violations := v_violations || format('[%s] %s: %s (should use var(--charte-*))', r.data_id, v_prop, v_val);
-        END IF;
+      IF v_prop = ANY(v_font_props) AND v_val NOT LIKE 'var(--charte-%' AND NOT (lower(v_val) = ANY(v_ok_vals)) THEN
+        v_violations := v_violations || format('[%s] %s: %s (should use var(--charte-*))', r.data_id, v_prop, v_val);
       END IF;
     END LOOP;
   END LOOP;
-
-  IF cardinality(v_violations) = 0 THEN
-    RETURN NULL;
-  END IF;
-
-  RETURN 'Charte violations:' || chr(10) || array_to_string(v_violations, chr(10));
+  IF cardinality(v_violations) = 0 THEN RETURN NULL; END IF;
+  RETURN 'Charter violations:' || chr(10) || array_to_string(v_violations, chr(10));
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_check(text,text) IS 'Validate HTML uses charte CSS vars for colors/fonts (no hardcoded values)';
+COMMENT ON FUNCTION docs.charter_check(text,text) IS 'Validate HTML uses charter CSS vars for colors/fonts';
 
-CREATE OR REPLACE FUNCTION docs.charte_create(p_data docs.charte)
+CREATE OR REPLACE FUNCTION docs.charter_create(p_data docs.charter)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -85,45 +62,42 @@ BEGIN
   p_data.rules := COALESCE(p_data.rules, '{}'::jsonb);
   p_data.created_at := now();
   p_data.updated_at := now();
-  INSERT INTO docs.charte VALUES (p_data.*) RETURNING * INTO p_data;
+  INSERT INTO docs.charter VALUES (p_data.*) RETURNING * INTO p_data;
   RETURN to_jsonb(p_data);
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_create(docs.charte) IS 'Create charte — auto-slug from name, returns jsonb';
+COMMENT ON FUNCTION docs.charter_create(docs.charter) IS 'Create charter — auto-slug, returns jsonb';
 
-CREATE OR REPLACE FUNCTION docs.charte_delete(p_id text)
+CREATE OR REPLACE FUNCTION docs.charter_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
-DECLARE
-  v_row docs.charte;
+DECLARE v_row docs.charter;
 BEGIN
-  DELETE FROM docs.charte
-  WHERE (slug = p_id OR id = p_id) AND tenant_id = current_setting('app.tenant_id', true)
-  RETURNING * INTO v_row;
+  DELETE FROM docs.charter WHERE (slug = p_id OR id = p_id) AND tenant_id = current_setting('app.tenant_id', true) RETURNING * INTO v_row;
   IF NOT FOUND THEN RETURN NULL; END IF;
   RETURN to_jsonb(v_row);
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_delete(text) IS 'Delete charte by slug or id — returns deleted row as jsonb, NULL if not found';
+COMMENT ON FUNCTION docs.charter_delete(text) IS 'Delete charter — returns deleted row as jsonb';
 
-CREATE OR REPLACE FUNCTION docs.charte_list(p_filter text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION docs.charter_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF jsonb
  LANGUAGE plpgsql
  STABLE
 AS $function$
 BEGIN
   IF p_filter IS NULL THEN
-    RETURN QUERY SELECT to_jsonb(c) FROM docs.charte c WHERE c.tenant_id = current_setting('app.tenant_id', true) ORDER BY c.name;
+    RETURN QUERY SELECT to_jsonb(c) FROM docs.charter c WHERE c.tenant_id = current_setting('app.tenant_id', true) ORDER BY c.name;
   ELSE
-    RETURN QUERY EXECUTE 'SELECT to_jsonb(c) FROM docs.charte c WHERE c.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true)) || ' AND ' || pgv.rsql_to_where(p_filter, 'docs', 'charte') || ' ORDER BY c.name';
+    RETURN QUERY EXECUTE 'SELECT to_jsonb(c) FROM docs.charter c WHERE c.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true)) || ' AND ' || pgv.rsql_to_where(p_filter, 'docs', 'charter') || ' ORDER BY c.name';
   END IF;
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_list(text) IS 'List chartes for current tenant — returns SETOF jsonb, optional RSQL filter';
+COMMENT ON FUNCTION docs.charter_list(text) IS 'List charters — SETOF jsonb, optional RSQL filter';
 
-CREATE OR REPLACE FUNCTION docs.charte_read(p_id text)
+CREATE OR REPLACE FUNCTION docs.charter_read(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
@@ -133,115 +107,80 @@ DECLARE
   v_doc_count int;
 BEGIN
   SELECT to_jsonb(c) INTO v_result
-  FROM docs.charte c WHERE (c.slug = p_id OR c.id = p_id) AND c.tenant_id = current_setting('app.tenant_id', true);
-
+  FROM docs.charter c WHERE (c.slug = p_id OR c.id = p_id) AND c.tenant_id = current_setting('app.tenant_id', true);
   IF v_result IS NULL THEN RETURN NULL; END IF;
-
-  SELECT count(*)::int INTO v_doc_count FROM docs.document WHERE charte_id = v_result->>'id' AND tenant_id = current_setting('app.tenant_id', true);
-
+  SELECT count(*)::int INTO v_doc_count FROM docs.document WHERE charter_id = v_result->>'id' AND tenant_id = current_setting('app.tenant_id', true);
   RETURN v_result || jsonb_build_object(
     'document_count', v_doc_count,
     'actions', jsonb_build_array(
-      jsonb_build_object('method', 'update', 'uri', 'docs://charte/' || (v_result->>'id') || '/update'),
-      jsonb_build_object('method', 'duplicate', 'uri', 'docs://charte/' || (v_result->>'id') || '/duplicate'),
-      jsonb_build_object('method', 'delete', 'uri', 'docs://charte/' || (v_result->>'id') || '/delete')
+      jsonb_build_object('method', 'update', 'uri', 'docs://charter/' || (v_result->>'id') || '/update'),
+      jsonb_build_object('method', 'duplicate', 'uri', 'docs://charter/' || (v_result->>'id') || '/duplicate'),
+      jsonb_build_object('method', 'delete', 'uri', 'docs://charter/' || (v_result->>'id') || '/delete')
     )
   );
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_read(text) IS 'Read charte — jsonb with document_count stat + HATEOAS actions (always editable)';
+COMMENT ON FUNCTION docs.charter_read(text) IS 'Read charter — jsonb with document_count + HATEOAS actions';
 
-CREATE OR REPLACE FUNCTION docs.charte_tokens_to_css(p_charte_id text)
+CREATE OR REPLACE FUNCTION docs.charter_tokens_to_css(p_charter_id text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
 AS $function$
 DECLARE
-  v_c docs.charte;
-  v_css text;
-  v_imports text := '';
-  v_fonts text[];
-  v_f text;
-  v_k text;
-  v_v text;
+  v_c docs.charter; v_css text; v_imports text := ''; v_fonts text[]; v_f text; v_k text; v_v text;
   v_generics constant text[] := ARRAY['serif','sans-serif','monospace','cursive','fantasy','system-ui','ui-serif','ui-sans-serif','ui-monospace','ui-rounded'];
 BEGIN
-  SELECT * INTO v_c FROM docs.charte WHERE id = p_charte_id;
+  SELECT * INTO v_c FROM docs.charter WHERE id = p_charter_id;
   IF v_c IS NULL THEN RETURN NULL; END IF;
-
   v_css := ':root {' || chr(10);
-
-  -- Colors
   v_css := v_css || '  --charte-color-bg: ' || v_c.color_bg || ';' || chr(10);
   v_css := v_css || '  --charte-color-main: ' || v_c.color_main || ';' || chr(10);
   v_css := v_css || '  --charte-color-accent: ' || v_c.color_accent || ';' || chr(10);
   v_css := v_css || '  --charte-color-text: ' || v_c.color_text || ';' || chr(10);
   v_css := v_css || '  --charte-color-text-light: ' || v_c.color_text_light || ';' || chr(10);
   v_css := v_css || '  --charte-color-border: ' || v_c.color_border || ';' || chr(10);
-
-  -- Color extra
-  FOR v_k, v_v IN SELECT key, value #>> '{}' FROM jsonb_each(v_c.color_extra)
-  LOOP
+  FOR v_k, v_v IN SELECT key, value #>> '{}' FROM jsonb_each(v_c.color_extra) LOOP
     v_css := v_css || '  --charte-color-' || v_k || ': ' || v_v || ';' || chr(10);
   END LOOP;
-
-  -- Fonts
   v_css := v_css || '  --charte-font-heading: ' || quote_literal(v_c.font_heading) || ';' || chr(10);
   v_css := v_css || '  --charte-font-body: ' || quote_literal(v_c.font_body) || ';' || chr(10);
-
-  -- Spacing
   IF v_c.spacing_page IS NOT NULL THEN v_css := v_css || '  --charte-spacing-page: ' || v_c.spacing_page || ';' || chr(10); END IF;
   IF v_c.spacing_section IS NOT NULL THEN v_css := v_css || '  --charte-spacing-section: ' || v_c.spacing_section || ';' || chr(10); END IF;
   IF v_c.spacing_gap IS NOT NULL THEN v_css := v_css || '  --charte-spacing-gap: ' || v_c.spacing_gap || ';' || chr(10); END IF;
   IF v_c.spacing_card IS NOT NULL THEN v_css := v_css || '  --charte-spacing-card: ' || v_c.spacing_card || ';' || chr(10); END IF;
-
-  -- Shadow
   IF v_c.shadow_card IS NOT NULL THEN v_css := v_css || '  --charte-shadow-card: ' || v_c.shadow_card || ';' || chr(10); END IF;
   IF v_c.shadow_elevated IS NOT NULL THEN v_css := v_css || '  --charte-shadow-elevated: ' || v_c.shadow_elevated || ';' || chr(10); END IF;
-
-  -- Radius
   IF v_c.radius_card IS NOT NULL THEN v_css := v_css || '  --charte-radius-card: ' || v_c.radius_card || ';' || chr(10); END IF;
-
   v_css := v_css || '}';
-
-  -- Google Fonts @import
   v_fonts := ARRAY[v_c.font_heading, v_c.font_body];
-  FOREACH v_f IN ARRAY v_fonts
-  LOOP
+  FOREACH v_f IN ARRAY v_fonts LOOP
     IF v_f IS NOT NULL AND NOT (lower(v_f) = ANY(v_generics)) THEN
       v_imports := v_imports || '@import url(''https://fonts.googleapis.com/css2?family=' || replace(v_f, ' ', '+') || ':wght@400;700&display=swap'');' || chr(10);
     END IF;
   END LOOP;
-
-  -- Deduplicate if heading = body
   IF v_c.font_heading = v_c.font_body THEN
     v_imports := '@import url(''https://fonts.googleapis.com/css2?family=' || replace(v_c.font_heading, ' ', '+') || ':wght@400;700&display=swap'');' || chr(10);
   END IF;
-
-  IF v_imports != '' THEN
-    RETURN v_imports || chr(10) || v_css;
-  END IF;
-
+  IF v_imports != '' THEN RETURN v_imports || chr(10) || v_css; END IF;
   RETURN v_css;
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_tokens_to_css(text) IS 'Generate CSS variables block from charte tokens + Google Fonts @import';
+COMMENT ON FUNCTION docs.charter_tokens_to_css(text) IS 'Generate CSS variables from charter tokens + Google Fonts @import';
 
-CREATE OR REPLACE FUNCTION docs.charte_ui(p_slug text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION docs.charter_ui(p_slug text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
 AS $function$
-DECLARE
-  v_c docs.charte;
+DECLARE v_c docs.charter;
 BEGIN
-  -- List mode
   IF p_slug IS NULL THEN
     RETURN jsonb_build_object(
       'ui', pgv.ui_column(
         pgv.ui_heading(pgv.t('docs.title_chartes')),
-        pgv.ui_table('chartes', jsonb_build_array(
-          pgv.ui_col('name', pgv.t('docs.col_name'), pgv.ui_link('{name}', '/docs/chartes/{slug}')),
+        pgv.ui_table('charters', jsonb_build_array(
+          pgv.ui_col('name', pgv.t('docs.col_name'), pgv.ui_link('{name}', '/docs/charters/{slug}')),
           pgv.ui_col('description', pgv.t('docs.col_description')),
           pgv.ui_col('color_bg', pgv.t('docs.col_bg'), pgv.ui_color('{color_bg}')),
           pgv.ui_col('color_main', pgv.t('docs.col_main'), pgv.ui_color('{color_main}')),
@@ -250,66 +189,28 @@ BEGIN
           pgv.ui_col('font_body', pgv.t('docs.col_body_font'))
         ))
       ),
-      'datasources', jsonb_build_object(
-        'chartes', pgv.ui_datasource('docs://charte', 20, true, 'name')
-      )
+      'datasources', jsonb_build_object('charters', pgv.ui_datasource('docs://charter', 20, true, 'name'))
     );
   END IF;
-
-  -- Detail mode
-  SELECT * INTO v_c FROM docs.charte WHERE slug = p_slug AND tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
-
-  RETURN jsonb_build_object(
-    'ui', pgv.ui_column(
-      pgv.ui_row(
-        pgv.ui_link(pgv.t('docs.title_chartes'), '/docs/chartes'),
-        pgv.ui_heading(v_c.name)
-      ),
-      pgv.ui_text(coalesce(v_c.description, '')),
-
-      -- Palette
-      pgv.ui_heading(pgv.t('docs.title_palette'), 3),
-      pgv.ui_row(
-        pgv.ui_color(v_c.color_bg),
-        pgv.ui_color(v_c.color_main),
-        pgv.ui_color(v_c.color_accent),
-        pgv.ui_color(v_c.color_text),
-        pgv.ui_color(v_c.color_text_light),
-        pgv.ui_color(v_c.color_border)
-      ),
-
-      -- Typography
-      pgv.ui_heading(pgv.t('docs.title_typography'), 3),
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('docs.label_heading_font') || ': ' || v_c.font_heading),
-        pgv.ui_text(pgv.t('docs.label_body_font') || ': ' || v_c.font_body)
-      ),
-
-      -- Spacing
-      pgv.ui_heading(pgv.t('docs.title_spacing'), 3),
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('docs.label_page') || ': ' || coalesce(v_c.spacing_page, '—')),
-        pgv.ui_text(pgv.t('docs.label_section') || ': ' || coalesce(v_c.spacing_section, '—')),
-        pgv.ui_text(pgv.t('docs.label_gap') || ': ' || coalesce(v_c.spacing_gap, '—')),
-        pgv.ui_text(pgv.t('docs.label_card') || ': ' || coalesce(v_c.spacing_card, '—'))
-      ),
-
-      -- Voice
-      pgv.ui_heading(pgv.t('docs.title_voice'), 3),
-      pgv.ui_row(
-        pgv.ui_badge(coalesce(v_c.voice_formality, '—')),
-        pgv.ui_text(coalesce(array_to_string(v_c.voice_personality, ', '), ''))
-      )
-    )
-  );
+  SELECT * INTO v_c FROM docs.charter WHERE slug = p_slug AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RETURN jsonb_build_object('error', 'not_found'); END IF;
+  RETURN jsonb_build_object('ui', pgv.ui_column(
+    pgv.ui_row(pgv.ui_link(pgv.t('docs.title_chartes'), '/docs/charters'), pgv.ui_heading(v_c.name)),
+    pgv.ui_text(coalesce(v_c.description, '')),
+    pgv.ui_heading(pgv.t('docs.title_palette'), 3),
+    pgv.ui_row(pgv.ui_color(v_c.color_bg), pgv.ui_color(v_c.color_main), pgv.ui_color(v_c.color_accent), pgv.ui_color(v_c.color_text), pgv.ui_color(v_c.color_text_light), pgv.ui_color(v_c.color_border)),
+    pgv.ui_heading(pgv.t('docs.title_typography'), 3),
+    pgv.ui_row(pgv.ui_text(pgv.t('docs.label_heading_font') || ': ' || v_c.font_heading), pgv.ui_text(pgv.t('docs.label_body_font') || ': ' || v_c.font_body)),
+    pgv.ui_heading(pgv.t('docs.title_spacing'), 3),
+    pgv.ui_row(pgv.ui_text(pgv.t('docs.label_page') || ': ' || coalesce(v_c.spacing_page, '—')), pgv.ui_text(pgv.t('docs.label_section') || ': ' || coalesce(v_c.spacing_section, '—')), pgv.ui_text(pgv.t('docs.label_gap') || ': ' || coalesce(v_c.spacing_gap, '—')), pgv.ui_text(pgv.t('docs.label_card') || ': ' || coalesce(v_c.spacing_card, '—'))),
+    pgv.ui_heading(pgv.t('docs.title_voice'), 3),
+    pgv.ui_row(pgv.ui_badge(coalesce(v_c.voice_formality, '—')), pgv.ui_text(coalesce(array_to_string(v_c.voice_personality, ', '), '')))
+  ));
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_ui(text) IS 'SDUI view: charte list + detail with palette, typography, spacing, voice — i18n labels';
+COMMENT ON FUNCTION docs.charter_ui(text) IS 'SDUI view: charter list + detail';
 
-CREATE OR REPLACE FUNCTION docs.charte_update(p_data docs.charte)
+CREATE OR REPLACE FUNCTION docs.charter_update(p_data docs.charter)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -318,105 +219,55 @@ BEGIN
   IF p_data.name IS NOT NULL AND p_data.name != '' THEN
     p_data.slug := pgv.slugify(p_data.name);
   END IF;
-
-  UPDATE docs.charte SET
-    name = COALESCE(NULLIF(p_data.name, ''), name),
-    slug = COALESCE(NULLIF(p_data.slug, ''), slug),
+  UPDATE docs.charter SET
+    name = COALESCE(NULLIF(p_data.name, ''), name), slug = COALESCE(NULLIF(p_data.slug, ''), slug),
     description = COALESCE(p_data.description, description),
-    color_bg = COALESCE(NULLIF(p_data.color_bg, ''), color_bg),
-    color_main = COALESCE(NULLIF(p_data.color_main, ''), color_main),
-    color_accent = COALESCE(NULLIF(p_data.color_accent, ''), color_accent),
-    color_text = COALESCE(NULLIF(p_data.color_text, ''), color_text),
-    color_text_light = COALESCE(NULLIF(p_data.color_text_light, ''), color_text_light),
-    color_border = COALESCE(NULLIF(p_data.color_border, ''), color_border),
+    color_bg = COALESCE(NULLIF(p_data.color_bg, ''), color_bg), color_main = COALESCE(NULLIF(p_data.color_main, ''), color_main),
+    color_accent = COALESCE(NULLIF(p_data.color_accent, ''), color_accent), color_text = COALESCE(NULLIF(p_data.color_text, ''), color_text),
+    color_text_light = COALESCE(NULLIF(p_data.color_text_light, ''), color_text_light), color_border = COALESCE(NULLIF(p_data.color_border, ''), color_border),
     color_extra = COALESCE(p_data.color_extra, color_extra),
-    font_heading = COALESCE(NULLIF(p_data.font_heading, ''), font_heading),
-    font_body = COALESCE(NULLIF(p_data.font_body, ''), font_body),
-    spacing_page = COALESCE(p_data.spacing_page, spacing_page),
-    spacing_section = COALESCE(p_data.spacing_section, spacing_section),
-    spacing_gap = COALESCE(p_data.spacing_gap, spacing_gap),
-    spacing_card = COALESCE(p_data.spacing_card, spacing_card),
-    shadow_card = COALESCE(p_data.shadow_card, shadow_card),
-    shadow_elevated = COALESCE(p_data.shadow_elevated, shadow_elevated),
+    font_heading = COALESCE(NULLIF(p_data.font_heading, ''), font_heading), font_body = COALESCE(NULLIF(p_data.font_body, ''), font_body),
+    spacing_page = COALESCE(p_data.spacing_page, spacing_page), spacing_section = COALESCE(p_data.spacing_section, spacing_section),
+    spacing_gap = COALESCE(p_data.spacing_gap, spacing_gap), spacing_card = COALESCE(p_data.spacing_card, spacing_card),
+    shadow_card = COALESCE(p_data.shadow_card, shadow_card), shadow_elevated = COALESCE(p_data.shadow_elevated, shadow_elevated),
     radius_card = COALESCE(p_data.radius_card, radius_card),
-    voice_personality = COALESCE(p_data.voice_personality, voice_personality),
-    voice_formality = COALESCE(p_data.voice_formality, voice_formality),
-    voice_do = COALESCE(p_data.voice_do, voice_do),
-    voice_dont = COALESCE(p_data.voice_dont, voice_dont),
-    voice_vocabulary = COALESCE(p_data.voice_vocabulary, voice_vocabulary),
-    voice_examples = COALESCE(p_data.voice_examples, voice_examples),
-    rules = COALESCE(p_data.rules, rules),
-    updated_at = now()
+    voice_personality = COALESCE(p_data.voice_personality, voice_personality), voice_formality = COALESCE(p_data.voice_formality, voice_formality),
+    voice_do = COALESCE(p_data.voice_do, voice_do), voice_dont = COALESCE(p_data.voice_dont, voice_dont),
+    voice_vocabulary = COALESCE(p_data.voice_vocabulary, voice_vocabulary), voice_examples = COALESCE(p_data.voice_examples, voice_examples),
+    rules = COALESCE(p_data.rules, rules), updated_at = now()
   WHERE (slug = p_data.slug OR id = p_data.id) AND tenant_id = current_setting('app.tenant_id', true)
   RETURNING * INTO p_data;
   RETURN to_jsonb(p_data);
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_update(docs.charte) IS 'Partial update charte — resolve by slug, returns jsonb';
+COMMENT ON FUNCTION docs.charter_update(docs.charter) IS 'Partial update charter — resolve by slug, returns jsonb';
 
-CREATE OR REPLACE FUNCTION docs.charte_view()
+CREATE OR REPLACE FUNCTION docs.charter_view()
  RETURNS jsonb
  LANGUAGE plpgsql
  IMMUTABLE
 AS $function$
 BEGIN
   RETURN jsonb_build_object(
-    'uri', 'docs://charte',
-    'icon', 'palette',
-    'label', 'docs.entity_charte',
-
+    'uri', 'docs://charter', 'icon', 'palette', 'label', 'docs.entity_charter',
     'template', jsonb_build_object(
-      'compact', jsonb_build_object(
-        'fields', jsonb_build_array('name', 'color_bg', 'color_main', 'color_accent', 'font_heading')
-      ),
+      'compact', jsonb_build_object('fields', jsonb_build_array('name', 'color_bg', 'color_main', 'color_accent', 'font_heading')),
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('name', 'description', 'color_bg', 'color_main', 'color_accent',
-          'color_text', 'color_text_light', 'color_border', 'font_heading', 'font_body'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'document_count', 'label', 'docs.stat_linked_docs')
-        )
+        'fields', jsonb_build_array('name', 'description', 'color_bg', 'color_main', 'color_accent', 'color_text', 'color_text_light', 'color_border', 'font_heading', 'font_body'),
+        'stats', jsonb_build_array(jsonb_build_object('key', 'document_count', 'label', 'docs.stat_linked_docs'))
       ),
       'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('name', 'description', 'color_bg', 'color_main', 'color_accent',
-          'color_text', 'color_text_light', 'color_border', 'color_extra',
-          'font_heading', 'font_body',
-          'spacing_page', 'spacing_section', 'spacing_gap', 'spacing_card',
-          'shadow_card', 'shadow_elevated', 'radius_card',
-          'voice_formality', 'voice_personality', 'voice_do', 'voice_dont',
-          'rules'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'document_count', 'label', 'docs.stat_linked_docs')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'docs://document', 'label', 'docs.rel_documents', 'filter', 'charte_id={id}')
-        )
+        'fields', jsonb_build_array('name', 'description', 'color_bg', 'color_main', 'color_accent', 'color_text', 'color_text_light', 'color_border', 'color_extra', 'font_heading', 'font_body', 'spacing_page', 'spacing_section', 'spacing_gap', 'spacing_card', 'shadow_card', 'shadow_elevated', 'radius_card', 'voice_formality', 'voice_personality', 'voice_do', 'voice_dont', 'rules'),
+        'stats', jsonb_build_array(jsonb_build_object('key', 'document_count', 'label', 'docs.stat_linked_docs')),
+        'related', jsonb_build_array(jsonb_build_object('entity', 'docs://document', 'label', 'docs.rel_documents', 'filter', 'charter_id={id}'))
       ),
-      'form', jsonb_build_object(
-        'sections', jsonb_build_array(
-          jsonb_build_object('label', 'docs.section_identity', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'name', 'type', 'text', 'label', 'docs.col_name', 'required', true),
-            jsonb_build_object('key', 'description', 'type', 'textarea', 'label', 'docs.col_description')
-          )),
-          jsonb_build_object('label', 'docs.section_palette', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'color_bg', 'type', 'text', 'label', 'docs.col_bg', 'required', true),
-            jsonb_build_object('key', 'color_main', 'type', 'text', 'label', 'docs.col_main', 'required', true),
-            jsonb_build_object('key', 'color_accent', 'type', 'text', 'label', 'docs.col_accent', 'required', true),
-            jsonb_build_object('key', 'color_text', 'type', 'text', 'label', 'docs.col_text', 'required', true),
-            jsonb_build_object('key', 'color_text_light', 'type', 'text', 'label', 'docs.col_text_light', 'required', true),
-            jsonb_build_object('key', 'color_border', 'type', 'text', 'label', 'docs.col_border', 'required', true)
-          )),
-          jsonb_build_object('label', 'docs.section_typography', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'font_heading', 'type', 'text', 'label', 'docs.col_heading_font', 'required', true),
-            jsonb_build_object('key', 'font_body', 'type', 'text', 'label', 'docs.col_body_font', 'required', true)
-          )),
-          jsonb_build_object('label', 'docs.section_voice', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'voice_formality', 'type', 'select', 'label', 'docs.col_formality'),
-            jsonb_build_object('key', 'voice_personality', 'type', 'textarea', 'label', 'docs.col_personality')
-          ))
-        )
-      )
+      'form', jsonb_build_object('sections', jsonb_build_array(
+        jsonb_build_object('label', 'docs.section_identity', 'fields', jsonb_build_array(jsonb_build_object('key', 'name', 'type', 'text', 'label', 'docs.col_name', 'required', true), jsonb_build_object('key', 'description', 'type', 'textarea', 'label', 'docs.col_description'))),
+        jsonb_build_object('label', 'docs.section_palette', 'fields', jsonb_build_array(jsonb_build_object('key', 'color_bg', 'type', 'text', 'label', 'docs.col_bg', 'required', true), jsonb_build_object('key', 'color_main', 'type', 'text', 'label', 'docs.col_main', 'required', true), jsonb_build_object('key', 'color_accent', 'type', 'text', 'label', 'docs.col_accent', 'required', true), jsonb_build_object('key', 'color_text', 'type', 'text', 'label', 'docs.col_text', 'required', true), jsonb_build_object('key', 'color_text_light', 'type', 'text', 'label', 'docs.col_text_light', 'required', true), jsonb_build_object('key', 'color_border', 'type', 'text', 'label', 'docs.col_border', 'required', true))),
+        jsonb_build_object('label', 'docs.section_typography', 'fields', jsonb_build_array(jsonb_build_object('key', 'font_heading', 'type', 'text', 'label', 'docs.col_heading_font', 'required', true), jsonb_build_object('key', 'font_body', 'type', 'text', 'label', 'docs.col_body_font', 'required', true))),
+        jsonb_build_object('label', 'docs.section_voice', 'fields', jsonb_build_array(jsonb_build_object('key', 'voice_formality', 'type', 'select', 'label', 'docs.col_formality'), jsonb_build_object('key', 'voice_personality', 'type', 'textarea', 'label', 'docs.col_personality')))
+      ))
     ),
-
     'actions', jsonb_build_object(
       'update', jsonb_build_object('label', 'docs.action_update', 'icon', 'edit', 'variant', 'primary'),
       'duplicate', jsonb_build_object('label', 'docs.action_duplicate', 'icon', 'copy', 'variant', 'muted'),
@@ -425,7 +276,7 @@ BEGIN
   );
 END;
 $function$;
-COMMENT ON FUNCTION docs.charte_view() IS 'SDUI _view() template for charte entity — no lifecycle, always editable';
+COMMENT ON FUNCTION docs.charter_view() IS 'SDUI _view() for charter — 4 density levels + actions catalog';
 
 CREATE OR REPLACE FUNCTION docs.document_create(p_data docs.document)
  RETURNS jsonb
@@ -451,9 +302,9 @@ BEGIN
     p_data.width := p_data.width - p_data.height;
   END IF;
 
-  IF p_data.charte_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM docs.charte WHERE id = p_data.charte_id AND tenant_id = current_setting('app.tenant_id', true)) THEN
-      RAISE EXCEPTION 'Charte not found: %', p_data.charte_id;
+  IF p_data.charter_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM docs.charter WHERE id = p_data.charter_id AND tenant_id = current_setting('app.tenant_id', true)) THEN
+      RAISE EXCEPTION 'Charter not found: %', p_data.charter_id;
     END IF;
   END IF;
 
@@ -511,8 +362,8 @@ BEGIN
   WHERE id = p_source_id AND tenant_id = current_setting('app.tenant_id', true);
   IF v_src IS NULL THEN RAISE EXCEPTION 'Document not found: %', p_source_id; END IF;
 
-  INSERT INTO docs.document (name, category, charte_id, format, orientation, width, height, bg, text_margin, design_notes)
-  VALUES (p_new_name, v_src.category, v_src.charte_id, v_src.format, v_src.orientation, v_src.width, v_src.height, v_src.bg, v_src.text_margin, v_src.design_notes)
+  INSERT INTO docs.document (name, category, charter_id, format, orientation, width, height, bg, text_margin, design_notes)
+  VALUES (p_new_name, v_src.category, v_src.charter_id, v_src.format, v_src.orientation, v_src.width, v_src.height, v_src.bg, v_src.text_margin, v_src.design_notes)
   RETURNING id INTO v_id;
 
   INSERT INTO docs.page (doc_id, page_index, name, html, format, orientation, width, height, bg, text_margin)
@@ -532,16 +383,16 @@ AS $function$
 BEGIN
   IF p_filter IS NULL THEN
     RETURN QUERY
-      SELECT to_jsonb(d) || jsonb_build_object('charte_name', c.name, 'charte_slug', c.slug, 'charte_color', c.color_accent)
+      SELECT to_jsonb(d) || jsonb_build_object('charter_name', c.name, 'charter_slug', c.slug, 'charter_color', c.color_accent)
       FROM docs.document d
-      LEFT JOIN docs.charte c ON c.id = d.charte_id
+      LEFT JOIN docs.charter c ON c.id = d.charter_id
       WHERE d.tenant_id = current_setting('app.tenant_id', true)
       ORDER BY d.updated_at DESC;
   ELSE
     RETURN QUERY EXECUTE
-      'SELECT to_jsonb(d) || jsonb_build_object(''charte_name'', c.name, ''charte_slug'', c.slug, ''charte_color'', c.color_accent)
+      'SELECT to_jsonb(d) || jsonb_build_object(''charter_name'', c.name, ''charter_slug'', c.slug, ''charter_color'', c.color_accent)
        FROM docs.document d
-       LEFT JOIN docs.charte c ON c.id = d.charte_id
+       LEFT JOIN docs.charter c ON c.id = d.charter_id
        WHERE d.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
        || ' AND ' || pgv.rsql_to_where(p_filter, 'docs', 'document')
        || ' ORDER BY d.updated_at DESC';
@@ -595,10 +446,10 @@ DECLARE
   v_actions jsonb;
   v_page_count int;
 BEGIN
-  SELECT to_jsonb(d) || jsonb_build_object('charte_name', c.name, 'charte_slug', c.slug)
+  SELECT to_jsonb(d) || jsonb_build_object('charter_name', c.name, 'charter_slug', c.slug)
   INTO v_result
   FROM docs.document d
-  LEFT JOIN docs.charte c ON c.id = d.charte_id
+  LEFT JOIN docs.charter c ON c.id = d.charter_id
   WHERE (d.slug = p_id OR d.id = p_id) AND d.tenant_id = current_setting('app.tenant_id', true);
 
   IF v_result IS NULL THEN RETURN NULL; END IF;
@@ -643,7 +494,7 @@ AS $function$
 DECLARE
   v_d docs.document;
   v_page_cnt int;
-  v_charte_name text;
+  v_charter_name text;
 BEGIN
   -- List mode
   IF p_slug IS NULL THEN
@@ -653,7 +504,7 @@ BEGIN
         pgv.ui_table('documents', jsonb_build_array(
           pgv.ui_col('name', pgv.t('docs.col_name'), pgv.ui_link('{name}', '/docs/document/{slug}')),
           pgv.ui_col('category', pgv.t('docs.col_category'), pgv.ui_badge('{category}')),
-          pgv.ui_col('charte_name', pgv.t('docs.col_charte'), pgv.ui_link('{charte_name}', '/docs/chartes/{charte_slug}')),
+          pgv.ui_col('charter_name', pgv.t('docs.col_charte'), pgv.ui_link('{charter_name}', '/docs/charters/{charter_slug}')),
           pgv.ui_col('format', pgv.t('docs.col_format')),
           pgv.ui_col('status', pgv.t('docs.col_status'), pgv.ui_badge('{status}'))
         ))
@@ -671,7 +522,7 @@ BEGIN
   END IF;
 
   SELECT count(*)::int INTO v_page_cnt FROM docs.page WHERE doc_id = v_d.id;
-  SELECT name INTO v_charte_name FROM docs.charte WHERE id = v_d.charte_id;
+  SELECT name INTO v_charter_name FROM docs.charter WHERE id = v_d.charter_id;
 
   RETURN jsonb_build_object(
     'ui', pgv.ui_column(
@@ -693,7 +544,7 @@ BEGIN
       pgv.ui_heading(pgv.t('docs.title_meta'), 3),
       pgv.ui_row(
         pgv.ui_text(pgv.t('docs.col_category') || ': ' || coalesce(v_d.category, '—')),
-        pgv.ui_text(pgv.t('docs.col_charte') || ': ' || coalesce(v_charte_name, '—'))
+        pgv.ui_text(pgv.t('docs.col_charte') || ': ' || coalesce(v_charter_name, '—'))
       ),
 
       -- Stats
@@ -721,7 +572,7 @@ BEGIN
     name = COALESCE(NULLIF(p_data.name, ''), name),
     slug = COALESCE(NULLIF(p_data.slug, ''), slug),
     category = COALESCE(NULLIF(p_data.category, ''), category),
-    charte_id = COALESCE(p_data.charte_id, charte_id),
+    charter_id = COALESCE(p_data.charter_id, charter_id),
     bg = COALESCE(NULLIF(p_data.bg, ''), bg),
     text_margin = COALESCE(p_data.text_margin, text_margin),
     design_notes = COALESCE(p_data.design_notes, design_notes),
@@ -757,26 +608,26 @@ BEGIN
 
     'template', jsonb_build_object(
       'compact', jsonb_build_object(
-        'fields', jsonb_build_array('name', 'format', 'status', 'charte_name')
+        'fields', jsonb_build_array('name', 'format', 'status', 'charter_name')
       ),
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('name', 'category', 'format', 'status', 'charte_name', 'updated_at'),
+        'fields', jsonb_build_array('name', 'category', 'format', 'status', 'charter_name', 'updated_at'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'page_count', 'label', 'docs.stat_pages')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'docs://charte', 'label', 'docs.rel_charte', 'filter', 'id={charte_id}'),
+          jsonb_build_object('entity', 'docs://charter', 'label', 'docs.rel_charter', 'filter', 'id={charter_id}'),
           jsonb_build_object('entity', 'docs://library', 'label', 'docs.rel_library', 'filter', 'id={library_id}')
         )
       ),
       'expanded', jsonb_build_object(
         'fields', jsonb_build_array('name', 'category', 'format', 'orientation', 'width', 'height',
-          'status', 'bg', 'charte_name', 'design_notes', 'team_notes', 'email_to', 'ref_module', 'ref_id'),
+          'status', 'bg', 'charter_name', 'design_notes', 'team_notes', 'email_to', 'ref_module', 'ref_id'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'page_count', 'label', 'docs.stat_pages')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'docs://charte', 'label', 'docs.rel_charte', 'filter', 'id={charte_id}'),
+          jsonb_build_object('entity', 'docs://charter', 'label', 'docs.rel_charter', 'filter', 'id={charter_id}'),
           jsonb_build_object('entity', 'docs://library', 'label', 'docs.rel_library', 'filter', 'id={library_id}')
         )
       ),
@@ -785,7 +636,7 @@ BEGIN
           jsonb_build_object('label', 'docs.section_identity', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'name', 'type', 'text', 'label', 'docs.col_name', 'required', true),
             jsonb_build_object('key', 'category', 'type', 'select', 'label', 'docs.col_category', 'options', 'docs.category_options'),
-            jsonb_build_object('key', 'charte_id', 'type', 'combobox', 'label', 'docs.col_charte', 'source', 'docs://charte', 'display', 'name'),
+            jsonb_build_object('key', 'charter_id', 'type', 'combobox', 'label', 'docs.col_charte', 'source', 'docs://charter', 'display', 'name'),
             jsonb_build_object('key', 'library_id', 'type', 'combobox', 'label', 'docs.rel_library', 'source', 'docs://library', 'display', 'name')
           )),
           jsonb_build_object('label', 'docs.section_canvas', 'fields', jsonb_build_array(
@@ -814,143 +665,59 @@ END;
 $function$;
 COMMENT ON FUNCTION docs.document_view() IS 'SDUI _view() template for document entity — 4 density levels + HATEOAS actions catalog';
 
-CREATE OR REPLACE FUNCTION docs.get_charte(p_id text)
+CREATE OR REPLACE FUNCTION docs.get_charter(p_id text)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
-DECLARE
-  v_c docs.charte;
-  v_body text;
-  v_k text;
-  v_v text;
+DECLARE v_c docs.charter; v_body text; v_k text; v_v text;
 BEGIN
-  SELECT * INTO v_c FROM docs.charte WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
+  SELECT * INTO v_c FROM docs.charter WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
   IF v_c IS NULL THEN RETURN pgv.empty(pgv.t('docs.err_charte_not_found')); END IF;
-
-  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('docs.brand'), '/chartes', pgv.esc(v_c.name)]);
-
-  IF v_c.description IS NOT NULL THEN
-    v_body := v_body || '<p>' || pgv.esc(v_c.description) || '</p>';
-  END IF;
-
-  -- Colors
-  v_body := v_body || '<h3>Couleurs</h3>'
-    || pgv.grid(VARIADIC ARRAY[
-      pgv.stat('Background', pgv.badge(v_c.color_bg, v_c.color_bg)),
-      pgv.stat('Main', pgv.badge(v_c.color_main, v_c.color_main)),
-      pgv.stat('Accent', pgv.badge(v_c.color_accent, v_c.color_accent)),
-      pgv.stat('Text', pgv.badge(v_c.color_text, v_c.color_text)),
-      pgv.stat('Text light', pgv.badge(v_c.color_text_light, v_c.color_text_light)),
-      pgv.stat('Border', pgv.badge(v_c.color_border, v_c.color_border))
-    ]);
-
-  -- Color extra
+  v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('docs.brand'), '/charters', pgv.esc(v_c.name)]);
+  IF v_c.description IS NOT NULL THEN v_body := v_body || '<p>' || pgv.esc(v_c.description) || '</p>'; END IF;
+  v_body := v_body || '<h3>Colors</h3>' || pgv.grid(VARIADIC ARRAY[pgv.stat('Background', pgv.badge(v_c.color_bg, v_c.color_bg)), pgv.stat('Main', pgv.badge(v_c.color_main, v_c.color_main)), pgv.stat('Accent', pgv.badge(v_c.color_accent, v_c.color_accent)), pgv.stat('Text', pgv.badge(v_c.color_text, v_c.color_text)), pgv.stat('Text light', pgv.badge(v_c.color_text_light, v_c.color_text_light)), pgv.stat('Border', pgv.badge(v_c.color_border, v_c.color_border))]);
   IF v_c.color_extra != '{}'::jsonb THEN
-    v_body := v_body || '<h4>Couleurs libres</h4><p>';
-    FOR v_k, v_v IN SELECT key, value #>> '{}' FROM jsonb_each(v_c.color_extra)
-    LOOP
-      v_body := v_body || pgv.badge(v_k || ' ' || v_v, v_v) || ' ';
-    END LOOP;
+    v_body := v_body || '<h4>Extra colors</h4><p>';
+    FOR v_k, v_v IN SELECT key, value #>> '{}' FROM jsonb_each(v_c.color_extra) LOOP v_body := v_body || pgv.badge(v_k || ' ' || v_v, v_v) || ' '; END LOOP;
     v_body := v_body || '</p>';
   END IF;
-
-  -- Fonts
-  v_body := v_body || '<h3>Typographie</h3>'
-    || pgv.grid(VARIADIC ARRAY[
-      pgv.stat('Heading', pgv.esc(v_c.font_heading)),
-      pgv.stat('Body', pgv.esc(v_c.font_body))
-    ]);
-
-  -- Spacing
+  v_body := v_body || '<h3>Typography</h3>' || pgv.grid(VARIADIC ARRAY[pgv.stat('Heading', pgv.esc(v_c.font_heading)), pgv.stat('Body', pgv.esc(v_c.font_body))]);
   IF v_c.spacing_page IS NOT NULL OR v_c.spacing_section IS NOT NULL THEN
-    v_body := v_body || '<h3>Spacing</h3>'
-      || pgv.grid(VARIADIC ARRAY[
-        pgv.stat('Page', COALESCE(v_c.spacing_page, '—')),
-        pgv.stat('Section', COALESCE(v_c.spacing_section, '—')),
-        pgv.stat('Gap', COALESCE(v_c.spacing_gap, '—')),
-        pgv.stat('Card', COALESCE(v_c.spacing_card, '—'))
-      ]);
+    v_body := v_body || '<h3>Spacing</h3>' || pgv.grid(VARIADIC ARRAY[pgv.stat('Page', COALESCE(v_c.spacing_page, '—')), pgv.stat('Section', COALESCE(v_c.spacing_section, '—')), pgv.stat('Gap', COALESCE(v_c.spacing_gap, '—')), pgv.stat('Card', COALESCE(v_c.spacing_card, '—'))]);
   END IF;
-
-  -- Shadow / Radius
   IF v_c.shadow_card IS NOT NULL OR v_c.radius_card IS NOT NULL THEN
-    v_body := v_body || '<h3>Shadow / Radius</h3>'
-      || pgv.grid(VARIADIC ARRAY[
-        pgv.stat('Card shadow', COALESCE(v_c.shadow_card, '—')),
-        pgv.stat('Elevated shadow', COALESCE(v_c.shadow_elevated, '—')),
-        pgv.stat('Card radius', COALESCE(v_c.radius_card, '—'))
-      ]);
+    v_body := v_body || '<h3>Shadow / Radius</h3>' || pgv.grid(VARIADIC ARRAY[pgv.stat('Card shadow', COALESCE(v_c.shadow_card, '—')), pgv.stat('Elevated shadow', COALESCE(v_c.shadow_elevated, '—')), pgv.stat('Card radius', COALESCE(v_c.radius_card, '—'))]);
   END IF;
-
-  -- Voice
   IF v_c.voice_personality IS NOT NULL THEN
-    v_body := v_body || '<h3>Voice</h3><p>'
-      || '<strong>Personnalité:</strong> ' || array_to_string(v_c.voice_personality, ', ') || '<br>'
-      || '<strong>Formalité:</strong> ' || COALESCE(v_c.voice_formality, '—')
-      || '</p>';
-    IF v_c.voice_do IS NOT NULL THEN
-      v_body := v_body || '<p><strong>Do:</strong> ' || array_to_string(v_c.voice_do, ', ') || '</p>';
-    END IF;
-    IF v_c.voice_dont IS NOT NULL THEN
-      v_body := v_body || '<p><strong>Don''t:</strong> ' || array_to_string(v_c.voice_dont, ', ') || '</p>';
-    END IF;
+    v_body := v_body || '<h3>Voice</h3><p><strong>Personality:</strong> ' || array_to_string(v_c.voice_personality, ', ') || '<br><strong>Formality:</strong> ' || COALESCE(v_c.voice_formality, '—') || '</p>';
+    IF v_c.voice_do IS NOT NULL THEN v_body := v_body || '<p><strong>Do:</strong> ' || array_to_string(v_c.voice_do, ', ') || '</p>'; END IF;
+    IF v_c.voice_dont IS NOT NULL THEN v_body := v_body || '<p><strong>Don''t:</strong> ' || array_to_string(v_c.voice_dont, ', ') || '</p>'; END IF;
   END IF;
-
-  -- Actions
-  v_body := v_body || '<p>'
-    || pgv.action('post_charte_delete', pgv.t('docs.btn_delete'), jsonb_build_object('p_id', v_c.id), 'Supprimer cette charte ?', 'danger')
-    || '</p>';
-
+  v_body := v_body || '<p>' || pgv.action('post_charter_delete', pgv.t('docs.action_delete'), jsonb_build_object('p_id', v_c.id), pgv.t('docs.confirm_delete'), 'danger') || '</p>';
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION docs.get_charte(text) IS 'pgView page: charte detail with all tokens, voice, rules';
+COMMENT ON FUNCTION docs.get_charter(text) IS 'pgView page: charter detail';
 
-CREATE OR REPLACE FUNCTION docs.get_chartes()
+CREATE OR REPLACE FUNCTION docs.get_charters()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_body text;
-  v_rows text[];
-  v_cnt int;
-  r record;
+DECLARE v_body text; v_rows text[]; v_cnt int; r record;
 BEGIN
-  SELECT count(*)::int INTO v_cnt FROM docs.charte WHERE tenant_id = current_setting('app.tenant_id', true);
-
+  SELECT count(*)::int INTO v_cnt FROM docs.charter WHERE tenant_id = current_setting('app.tenant_id', true);
   v_body := '<h2>' || pgv.t('docs.title_chartes') || '</h2>';
-
-  IF v_cnt = 0 THEN
-    RETURN v_body || pgv.empty(pgv.t('docs.empty_no_chartes'), pgv.t('docs.empty_first_charte'));
-  END IF;
-
+  IF v_cnt = 0 THEN RETURN v_body || pgv.empty(pgv.t('docs.empty_no_chartes'), pgv.t('docs.empty_first_charte')); END IF;
   v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT id, name, description, color_bg, color_main, color_accent, font_heading, font_body,
-           (SELECT count(*) FROM docs.document d WHERE d.charte_id = c.id) AS doc_cnt
-    FROM docs.charte c
-    WHERE tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY name
+  FOR r IN SELECT id, name, description, color_bg, color_main, color_accent, font_heading, font_body, (SELECT count(*) FROM docs.document d WHERE d.charter_id = c.id) AS doc_cnt FROM docs.charter c WHERE tenant_id = current_setting('app.tenant_id', true) ORDER BY name
   LOOP
-    v_rows := v_rows || ARRAY[
-      format('<a href="/charte?p_id=%s">%s</a>', r.id, pgv.esc(r.name)),
-      COALESCE(r.description, '—'),
-      pgv.badge(' ', r.color_bg) || ' ' || pgv.badge(' ', r.color_main) || ' ' || pgv.badge(' ', r.color_accent),
-      r.font_heading || ' / ' || r.font_body,
-      r.doc_cnt::text
-    ];
+    v_rows := v_rows || ARRAY[format('<a href="/charter?p_id=%s">%s</a>', r.id, pgv.esc(r.name)), COALESCE(r.description, '—'), pgv.badge(' ', r.color_bg) || ' ' || pgv.badge(' ', r.color_main) || ' ' || pgv.badge(' ', r.color_accent), r.font_heading || ' / ' || r.font_body, r.doc_cnt::text];
   END LOOP;
-
-  v_body := v_body || pgv.md_table(
-    ARRAY[pgv.t('docs.col_name'), 'Description', pgv.t('docs.col_colors'), pgv.t('docs.col_fonts'), 'Docs'],
-    v_rows, 20
-  );
-
+  v_body := v_body || pgv.md_table(ARRAY[pgv.t('docs.col_name'), 'Description', pgv.t('docs.col_colors'), pgv.t('docs.col_fonts'), 'Docs'], v_rows, 20);
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION docs.get_chartes() IS 'pgView page: list chartes with color preview cards';
+COMMENT ON FUNCTION docs.get_charters() IS 'pgView page: list charters with color preview';
 
 CREATE OR REPLACE FUNCTION docs.get_document(p_id text)
  RETURNS text
@@ -960,15 +727,15 @@ AS $function$
 DECLARE
   v_d docs.document;
   v_body text;
-  v_charte_name text;
+  v_charter_name text;
   v_rows text[];
   r record;
 BEGIN
   SELECT * INTO v_d FROM docs.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
   IF v_d IS NULL THEN RETURN pgv.empty(pgv.t('docs.err_not_found')); END IF;
 
-  IF v_d.charte_id IS NOT NULL THEN
-    SELECT name INTO v_charte_name FROM docs.charte WHERE id = v_d.charte_id;
+  IF v_d.charter_id IS NOT NULL THEN
+    SELECT name INTO v_charter_name FROM docs.charter WHERE id = v_d.charter_id;
   END IF;
 
   v_body := pgv.breadcrumb(VARIADIC ARRAY[pgv.t('docs.brand'), '/', pgv.esc(v_d.name)]);
@@ -977,7 +744,7 @@ BEGIN
     || v_d.format || ' ' || v_d.orientation
     || ' · ' || v_d.width::int::text || '×' || v_d.height::int::text
     || ' · ' || pgv.badge(v_d.status, CASE v_d.status WHEN 'draft' THEN 'secondary' WHEN 'generated' THEN 'primary' WHEN 'signed' THEN 'success' ELSE 'muted' END)
-    || CASE WHEN v_charte_name IS NOT NULL THEN ' · Charte: ' || pgv.esc(v_charte_name) ELSE '' END
+    || CASE WHEN v_charter_name IS NOT NULL THEN ' · Charter: ' || pgv.esc(v_charter_name) ELSE '' END
     || '</small></p>';
 
   -- Pages table
@@ -1020,7 +787,7 @@ AS $function$
 DECLARE
   v_body text;
   v_nb_docs int;
-  v_nb_chartes int;
+  v_nb_charters int;
   v_nb_pages int;
   v_nb_draft int;
   v_rows text[];
@@ -1028,13 +795,13 @@ DECLARE
 BEGIN
   -- Stats
   SELECT count(*)::int INTO v_nb_docs FROM docs.document;
-  SELECT count(*)::int INTO v_nb_chartes FROM docs.charte;
+  SELECT count(*)::int INTO v_nb_charters FROM docs.charter;
   SELECT count(*)::int INTO v_nb_pages FROM docs.page;
   SELECT count(*)::int INTO v_nb_draft FROM docs.document WHERE status = 'draft';
 
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat(pgv.t('docs.stat_documents'), v_nb_docs::text),
-    pgv.stat(pgv.t('docs.stat_chartes'), v_nb_chartes::text),
+    pgv.stat(pgv.t('docs.stat_chartes'), v_nb_charters::text),
     pgv.stat(pgv.t('docs.stat_pages'), v_nb_pages::text),
     pgv.stat(pgv.t('docs.stat_draft'), v_nb_draft::text)
   ]);
@@ -1043,18 +810,18 @@ BEGIN
   v_rows := ARRAY[]::text[];
   FOR r IN
     SELECT d.id, d.name, d.category, d.format, d.orientation, d.status,
-           c.name AS charte_name,
+           c.name AS charter_name,
            (SELECT count(*) FROM docs.page p WHERE p.doc_id = d.id) AS nb_pages,
            d.updated_at
     FROM docs.document d
-    LEFT JOIN docs.charte c ON c.id = d.charte_id
+    LEFT JOIN docs.charter c ON c.id = d.charter_id
     ORDER BY d.updated_at DESC
   LOOP
     v_rows := v_rows || ARRAY[
       format('<a href="/document?p_id=%s">%s</a>', r.id, pgv.esc(r.name)),
       r.category,
       r.format || ' ' || r.orientation,
-      COALESCE(r.charte_name, '—'),
+      COALESCE(r.charter_name, '—'),
       pgv.badge(r.status, CASE r.status WHEN 'draft' THEN 'secondary' WHEN 'generated' THEN 'primary' WHEN 'signed' THEN 'success' ELSE 'muted' END),
       r.nb_pages::text,
       to_char(r.updated_at, 'DD/MM/YY')
@@ -1183,7 +950,7 @@ CREATE OR REPLACE FUNCTION docs.get_print(p_id text)
 AS $function$
 DECLARE
   v_d docs.document;
-  v_charte_css text := '';
+  v_charter_css text := '';
   v_print_css text;
   v_body text;
   r record;
@@ -1191,13 +958,13 @@ BEGIN
   SELECT * INTO v_d FROM docs.document WHERE id = p_id AND tenant_id = current_setting('app.tenant_id', true);
   IF v_d IS NULL THEN RETURN pgv.empty(pgv.t('docs.err_not_found')); END IF;
 
-  IF v_d.charte_id IS NOT NULL THEN
-    v_charte_css := docs.charte_tokens_to_css(v_d.charte_id);
+  IF v_d.charter_id IS NOT NULL THEN
+    v_charter_css := docs.charter_tokens_to_css(v_d.charter_id);
   END IF;
 
   v_print_css := docs.document_print_css(p_id);
 
-  v_body := '<style>' || v_charte_css || chr(10) || v_print_css || '</style>';
+  v_body := '<style>' || v_charter_css || chr(10) || v_print_css || '</style>';
 
   FOR r IN
     SELECT page_index, html, bg,
@@ -1640,7 +1407,7 @@ CREATE OR REPLACE FUNCTION docs.nav_items()
 AS $function$
   SELECT jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('docs.nav_documents'), 'icon', 'file-text', 'entity', 'document'),
-    jsonb_build_object('href', '/chartes', 'label', pgv.t('docs.nav_chartes'), 'icon', 'palette', 'entity', 'charte'),
+    jsonb_build_object('href', '/charters', 'label', pgv.t('docs.nav_chartes'), 'icon', 'palette', 'entity', 'charter'),
     jsonb_build_object('href', '/libraries', 'label', pgv.t('docs.nav_libraries'), 'icon', 'image', 'entity', 'library')
   );
 $function$;

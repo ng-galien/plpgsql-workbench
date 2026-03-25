@@ -10,6 +10,6 @@ BEGIN
   DELETE FROM docs.library_asset WHERE library_id IN (SELECT id FROM docs.library WHERE tenant_id = current_setting('app.tenant_id', true));
   DELETE FROM docs.document WHERE tenant_id = current_setting('app.tenant_id', true);
   DELETE FROM docs.library WHERE tenant_id = current_setting('app.tenant_id', true);
-  DELETE FROM docs.charte WHERE tenant_id = current_setting('app.tenant_id', true);
+  DELETE FROM docs.charter WHERE tenant_id = current_setting('app.tenant_id', true);
 END;
 $function$;

@@ -14,8 +14,8 @@ BEGIN
   DELETE FROM ledger.journal_entry;
 
   SELECT f.id INTO v_facture_id
-    FROM quote.facture f
-    JOIN quote.ligne l ON l.facture_id = f.id
+    FROM quote.invoice f
+    JOIN quote.line_item l ON l.invoice_id = f.id
    GROUP BY f.id
    HAVING count(*) > 0
    LIMIT 1;
@@ -25,7 +25,7 @@ BEGIN
     RETURN;
   END IF;
 
-  PERFORM ledger.post_from_facture(jsonb_build_object('facture_id', v_facture_id));
+  PERFORM ledger.post_from_invoice(jsonb_build_object('invoice_id', v_facture_id));
 
   SELECT id INTO v_entry_id FROM ledger.journal_entry ORDER BY id DESC LIMIT 1;
 
@@ -37,8 +37,8 @@ BEGIN
   RETURN NEXT is(v_total_debit, v_total_credit, 'Écriture facture équilibrée : débit = crédit');
 
   RETURN NEXT ok(
-    EXISTS (SELECT 1 FROM ledger.journal_entry WHERE id = v_entry_id AND reference LIKE 'FAC-%'),
-    'Référence commence par FAC-'
+    EXISTS (SELECT 1 FROM ledger.journal_entry WHERE id = v_entry_id AND reference LIKE 'INV-%'),
+    'Reference starts with INV-'
   );
 
   RETURN NEXT ok(

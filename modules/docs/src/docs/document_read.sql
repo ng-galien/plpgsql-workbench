@@ -9,10 +9,10 @@ DECLARE
   v_actions jsonb;
   v_page_count int;
 BEGIN
-  SELECT to_jsonb(d) || jsonb_build_object('charte_name', c.name, 'charte_slug', c.slug)
+  SELECT to_jsonb(d) || jsonb_build_object('charter_name', c.name, 'charter_slug', c.slug)
   INTO v_result
   FROM docs.document d
-  LEFT JOIN docs.charte c ON c.id = d.charte_id
+  LEFT JOIN docs.charter c ON c.id = d.charter_id
   WHERE (d.slug = p_id OR d.id = p_id) AND d.tenant_id = current_setting('app.tenant_id', true);
 
   IF v_result IS NULL THEN RETURN NULL; END IF;

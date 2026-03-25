@@ -11,7 +11,7 @@ BEGIN
   RETURN NEXT ok(v LIKE 'check_crud: docs%', 'header present');
 
   -- Entities with CRUD detected
-  RETURN NEXT ok(v LIKE '%charte — create read list%delete%', 'charte: CRUD detected');
+  RETURN NEXT ok(v LIKE '%charter — create read list%delete%', 'charter: CRUD detected');
   RETURN NEXT ok(v LIKE '%document — create read list%delete%', 'document: CRUD detected');
   RETURN NEXT ok(v LIKE '%library — create read list%delete%', 'library: CRUD detected');
 

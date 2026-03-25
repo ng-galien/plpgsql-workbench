@@ -17,22 +17,21 @@ BEGIN
   RETURN NEXT ok(jsonb_typeof(v->'data') = 'array', 'discover: returns array');
 
   -- get schema://entity#schema → schema_table
-  v := pgv.route_crud('get', 'docs://charte#schema');
-  RETURN NEXT is(v->'data'->>'table', 'charte', 'schema: returns table detail');
+  v := pgv.route_crud('get', 'docs://charter#schema');
+  RETURN NEXT is(v->'data'->>'table', 'charter', 'schema: returns table detail');
 
   -- get schema://entity → list
-  v := pgv.route_crud('get', 'docs://charte');
+  v := pgv.route_crud('get', 'docs://charter');
   RETURN NEXT ok(v ? 'data', 'list: has data key');
-  RETURN NEXT is(v->>'uri', 'docs://charte', 'list: uri preserved');
+  RETURN NEXT is(v->>'uri', 'docs://charter', 'list: uri preserved');
 
   -- get schema://entity/{id} → read (fallback to _load)
-  v := pgv.route_crud('get', 'docs://charte/nonexistent_id');
+  v := pgv.route_crud('get', 'docs://charter/nonexistent_id');
   RETURN NEXT ok(v ? 'data', 'read: has data key');
 
   -- HATEOAS: actions extracted from _read() response (module is responsible)
-  v := pgv.route_crud('get', 'docs://charte/test');
+  v := pgv.route_crud('get', 'docs://charter/test');
   RETURN NEXT ok(jsonb_typeof(v->'actions') = 'array', 'hateoas: actions is array');
-  -- Actions come from _read() — empty if module doesn't return them yet
   RETURN NEXT ok(v ? 'actions', 'hateoas: actions key always present');
 
   -- Error: nonexistent schema
@@ -44,16 +43,16 @@ BEGIN
   RETURN NEXT is(v->>'error', 'not_found', 'error: bad entity');
 
   -- Error: bad verb
-  v := pgv.route_crud('badverb', 'docs://charte');
+  v := pgv.route_crud('badverb', 'docs://charter');
   RETURN NEXT is(v->>'error', 'bad_request', 'error: bad verb');
 
   -- Error: POST without method
-  v := pgv.route_crud('post', 'docs://charte/test');
+  v := pgv.route_crud('post', 'docs://charter/test');
   RETURN NEXT is(v->>'error', 'bad_request', 'error: post without method');
 
   -- Slug-based read
-  v := pgv.route_crud('get', 'docs://charte/my-slug-name');
+  v := pgv.route_crud('get', 'docs://charter/my-slug-name');
   RETURN NEXT ok(v ? 'data', 'slug: read passes segment to _read');
-  RETURN NEXT is(v->>'uri', 'docs://charte/my-slug-name', 'slug: uri preserved with slug');
+  RETURN NEXT is(v->>'uri', 'docs://charter/my-slug-name', 'slug: uri preserved with slug');
 END;
 $function$;

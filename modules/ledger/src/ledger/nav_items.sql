@@ -8,8 +8,8 @@ AS $function$
     jsonb_build_object('href', '/entries', 'label', pgv.t('ledger.nav_entries'), 'icon', 'list', 'entity', 'journal_entry', 'uri', 'ledger://journal_entry'),
     jsonb_build_object('href', '/accounts', 'label', pgv.t('ledger.nav_accounts'), 'icon', 'book', 'entity', 'account', 'uri', 'ledger://account'),
     jsonb_build_object('href', '/balance', 'label', pgv.t('ledger.nav_balance'), 'icon', 'scale'),
-    jsonb_build_object('href', '/exercice', 'label', pgv.t('ledger.nav_exercice'), 'icon', 'calendar'),
-    jsonb_build_object('href', '/tva', 'label', pgv.t('ledger.nav_tva'), 'icon', 'percent'),
-    jsonb_build_object('href', '/bilan', 'label', pgv.t('ledger.nav_bilan'), 'icon', 'bar-chart')
+    jsonb_build_object('href', '/fiscal_year', 'label', pgv.t('ledger.nav_fiscal_year'), 'icon', 'calendar'),
+    jsonb_build_object('href', '/vat', 'label', pgv.t('ledger.nav_vat'), 'icon', 'percent'),
+    jsonb_build_object('href', '/balance_sheet', 'label', pgv.t('ledger.nav_balance_sheet'), 'icon', 'bar-chart')
   );
 $function$;

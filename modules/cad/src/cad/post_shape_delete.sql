@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION cad.post_shape_delete(shape_id integer, drawing_id integer)
  RETURNS "text/html"
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   IF shape_id IS NULL THEN
