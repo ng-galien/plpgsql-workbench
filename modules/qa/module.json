@@ -1,0 +1,28 @@
+{
+  "name": "qa",
+  "version": "0.1.0",
+  "description": "",
+  "schemas": {
+    "public": "qa",
+    "private": null,
+    "qa": "qa_qa"
+  },
+  "dependencies": [
+    "pgv"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/qa.ddl.sql",
+    "build/qa.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "anon": [
+      "qa"
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION quote.post_devis_refuser(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_data->>'id')::int;

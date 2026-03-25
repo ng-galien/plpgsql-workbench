@@ -49,8 +49,8 @@ AS $function$
     ),
 
     'actions', jsonb_build_object(
-      'acknowledge', jsonb_build_object('label', 'workbench.action_acknowledge', 'icon', '✓', 'variant', 'primary'),
-      'resolve',     jsonb_build_object('label', 'workbench.action_resolve', 'icon', '✔', 'variant', 'success'),
+      'acknowledge', jsonb_build_object('label', 'workbench.action_acknowledge', 'icon', '✓', 'variant', 'default'),
+      'resolve',     jsonb_build_object('label', 'workbench.action_resolve', 'icon', '✔', 'variant', 'primary'),
       'close',       jsonb_build_object('label', 'workbench.action_close', 'icon', '×', 'variant', 'muted'),
       'reopen',      jsonb_build_object('label', 'workbench.action_reopen', 'icon', '↺', 'variant', 'warning'),
       'delete',      jsonb_build_object('label', 'workbench.action_delete', 'icon', '🗑', 'variant', 'danger', 'confirm', 'workbench.confirm_delete_issue')

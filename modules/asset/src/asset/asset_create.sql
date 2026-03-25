@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION asset.asset_create(p_row asset.asset)
  RETURNS asset.asset
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.id := COALESCE(p_row.id, gen_random_uuid());

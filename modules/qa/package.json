@@ -1,0 +1,16 @@
+{
+  "name": "qa",
+  "version": "1.0.0",
+  "description": "QA team member — cross-module e2e testing",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:shell": "npx playwright test tests/e2e/shell-workspace.spec.ts",
+    "report": "npx playwright show-report"
+  },
+  "keywords": [],
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2"
+  }
+}

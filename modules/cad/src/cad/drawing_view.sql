@@ -67,8 +67,8 @@ BEGIN
 
     'actions', jsonb_build_object(
       'delete', jsonb_build_object('label', 'cad.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'cad.confirm_delete'),
-      'duplicate', jsonb_build_object('label', 'cad.action_duplicate', 'icon', '+', 'variant', 'outline'),
-      'export_bom', jsonb_build_object('label', 'cad.action_export_bom', 'icon', '↓', 'variant', 'secondary')
+      'duplicate', jsonb_build_object('label', 'cad.action_duplicate', 'icon', '+', 'variant', 'primary'),
+      'export_bom', jsonb_build_object('label', 'cad.action_export_bom', 'icon', '↓', 'variant', 'muted')
     )
   );
 END;

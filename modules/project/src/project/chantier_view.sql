@@ -60,7 +60,7 @@ AS $function$
       'demarrer', jsonb_build_object('label', 'project.action_demarrer', 'icon', '▶', 'variant', 'primary', 'confirm', 'project.confirm_demarrer'),
       'reception', jsonb_build_object('label', 'project.action_reception', 'icon', '✓', 'variant', 'primary', 'confirm', 'project.confirm_reception'),
       'clore', jsonb_build_object('label', 'project.action_clore', 'icon', '■', 'variant', 'primary', 'confirm', 'project.confirm_clore'),
-      'edit', jsonb_build_object('label', 'project.action_edit', 'icon', '✎', 'variant', 'outline'),
+      'edit', jsonb_build_object('label', 'project.action_edit', 'icon', '✎', 'variant', 'muted'),
       'supprimer', jsonb_build_object('label', 'project.action_supprimer', 'icon', '×', 'variant', 'danger', 'confirm', 'project.confirm_supprimer')
     )
   );

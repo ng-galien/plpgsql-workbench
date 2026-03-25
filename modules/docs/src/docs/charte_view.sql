@@ -63,7 +63,7 @@ BEGIN
 
     'actions', jsonb_build_object(
       'update', jsonb_build_object('label', 'docs.action_update', 'icon', 'edit', 'variant', 'primary'),
-      'duplicate', jsonb_build_object('label', 'docs.action_duplicate', 'icon', 'copy', 'variant', 'default'),
+      'duplicate', jsonb_build_object('label', 'docs.action_duplicate', 'icon', 'copy', 'variant', 'muted'),
       'delete', jsonb_build_object('label', 'docs.action_delete', 'icon', 'trash', 'variant', 'danger', 'confirm', 'docs.confirm_delete')
     )
   );

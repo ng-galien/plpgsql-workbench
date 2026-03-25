@@ -419,7 +419,7 @@ BEGIN
 
     'actions', jsonb_build_object(
       'update', jsonb_build_object('label', 'docs.action_update', 'icon', 'edit', 'variant', 'primary'),
-      'duplicate', jsonb_build_object('label', 'docs.action_duplicate', 'icon', 'copy', 'variant', 'default'),
+      'duplicate', jsonb_build_object('label', 'docs.action_duplicate', 'icon', 'copy', 'variant', 'muted'),
       'delete', jsonb_build_object('label', 'docs.action_delete', 'icon', 'trash', 'variant', 'danger', 'confirm', 'docs.confirm_delete')
     )
   );
@@ -803,10 +803,10 @@ BEGIN
 
     'actions', jsonb_build_object(
       'generate', jsonb_build_object('label', 'docs.action_generate', 'icon', 'zap', 'variant', 'primary', 'confirm', 'docs.confirm_generate'),
-      'sign', jsonb_build_object('label', 'docs.action_sign', 'icon', 'check', 'variant', 'success', 'confirm', 'docs.confirm_sign'),
+      'sign', jsonb_build_object('label', 'docs.action_sign', 'icon', 'check', 'variant', 'warning', 'confirm', 'docs.confirm_sign'),
       'revert', jsonb_build_object('label', 'docs.action_revert', 'icon', 'undo', 'variant', 'muted'),
       'archive', jsonb_build_object('label', 'docs.action_archive', 'icon', 'archive', 'variant', 'muted'),
-      'duplicate', jsonb_build_object('label', 'docs.action_duplicate', 'icon', 'copy', 'variant', 'default'),
+      'duplicate', jsonb_build_object('label', 'docs.action_duplicate', 'icon', 'copy', 'variant', 'muted'),
       'delete', jsonb_build_object('label', 'docs.action_delete', 'icon', 'trash', 'variant', 'danger', 'confirm', 'docs.confirm_delete')
     )
   );

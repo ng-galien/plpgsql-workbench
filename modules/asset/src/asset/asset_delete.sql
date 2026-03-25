@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION asset.asset_delete(p_id text)
  RETURNS boolean
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_deleted int;

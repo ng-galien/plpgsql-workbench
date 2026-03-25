@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION quote.devis_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_row quote.devis;

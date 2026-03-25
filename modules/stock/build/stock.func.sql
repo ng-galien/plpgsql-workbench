@@ -591,7 +591,7 @@ AS $function$
     'actions', jsonb_build_object(
       'deactivate', jsonb_build_object('label', 'stock.action_deactivate', 'icon', '▾', 'variant', 'warning', 'confirm', 'stock.confirm_deactivate'),
       'activate', jsonb_build_object('label', 'stock.action_activate', 'icon', '▴', 'variant', 'primary'),
-      'inventory', jsonb_build_object('label', 'stock.action_inventory', 'icon', '☰', 'variant', 'outline'),
+      'inventory', jsonb_build_object('label', 'stock.action_inventory', 'icon', '☰', 'variant', 'default'),
       'delete', jsonb_build_object('label', 'stock.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'stock.confirm_delete')
     )
   );

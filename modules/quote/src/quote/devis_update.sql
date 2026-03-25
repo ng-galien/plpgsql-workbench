@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION quote.devis_update(p_row quote.devis)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM quote.devis WHERE id = p_row.id AND statut = 'brouillon' AND tenant_id = current_setting('app.tenant_id', true)) THEN

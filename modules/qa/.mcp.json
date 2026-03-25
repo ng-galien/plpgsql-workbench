@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "plpgsql-workbench": {
+      "type": "http",
+      "url": "http://localhost:3100/mcp"
+    },
+    "workbench-msg": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "../../src/channel/workbench-msg.ts"
+      ],
+      "env": {
+        "MODULE": "qa"
+      }
+    },
+    "maket": {
+      "type": "http",
+      "url": "http://localhost:3337/mcp",
+      "headers": {
+        "X-Session": "qa"
+      }
+    }
+  }
+}

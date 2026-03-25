@@ -156,7 +156,33 @@ BEGIN
     ('fr', 'quote.toast_ligne_deleted', 'Ligne supprimée'),
 
     -- Currency suffix
-    ('fr', 'quote.currency', 'EUR')
+    ('fr', 'quote.currency', 'EUR'),
+
+    -- Entity labels (_view contract)
+    ('fr', 'quote.entity_devis', 'Devis'),
+    ('fr', 'quote.entity_facture', 'Facture'),
+
+    -- Section labels (form)
+    ('fr', 'quote.section_general', 'Informations générales'),
+
+    -- Action labels (_view actions catalog)
+    ('fr', 'quote.action_envoyer', 'Envoyer'),
+    ('fr', 'quote.action_accepter', 'Accepter'),
+    ('fr', 'quote.action_refuser', 'Refuser'),
+    ('fr', 'quote.action_facturer', 'Créer la facture'),
+    ('fr', 'quote.action_dupliquer', 'Dupliquer'),
+    ('fr', 'quote.action_supprimer', 'Supprimer'),
+    ('fr', 'quote.action_payer', 'Marquer payée'),
+    ('fr', 'quote.action_relancer', 'Relancer'),
+
+    -- Stat labels (_view stats)
+    ('fr', 'quote.stat_total_ht', 'Total HT'),
+    ('fr', 'quote.stat_total_tva', 'Total TVA'),
+    ('fr', 'quote.stat_total_ttc', 'Total TTC'),
+
+    -- Related entity labels
+    ('fr', 'quote.related_factures', 'Factures liées'),
+    ('fr', 'quote.related_devis', 'Devis source')
 
   ON CONFLICT DO NOTHING;
 END;

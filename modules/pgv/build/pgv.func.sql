@@ -3256,7 +3256,7 @@ AS $function$
           "properties": {
             "label": { "type": "string", "pattern": "^[a-z_]+\\." },
             "icon": { "type": "string" },
-            "variant": { "type": "string", "enum": ["primary", "warning", "danger", "muted"] },
+            "variant": { "type": "string", "enum": ["default", "primary", "warning", "danger", "muted"] },
             "confirm": { "type": "string", "pattern": "^[a-z_]+\\." }
           }
         }

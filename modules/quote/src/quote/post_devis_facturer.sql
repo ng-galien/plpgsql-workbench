@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION quote.post_devis_facturer(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_devis_id int := (p_data->>'id')::int;

@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION asset.asset_update(p_row asset.asset)
  RETURNS asset.asset
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   UPDATE asset.asset SET

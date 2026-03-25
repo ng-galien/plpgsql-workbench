@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION quote.devis_create(p_row quote.devis)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);

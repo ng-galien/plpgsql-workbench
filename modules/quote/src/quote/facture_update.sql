@@ -1,6 +1,7 @@
 CREATE OR REPLACE FUNCTION quote.facture_update(p_row quote.facture)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM quote.facture WHERE id = p_row.id AND statut = 'brouillon' AND tenant_id = current_setting('app.tenant_id', true)) THEN

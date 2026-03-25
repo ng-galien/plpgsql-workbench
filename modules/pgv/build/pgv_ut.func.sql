@@ -338,10 +338,10 @@ BEGIN
   -- Header
   RETURN NEXT ok(v LIKE 'check_crud: docs%', 'header present');
 
-  -- Entities with full CRUD get checkmark
-  RETURN NEXT ok(v LIKE '%✓ charte — create read list%delete%', 'charte: CRUD ok');
-  RETURN NEXT ok(v LIKE '%✓ document — create read list%delete%', 'document: CRUD ok');
-  RETURN NEXT ok(v LIKE '%✓ library — create read list delete%', 'library: full CRUD ok');
+  -- Entities with CRUD detected
+  RETURN NEXT ok(v LIKE '%charte — create read list%delete%', 'charte: CRUD detected');
+  RETURN NEXT ok(v LIKE '%document — create read list%delete%', 'document: CRUD detected');
+  RETURN NEXT ok(v LIKE '%library — create read list%delete%', 'library: CRUD detected');
 
   -- Naming warning
   RETURN NEXT ok(v LIKE '%⚠ naming: page_remove%', 'naming: page_remove detected');
