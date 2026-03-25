@@ -5,8 +5,8 @@ CREATE OR REPLACE FUNCTION hr.timesheet_update(p_row hr.timesheet)
 AS $function$
 BEGIN
   UPDATE hr.timesheet SET
-    date_travail = COALESCE(p_row.date_travail, date_travail),
-    heures = COALESCE(p_row.heures, heures),
+    work_date = COALESCE(p_row.work_date, work_date),
+    hours = COALESCE(p_row.hours, hours),
     description = COALESCE(p_row.description, description)
   WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
   RETURNING * INTO p_row;

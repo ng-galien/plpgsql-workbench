@@ -9,71 +9,70 @@ CREATE OR REPLACE FUNCTION catalog_qa.clean()
 AS $function$
 BEGIN
   DELETE FROM catalog.article;
-  DELETE FROM catalog.categorie;
-  -- Re-seed
+  DELETE FROM catalog.category;
   PERFORM catalog_qa.seed();
 END;
 $function$;
-COMMENT ON FUNCTION catalog_qa.clean() IS 'Nettoyer les données QA du catalog';
+COMMENT ON FUNCTION catalog_qa.clean() IS 'Clean and re-seed QA data';
 
 CREATE OR REPLACE FUNCTION catalog_qa.seed()
  RETURNS void
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_cat_bois int;
-  v_cat_quinc int;
-  v_cat_isol int;
-  v_cat_presta int;
-  v_cat_finition int;
+  v_cat_wood int;
+  v_cat_hardware int;
+  v_cat_insulation int;
+  v_cat_services int;
+  v_cat_finishing int;
 BEGIN
-  -- Catégories
-  INSERT INTO catalog.categorie (nom, ordre) VALUES ('Bois', 1) RETURNING id INTO v_cat_bois;
-  INSERT INTO catalog.categorie (nom, ordre) VALUES ('Quincaillerie', 2) RETURNING id INTO v_cat_quinc;
-  INSERT INTO catalog.categorie (nom, ordre) VALUES ('Isolation', 3) RETURNING id INTO v_cat_isol;
-  INSERT INTO catalog.categorie (nom, ordre) VALUES ('Prestations', 4) RETURNING id INTO v_cat_presta;
-  INSERT INTO catalog.categorie (nom, ordre) VALUES ('Finition', 5) RETURNING id INTO v_cat_finition;
+  -- Categories
+  INSERT INTO catalog.category (name, sort_order) VALUES ('Bois', 1) RETURNING id INTO v_cat_wood;
+  INSERT INTO catalog.category (name, sort_order) VALUES ('Quincaillerie', 2) RETURNING id INTO v_cat_hardware;
+  INSERT INTO catalog.category (name, sort_order) VALUES ('Isolation', 3) RETURNING id INTO v_cat_insulation;
+  INSERT INTO catalog.category (name, sort_order) VALUES ('Prestations', 4) RETURNING id INTO v_cat_services;
+  INSERT INTO catalog.category (name, sort_order) VALUES ('Finition', 5) RETURNING id INTO v_cat_finishing;
 
-  -- Sous-catégories bois
-  INSERT INTO catalog.categorie (nom, parent_id, ordre) VALUES ('Bois massif', v_cat_bois, 1);
-  INSERT INTO catalog.categorie (nom, parent_id, ordre) VALUES ('Panneaux', v_cat_bois, 2);
+  -- Sub-categories
+  INSERT INTO catalog.category (name, parent_id, sort_order) VALUES ('Bois massif', v_cat_wood, 1);
+  INSERT INTO catalog.category (name, parent_id, sort_order) VALUES ('Panneaux', v_cat_wood, 2);
 
-  -- Articles Bois
-  INSERT INTO catalog.article (reference, designation, description, categorie_id, unite, prix_vente, prix_achat, tva) VALUES
-    ('BOIS-CHENE-27', 'Chêne massif 27mm', 'Chêne premier choix, séché, raboté', v_cat_bois, 'm3', 1200.00, 850.00, 20.00),
-    ('BOIS-DOUG-45', 'Douglas 45x145 C24', 'Bois de structure Douglas, classé C24', v_cat_bois, 'ml', 8.50, 5.20, 20.00),
-    ('BOIS-SAP-22', 'Sapin 22x100 raboté', 'Sapin raboté 4 faces, sec', v_cat_bois, 'ml', 3.20, 1.80, 20.00),
-    ('PAN-OSB-18', 'OSB3 18mm 2500x1250', 'Panneau OSB3 milieu humide', v_cat_bois, 'u', 42.00, 32.00, 20.00),
-    ('PAN-CP-15', 'Contreplaqué okoumé 15mm', 'Contreplaqué marine okoumé', v_cat_bois, 'u', 65.00, 48.00, 20.00);
+  -- Wood articles
+  INSERT INTO catalog.article (reference, name, description, category_id, unit, sale_price, purchase_price, vat_rate) VALUES
+    ('BOIS-CHENE-27', 'Chêne massif 27mm', 'Chêne premier choix, séché, raboté', v_cat_wood, 'm3', 1200.00, 850.00, 20.00),
+    ('BOIS-DOUG-45', 'Douglas 45x145 C24', 'Bois de structure Douglas, classé C24', v_cat_wood, 'ml', 8.50, 5.20, 20.00),
+    ('BOIS-SAP-22', 'Sapin 22x100 raboté', 'Sapin raboté 4 faces, sec', v_cat_wood, 'ml', 3.20, 1.80, 20.00),
+    ('PAN-OSB-18', 'OSB3 18mm 2500x1250', 'Panneau OSB3 milieu humide', v_cat_wood, 'u', 42.00, 32.00, 20.00),
+    ('PAN-CP-15', 'Contreplaqué okoumé 15mm', 'Contreplaqué marine okoumé', v_cat_wood, 'u', 65.00, 48.00, 20.00);
 
-  -- Articles Quincaillerie
-  INSERT INTO catalog.article (reference, designation, categorie_id, unite, prix_vente, prix_achat, tva) VALUES
-    ('QU-VIS-5x50', 'Vis inox A2 5x50 (boîte 200)', v_cat_quinc, 'u', 24.00, 18.50, 20.00),
-    ('QU-TIRE-8x80', 'Tirefond 8x80 (boîte 50)', v_cat_quinc, 'u', 32.00, 24.00, 20.00),
-    ('QU-EQUER-90', 'Équerre renforcée 90° galva', v_cat_quinc, 'u', 4.80, 3.50, 20.00),
-    ('QU-SABOTAB', 'Sabot de solive 50x150', v_cat_quinc, 'u', 3.90, 2.60, 20.00);
+  -- Hardware articles
+  INSERT INTO catalog.article (reference, name, category_id, unit, sale_price, purchase_price, vat_rate) VALUES
+    ('QU-VIS-5x50', 'Vis inox A2 5x50 (boîte 200)', v_cat_hardware, 'u', 24.00, 18.50, 20.00),
+    ('QU-TIRE-8x80', 'Tirefond 8x80 (boîte 50)', v_cat_hardware, 'u', 32.00, 24.00, 20.00),
+    ('QU-EQUER-90', 'Équerre renforcée 90° galva', v_cat_hardware, 'u', 4.80, 3.50, 20.00),
+    ('QU-SABOTAB', 'Sabot de solive 50x150', v_cat_hardware, 'u', 3.90, 2.60, 20.00);
 
-  -- Articles Isolation
-  INSERT INTO catalog.article (reference, designation, description, categorie_id, unite, prix_vente, prix_achat, tva) VALUES
-    ('ISOL-LDB-60', 'Laine de bois 60mm', 'Panneau isolant fibre de bois, lambda 0.038', v_cat_isol, 'm2', 12.50, 8.50, 5.50),
-    ('ISOL-LDB-140', 'Laine de bois 140mm', 'Panneau isolant fibre de bois, lambda 0.038', v_cat_isol, 'm2', 28.00, 19.00, 5.50);
+  -- Insulation articles
+  INSERT INTO catalog.article (reference, name, description, category_id, unit, sale_price, purchase_price, vat_rate) VALUES
+    ('ISOL-LDB-60', 'Laine de bois 60mm', 'Panneau isolant fibre de bois, lambda 0.038', v_cat_insulation, 'm2', 12.50, 8.50, 5.50),
+    ('ISOL-LDB-140', 'Laine de bois 140mm', 'Panneau isolant fibre de bois, lambda 0.038', v_cat_insulation, 'm2', 28.00, 19.00, 5.50);
 
-  -- Articles Finition
-  INSERT INTO catalog.article (reference, designation, categorie_id, unite, prix_vente, prix_achat, tva) VALUES
-    ('FIN-HUILE-LIN', 'Huile de lin 5L', v_cat_finition, 'u', 48.00, 35.00, 20.00),
-    ('FIN-LASURE-5L', 'Lasure bois extérieur chêne 5L', v_cat_finition, 'u', 62.00, 42.00, 20.00);
+  -- Finishing articles
+  INSERT INTO catalog.article (reference, name, category_id, unit, sale_price, purchase_price, vat_rate) VALUES
+    ('FIN-HUILE-LIN', 'Huile de lin 5L', v_cat_finishing, 'u', 48.00, 35.00, 20.00),
+    ('FIN-LASURE-5L', 'Lasure bois extérieur chêne 5L', v_cat_finishing, 'u', 62.00, 42.00, 20.00);
 
-  -- Prestations (services, pas de prix achat)
-  INSERT INTO catalog.article (reference, designation, description, categorie_id, unite, prix_vente, tva) VALUES
-    ('PREST-POSE-CHARP', 'Pose charpente traditionnelle', 'Main d''oeuvre pose charpente, hors fournitures', v_cat_presta, 'h', 55.00, 20.00),
-    ('PREST-POSE-ISOL', 'Pose isolation laine de bois', 'Main d''oeuvre isolation, hors matériaux', v_cat_presta, 'm2', 18.00, 10.00);
+  -- Service articles (no purchase price)
+  INSERT INTO catalog.article (reference, name, description, category_id, unit, sale_price, vat_rate) VALUES
+    ('PREST-POSE-CHARP', 'Pose charpente traditionnelle', 'Main d''oeuvre pose charpente, hors fournitures', v_cat_services, 'h', 55.00, 20.00),
+    ('PREST-POSE-ISOL', 'Pose isolation laine de bois', 'Main d''oeuvre isolation, hors matériaux', v_cat_services, 'm2', 18.00, 10.00);
 
-  -- Un article inactif pour tester le filtre
-  INSERT INTO catalog.article (reference, designation, categorie_id, unite, prix_vente, prix_achat, tva, actif) VALUES
-    ('BOIS-EPIC-OLD', 'Épicéa 27mm (ancien)', v_cat_bois, 'm3', 900.00, 650.00, 20.00, false);
+  -- Inactive article for filter testing
+  INSERT INTO catalog.article (reference, name, category_id, unit, sale_price, purchase_price, vat_rate, active) VALUES
+    ('BOIS-EPIC-OLD', 'Épicéa 27mm (ancien)', v_cat_wood, 'm3', 900.00, 650.00, 20.00, false);
 END;
 $function$;
-COMMENT ON FUNCTION catalog_qa.seed() IS 'Seed données démo: 5 catégories, ~15 articles (matériaux BTP, prestations artisan)';
+COMMENT ON FUNCTION catalog_qa.seed() IS 'Seed demo data: 7 categories, 16 articles (BTP materials, services)';
 
 GRANT USAGE ON SCHEMA catalog_qa TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_qa TO anon;

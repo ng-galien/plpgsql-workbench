@@ -22,17 +22,14 @@ BEGIN
     ELSE 'default'
   END;
 
-  -- Breadcrumb
   v_body := pgv.breadcrumb(VARIADIC ARRAY[
     pgv.t('asset.nav_assets'), '/',
     COALESCE(a.title, a.filename)
   ]);
 
-  -- Image
   v_body := v_body
     || '<img src="' || pgv.esc(a.path) || '" style="max-width:100%;border-radius:8px" loading="lazy">';
 
-  -- Tags as badges
   IF cardinality(a.tags) > 0 THEN
     v_tags := array_to_string(
       ARRAY(SELECT pgv.badge(t, 'default') FROM unnest(a.tags) AS t),
@@ -41,7 +38,6 @@ BEGIN
     v_tags := '-';
   END IF;
 
-  -- Colors as inline swatches
   IF cardinality(a.colors) > 0 THEN
     v_colors := array_to_string(
       ARRAY(SELECT '<span style="display:inline-block;width:24px;height:24px;border-radius:4px;background:' || c || ';margin-right:4px;vertical-align:middle" title="' || c || '"></span>' FROM unnest(a.colors) AS c),
@@ -50,7 +46,6 @@ BEGIN
     v_colors := '-';
   END IF;
 
-  -- Metadata DL
   v_dl := ARRAY[
     pgv.t('asset.field_title'), COALESCE(pgv.esc(a.title), '-'),
     pgv.t('asset.field_description'), COALESCE(pgv.esc(a.description), '-'),
@@ -59,7 +54,7 @@ BEGIN
     pgv.t('asset.field_dimensions'), CASE WHEN a.width IS NOT NULL THEN a.width::text || ' × ' || a.height::text ELSE '-' END,
     pgv.t('asset.field_orientation'), COALESCE(a.orientation, '-'),
     pgv.t('asset.field_status'), pgv.badge(a.status, v_status_variant),
-    pgv.t('asset.field_saison'), COALESCE(a.saison, '-'),
+    pgv.t('asset.field_season'), COALESCE(a.season, '-'),
     pgv.t('asset.field_credit'), COALESCE(pgv.esc(a.credit), '-'),
     pgv.t('asset.field_usage_hint'), COALESCE(pgv.esc(a.usage_hint), '-'),
     pgv.t('asset.field_tags'), v_tags,
@@ -69,7 +64,6 @@ BEGIN
   ];
   v_body := v_body || pgv.dl(VARIADIC v_dl);
 
-  -- Actions
   v_body := v_body || '<p>';
   IF a.status = 'to_classify' THEN
     v_body := v_body || pgv.badge(pgv.t('asset.btn_classify'), 'warning') || ' ';

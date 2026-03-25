@@ -86,7 +86,7 @@ END;
 $function$;
 COMMENT ON FUNCTION purchase._fournisseur_options() IS 'HTML select options for CRM clients as suppliers';
 
-CREATE OR REPLACE FUNCTION purchase._next_numero(p_prefix text)
+CREATE OR REPLACE FUNCTION purchase._next_number(p_prefix text)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
@@ -95,39 +95,39 @@ DECLARE
   v_seq int;
 BEGIN
   SELECT coalesce(max(
-    regexp_replace(numero, '^.*-(\d+)$', '\1')::int
+    regexp_replace(number, '^.*-(\d+)$', '\1')::int
   ), 0) + 1
   INTO v_seq
-  FROM purchase.commande
-  WHERE numero LIKE p_prefix || '-' || v_year || '-%'
+  FROM purchase.purchase_order
+  WHERE number LIKE p_prefix || '-' || v_year || '-%'
   UNION ALL
   SELECT coalesce(max(
-    regexp_replace(numero, '^.*-(\d+)$', '\1')::int
+    regexp_replace(number, '^.*-(\d+)$', '\1')::int
   ), 0) + 1
-  FROM purchase.reception
-  WHERE numero LIKE p_prefix || '-' || v_year || '-%'
+  FROM purchase.receipt
+  WHERE number LIKE p_prefix || '-' || v_year || '-%'
   ORDER BY 1 DESC LIMIT 1;
 
   RETURN p_prefix || '-' || v_year || '-' || lpad(v_seq::text, 3, '0');
 END;
 $function$;
-COMMENT ON FUNCTION purchase._next_numero(text) IS 'Generate next sequential number (CMD-2026-001, REC-2026-001)';
+COMMENT ON FUNCTION purchase._next_number(text) IS 'Generate next sequential number (PO-2026-001, REC-2026-001)';
 
-CREATE OR REPLACE FUNCTION purchase._quantite_restante(p_ligne_id integer)
+CREATE OR REPLACE FUNCTION purchase._remaining_quantity(p_line_id integer)
  RETURNS numeric
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_commandee numeric;
-  v_recue numeric;
 BEGIN
-  SELECT quantite INTO v_commandee FROM purchase.ligne WHERE id = p_ligne_id;
-  SELECT coalesce(sum(quantite_recue), 0) INTO v_recue
-    FROM purchase.reception_ligne WHERE ligne_id = p_ligne_id;
-  RETURN v_commandee - v_recue;
+  RETURN (
+    SELECT l.quantity - coalesce(sum(rl.quantity_received), 0)
+    FROM purchase.order_line l
+    LEFT JOIN purchase.receipt_line rl ON rl.line_id = l.id
+    WHERE l.id = p_line_id
+    GROUP BY l.quantity
+  );
 END;
 $function$;
-COMMENT ON FUNCTION purchase._quantite_restante(integer) IS 'Remaining quantity to receive for an order line';
+COMMENT ON FUNCTION purchase._remaining_quantity(integer) IS 'Calculate remaining quantity to receive for an order line';
 
 CREATE OR REPLACE FUNCTION purchase._set_updated_at()
  RETURNS trigger
@@ -139,64 +139,64 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION purchase._set_updated_at() IS 'Trigger function to auto-update updated_at timestamp';
-DROP TRIGGER IF EXISTS trg_commande_updated_at ON purchase.commande;
-CREATE TRIGGER trg_commande_updated_at BEFORE UPDATE ON purchase.commande FOR EACH ROW EXECUTE FUNCTION purchase._set_updated_at();
-DROP TRIGGER IF EXISTS trg_facture_fournisseur_updated_at ON purchase.facture_fournisseur;
-CREATE TRIGGER trg_facture_fournisseur_updated_at BEFORE UPDATE ON purchase.facture_fournisseur FOR EACH ROW EXECUTE FUNCTION purchase._set_updated_at();
+DROP TRIGGER IF EXISTS trg_commande_updated_at ON purchase.purchase_order;
+CREATE TRIGGER trg_commande_updated_at BEFORE UPDATE ON purchase.purchase_order FOR EACH ROW EXECUTE FUNCTION purchase._set_updated_at();
+DROP TRIGGER IF EXISTS trg_facture_fournisseur_updated_at ON purchase.supplier_invoice;
+CREATE TRIGGER trg_facture_fournisseur_updated_at BEFORE UPDATE ON purchase.supplier_invoice FOR EACH ROW EXECUTE FUNCTION purchase._set_updated_at();
 
-CREATE OR REPLACE FUNCTION purchase._statut_badge(p_statut text)
+CREATE OR REPLACE FUNCTION purchase._status_badge(p_status text)
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  RETURN CASE p_statut
-    WHEN 'brouillon' THEN pgv.badge(pgv.t('purchase.status_brouillon'), 'default')
-    WHEN 'envoyee' THEN pgv.badge(pgv.t('purchase.status_envoyee'), 'primary')
-    WHEN 'partiellement_recue' THEN pgv.badge(pgv.t('purchase.status_partielle'), 'warning')
-    WHEN 'recue' THEN pgv.badge(pgv.t('purchase.status_recue'), 'success')
-    WHEN 'annulee' THEN pgv.badge(pgv.t('purchase.status_annulee'), 'danger')
-    WHEN 'validee' THEN pgv.badge(pgv.t('purchase.status_validee'), 'success')
-    WHEN 'payee' THEN pgv.badge(pgv.t('purchase.status_payee'), 'success')
-    ELSE pgv.badge(p_statut, 'default')
+  RETURN CASE p_status
+    WHEN 'draft' THEN pgv.badge(pgv.t('purchase.status_draft'), 'default')
+    WHEN 'sent' THEN pgv.badge(pgv.t('purchase.status_sent'), 'primary')
+    WHEN 'partially_received' THEN pgv.badge(pgv.t('purchase.status_partially_received'), 'warning')
+    WHEN 'received' THEN pgv.badge(pgv.t('purchase.status_received'), 'success')
+    WHEN 'cancelled' THEN pgv.badge(pgv.t('purchase.status_cancelled'), 'danger')
+    WHEN 'validated' THEN pgv.badge(pgv.t('purchase.status_validated'), 'primary')
+    WHEN 'paid' THEN pgv.badge(pgv.t('purchase.status_paid'), 'success')
+    ELSE pgv.badge(p_status, 'default')
   END;
 END;
 $function$;
-COMMENT ON FUNCTION purchase._statut_badge(text) IS 'Colored status badge for purchase statuses';
+COMMENT ON FUNCTION purchase._status_badge(text) IS 'Return HTML badge for a purchase status value';
 
-CREATE OR REPLACE FUNCTION purchase._total_ht(p_commande_id integer)
+CREATE OR REPLACE FUNCTION purchase._total_ht(p_order_id integer)
  RETURNS numeric
  LANGUAGE plpgsql
 AS $function$
 BEGIN
   RETURN coalesce((
-    SELECT sum(quantite * prix_unitaire)
-    FROM purchase.ligne
-    WHERE commande_id = p_commande_id
+    SELECT sum(quantity * unit_price)
+    FROM purchase.order_line
+    WHERE order_id = p_order_id
   ), 0);
 END;
 $function$;
 COMMENT ON FUNCTION purchase._total_ht(integer) IS 'Total HT for a purchase order';
 
-CREATE OR REPLACE FUNCTION purchase._total_tva(p_commande_id integer)
+CREATE OR REPLACE FUNCTION purchase._total_tva(p_order_id integer)
  RETURNS numeric
  LANGUAGE plpgsql
 AS $function$
 BEGIN
   RETURN coalesce((
-    SELECT sum(quantite * prix_unitaire * tva_rate / 100)
-    FROM purchase.ligne
-    WHERE commande_id = p_commande_id
+    SELECT sum(quantity * unit_price * tva_rate / 100)
+    FROM purchase.order_line
+    WHERE order_id = p_order_id
   ), 0);
 END;
 $function$;
 COMMENT ON FUNCTION purchase._total_tva(integer) IS 'Total TVA for a purchase order';
 
-CREATE OR REPLACE FUNCTION purchase._total_ttc(p_commande_id integer)
+CREATE OR REPLACE FUNCTION purchase._total_ttc(p_order_id integer)
  RETURNS numeric
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  RETURN purchase._total_ht(p_commande_id) + purchase._total_tva(p_commande_id);
+  RETURN purchase._total_ht(p_order_id) + purchase._total_tva(p_order_id);
 END;
 $function$;
 COMMENT ON FUNCTION purchase._total_ttc(integer) IS 'Total TTC for a purchase order';
@@ -248,580 +248,6 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION purchase.brand() IS 'Brand name for purchase module';
-
-CREATE OR REPLACE FUNCTION purchase.commande_create(p_row purchase.commande)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  INSERT INTO purchase.commande (tenant_id, numero, fournisseur_id, objet, notes, date_livraison, conditions_paiement)
-  VALUES (
-    current_setting('app.tenant_id', true),
-    purchase._next_numero('CMD'),
-    p_row.fournisseur_id,
-    p_row.objet,
-    coalesce(p_row.notes, ''),
-    p_row.date_livraison,
-    coalesce(p_row.conditions_paiement, '')
-  )
-  RETURNING * INTO p_row;
-  RETURN to_jsonb(p_row);
-END;
-$function$;
-COMMENT ON FUNCTION purchase.commande_create(purchase.commande) IS 'Create a new commande fournisseur (brouillon)';
-
-CREATE OR REPLACE FUNCTION purchase.commande_delete(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_row purchase.commande;
-BEGIN
-  DELETE FROM purchase.commande
-  WHERE id = p_id::int
-    AND tenant_id = current_setting('app.tenant_id', true)
-    AND statut = 'brouillon'
-  RETURNING * INTO v_row;
-  RETURN to_jsonb(v_row);
-END;
-$function$;
-COMMENT ON FUNCTION purchase.commande_delete(text) IS 'Delete a commande fournisseur (brouillon only)';
-
-CREATE OR REPLACE FUNCTION purchase.commande_list(p_filter text DEFAULT NULL::text)
- RETURNS SETOF jsonb
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF p_filter IS NULL THEN
-    RETURN QUERY
-      SELECT to_jsonb(c) || jsonb_build_object('fournisseur_name', cl.name, 'total_ttc', purchase._total_ttc(c.id))
-      FROM purchase.commande c
-      JOIN crm.client cl ON cl.id = c.fournisseur_id
-      WHERE c.tenant_id = current_setting('app.tenant_id', true)
-      ORDER BY c.created_at DESC;
-  ELSE
-    RETURN QUERY EXECUTE
-      'SELECT to_jsonb(c) || jsonb_build_object(''fournisseur_name'', cl.name, ''total_ttc'', purchase._total_ttc(c.id))
-       FROM purchase.commande c
-       JOIN crm.client cl ON cl.id = c.fournisseur_id
-       WHERE c.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
-       || ' AND ' || pgv.rsql_to_where(p_filter, 'purchase', 'commande')
-       || ' ORDER BY c.created_at DESC';
-  END IF;
-END;
-$function$;
-COMMENT ON FUNCTION purchase.commande_list(text) IS 'List commandes for current tenant with fournisseur name resolved — optional RSQL filter';
-
-CREATE OR REPLACE FUNCTION purchase.commande_read(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_result jsonb;
-  v_actions jsonb;
-  v_has_receptions boolean;
-BEGIN
-  SELECT to_jsonb(c) || jsonb_build_object(
-    'fournisseur_name', cl.name,
-    'total_ht', purchase._total_ht(c.id),
-    'total_tva', purchase._total_tva(c.id),
-    'total_ttc', purchase._total_ttc(c.id),
-    'nb_lignes', (SELECT count(*) FROM purchase.ligne l WHERE l.commande_id = c.id),
-    'nb_receptions', (SELECT count(*) FROM purchase.reception r WHERE r.commande_id = c.id)
-  ) INTO v_result
-  FROM purchase.commande c
-  JOIN crm.client cl ON cl.id = c.fournisseur_id
-  WHERE c.id = p_id::int AND c.tenant_id = current_setting('app.tenant_id', true);
-
-  IF v_result IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  -- HATEOAS actions based on state
-  v_actions := '[]'::jsonb;
-
-  CASE v_result->>'statut'
-    WHEN 'brouillon' THEN
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'envoyer', 'uri', 'purchase://commande/' || p_id || '/envoyer'),
-        jsonb_build_object('method', 'annuler', 'uri', 'purchase://commande/' || p_id || '/annuler'),
-        jsonb_build_object('method', 'delete', 'uri', 'purchase://commande/' || p_id)
-      );
-    WHEN 'envoyee', 'partiellement_recue' THEN
-      v_has_receptions := (v_result->'nb_receptions')::int > 0;
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'recevoir', 'uri', 'purchase://commande/' || p_id || '/recevoir')
-      );
-      IF NOT v_has_receptions THEN
-        v_actions := v_actions || jsonb_build_array(
-          jsonb_build_object('method', 'annuler', 'uri', 'purchase://commande/' || p_id || '/annuler')
-        );
-      END IF;
-    ELSE
-      -- recue, annulee: no actions (terminal)
-  END CASE;
-
-  v_result := v_result || jsonb_build_object('actions', v_actions);
-
-  RETURN v_result;
-END;
-$function$;
-COMMENT ON FUNCTION purchase.commande_read(text) IS 'Read commande by id with fournisseur, totals, stats, and HATEOAS actions';
-
-CREATE OR REPLACE FUNCTION purchase.commande_ui(p_slug text DEFAULT NULL::text)
- RETURNS jsonb
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_cmd purchase.commande;
-  v_fournisseur text;
-BEGIN
-  -- List mode
-  IF p_slug IS NULL THEN
-    RETURN jsonb_build_object(
-      'ui', pgv.ui_column(
-        pgv.ui_heading(pgv.t('purchase.nav_commandes')),
-        pgv.ui_table('commandes', jsonb_build_array(
-          pgv.ui_col('numero', pgv.t('purchase.col_numero'), pgv.ui_link('{numero}', '/purchase/commande/{id}')),
-          pgv.ui_col('fournisseur_name', pgv.t('purchase.col_fournisseur')),
-          pgv.ui_col('objet', pgv.t('purchase.col_objet')),
-          pgv.ui_col('statut', pgv.t('purchase.col_statut'), pgv.ui_badge('{statut}')),
-          pgv.ui_col('total_ttc', pgv.t('purchase.col_total_ttc')),
-          pgv.ui_col('created_at', pgv.t('purchase.col_date'))
-        ))
-      ),
-      'datasources', jsonb_build_object(
-        'commandes', pgv.ui_datasource('purchase://commande', 20, true, 'created_at')
-      )
-    );
-  END IF;
-
-  -- Detail mode
-  SELECT * INTO v_cmd FROM purchase.commande WHERE id = p_slug::int AND tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
-
-  SELECT name INTO v_fournisseur FROM crm.client WHERE id = v_cmd.fournisseur_id;
-
-  RETURN jsonb_build_object(
-    'ui', pgv.ui_column(
-      pgv.ui_row(
-        pgv.ui_link('← ' || pgv.t('purchase.nav_commandes'), '/purchase/commande'),
-        pgv.ui_heading(pgv.t('purchase.title_bon_commande') || ' ' || v_cmd.numero)
-      ),
-      pgv.ui_row(
-        pgv.ui_badge(v_cmd.statut),
-        pgv.ui_text(pgv.t('purchase.card_fournisseur') || ': ' || v_fournisseur),
-        pgv.ui_text(pgv.t('purchase.card_total_ttc') || ': ' || to_char(purchase._total_ttc(v_cmd.id), 'FM999 990.00') || ' EUR')
-      ),
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('purchase.label_objet') || ': ' || coalesce(nullif(v_cmd.objet, ''), '—')),
-        pgv.ui_text(pgv.t('purchase.card_livraison') || ': ' || coalesce(to_char(v_cmd.date_livraison, 'DD/MM/YYYY'), '—'))
-      ),
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('purchase.label_conditions') || ': ' || coalesce(nullif(v_cmd.conditions_paiement, ''), '—')),
-        pgv.ui_text(pgv.t('purchase.label_notes') || ': ' || coalesce(nullif(v_cmd.notes, ''), '—'))
-      ),
-      pgv.ui_heading(pgv.t('purchase.label_total_ht') || ' / ' || pgv.t('purchase.label_tva') || ' / ' || pgv.t('purchase.label_ttc'), 3),
-      pgv.ui_row(
-        pgv.ui_text(to_char(purchase._total_ht(v_cmd.id), 'FM999 990.00') || ' EUR'),
-        pgv.ui_text(to_char(purchase._total_tva(v_cmd.id), 'FM999 990.00') || ' EUR'),
-        pgv.ui_text(to_char(purchase._total_ttc(v_cmd.id), 'FM999 990.00') || ' EUR')
-      )
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION purchase.commande_ui(text) IS 'SDUI view: commande list with datasource table, or detail with static components';
-
-CREATE OR REPLACE FUNCTION purchase.commande_update(p_row purchase.commande)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  UPDATE purchase.commande SET
-    fournisseur_id = coalesce(p_row.fournisseur_id, fournisseur_id),
-    objet = coalesce(nullif(p_row.objet, ''), objet),
-    notes = coalesce(p_row.notes, notes),
-    date_livraison = coalesce(p_row.date_livraison, date_livraison),
-    conditions_paiement = coalesce(p_row.conditions_paiement, conditions_paiement),
-    updated_at = now()
-  WHERE id = p_row.id
-    AND tenant_id = current_setting('app.tenant_id', true)
-    AND statut = 'brouillon'
-  RETURNING * INTO p_row;
-  RETURN to_jsonb(p_row);
-END;
-$function$;
-COMMENT ON FUNCTION purchase.commande_update(purchase.commande) IS 'Update a commande fournisseur (brouillon only)';
-
-CREATE OR REPLACE FUNCTION purchase.commande_view()
- RETURNS jsonb
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  RETURN jsonb_build_object(
-    'uri', 'purchase://commande',
-    'label', 'purchase.entity_commande',
-
-    'template', jsonb_build_object(
-      'compact', jsonb_build_object(
-        'fields', jsonb_build_array('numero', 'fournisseur_name', 'statut', 'total_ttc')
-      ),
-
-      'standard', jsonb_build_object(
-        'fields', jsonb_build_array('numero', 'fournisseur_name', 'objet', 'statut', 'date_livraison'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'total_ttc', 'label', 'purchase.stat_total_ttc'),
-          jsonb_build_object('key', 'nb_lignes', 'label', 'purchase.stat_nb_lignes'),
-          jsonb_build_object('key', 'nb_receptions', 'label', 'purchase.stat_nb_receptions')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'crm://client', 'filter', 'id={fournisseur_id}', 'label', 'purchase.rel_fournisseur'),
-          jsonb_build_object('entity', 'purchase://facture_fournisseur', 'filter', 'commande_id={id}', 'label', 'purchase.rel_factures')
-        )
-      ),
-
-      'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('numero', 'fournisseur_name', 'objet', 'statut', 'date_livraison', 'conditions_paiement', 'notes', 'created_at'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'total_ht', 'label', 'purchase.stat_total_ht'),
-          jsonb_build_object('key', 'total_tva', 'label', 'purchase.stat_total_tva'),
-          jsonb_build_object('key', 'total_ttc', 'label', 'purchase.stat_total_ttc'),
-          jsonb_build_object('key', 'nb_lignes', 'label', 'purchase.stat_nb_lignes'),
-          jsonb_build_object('key', 'nb_receptions', 'label', 'purchase.stat_nb_receptions')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'crm://client', 'filter', 'id={fournisseur_id}', 'label', 'purchase.rel_fournisseur'),
-          jsonb_build_object('entity', 'purchase://facture_fournisseur', 'filter', 'commande_id={id}', 'label', 'purchase.rel_factures')
-        )
-      ),
-
-      'form', jsonb_build_object(
-        'sections', jsonb_build_array(
-          jsonb_build_object('label', 'purchase.section_commande', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'fournisseur_id', 'label', 'purchase.field_fournisseur', 'type', 'combobox',
-              'source', 'crm://client', 'display', 'name', 'required', true),
-            jsonb_build_object('key', 'objet', 'label', 'purchase.field_objet', 'type', 'text', 'required', true),
-            jsonb_build_object('key', 'date_livraison', 'label', 'purchase.field_date_livraison', 'type', 'date'),
-            jsonb_build_object('key', 'conditions_paiement', 'label', 'purchase.field_conditions', 'type', 'text'),
-            jsonb_build_object('key', 'notes', 'label', 'purchase.field_notes', 'type', 'textarea')
-          ))
-        )
-      )
-    ),
-
-    'actions', jsonb_build_object(
-      'envoyer', jsonb_build_object('label', 'purchase.action_envoyer', 'confirm', 'purchase.confirm_envoyer'),
-      'recevoir', jsonb_build_object('label', 'purchase.action_recevoir', 'confirm', 'purchase.confirm_reception'),
-      'annuler', jsonb_build_object('label', 'purchase.action_annuler', 'variant', 'danger', 'confirm', 'purchase.confirm_annuler'),
-      'delete', jsonb_build_object('label', 'purchase.action_delete', 'variant', 'danger', 'confirm', 'purchase.confirm_delete')
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION purchase.commande_view() IS 'View template for commande entity: compact, standard, expanded, form, actions catalog';
-
-CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_create(p_row purchase.facture_fournisseur)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  INSERT INTO purchase.facture_fournisseur (tenant_id, commande_id, numero_fournisseur, montant_ht, montant_ttc, date_facture, date_echeance, notes)
-  VALUES (
-    current_setting('app.tenant_id', true),
-    p_row.commande_id,
-    p_row.numero_fournisseur,
-    p_row.montant_ht,
-    p_row.montant_ttc,
-    p_row.date_facture,
-    p_row.date_echeance,
-    coalesce(p_row.notes, '')
-  )
-  RETURNING * INTO p_row;
-  RETURN to_jsonb(p_row);
-END;
-$function$;
-COMMENT ON FUNCTION purchase.facture_fournisseur_create(purchase.facture_fournisseur) IS 'Create a new facture fournisseur (statut recue)';
-
-CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_delete(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_row purchase.facture_fournisseur;
-BEGIN
-  DELETE FROM purchase.facture_fournisseur
-  WHERE id = p_id::int
-    AND tenant_id = current_setting('app.tenant_id', true)
-    AND statut = 'recue'
-  RETURNING * INTO v_row;
-  RETURN to_jsonb(v_row);
-END;
-$function$;
-COMMENT ON FUNCTION purchase.facture_fournisseur_delete(text) IS 'Delete a facture fournisseur (recue only)';
-
-CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_list(p_filter text DEFAULT NULL::text)
- RETURNS SETOF jsonb
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF p_filter IS NULL THEN
-    RETURN QUERY
-      SELECT to_jsonb(f) || jsonb_build_object('commande_numero', c.numero, 'fournisseur_name', cl.name, 'fournisseur_id', cl.id)
-      FROM purchase.facture_fournisseur f
-      LEFT JOIN purchase.commande c ON c.id = f.commande_id
-      LEFT JOIN crm.client cl ON cl.id = c.fournisseur_id
-      WHERE f.tenant_id = current_setting('app.tenant_id', true)
-      ORDER BY f.created_at DESC;
-  ELSE
-    RETURN QUERY EXECUTE
-      'SELECT to_jsonb(f) || jsonb_build_object(''commande_numero'', c.numero, ''fournisseur_name'', cl.name, ''fournisseur_id'', cl.id)
-       FROM purchase.facture_fournisseur f
-       LEFT JOIN purchase.commande c ON c.id = f.commande_id
-       LEFT JOIN crm.client cl ON cl.id = c.fournisseur_id
-       WHERE f.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
-       || ' AND ' || pgv.rsql_to_where(p_filter, 'purchase', 'facture_fournisseur')
-       || ' ORDER BY f.created_at DESC';
-  END IF;
-END;
-$function$;
-COMMENT ON FUNCTION purchase.facture_fournisseur_list(text) IS 'List factures fournisseur with commande numero and fournisseur name resolved — optional RSQL filter';
-
-CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_read(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_result jsonb;
-  v_actions jsonb;
-BEGIN
-  SELECT to_jsonb(f) || jsonb_build_object(
-    'commande_numero', c.numero,
-    'fournisseur_name', cl.name,
-    'fournisseur_id', cl.id,
-    'commande_ttc', CASE WHEN f.commande_id IS NOT NULL THEN purchase._total_ttc(f.commande_id) END,
-    'ecart', CASE WHEN f.commande_id IS NOT NULL THEN f.montant_ttc - purchase._total_ttc(f.commande_id) END
-  ) INTO v_result
-  FROM purchase.facture_fournisseur f
-  LEFT JOIN purchase.commande c ON c.id = f.commande_id
-  LEFT JOIN crm.client cl ON cl.id = c.fournisseur_id
-  WHERE f.id = p_id::int AND f.tenant_id = current_setting('app.tenant_id', true);
-
-  IF v_result IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  -- HATEOAS actions based on state
-  v_actions := '[]'::jsonb;
-
-  CASE v_result->>'statut'
-    WHEN 'recue' THEN
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'valider', 'uri', 'purchase://facture_fournisseur/' || p_id || '/valider'),
-        jsonb_build_object('method', 'delete', 'uri', 'purchase://facture_fournisseur/' || p_id)
-      );
-    WHEN 'validee' THEN
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'payer', 'uri', 'purchase://facture_fournisseur/' || p_id || '/payer')
-      );
-    WHEN 'payee' THEN
-      IF NOT (v_result->>'comptabilisee')::boolean THEN
-        v_actions := jsonb_build_array(
-          jsonb_build_object('method', 'comptabiliser', 'uri', 'purchase://facture_fournisseur/' || p_id || '/comptabiliser')
-        );
-      END IF;
-    ELSE
-      -- terminal
-  END CASE;
-
-  v_result := v_result || jsonb_build_object('actions', v_actions);
-
-  RETURN v_result;
-END;
-$function$;
-COMMENT ON FUNCTION purchase.facture_fournisseur_read(text) IS 'Read facture fournisseur by id with commande, fournisseur, reconciliation stats, and HATEOAS actions';
-
-CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_ui(p_slug text DEFAULT NULL::text)
- RETURNS jsonb
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_fac purchase.facture_fournisseur;
-  v_cmd_numero text;
-  v_fournisseur_name text;
-BEGIN
-  -- List mode
-  IF p_slug IS NULL THEN
-    RETURN jsonb_build_object(
-      'ui', pgv.ui_column(
-        pgv.ui_heading(pgv.t('purchase.nav_factures')),
-        pgv.ui_table('factures', jsonb_build_array(
-          pgv.ui_col('numero_fournisseur', pgv.t('purchase.col_no_fournisseur'), pgv.ui_link('{numero_fournisseur}', '/purchase/facture_fournisseur/{id}')),
-          pgv.ui_col('fournisseur_name', pgv.t('purchase.col_fournisseur')),
-          pgv.ui_col('commande_numero', pgv.t('purchase.col_commande')),
-          pgv.ui_col('statut', pgv.t('purchase.col_statut'), pgv.ui_badge('{statut}')),
-          pgv.ui_col('montant_ttc', pgv.t('purchase.col_montant_ttc')),
-          pgv.ui_col('date_facture', pgv.t('purchase.col_date_facture')),
-          pgv.ui_col('date_echeance', pgv.t('purchase.col_echeance'))
-        ))
-      ),
-      'datasources', jsonb_build_object(
-        'factures', pgv.ui_datasource('purchase://facture_fournisseur', 20, true, 'created_at')
-      )
-    );
-  END IF;
-
-  -- Detail mode
-  SELECT * INTO v_fac FROM purchase.facture_fournisseur WHERE id = p_slug::int AND tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
-
-  SELECT numero INTO v_cmd_numero FROM purchase.commande WHERE id = v_fac.commande_id;
-  SELECT cl.name INTO v_fournisseur_name
-    FROM purchase.commande c
-    JOIN crm.client cl ON cl.id = c.fournisseur_id
-   WHERE c.id = v_fac.commande_id;
-
-  RETURN jsonb_build_object(
-    'ui', pgv.ui_column(
-      pgv.ui_row(
-        pgv.ui_link('← ' || pgv.t('purchase.nav_factures'), '/purchase/facture_fournisseur'),
-        pgv.ui_heading(pgv.t('purchase.card_facture') || ' ' || v_fac.numero_fournisseur)
-      ),
-      pgv.ui_row(
-        pgv.ui_badge(v_fac.statut),
-        pgv.ui_text(pgv.t('purchase.card_fournisseur') || ': ' || coalesce(v_fournisseur_name, '—')),
-        pgv.ui_text(pgv.t('purchase.card_commande') || ': ' || coalesce(v_cmd_numero, '—'))
-      ),
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('purchase.card_montant_ht') || ': ' || to_char(v_fac.montant_ht, 'FM999 990.00') || ' EUR'),
-        pgv.ui_text(pgv.t('purchase.card_montant_ttc') || ': ' || to_char(v_fac.montant_ttc, 'FM999 990.00') || ' EUR')
-      ),
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('purchase.label_date_facture') || ': ' || to_char(v_fac.date_facture, 'DD/MM/YYYY')),
-        pgv.ui_text(pgv.t('purchase.label_echeance') || ': ' || coalesce(to_char(v_fac.date_echeance, 'DD/MM/YYYY'), '—'))
-      ),
-      CASE WHEN v_fac.commande_id IS NOT NULL THEN
-        pgv.ui_row(
-          pgv.ui_text(pgv.t('purchase.label_rapprochement') || ': '
-            || pgv.t('purchase.label_commande_ttc') || ' ' || to_char(purchase._total_ttc(v_fac.commande_id), 'FM999 990.00') || ' EUR'
-            || ' | ' || pgv.t('purchase.label_ecart') || ' ' || to_char(v_fac.montant_ttc - purchase._total_ttc(v_fac.commande_id), 'FM999 990.00') || ' EUR'),
-          CASE WHEN abs(v_fac.montant_ttc - purchase._total_ttc(v_fac.commande_id)) > 0.01
-            THEN pgv.ui_badge(pgv.t('purchase.badge_ecart'), 'warning')
-            ELSE pgv.ui_badge(pgv.t('purchase.badge_ok'), 'success')
-          END
-        )
-      ELSE
-        pgv.ui_text('')
-      END,
-      CASE WHEN v_fac.notes <> '' THEN pgv.ui_text(pgv.t('purchase.label_notes') || ': ' || v_fac.notes)
-      ELSE pgv.ui_text('') END,
-      CASE WHEN v_fac.comptabilisee THEN pgv.ui_badge(pgv.t('purchase.badge_comptabilisee'), 'success')
-      ELSE pgv.ui_text('') END
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION purchase.facture_fournisseur_ui(text) IS 'SDUI view: facture fournisseur list with datasource table, or detail with static components';
-
-CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_update(p_row purchase.facture_fournisseur)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  UPDATE purchase.facture_fournisseur SET
-    numero_fournisseur = coalesce(nullif(p_row.numero_fournisseur, ''), numero_fournisseur),
-    commande_id = coalesce(p_row.commande_id, commande_id),
-    montant_ht = coalesce(p_row.montant_ht, montant_ht),
-    montant_ttc = coalesce(p_row.montant_ttc, montant_ttc),
-    date_facture = coalesce(p_row.date_facture, date_facture),
-    date_echeance = coalesce(p_row.date_echeance, date_echeance),
-    notes = coalesce(p_row.notes, notes),
-    updated_at = now()
-  WHERE id = p_row.id
-    AND tenant_id = current_setting('app.tenant_id', true)
-    AND statut = 'recue'
-  RETURNING * INTO p_row;
-  RETURN to_jsonb(p_row);
-END;
-$function$;
-COMMENT ON FUNCTION purchase.facture_fournisseur_update(purchase.facture_fournisseur) IS 'Update a facture fournisseur (recue only)';
-
-CREATE OR REPLACE FUNCTION purchase.facture_fournisseur_view()
- RETURNS jsonb
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  RETURN jsonb_build_object(
-    'uri', 'purchase://facture_fournisseur',
-    'label', 'purchase.entity_facture_fournisseur',
-
-    'template', jsonb_build_object(
-      'compact', jsonb_build_object(
-        'fields', jsonb_build_array('numero_fournisseur', 'fournisseur_name', 'statut', 'montant_ttc')
-      ),
-
-      'standard', jsonb_build_object(
-        'fields', jsonb_build_array('numero_fournisseur', 'fournisseur_name', 'commande_numero', 'statut', 'montant_ttc', 'date_facture', 'date_echeance'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'montant_ht', 'label', 'purchase.stat_montant_ht'),
-          jsonb_build_object('key', 'montant_ttc', 'label', 'purchase.stat_montant_ttc')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'purchase://commande', 'filter', 'id={commande_id}', 'label', 'purchase.rel_commande'),
-          jsonb_build_object('entity', 'crm://client', 'filter', 'id={fournisseur_id}', 'label', 'purchase.rel_fournisseur')
-        )
-      ),
-
-      'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('numero_fournisseur', 'fournisseur_name', 'commande_numero', 'statut', 'montant_ht', 'montant_ttc', 'date_facture', 'date_echeance', 'comptabilisee', 'notes', 'created_at'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'montant_ht', 'label', 'purchase.stat_montant_ht'),
-          jsonb_build_object('key', 'montant_ttc', 'label', 'purchase.stat_montant_ttc'),
-          jsonb_build_object('key', 'commande_ttc', 'label', 'purchase.stat_commande_ttc'),
-          jsonb_build_object('key', 'ecart', 'label', 'purchase.stat_ecart', 'variant', 'warning')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'purchase://commande', 'filter', 'id={commande_id}', 'label', 'purchase.rel_commande'),
-          jsonb_build_object('entity', 'crm://client', 'filter', 'id={fournisseur_id}', 'label', 'purchase.rel_fournisseur')
-        )
-      ),
-
-      'form', jsonb_build_object(
-        'sections', jsonb_build_array(
-          jsonb_build_object('label', 'purchase.section_facture', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'numero_fournisseur', 'label', 'purchase.field_no_fournisseur', 'type', 'text', 'required', true),
-            jsonb_build_object('key', 'montant_ht', 'label', 'purchase.field_montant_ht', 'type', 'number', 'required', true),
-            jsonb_build_object('key', 'montant_ttc', 'label', 'purchase.field_montant_ttc', 'type', 'number', 'required', true),
-            jsonb_build_object('key', 'date_facture', 'label', 'purchase.field_date_facture', 'type', 'date', 'required', true),
-            jsonb_build_object('key', 'date_echeance', 'label', 'purchase.field_date_echeance', 'type', 'date'),
-            jsonb_build_object('key', 'commande_id', 'label', 'purchase.field_commande_liee', 'type', 'combobox',
-              'source', 'purchase://commande', 'display', 'numero'),
-            jsonb_build_object('key', 'notes', 'label', 'purchase.field_notes', 'type', 'textarea')
-          ))
-        )
-      )
-    ),
-
-    'actions', jsonb_build_object(
-      'valider', jsonb_build_object('label', 'purchase.action_valider', 'confirm', 'purchase.confirm_valider_facture'),
-      'payer', jsonb_build_object('label', 'purchase.action_payer', 'confirm', 'purchase.confirm_payer'),
-      'comptabiliser', jsonb_build_object('label', 'purchase.action_comptabiliser', 'confirm', 'purchase.confirm_comptabiliser'),
-      'delete', jsonb_build_object('label', 'purchase.action_delete', 'variant', 'danger', 'confirm', 'purchase.confirm_delete_facture')
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION purchase.facture_fournisseur_view() IS 'View template for facture_fournisseur entity: compact, standard, expanded, form, actions catalog';
 
 CREATE OR REPLACE FUNCTION purchase.fournisseur_options(p_search text DEFAULT ''::text)
  RETURNS jsonb
@@ -1931,206 +1357,159 @@ AS $function$
 BEGIN
   RETURN jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('purchase.nav_dashboard'), 'icon', 'home'),
-    jsonb_build_object('href', '/commande', 'label', pgv.t('purchase.nav_commandes'), 'icon', 'shopping-cart', 'entity', 'commande', 'uri', 'purchase://commande'),
-    jsonb_build_object('href', '/facture_fournisseur', 'label', pgv.t('purchase.nav_factures'), 'icon', 'receipt', 'entity', 'facture_fournisseur', 'uri', 'purchase://facture_fournisseur'),
-    jsonb_build_object('href', '/recapitulatif', 'label', pgv.t('purchase.nav_recap'), 'icon', 'bar-chart'),
-    jsonb_build_object('href', '/article_prix', 'label', pgv.t('purchase.nav_prix_articles'), 'icon', 'tag')
+    jsonb_build_object('href', '/purchase_order', 'label', pgv.t('purchase.nav_orders'), 'icon', 'shopping-cart', 'entity', 'purchase_order', 'uri', 'purchase://purchase_order'),
+    jsonb_build_object('href', '/supplier_invoice', 'label', pgv.t('purchase.nav_invoices'), 'icon', 'receipt', 'entity', 'supplier_invoice', 'uri', 'purchase://supplier_invoice'),
+    jsonb_build_object('href', '/summary', 'label', pgv.t('purchase.nav_summary'), 'icon', 'bar-chart'),
+    jsonb_build_object('href', '/article_prices', 'label', pgv.t('purchase.nav_article_prices'), 'icon', 'tag')
   );
 END;
 $function$;
 COMMENT ON FUNCTION purchase.nav_items() IS 'Navigation items for purchase module';
 
-CREATE OR REPLACE FUNCTION purchase.post_commande_annuler(p_data jsonb)
- RETURNS text
+CREATE OR REPLACE FUNCTION purchase.order_create(p_row purchase.purchase_order)
+ RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
-DECLARE
-  v_id int := (p_data->>'p_id')::int;
-  v_has_receptions bool;
 BEGIN
-  SELECT exists(SELECT 1 FROM purchase.reception WHERE commande_id = v_id) INTO v_has_receptions;
-
-  IF v_has_receptions THEN
-    RETURN pgv.toast(pgv.t('purchase.err_cancel_receptions'), 'error');
-  END IF;
-
-  UPDATE purchase.commande SET statut = 'annulee'
-   WHERE id = v_id AND statut IN ('brouillon', 'envoyee');
-
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('purchase.err_not_cancellable'), 'error');
-  END IF;
-
-  RETURN pgv.toast(pgv.t('purchase.toast_commande_annulee'))
-    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
+  INSERT INTO purchase.purchase_order (tenant_id, number, supplier_id, subject, notes, delivery_date, payment_terms)
+  VALUES (
+    current_setting('app.tenant_id', true),
+    purchase._next_number('PO'),
+    p_row.supplier_id,
+    p_row.subject,
+    coalesce(p_row.notes, ''),
+    p_row.delivery_date,
+    coalesce(p_row.payment_terms, '')
+  )
+  RETURNING * INTO p_row;
+  RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION purchase.post_commande_annuler(jsonb) IS 'Cancel a purchase order (only if no receptions)';
+COMMENT ON FUNCTION purchase.order_create(purchase.purchase_order) IS 'Create a new purchase order (draft)';
 
-CREATE OR REPLACE FUNCTION purchase.post_commande_envoyer(p_data jsonb)
- RETURNS text
+CREATE OR REPLACE FUNCTION purchase.order_delete(p_id text)
+ RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_id int := (p_data->>'p_id')::int;
+  v_row purchase.purchase_order;
 BEGIN
-  UPDATE purchase.commande SET statut = 'envoyee'
-   WHERE id = v_id AND statut = 'brouillon';
-
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('purchase.err_already_sent'), 'error');
-  END IF;
-
-  RETURN pgv.toast(pgv.t('purchase.toast_commande_envoyee'))
-    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
+  DELETE FROM purchase.purchase_order
+  WHERE id = p_id::int
+    AND tenant_id = current_setting('app.tenant_id', true)
+    AND status = 'draft'
+  RETURNING * INTO v_row;
+  RETURN to_jsonb(v_row);
 END;
 $function$;
-COMMENT ON FUNCTION purchase.post_commande_envoyer(jsonb) IS 'Mark purchase order as sent to supplier';
+COMMENT ON FUNCTION purchase.order_delete(text) IS 'Delete a purchase order (draft only)';
 
-CREATE OR REPLACE FUNCTION purchase.post_commande_save(p_data jsonb)
- RETURNS text
+CREATE OR REPLACE FUNCTION purchase.order_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF jsonb
  LANGUAGE plpgsql
- SECURITY DEFINER
 AS $function$
-DECLARE
-  v_id int := (p_data->>'p_id')::int;
-  v_fournisseur_id int := (p_data->>'p_fournisseur_id')::int;
-  v_objet text := p_data->>'p_objet';
-  v_notes text := coalesce(p_data->>'p_notes', '');
-  v_date_livraison date := (p_data->>'p_date_livraison')::date;
-  v_conditions text := coalesce(p_data->>'p_conditions_paiement', '');
 BEGIN
-  IF v_id IS NOT NULL THEN
-    UPDATE purchase.commande
-       SET fournisseur_id = v_fournisseur_id,
-           objet = v_objet,
-           notes = v_notes,
-           date_livraison = v_date_livraison,
-           conditions_paiement = v_conditions
-     WHERE id = v_id AND statut = 'brouillon';
-
-    IF NOT FOUND THEN
-      RETURN pgv.toast(pgv.t('purchase.err_commande_not_found'), 'error');
-    END IF;
-
-    RETURN pgv.toast(pgv.t('purchase.toast_commande_updated'))
-      || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
+  IF p_filter IS NULL THEN
+    RETURN QUERY
+      SELECT to_jsonb(o) || jsonb_build_object('supplier_name', cl.name, 'total_ttc', purchase._total_ttc(o.id))
+      FROM purchase.purchase_order o
+      JOIN crm.client cl ON cl.id = o.supplier_id
+      WHERE o.tenant_id = current_setting('app.tenant_id', true)
+      ORDER BY o.created_at DESC;
   ELSE
-    INSERT INTO purchase.commande (numero, fournisseur_id, objet, notes, date_livraison, conditions_paiement)
-    VALUES (purchase._next_numero('CMD'), v_fournisseur_id, v_objet, v_notes, v_date_livraison, v_conditions)
-    RETURNING id INTO v_id;
-
-    RETURN pgv.toast(pgv.t('purchase.toast_commande_created'))
-      || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_id)));
+    RETURN QUERY EXECUTE
+      'SELECT to_jsonb(o) || jsonb_build_object(''supplier_name'', cl.name, ''total_ttc'', purchase._total_ttc(o.id))
+       FROM purchase.purchase_order o
+       JOIN crm.client cl ON cl.id = o.supplier_id
+       WHERE o.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
+       || ' AND ' || pgv.rsql_to_where(p_filter, 'purchase', 'purchase_order')
+       || ' ORDER BY o.created_at DESC';
   END IF;
 END;
 $function$;
-COMMENT ON FUNCTION purchase.post_commande_save(jsonb) IS 'Create or update a purchase order (draft only)';
+COMMENT ON FUNCTION purchase.order_list(text) IS 'List purchase orders with supplier name resolved — optional RSQL filter';
 
-CREATE OR REPLACE FUNCTION purchase.post_facture_comptabiliser(p_data jsonb)
- RETURNS text
+CREATE OR REPLACE FUNCTION purchase.order_read(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result jsonb;
+  v_actions jsonb;
+  v_has_receipts boolean;
+BEGIN
+  SELECT to_jsonb(o) || jsonb_build_object(
+    'supplier_name', cl.name,
+    'total_ht', purchase._total_ht(o.id),
+    'total_tva', purchase._total_tva(o.id),
+    'total_ttc', purchase._total_ttc(o.id),
+    'line_count', (SELECT count(*) FROM purchase.order_line l WHERE l.order_id = o.id),
+    'receipt_count', (SELECT count(*) FROM purchase.receipt r WHERE r.order_id = o.id)
+  ) INTO v_result
+  FROM purchase.purchase_order o
+  JOIN crm.client cl ON cl.id = o.supplier_id
+  WHERE o.id = p_id::int AND o.tenant_id = current_setting('app.tenant_id', true);
+
+  IF v_result IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  -- HATEOAS actions based on state
+  v_actions := '[]'::jsonb;
+
+  CASE v_result->>'status'
+    WHEN 'draft' THEN
+      v_actions := jsonb_build_array(
+        jsonb_build_object('method', 'send', 'uri', 'purchase://purchase_order/' || p_id || '/send'),
+        jsonb_build_object('method', 'cancel', 'uri', 'purchase://purchase_order/' || p_id || '/cancel'),
+        jsonb_build_object('method', 'delete', 'uri', 'purchase://purchase_order/' || p_id)
+      );
+    WHEN 'sent', 'partially_received' THEN
+      v_has_receipts := (v_result->'receipt_count')::int > 0;
+      v_actions := jsonb_build_array(
+        jsonb_build_object('method', 'receive', 'uri', 'purchase://purchase_order/' || p_id || '/receive')
+      );
+      IF NOT v_has_receipts THEN
+        v_actions := v_actions || jsonb_build_array(
+          jsonb_build_object('method', 'cancel', 'uri', 'purchase://purchase_order/' || p_id || '/cancel')
+        );
+      END IF;
+    ELSE
+      -- received, cancelled: no actions (terminal)
+  END CASE;
+
+  v_result := v_result || jsonb_build_object('actions', v_actions);
+
+  RETURN v_result;
+END;
+$function$;
+COMMENT ON FUNCTION purchase.order_read(text) IS 'Read purchase order by id with supplier, totals, stats, and HATEOAS actions';
+
+CREATE OR REPLACE FUNCTION purchase.order_update(p_row purchase.purchase_order)
+ RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
-DECLARE
-  v_id int := (p_data->>'p_id')::int;
-  v_facture record;
-  v_tva numeric(12,2);
-  v_entry_id int;
-  v_ledger_exists boolean;
 BEGIN
-  -- Check facture exists and is payee
-  SELECT * INTO v_facture FROM purchase.facture_fournisseur WHERE id = v_id;
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('purchase.err_facture_not_found'), 'error');
-  END IF;
-  IF v_facture.statut <> 'payee' THEN
-    RETURN pgv.toast(pgv.t('purchase.err_must_pay_first'), 'error');
-  END IF;
-  IF v_facture.montant_ttc = 0 THEN
-    RETURN pgv.toast(pgv.t('purchase.err_no_amount'), 'error');
-  END IF;
-  IF v_facture.comptabilisee THEN
-    RETURN pgv.toast(pgv.t('purchase.err_already_booked'), 'error');
-  END IF;
-
-  -- Check ledger schema exists
-  SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'ledger') INTO v_ledger_exists;
-  IF NOT v_ledger_exists THEN
-    RETURN pgv.toast(pgv.t('purchase.err_no_ledger'), 'error');
-  END IF;
-
-  -- Compute TVA (TTC - HT)
-  v_tva := v_facture.montant_ttc - v_facture.montant_ht;
-
-  -- Create journal entry via dynamic SQL (no hard dependency on ledger)
-  EXECUTE format(
-    $e$INSERT INTO ledger.journal_entry (entry_date, reference, description)
-    VALUES (%L, %L, %L) RETURNING id$e$,
-    coalesce(v_facture.date_facture, CURRENT_DATE),
-    'FAF-' || v_facture.numero_fournisseur,
-    'Facture fournisseur ' || v_facture.numero_fournisseur
-  ) INTO v_entry_id;
-
-  -- 601 Achats — débit HT
-  EXECUTE format(
-    $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-    VALUES (%s, (SELECT id FROM ledger.account WHERE code = '601'), %s, 0, %L)$e$,
-    v_entry_id, v_facture.montant_ht,
-    'Achat facture ' || v_facture.numero_fournisseur
-  );
-
-  -- 4456 TVA déductible — débit TVA
-  IF v_tva > 0 THEN
-    EXECUTE format(
-      $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-      VALUES (%s, (SELECT id FROM ledger.account WHERE code = '4456'), %s, 0, %L)$e$,
-      v_entry_id, v_tva,
-      'TVA déductible facture ' || v_facture.numero_fournisseur
-    );
-  END IF;
-
-  -- 401 Fournisseurs — crédit TTC
-  EXECUTE format(
-    $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
-    VALUES (%s, (SELECT id FROM ledger.account WHERE code = '401'), 0, %s, %L)$e$,
-    v_entry_id, v_facture.montant_ttc,
-    'Fournisseur facture ' || v_facture.numero_fournisseur
-  );
-
-  -- Flag anti-doublon
-  UPDATE purchase.facture_fournisseur SET comptabilisee = true WHERE id = v_id;
-
-  RETURN pgv.toast(pgv.t('purchase.toast_ecriture_creee'))
-    || pgv.redirect(pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
+  UPDATE purchase.purchase_order SET
+    supplier_id = coalesce(p_row.supplier_id, supplier_id),
+    subject = coalesce(nullif(p_row.subject, ''), subject),
+    notes = coalesce(p_row.notes, notes),
+    delivery_date = coalesce(p_row.delivery_date, delivery_date),
+    payment_terms = coalesce(p_row.payment_terms, payment_terms),
+    updated_at = now()
+  WHERE id = p_row.id
+    AND tenant_id = current_setting('app.tenant_id', true)
+    AND status = 'draft'
+  RETURNING * INTO p_row;
+  RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION purchase.post_facture_comptabiliser(jsonb) IS 'Comptabiliser une facture fournisseur payée: écriture 601/4456/401 dans ledger';
+COMMENT ON FUNCTION purchase.order_update(purchase.purchase_order) IS 'Update a purchase order (draft only)';
 
-CREATE OR REPLACE FUNCTION purchase.post_facture_payer(p_data jsonb)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_id int := (p_data->>'p_id')::int;
-BEGIN
-  UPDATE purchase.facture_fournisseur SET statut = 'payee'
-   WHERE id = v_id AND statut = 'validee';
-
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('purchase.err_facture_not_validated'), 'error');
-  END IF;
-
-  RETURN pgv.toast(pgv.t('purchase.toast_facture_payee'))
-    || pgv.redirect(pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
-END;
-$function$;
-COMMENT ON FUNCTION purchase.post_facture_payer(jsonb) IS 'Mark a supplier invoice as paid';
-
-CREATE OR REPLACE FUNCTION purchase.post_facture_saisir(p_data jsonb)
+CREATE OR REPLACE FUNCTION purchase.post_invoice_create(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -2138,9 +1517,9 @@ AS $function$
 DECLARE
   v_id int;
 BEGIN
-  INSERT INTO purchase.facture_fournisseur (
-    commande_id, numero_fournisseur, montant_ht, montant_ttc,
-    date_facture, date_echeance, notes
+  INSERT INTO purchase.supplier_invoice (
+    order_id, supplier_ref, amount_excl_tax, amount_incl_tax,
+    invoice_date, due_date, notes
   ) VALUES (
     (p_data->>'p_commande_id')::int,
     p_data->>'p_numero_fournisseur',
@@ -2151,13 +1530,13 @@ BEGIN
     coalesce(p_data->>'p_notes', '')
   ) RETURNING id INTO v_id;
 
-  RETURN pgv.toast(pgv.t('purchase.toast_facture_saisie'))
-    || pgv.redirect(pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_invoice_created'))
+    || pgv.redirect(pgv.call_ref('get_supplier_invoice', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION purchase.post_facture_saisir(jsonb) IS 'Record a supplier invoice';
+COMMENT ON FUNCTION purchase.post_invoice_create(jsonb) IS 'Record a supplier invoice';
 
-CREATE OR REPLACE FUNCTION purchase.post_facture_valider(p_data jsonb)
+CREATE OR REPLACE FUNCTION purchase.post_invoice_pay(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -2165,155 +1544,608 @@ AS $function$
 DECLARE
   v_id int := (p_data->>'p_id')::int;
 BEGIN
-  UPDATE purchase.facture_fournisseur SET statut = 'validee'
-   WHERE id = v_id AND statut = 'recue';
+  UPDATE purchase.supplier_invoice SET status = 'paid'
+   WHERE id = v_id AND status = 'validated';
 
   IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('purchase.err_facture_already_validated'), 'error');
+    RETURN pgv.toast(pgv.t('purchase.err_invoice_not_validated'), 'error');
   END IF;
 
-  RETURN pgv.toast(pgv.t('purchase.toast_facture_validee'))
-    || pgv.redirect(pgv.call_ref('get_facture_fournisseur', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_invoice_paid'))
+    || pgv.redirect(pgv.call_ref('get_supplier_invoice', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION purchase.post_facture_valider(jsonb) IS 'Validate a supplier invoice';
+COMMENT ON FUNCTION purchase.post_invoice_pay(jsonb) IS 'Mark a supplier invoice as paid';
 
-CREATE OR REPLACE FUNCTION purchase.post_ligne_ajouter(p_data jsonb)
+CREATE OR REPLACE FUNCTION purchase.post_invoice_post(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_commande_id int := (p_data->>'p_commande_id')::int;
-  v_statut text;
+  v_id int := (p_data->>'p_id')::int;
+  v_invoice record;
+  v_tva numeric(12,2);
+  v_entry_id int;
+  v_ledger_exists boolean;
+BEGIN
+  SELECT * INTO v_invoice FROM purchase.supplier_invoice WHERE id = v_id;
+  IF NOT FOUND THEN
+    RETURN pgv.toast(pgv.t('purchase.err_invoice_not_found'), 'error');
+  END IF;
+  IF v_invoice.status <> 'paid' THEN
+    RETURN pgv.toast(pgv.t('purchase.err_must_pay_first'), 'error');
+  END IF;
+  IF v_invoice.amount_incl_tax = 0 THEN
+    RETURN pgv.toast(pgv.t('purchase.err_no_amount'), 'error');
+  END IF;
+  IF v_invoice.posted THEN
+    RETURN pgv.toast(pgv.t('purchase.err_already_booked'), 'error');
+  END IF;
+
+  SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'ledger') INTO v_ledger_exists;
+  IF NOT v_ledger_exists THEN
+    RETURN pgv.toast(pgv.t('purchase.err_no_ledger'), 'error');
+  END IF;
+
+  v_tva := v_invoice.amount_incl_tax - v_invoice.amount_excl_tax;
+
+  EXECUTE format(
+    $e$INSERT INTO ledger.journal_entry (entry_date, reference, description)
+    VALUES (%L, %L, %L) RETURNING id$e$,
+    coalesce(v_invoice.invoice_date, CURRENT_DATE),
+    'SI-' || v_invoice.supplier_ref,
+    'Supplier invoice ' || v_invoice.supplier_ref
+  ) INTO v_entry_id;
+
+  -- 601 Purchases — debit excl tax
+  EXECUTE format(
+    $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
+    VALUES (%s, (SELECT id FROM ledger.account WHERE code = '601'), %s, 0, %L)$e$,
+    v_entry_id, v_invoice.amount_excl_tax,
+    'Purchase invoice ' || v_invoice.supplier_ref
+  );
+
+  -- 4456 Deductible VAT — debit VAT
+  IF v_tva > 0 THEN
+    EXECUTE format(
+      $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
+      VALUES (%s, (SELECT id FROM ledger.account WHERE code = '4456'), %s, 0, %L)$e$,
+      v_entry_id, v_tva,
+      'Deductible VAT invoice ' || v_invoice.supplier_ref
+    );
+  END IF;
+
+  -- 401 Suppliers — credit incl tax
+  EXECUTE format(
+    $e$INSERT INTO ledger.entry_line (journal_entry_id, account_id, debit, credit, label)
+    VALUES (%s, (SELECT id FROM ledger.account WHERE code = '401'), 0, %s, %L)$e$,
+    v_entry_id, v_invoice.amount_incl_tax,
+    'Supplier invoice ' || v_invoice.supplier_ref
+  );
+
+  UPDATE purchase.supplier_invoice SET posted = true WHERE id = v_id;
+
+  RETURN pgv.toast(pgv.t('purchase.toast_entry_created'))
+    || pgv.redirect(pgv.call_ref('get_supplier_invoice', jsonb_build_object('p_id', v_id)));
+END;
+$function$;
+COMMENT ON FUNCTION purchase.post_invoice_post(jsonb) IS 'Post a paid supplier invoice to ledger (601/4456/401 journal entry)';
+
+CREATE OR REPLACE FUNCTION purchase.post_invoice_validate(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_id int := (p_data->>'p_id')::int;
+BEGIN
+  UPDATE purchase.supplier_invoice SET status = 'validated'
+   WHERE id = v_id AND status = 'received';
+
+  IF NOT FOUND THEN
+    RETURN pgv.toast(pgv.t('purchase.err_invoice_already_validated'), 'error');
+  END IF;
+
+  RETURN pgv.toast(pgv.t('purchase.toast_invoice_validated'))
+    || pgv.redirect(pgv.call_ref('get_supplier_invoice', jsonb_build_object('p_id', v_id)));
+END;
+$function$;
+COMMENT ON FUNCTION purchase.post_invoice_validate(jsonb) IS 'Validate a supplier invoice';
+
+CREATE OR REPLACE FUNCTION purchase.post_line_add(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_order_id int := (p_data->>'p_commande_id')::int;
+  v_status text;
   v_sort int;
 BEGIN
-  SELECT statut INTO v_statut FROM purchase.commande WHERE id = v_commande_id;
-  IF v_statut IS NULL OR v_statut <> 'brouillon' THEN
+  SELECT status INTO v_status FROM purchase.purchase_order WHERE id = v_order_id;
+  IF v_status IS NULL OR v_status <> 'draft' THEN
     RETURN pgv.toast(pgv.t('purchase.err_draft_only'), 'error');
   END IF;
 
   SELECT coalesce(max(sort_order), 0) + 1 INTO v_sort
-    FROM purchase.ligne WHERE commande_id = v_commande_id;
+    FROM purchase.order_line WHERE order_id = v_order_id;
 
-  -- Auto-fill price from catalog if article_id provided and no price given
   DECLARE
     v_article_id int := (p_data->>'p_article_id')::int;
-    v_prix numeric := (p_data->>'p_prix_unitaire')::numeric;
+    v_price numeric := (p_data->>'p_prix_unitaire')::numeric;
   BEGIN
-    IF v_article_id IS NOT NULL AND v_prix IS NULL
+    IF v_article_id IS NOT NULL AND v_price IS NULL
        AND EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
                     WHERE n.nspname = 'catalog' AND c.relname = 'article') THEN
       EXECUTE format('SELECT prix_achat FROM catalog.article WHERE id = %L', v_article_id)
-        INTO v_prix;
+        INTO v_price;
     END IF;
 
-    INSERT INTO purchase.ligne (commande_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate, article_id)
+    INSERT INTO purchase.order_line (order_id, sort_order, description, quantity, unit, unit_price, tva_rate, article_id)
     VALUES (
-      v_commande_id,
+      v_order_id,
       v_sort,
       p_data->>'p_description',
       coalesce((p_data->>'p_quantite')::numeric, 1),
       coalesce(p_data->>'p_unite', 'u'),
-      coalesce(v_prix, (p_data->>'p_prix_unitaire')::numeric),
+      coalesce(v_price, (p_data->>'p_prix_unitaire')::numeric),
       coalesce((p_data->>'p_tva_rate')::numeric, 20.00),
       v_article_id
     );
   END;
 
-  RETURN pgv.toast(pgv.t('purchase.toast_ligne_ajoutee'))
-    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_line_added'))
+    || pgv.redirect(pgv.call_ref('get_order', jsonb_build_object('p_id', v_order_id)));
 END;
 $function$;
-COMMENT ON FUNCTION purchase.post_ligne_ajouter(jsonb) IS 'Add a line to a draft purchase order';
+COMMENT ON FUNCTION purchase.post_line_add(jsonb) IS 'Add a line to a draft purchase order';
 
-CREATE OR REPLACE FUNCTION purchase.post_ligne_supprimer(p_data jsonb)
+CREATE OR REPLACE FUNCTION purchase.post_line_remove(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_ligne_id int := (p_data->>'p_ligne_id')::int;
-  v_commande_id int;
-  v_statut text;
+  v_line_id int := (p_data->>'p_ligne_id')::int;
+  v_order_id int;
+  v_status text;
 BEGIN
-  SELECT l.commande_id, c.statut INTO v_commande_id, v_statut
-    FROM purchase.ligne l
-    JOIN purchase.commande c ON c.id = l.commande_id
-   WHERE l.id = v_ligne_id;
+  SELECT l.order_id, o.status INTO v_order_id, v_status
+    FROM purchase.order_line l
+    JOIN purchase.purchase_order o ON o.id = l.order_id
+   WHERE l.id = v_line_id;
 
-  IF v_statut IS NULL OR v_statut <> 'brouillon' THEN
+  IF v_status IS NULL OR v_status <> 'draft' THEN
     RETURN pgv.toast(pgv.t('purchase.err_draft_only'), 'error');
   END IF;
 
-  DELETE FROM purchase.ligne WHERE id = v_ligne_id;
+  DELETE FROM purchase.order_line WHERE id = v_line_id;
 
-  RETURN pgv.toast(pgv.t('purchase.toast_ligne_supprimee'))
-    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
+  RETURN pgv.toast(pgv.t('purchase.toast_line_removed'))
+    || pgv.redirect(pgv.call_ref('get_order', jsonb_build_object('p_id', v_order_id)));
 END;
 $function$;
-COMMENT ON FUNCTION purchase.post_ligne_supprimer(jsonb) IS 'Remove a line from a draft purchase order';
+COMMENT ON FUNCTION purchase.post_line_remove(jsonb) IS 'Remove a line from a draft purchase order';
 
-CREATE OR REPLACE FUNCTION purchase.post_reception_creer(p_data jsonb)
+CREATE OR REPLACE FUNCTION purchase.post_order_cancel(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_commande_id int := (p_data->>'p_commande_id')::int;
-  v_statut text;
-  v_reception_id int;
-  v_numero text;
-  v_nb_lignes int := 0;
+  v_id int := (p_data->>'p_id')::int;
+  v_has_receipts bool;
+BEGIN
+  SELECT exists(SELECT 1 FROM purchase.receipt WHERE order_id = v_id) INTO v_has_receipts;
+
+  IF v_has_receipts THEN
+    RETURN pgv.toast(pgv.t('purchase.err_cancel_receipts'), 'error');
+  END IF;
+
+  UPDATE purchase.purchase_order SET status = 'cancelled'
+   WHERE id = v_id AND status IN ('draft', 'sent');
+
+  IF NOT FOUND THEN
+    RETURN pgv.toast(pgv.t('purchase.err_not_cancellable'), 'error');
+  END IF;
+
+  RETURN pgv.toast(pgv.t('purchase.toast_order_cancelled'))
+    || pgv.redirect(pgv.call_ref('get_order', jsonb_build_object('p_id', v_id)));
+END;
+$function$;
+COMMENT ON FUNCTION purchase.post_order_cancel(jsonb) IS 'Cancel a purchase order (only if no receipts)';
+
+CREATE OR REPLACE FUNCTION purchase.post_order_save(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_id int := (p_data->>'p_id')::int;
+  v_supplier_id int := (p_data->>'p_fournisseur_id')::int;
+  v_subject text := p_data->>'p_objet';
+  v_notes text := coalesce(p_data->>'p_notes', '');
+  v_delivery_date date := (p_data->>'p_date_livraison')::date;
+  v_payment_terms text := coalesce(p_data->>'p_conditions_paiement', '');
+BEGIN
+  IF v_id IS NOT NULL THEN
+    UPDATE purchase.purchase_order
+       SET supplier_id = v_supplier_id,
+           subject = v_subject,
+           notes = v_notes,
+           delivery_date = v_delivery_date,
+           payment_terms = v_payment_terms
+     WHERE id = v_id AND status = 'draft';
+
+    IF NOT FOUND THEN
+      RETURN pgv.toast(pgv.t('purchase.err_order_not_found'), 'error');
+    END IF;
+
+    RETURN pgv.toast(pgv.t('purchase.toast_order_updated'))
+      || pgv.redirect(pgv.call_ref('get_order', jsonb_build_object('p_id', v_id)));
+  ELSE
+    INSERT INTO purchase.purchase_order (number, supplier_id, subject, notes, delivery_date, payment_terms)
+    VALUES (purchase._next_number('PO'), v_supplier_id, v_subject, v_notes, v_delivery_date, v_payment_terms)
+    RETURNING id INTO v_id;
+
+    RETURN pgv.toast(pgv.t('purchase.toast_order_created'))
+      || pgv.redirect(pgv.call_ref('get_order', jsonb_build_object('p_id', v_id)));
+  END IF;
+END;
+$function$;
+COMMENT ON FUNCTION purchase.post_order_save(jsonb) IS 'Create or update a purchase order (draft only)';
+
+CREATE OR REPLACE FUNCTION purchase.post_order_send(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_id int := (p_data->>'p_id')::int;
+BEGIN
+  UPDATE purchase.purchase_order SET status = 'sent'
+   WHERE id = v_id AND status = 'draft';
+
+  IF NOT FOUND THEN
+    RETURN pgv.toast(pgv.t('purchase.err_already_sent'), 'error');
+  END IF;
+
+  RETURN pgv.toast(pgv.t('purchase.toast_order_sent'))
+    || pgv.redirect(pgv.call_ref('get_order', jsonb_build_object('p_id', v_id)));
+END;
+$function$;
+COMMENT ON FUNCTION purchase.post_order_send(jsonb) IS 'Mark purchase order as sent to supplier';
+
+CREATE OR REPLACE FUNCTION purchase.post_receipt_create(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_order_id int := (p_data->>'p_commande_id')::int;
+  v_status text;
+  v_receipt_id int;
+  v_number text;
+  v_line_count int := 0;
   v_all_received bool;
   r record;
 BEGIN
-  SELECT statut INTO v_statut FROM purchase.commande WHERE id = v_commande_id;
-  IF v_statut NOT IN ('envoyee', 'partiellement_recue') THEN
+  SELECT status INTO v_status FROM purchase.purchase_order WHERE id = v_order_id;
+  IF v_status NOT IN ('sent', 'partially_received') THEN
     RETURN pgv.toast(pgv.t('purchase.err_not_receivable'), 'error');
   END IF;
 
-  v_numero := purchase._next_numero('REC');
-  INSERT INTO purchase.reception (commande_id, numero, notes)
-  VALUES (v_commande_id, v_numero, coalesce(p_data->>'p_notes', ''))
-  RETURNING id INTO v_reception_id;
+  v_number := purchase._next_number('REC');
+  INSERT INTO purchase.receipt (order_id, number, notes)
+  VALUES (v_order_id, v_number, coalesce(p_data->>'p_notes', ''))
+  RETURNING id INTO v_receipt_id;
 
-  -- Réceptionner toutes les quantités restantes
   FOR r IN
-    SELECT l.id AS ligne_id, purchase._quantite_restante(l.id) AS restante
-      FROM purchase.ligne l
-     WHERE l.commande_id = v_commande_id
-       AND purchase._quantite_restante(l.id) > 0
+    SELECT l.id AS line_id, purchase._remaining_quantity(l.id) AS remaining
+      FROM purchase.order_line l
+     WHERE l.order_id = v_order_id
+       AND purchase._remaining_quantity(l.id) > 0
   LOOP
-    INSERT INTO purchase.reception_ligne (reception_id, ligne_id, quantite_recue)
-    VALUES (v_reception_id, r.ligne_id, r.restante);
-    v_nb_lignes := v_nb_lignes + 1;
+    INSERT INTO purchase.receipt_line (reception_id, line_id, quantity_received)
+    VALUES (v_receipt_id, r.line_id, r.remaining);
+    v_line_count := v_line_count + 1;
   END LOOP;
 
-  IF v_nb_lignes = 0 THEN
-    -- Rien à réceptionner, rollback reception
-    DELETE FROM purchase.reception WHERE id = v_reception_id;
+  IF v_line_count = 0 THEN
+    DELETE FROM purchase.receipt WHERE id = v_receipt_id;
     RETURN pgv.toast(pgv.t('purchase.err_all_received'), 'error');
   END IF;
 
-  -- Vérifier si tout est reçu
   SELECT NOT exists(
-    SELECT 1 FROM purchase.ligne l
-     WHERE l.commande_id = v_commande_id
-       AND purchase._quantite_restante(l.id) > 0
+    SELECT 1 FROM purchase.order_line l
+     WHERE l.order_id = v_order_id
+       AND purchase._remaining_quantity(l.id) > 0
   ) INTO v_all_received;
 
   IF v_all_received THEN
-    UPDATE purchase.commande SET statut = 'recue' WHERE id = v_commande_id;
+    UPDATE purchase.purchase_order SET status = 'received' WHERE id = v_order_id;
   ELSE
-    UPDATE purchase.commande SET statut = 'partiellement_recue' WHERE id = v_commande_id;
+    UPDATE purchase.purchase_order SET status = 'partially_received' WHERE id = v_order_id;
   END IF;
 
-  RETURN pgv.toast(format('Réception %s créée (%s %s)', v_numero, v_nb_lignes, pgv.t('purchase.col_lignes')))
-    || pgv.redirect(pgv.call_ref('get_commande', jsonb_build_object('p_id', v_commande_id)));
+  RETURN pgv.toast(format('Receipt %s created (%s lines)', v_number, v_line_count))
+    || pgv.redirect(pgv.call_ref('get_order', jsonb_build_object('p_id', v_order_id)));
 END;
 $function$;
-COMMENT ON FUNCTION purchase.post_reception_creer(jsonb) IS 'Create a reception for all remaining quantities of a purchase order';
+COMMENT ON FUNCTION purchase.post_receipt_create(jsonb) IS 'Create a receipt for all remaining quantities of a purchase order';
+
+CREATE OR REPLACE FUNCTION purchase.purchase_order_view()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN jsonb_build_object(
+    'uri', 'purchase://purchase_order',
+    'label', 'purchase.entity_purchase_order',
+
+    'template', jsonb_build_object(
+      'compact', jsonb_build_object(
+        'fields', jsonb_build_array('number', 'supplier_name', 'status', 'total_ttc')
+      ),
+      'standard', jsonb_build_object(
+        'fields', jsonb_build_array('number', 'supplier_name', 'subject', 'status', 'delivery_date'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'total_ttc', 'label', 'purchase.stat_total_ttc'),
+          jsonb_build_object('key', 'line_count', 'label', 'purchase.stat_line_count'),
+          jsonb_build_object('key', 'receipt_count', 'label', 'purchase.stat_receipt_count')
+        ),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'crm://client', 'filter', 'id={supplier_id}', 'label', 'purchase.rel_supplier'),
+          jsonb_build_object('entity', 'purchase://supplier_invoice', 'filter', 'order_id={id}', 'label', 'purchase.rel_invoices')
+        )
+      ),
+      'expanded', jsonb_build_object(
+        'fields', jsonb_build_array('number', 'supplier_name', 'subject', 'status', 'delivery_date', 'payment_terms', 'notes', 'created_at'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'total_ht', 'label', 'purchase.stat_total_ht'),
+          jsonb_build_object('key', 'total_tva', 'label', 'purchase.stat_total_tva'),
+          jsonb_build_object('key', 'total_ttc', 'label', 'purchase.stat_total_ttc'),
+          jsonb_build_object('key', 'line_count', 'label', 'purchase.stat_line_count'),
+          jsonb_build_object('key', 'receipt_count', 'label', 'purchase.stat_receipt_count')
+        ),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'crm://client', 'filter', 'id={supplier_id}', 'label', 'purchase.rel_supplier'),
+          jsonb_build_object('entity', 'purchase://supplier_invoice', 'filter', 'order_id={id}', 'label', 'purchase.rel_invoices')
+        )
+      ),
+      'form', jsonb_build_object(
+        'sections', jsonb_build_array(
+          jsonb_build_object('label', 'purchase.section_order', 'fields', jsonb_build_array(
+            jsonb_build_object('key', 'supplier_id', 'label', 'purchase.field_supplier', 'type', 'combobox',
+              'source', 'crm://client', 'display', 'name', 'required', true),
+            jsonb_build_object('key', 'subject', 'label', 'purchase.field_subject', 'type', 'text', 'required', true),
+            jsonb_build_object('key', 'delivery_date', 'label', 'purchase.field_delivery_date', 'type', 'date'),
+            jsonb_build_object('key', 'payment_terms', 'label', 'purchase.field_payment_terms', 'type', 'text'),
+            jsonb_build_object('key', 'notes', 'label', 'purchase.field_notes', 'type', 'textarea')
+          ))
+        )
+      )
+    ),
+
+    'actions', jsonb_build_object(
+      'send', jsonb_build_object('label', 'purchase.action_send', 'confirm', 'purchase.confirm_send'),
+      'receive', jsonb_build_object('label', 'purchase.action_receive', 'confirm', 'purchase.confirm_receive'),
+      'cancel', jsonb_build_object('label', 'purchase.action_cancel', 'variant', 'danger', 'confirm', 'purchase.confirm_cancel'),
+      'delete', jsonb_build_object('label', 'purchase.action_delete', 'variant', 'danger', 'confirm', 'purchase.confirm_delete')
+    )
+  );
+END;
+$function$;
+COMMENT ON FUNCTION purchase.purchase_order_view() IS 'View template for purchase_order entity: compact, standard, expanded, form, actions catalog';
+
+CREATE OR REPLACE FUNCTION purchase.supplier_invoice_create(p_row purchase.supplier_invoice)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  INSERT INTO purchase.supplier_invoice (tenant_id, order_id, supplier_ref, amount_excl_tax, amount_incl_tax, invoice_date, due_date, notes)
+  VALUES (
+    current_setting('app.tenant_id', true),
+    p_row.order_id,
+    p_row.supplier_ref,
+    p_row.amount_excl_tax,
+    p_row.amount_incl_tax,
+    p_row.invoice_date,
+    p_row.due_date,
+    coalesce(p_row.notes, '')
+  )
+  RETURNING * INTO p_row;
+  RETURN to_jsonb(p_row);
+END;
+$function$;
+COMMENT ON FUNCTION purchase.supplier_invoice_create(purchase.supplier_invoice) IS 'Create a new supplier invoice (status received)';
+
+CREATE OR REPLACE FUNCTION purchase.supplier_invoice_delete(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_row purchase.supplier_invoice;
+BEGIN
+  DELETE FROM purchase.supplier_invoice
+  WHERE id = p_id::int
+    AND tenant_id = current_setting('app.tenant_id', true)
+    AND status = 'received'
+  RETURNING * INTO v_row;
+  RETURN to_jsonb(v_row);
+END;
+$function$;
+COMMENT ON FUNCTION purchase.supplier_invoice_delete(text) IS 'Delete a supplier invoice (received only)';
+
+CREATE OR REPLACE FUNCTION purchase.supplier_invoice_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF p_filter IS NULL THEN
+    RETURN QUERY
+      SELECT to_jsonb(i) || jsonb_build_object('order_number', o.number, 'supplier_name', cl.name, 'supplier_id', cl.id)
+      FROM purchase.supplier_invoice i
+      LEFT JOIN purchase.purchase_order o ON o.id = i.order_id
+      LEFT JOIN crm.client cl ON cl.id = o.supplier_id
+      WHERE i.tenant_id = current_setting('app.tenant_id', true)
+      ORDER BY i.created_at DESC;
+  ELSE
+    RETURN QUERY EXECUTE
+      'SELECT to_jsonb(i) || jsonb_build_object(''order_number'', o.number, ''supplier_name'', cl.name, ''supplier_id'', cl.id)
+       FROM purchase.supplier_invoice i
+       LEFT JOIN purchase.purchase_order o ON o.id = i.order_id
+       LEFT JOIN crm.client cl ON cl.id = o.supplier_id
+       WHERE i.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
+       || ' AND ' || pgv.rsql_to_where(p_filter, 'purchase', 'supplier_invoice')
+       || ' ORDER BY i.created_at DESC';
+  END IF;
+END;
+$function$;
+COMMENT ON FUNCTION purchase.supplier_invoice_list(text) IS 'List supplier invoices with order number and supplier name — optional RSQL filter';
+
+CREATE OR REPLACE FUNCTION purchase.supplier_invoice_read(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result jsonb;
+  v_actions jsonb;
+BEGIN
+  SELECT to_jsonb(i) || jsonb_build_object(
+    'order_number', o.number,
+    'supplier_name', cl.name,
+    'supplier_id', cl.id,
+    'order_ttc', CASE WHEN i.order_id IS NOT NULL THEN purchase._total_ttc(i.order_id) END,
+    'variance', CASE WHEN i.order_id IS NOT NULL THEN i.amount_incl_tax - purchase._total_ttc(i.order_id) END
+  ) INTO v_result
+  FROM purchase.supplier_invoice i
+  LEFT JOIN purchase.purchase_order o ON o.id = i.order_id
+  LEFT JOIN crm.client cl ON cl.id = o.supplier_id
+  WHERE i.id = p_id::int AND i.tenant_id = current_setting('app.tenant_id', true);
+
+  IF v_result IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  v_actions := '[]'::jsonb;
+
+  CASE v_result->>'status'
+    WHEN 'received' THEN
+      v_actions := jsonb_build_array(
+        jsonb_build_object('method', 'validate', 'uri', 'purchase://supplier_invoice/' || p_id || '/validate'),
+        jsonb_build_object('method', 'delete', 'uri', 'purchase://supplier_invoice/' || p_id)
+      );
+    WHEN 'validated' THEN
+      v_actions := jsonb_build_array(
+        jsonb_build_object('method', 'pay', 'uri', 'purchase://supplier_invoice/' || p_id || '/pay')
+      );
+    WHEN 'paid' THEN
+      IF NOT (v_result->>'posted')::boolean THEN
+        v_actions := jsonb_build_array(
+          jsonb_build_object('method', 'post', 'uri', 'purchase://supplier_invoice/' || p_id || '/post')
+        );
+      END IF;
+    ELSE
+      -- terminal
+  END CASE;
+
+  v_result := v_result || jsonb_build_object('actions', v_actions);
+  RETURN v_result;
+END;
+$function$;
+COMMENT ON FUNCTION purchase.supplier_invoice_read(text) IS 'Read supplier invoice by id with order, supplier, reconciliation stats, and HATEOAS actions';
+
+CREATE OR REPLACE FUNCTION purchase.supplier_invoice_update(p_row purchase.supplier_invoice)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  UPDATE purchase.supplier_invoice SET
+    supplier_ref = coalesce(nullif(p_row.supplier_ref, ''), supplier_ref),
+    order_id = coalesce(p_row.order_id, order_id),
+    amount_excl_tax = coalesce(p_row.amount_excl_tax, amount_excl_tax),
+    amount_incl_tax = coalesce(p_row.amount_incl_tax, amount_incl_tax),
+    invoice_date = coalesce(p_row.invoice_date, invoice_date),
+    due_date = coalesce(p_row.due_date, due_date),
+    notes = coalesce(p_row.notes, notes),
+    updated_at = now()
+  WHERE id = p_row.id
+    AND tenant_id = current_setting('app.tenant_id', true)
+    AND status = 'received'
+  RETURNING * INTO p_row;
+  RETURN to_jsonb(p_row);
+END;
+$function$;
+COMMENT ON FUNCTION purchase.supplier_invoice_update(purchase.supplier_invoice) IS 'Update a supplier invoice (received only)';
+
+CREATE OR REPLACE FUNCTION purchase.supplier_invoice_view()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RETURN jsonb_build_object(
+    'uri', 'purchase://supplier_invoice',
+    'label', 'purchase.entity_supplier_invoice',
+
+    'template', jsonb_build_object(
+      'compact', jsonb_build_object(
+        'fields', jsonb_build_array('supplier_ref', 'supplier_name', 'status', 'amount_incl_tax')
+      ),
+      'standard', jsonb_build_object(
+        'fields', jsonb_build_array('supplier_ref', 'supplier_name', 'order_number', 'status', 'amount_incl_tax', 'invoice_date', 'due_date'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'amount_excl_tax', 'label', 'purchase.stat_amount_excl_tax'),
+          jsonb_build_object('key', 'amount_incl_tax', 'label', 'purchase.stat_amount_incl_tax')
+        ),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'purchase://purchase_order', 'filter', 'id={order_id}', 'label', 'purchase.rel_order'),
+          jsonb_build_object('entity', 'crm://client', 'filter', 'id={supplier_id}', 'label', 'purchase.rel_supplier')
+        )
+      ),
+      'expanded', jsonb_build_object(
+        'fields', jsonb_build_array('supplier_ref', 'supplier_name', 'order_number', 'status', 'amount_excl_tax', 'amount_incl_tax', 'invoice_date', 'due_date', 'posted', 'notes', 'created_at'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'amount_excl_tax', 'label', 'purchase.stat_amount_excl_tax'),
+          jsonb_build_object('key', 'amount_incl_tax', 'label', 'purchase.stat_amount_incl_tax'),
+          jsonb_build_object('key', 'order_ttc', 'label', 'purchase.stat_order_ttc'),
+          jsonb_build_object('key', 'variance', 'label', 'purchase.stat_variance', 'variant', 'warning')
+        ),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'purchase://purchase_order', 'filter', 'id={order_id}', 'label', 'purchase.rel_order'),
+          jsonb_build_object('entity', 'crm://client', 'filter', 'id={supplier_id}', 'label', 'purchase.rel_supplier')
+        )
+      ),
+      'form', jsonb_build_object(
+        'sections', jsonb_build_array(
+          jsonb_build_object('label', 'purchase.section_invoice', 'fields', jsonb_build_array(
+            jsonb_build_object('key', 'supplier_ref', 'label', 'purchase.field_supplier_ref', 'type', 'text', 'required', true),
+            jsonb_build_object('key', 'amount_excl_tax', 'label', 'purchase.field_amount_excl_tax', 'type', 'number', 'required', true),
+            jsonb_build_object('key', 'amount_incl_tax', 'label', 'purchase.field_amount_incl_tax', 'type', 'number', 'required', true),
+            jsonb_build_object('key', 'invoice_date', 'label', 'purchase.field_invoice_date', 'type', 'date', 'required', true),
+            jsonb_build_object('key', 'due_date', 'label', 'purchase.field_due_date', 'type', 'date'),
+            jsonb_build_object('key', 'order_id', 'label', 'purchase.field_linked_order', 'type', 'combobox',
+              'source', 'purchase://purchase_order', 'display', 'number'),
+            jsonb_build_object('key', 'notes', 'label', 'purchase.field_notes', 'type', 'textarea')
+          ))
+        )
+      )
+    ),
+
+    'actions', jsonb_build_object(
+      'validate', jsonb_build_object('label', 'purchase.action_validate', 'confirm', 'purchase.confirm_validate'),
+      'pay', jsonb_build_object('label', 'purchase.action_pay', 'confirm', 'purchase.confirm_pay'),
+      'post', jsonb_build_object('label', 'purchase.action_post', 'confirm', 'purchase.confirm_post'),
+      'delete', jsonb_build_object('label', 'purchase.action_delete', 'variant', 'danger', 'confirm', 'purchase.confirm_delete_invoice')
+    )
+  );
+END;
+$function$;
+COMMENT ON FUNCTION purchase.supplier_invoice_view() IS 'View template for supplier_invoice entity: compact, standard, expanded, form, actions catalog';
 
 GRANT USAGE ON SCHEMA purchase TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA purchase TO anon;

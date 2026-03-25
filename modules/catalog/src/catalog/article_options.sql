@@ -8,9 +8,9 @@ SELECT coalesce(
     format('<option value="%s">%s - %s</option>',
       a.id,
       pgv.esc(coalesce(a.reference, '#' || a.id)),
-      pgv.esc(a.designation)),
-    '' ORDER BY a.designation
+      pgv.esc(a.name)),
+    '' ORDER BY a.name
   ), '')
 FROM catalog.article a
-WHERE a.actif;
+WHERE a.active;
 $function$;

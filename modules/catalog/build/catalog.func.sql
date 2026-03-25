@@ -9,14 +9,14 @@ CREATE OR REPLACE FUNCTION catalog.article_create(p_row catalog.article)
  SECURITY DEFINER
 AS $function$
 BEGIN
-  p_row.actif := COALESCE(p_row.actif, true);
-  p_row.unite := COALESCE(p_row.unite, 'u');
-  p_row.tva := COALESCE(p_row.tva, 20.00);
+  p_row.active := COALESCE(p_row.active, true);
+  p_row.unit := COALESCE(p_row.unit, 'u');
+  p_row.vat_rate := COALESCE(p_row.vat_rate, 20.00);
   p_row.created_at := now();
   p_row.updated_at := now();
 
-  INSERT INTO catalog.article (reference, designation, description, categorie_id, unite, prix_vente, prix_achat, tva, actif, created_at, updated_at)
-  VALUES (p_row.reference, p_row.designation, p_row.description, p_row.categorie_id, p_row.unite, p_row.prix_vente, p_row.prix_achat, p_row.tva, p_row.actif, p_row.created_at, p_row.updated_at)
+  INSERT INTO catalog.article (reference, name, description, category_id, unit, sale_price, purchase_price, vat_rate, active, created_at, updated_at)
+  VALUES (p_row.reference, p_row.name, p_row.description, p_row.category_id, p_row.unit, p_row.sale_price, p_row.purchase_price, p_row.vat_rate, p_row.active, p_row.created_at, p_row.updated_at)
   RETURNING * INTO p_row;
 
   RETURN to_jsonb(p_row);
@@ -36,7 +36,7 @@ BEGIN
   RETURN to_jsonb(v_row);
 END;
 $function$;
-COMMENT ON FUNCTION catalog.article_delete(text) IS 'Delete article by id — SECURITY DEFINER, RETURNING deleted row as jsonb';
+COMMENT ON FUNCTION catalog.article_delete(text) IS 'Delete article by id — SECURITY DEFINER';
 
 CREATE OR REPLACE FUNCTION catalog.article_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF jsonb
@@ -46,19 +46,19 @@ AS $function$
 BEGIN
   RETURN QUERY
     SELECT to_jsonb(a) || jsonb_build_object(
-      'categorie_nom', c.nom,
-      'unite_label', u.label
+      'category_name', c.name,
+      'unit_label', u.label
     )
     FROM catalog.article a
-    LEFT JOIN catalog.categorie c ON c.id = a.categorie_id
-    LEFT JOIN catalog.unite u ON u.code = a.unite
+    LEFT JOIN catalog.category c ON c.id = a.category_id
+    LEFT JOIN catalog.unit u ON u.code = a.unit
     WHERE p_filter IS NULL
-       OR a.designation ILIKE '%' || p_filter || '%'
+       OR a.name ILIKE '%' || p_filter || '%'
        OR a.reference ILIKE '%' || p_filter || '%'
-    ORDER BY a.designation;
+    ORDER BY a.name;
 END;
 $function$;
-COMMENT ON FUNCTION catalog.article_list(text) IS 'List articles with resolved FK names — optional text filter on designation/reference';
+COMMENT ON FUNCTION catalog.article_list(text) IS 'List articles with resolved FK names — optional text filter';
 
 CREATE OR REPLACE FUNCTION catalog.article_options()
  RETURNS text
@@ -70,13 +70,13 @@ SELECT coalesce(
     format('<option value="%s">%s - %s</option>',
       a.id,
       pgv.esc(coalesce(a.reference, '#' || a.id)),
-      pgv.esc(a.designation)),
-    '' ORDER BY a.designation
+      pgv.esc(a.name)),
+    '' ORDER BY a.name
   ), '')
 FROM catalog.article a
-WHERE a.actif;
+WHERE a.active;
 $function$;
-COMMENT ON FUNCTION catalog.article_options() IS 'Helper cross-module: retourne options HTML articles pour select dans quote, stock, purchase';
+COMMENT ON FUNCTION catalog.article_options() IS 'Helper cross-module: HTML options for article select';
 
 CREATE OR REPLACE FUNCTION catalog.article_read(p_id text)
  RETURNS jsonb
@@ -85,22 +85,21 @@ CREATE OR REPLACE FUNCTION catalog.article_read(p_id text)
 AS $function$
 DECLARE
   v_result jsonb;
-  v_actif boolean;
+  v_active boolean;
 BEGIN
   SELECT to_jsonb(a) || jsonb_build_object(
-    'categorie_nom', c.nom,
-    'unite_label', u.label
+    'category_name', c.name,
+    'unit_label', u.label
   ) INTO v_result
   FROM catalog.article a
-  LEFT JOIN catalog.categorie c ON c.id = a.categorie_id
-  LEFT JOIN catalog.unite u ON u.code = a.unite
+  LEFT JOIN catalog.category c ON c.id = a.category_id
+  LEFT JOIN catalog.unit u ON u.code = a.unit
   WHERE a.id = p_id::int;
 
   IF v_result IS NULL THEN RETURN NULL; END IF;
 
-  -- HATEOAS actions based on state
-  v_actif := (v_result->>'actif')::boolean;
-  IF v_actif THEN
+  v_active := (v_result->>'active')::boolean;
+  IF v_active THEN
     v_result := v_result || jsonb_build_object('actions', jsonb_build_array(
       jsonb_build_object('method', 'deactivate', 'uri', 'catalog://article/' || p_id || '/deactivate'),
       jsonb_build_object('method', 'delete', 'uri', 'catalog://article/' || p_id)
@@ -115,7 +114,7 @@ BEGIN
   RETURN v_result;
 END;
 $function$;
-COMMENT ON FUNCTION catalog.article_read(text) IS 'Read article by id — enriched with FK names + HATEOAS actions based on actif state';
+COMMENT ON FUNCTION catalog.article_read(text) IS 'Read article by id — enriched + HATEOAS actions based on active state';
 
 CREATE OR REPLACE FUNCTION catalog.article_ui(p_slug text DEFAULT NULL::text)
  RETURNS jsonb
@@ -124,68 +123,57 @@ CREATE OR REPLACE FUNCTION catalog.article_ui(p_slug text DEFAULT NULL::text)
 AS $function$
 DECLARE
   v_art catalog.article;
-  v_categorie_nom text;
-  v_unite_label text;
+  v_category_name text;
+  v_unit_label text;
 BEGIN
-  -- List mode
   IF p_slug IS NULL THEN
     RETURN jsonb_build_object(
       'ui', pgv.ui_column(
         pgv.ui_heading(pgv.t('catalog.nav_articles')),
         pgv.ui_table('articles', jsonb_build_array(
           pgv.ui_col('reference', pgv.t('catalog.col_ref'), pgv.ui_link('{reference}', '/catalog/article/{id}')),
-          pgv.ui_col('designation', pgv.t('catalog.col_designation')),
-          pgv.ui_col('categorie_nom', pgv.t('catalog.col_categorie'), pgv.ui_badge('{categorie_nom}')),
-          pgv.ui_col('prix_vente', pgv.t('catalog.col_pv_ht')),
-          pgv.ui_col('prix_achat', pgv.t('catalog.col_pa_ht')),
-          pgv.ui_col('unite_label', pgv.t('catalog.col_unite')),
-          pgv.ui_col('tva', pgv.t('catalog.col_tva')),
-          pgv.ui_col('actif', pgv.t('catalog.col_statut'), pgv.ui_badge('{actif}'))
+          pgv.ui_col('name', pgv.t('catalog.col_name')),
+          pgv.ui_col('category_name', pgv.t('catalog.col_category'), pgv.ui_badge('{category_name}')),
+          pgv.ui_col('sale_price', pgv.t('catalog.col_sale_price')),
+          pgv.ui_col('purchase_price', pgv.t('catalog.col_purchase_price')),
+          pgv.ui_col('unit_label', pgv.t('catalog.col_unit')),
+          pgv.ui_col('vat_rate', pgv.t('catalog.col_vat_rate')),
+          pgv.ui_col('active', pgv.t('catalog.col_status'), pgv.ui_badge('{active}'))
         ))
       ),
       'datasources', jsonb_build_object(
-        'articles', pgv.ui_datasource('catalog://article', 20, true, 'designation')
+        'articles', pgv.ui_datasource('catalog://article', 20, true, 'name')
       )
     );
   END IF;
 
-  -- Detail mode
   SELECT * INTO v_art FROM catalog.article WHERE id = p_slug::int;
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error', 'not_found'); END IF;
 
-  SELECT c.nom INTO v_categorie_nom FROM catalog.categorie c WHERE c.id = v_art.categorie_id;
-  SELECT u.label INTO v_unite_label FROM catalog.unite u WHERE u.code = v_art.unite;
+  SELECT c.name INTO v_category_name FROM catalog.category c WHERE c.id = v_art.category_id;
+  SELECT u.label INTO v_unit_label FROM catalog.unit u WHERE u.code = v_art.unit;
 
   RETURN jsonb_build_object(
     'ui', pgv.ui_column(
       pgv.ui_row(
         pgv.ui_link('← ' || pgv.t('catalog.nav_articles'), '/catalog/articles'),
-        pgv.ui_heading(v_art.designation)
+        pgv.ui_heading(v_art.name)
       ),
-
-      -- Prix & unité
       pgv.ui_row(
-        pgv.ui_text(pgv.t('catalog.field_prix_vente') || ': ' || CASE WHEN v_art.prix_vente IS NOT NULL THEN to_char(v_art.prix_vente, 'FM999G990D00') || ' EUR' ELSE '—' END),
-        pgv.ui_text(pgv.t('catalog.field_prix_achat') || ': ' || CASE WHEN v_art.prix_achat IS NOT NULL THEN to_char(v_art.prix_achat, 'FM999G990D00') || ' EUR' ELSE '—' END),
-        pgv.ui_text(pgv.t('catalog.field_tva') || ': ' || v_art.tva || '%'),
-        pgv.ui_text(pgv.t('catalog.field_unite') || ': ' || coalesce(v_unite_label, v_art.unite))
+        pgv.ui_text(pgv.t('catalog.field_sale_price') || ': ' || CASE WHEN v_art.sale_price IS NOT NULL THEN to_char(v_art.sale_price, 'FM999G990D00') || ' EUR' ELSE '—' END),
+        pgv.ui_text(pgv.t('catalog.field_purchase_price') || ': ' || CASE WHEN v_art.purchase_price IS NOT NULL THEN to_char(v_art.purchase_price, 'FM999G990D00') || ' EUR' ELSE '—' END),
+        pgv.ui_text(pgv.t('catalog.field_vat_rate') || ': ' || v_art.vat_rate || '%'),
+        pgv.ui_text(pgv.t('catalog.field_unit') || ': ' || coalesce(v_unit_label, v_art.unit))
       ),
-
-      -- Détails
       pgv.ui_heading(pgv.t('catalog.field_reference'), 3),
       pgv.ui_text(coalesce(v_art.reference, '—')),
-
-      pgv.ui_heading(pgv.t('catalog.field_categorie'), 3),
-      pgv.ui_text(coalesce(v_categorie_nom, '—')),
-
+      pgv.ui_heading(pgv.t('catalog.field_category'), 3),
+      pgv.ui_text(coalesce(v_category_name, '—')),
       pgv.ui_heading(pgv.t('catalog.field_description'), 3),
       pgv.ui_text(coalesce(v_art.description, '—')),
-
       pgv.ui_row(
-        pgv.ui_badge(CASE WHEN v_art.actif THEN pgv.t('catalog.badge_actif') ELSE pgv.t('catalog.badge_inactif') END,
-                     CASE WHEN v_art.actif THEN 'success' ELSE 'warning' END),
+        pgv.ui_badge(CASE WHEN v_art.active THEN pgv.t('catalog.badge_active') ELSE pgv.t('catalog.badge_inactive') END,
+                     CASE WHEN v_art.active THEN 'success' ELSE 'warning' END),
         pgv.ui_text(pgv.t('catalog.detail_created_at') || ': ' || to_char(v_art.created_at, 'DD/MM/YYYY HH24:MI')),
         pgv.ui_text(pgv.t('catalog.detail_updated_at') || ': ' || to_char(v_art.updated_at, 'DD/MM/YYYY HH24:MI'))
       )
@@ -193,7 +181,7 @@ BEGIN
   );
 END;
 $function$;
-COMMENT ON FUNCTION catalog.article_ui(text) IS 'SDUI view: article list (table+datasource) and detail (static components)';
+COMMENT ON FUNCTION catalog.article_ui(text) IS 'SDUI view: article list + detail — English column names';
 
 CREATE OR REPLACE FUNCTION catalog.article_update(p_row catalog.article)
  RETURNS jsonb
@@ -203,14 +191,14 @@ AS $function$
 BEGIN
   UPDATE catalog.article SET
     reference = COALESCE(p_row.reference, reference),
-    designation = COALESCE(p_row.designation, designation),
+    name = COALESCE(p_row.name, name),
     description = COALESCE(p_row.description, description),
-    categorie_id = COALESCE(p_row.categorie_id, categorie_id),
-    unite = COALESCE(p_row.unite, unite),
-    prix_vente = COALESCE(p_row.prix_vente, prix_vente),
-    prix_achat = COALESCE(p_row.prix_achat, prix_achat),
-    tva = COALESCE(p_row.tva, tva),
-    actif = COALESCE(p_row.actif, actif),
+    category_id = COALESCE(p_row.category_id, category_id),
+    unit = COALESCE(p_row.unit, unit),
+    sale_price = COALESCE(p_row.sale_price, sale_price),
+    purchase_price = COALESCE(p_row.purchase_price, purchase_price),
+    vat_rate = COALESCE(p_row.vat_rate, vat_rate),
+    active = COALESCE(p_row.active, active),
     updated_at = now()
   WHERE id = p_row.id
   RETURNING * INTO p_row;
@@ -218,7 +206,7 @@ BEGIN
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION catalog.article_update(catalog.article) IS 'Update article by id — SECURITY DEFINER, partial COALESCE merge + RETURNING as jsonb';
+COMMENT ON FUNCTION catalog.article_update(catalog.article) IS 'Update article by id — SECURITY DEFINER, partial COALESCE merge';
 
 CREATE OR REPLACE FUNCTION catalog.article_view()
  RETURNS jsonb
@@ -232,41 +220,38 @@ BEGIN
 
     'template', jsonb_build_object(
       'compact', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'designation', 'prix_vente', 'actif')
+        'fields', jsonb_build_array('reference', 'name', 'sale_price', 'active')
       ),
-
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'designation', 'prix_vente', 'prix_achat', 'tva', 'unite', 'actif'),
+        'fields', jsonb_build_array('reference', 'name', 'sale_price', 'purchase_price', 'vat_rate', 'unit', 'active'),
         'stats', jsonb_build_array(
-          jsonb_build_object('key', 'categorie_nom', 'label', 'catalog.field_categorie'),
-          jsonb_build_object('key', 'unite_label', 'label', 'catalog.field_unite')
+          jsonb_build_object('key', 'category_name', 'label', 'catalog.field_category'),
+          jsonb_build_object('key', 'unit_label', 'label', 'catalog.field_unit')
         )
       ),
-
       'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'designation', 'description', 'prix_vente', 'prix_achat', 'tva', 'unite', 'actif', 'created_at', 'updated_at'),
+        'fields', jsonb_build_array('reference', 'name', 'description', 'sale_price', 'purchase_price', 'vat_rate', 'unit', 'active', 'created_at', 'updated_at'),
         'stats', jsonb_build_array(
-          jsonb_build_object('key', 'categorie_nom', 'label', 'catalog.field_categorie'),
-          jsonb_build_object('key', 'unite_label', 'label', 'catalog.field_unite')
+          jsonb_build_object('key', 'category_name', 'label', 'catalog.field_category'),
+          jsonb_build_object('key', 'unit_label', 'label', 'catalog.field_unit')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'quote://ligne', 'filter', 'article_id={id}', 'label', 'catalog.related_quotes'),
-          jsonb_build_object('entity', 'stock://mouvement', 'filter', 'article_id={id}', 'label', 'catalog.related_stock'),
-          jsonb_build_object('entity', 'purchase://ligne', 'filter', 'article_id={id}', 'label', 'catalog.related_purchases')
+          jsonb_build_object('entity', 'quote://line_item', 'filter', 'article_id={id}', 'label', 'catalog.related_quotes'),
+          jsonb_build_object('entity', 'stock://movement', 'filter', 'article_id={id}', 'label', 'catalog.related_stock'),
+          jsonb_build_object('entity', 'purchase://order_line', 'filter', 'article_id={id}', 'label', 'catalog.related_purchases')
         )
       ),
-
       'form', jsonb_build_object(
         'sections', jsonb_build_array(
           jsonb_build_object('label', 'catalog.section_identity', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'reference', 'label', 'catalog.field_reference', 'type', 'text'),
-            jsonb_build_object('key', 'designation', 'label', 'catalog.field_designation', 'type', 'text', 'required', true),
+            jsonb_build_object('key', 'name', 'label', 'catalog.field_name', 'type', 'text', 'required', true),
             jsonb_build_object('key', 'description', 'label', 'catalog.field_description', 'type', 'textarea')
           )),
           jsonb_build_object('label', 'catalog.section_pricing', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'prix_vente', 'label', 'catalog.field_prix_vente', 'type', 'number'),
-            jsonb_build_object('key', 'prix_achat', 'label', 'catalog.field_prix_achat', 'type', 'number'),
-            jsonb_build_object('key', 'tva', 'label', 'catalog.field_tva', 'type', 'select',
+            jsonb_build_object('key', 'sale_price', 'label', 'catalog.field_sale_price', 'type', 'number'),
+            jsonb_build_object('key', 'purchase_price', 'label', 'catalog.field_purchase_price', 'type', 'number'),
+            jsonb_build_object('key', 'vat_rate', 'label', 'catalog.field_vat_rate', 'type', 'select',
               'options', jsonb_build_array(
                 jsonb_build_object('label', '20%', 'value', '20.00'),
                 jsonb_build_object('label', '10%', 'value', '10.00'),
@@ -275,10 +260,10 @@ BEGIN
               ))
           )),
           jsonb_build_object('label', 'catalog.section_classification', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'categorie_id', 'label', 'catalog.field_categorie', 'type', 'combobox',
-              'source', 'catalog://categorie', 'display', 'nom'),
-            jsonb_build_object('key', 'unite', 'label', 'catalog.field_unite', 'type', 'select',
-              'options', (SELECT COALESCE(jsonb_agg(jsonb_build_object('label', u.label, 'value', u.code) ORDER BY u.label), '[]'::jsonb) FROM catalog.unite u))
+            jsonb_build_object('key', 'category_id', 'label', 'catalog.field_category', 'type', 'combobox',
+              'source', 'catalog://category', 'display', 'name'),
+            jsonb_build_object('key', 'unit', 'label', 'catalog.field_unit', 'type', 'select',
+              'options', (SELECT COALESCE(jsonb_agg(jsonb_build_object('label', u.label, 'value', u.code) ORDER BY u.label), '[]'::jsonb) FROM catalog.unit u))
           ))
         )
       )
@@ -292,7 +277,7 @@ BEGIN
   );
 END;
 $function$;
-COMMENT ON FUNCTION catalog.article_view() IS 'View template for article entity: compact, standard, expanded, form, actions';
+COMMENT ON FUNCTION catalog.article_view() IS 'View template for article entity — English column names';
 
 CREATE OR REPLACE FUNCTION catalog.brand()
  RETURNS text
@@ -303,39 +288,39 @@ SELECT pgv.t('catalog.brand');
 $function$;
 COMMENT ON FUNCTION catalog.brand() IS 'Brand name for catalog module (i18n)';
 
-CREATE OR REPLACE FUNCTION catalog.categorie_create(p_row catalog.categorie)
+CREATE OR REPLACE FUNCTION catalog.category_create(p_row catalog.category)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 BEGIN
-  p_row.ordre := COALESCE(p_row.ordre, 0);
+  p_row.sort_order := COALESCE(p_row.sort_order, 0);
   p_row.created_at := now();
 
-  INSERT INTO catalog.categorie (nom, parent_id, ordre, created_at)
-  VALUES (p_row.nom, p_row.parent_id, p_row.ordre, p_row.created_at)
+  INSERT INTO catalog.category (name, parent_id, sort_order, created_at)
+  VALUES (p_row.name, p_row.parent_id, p_row.sort_order, p_row.created_at)
   RETURNING * INTO p_row;
 
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION catalog.categorie_create(catalog.categorie) IS 'Create category — SECURITY DEFINER, INSERT + RETURNING as jsonb';
+COMMENT ON FUNCTION catalog.category_create(catalog.category) IS 'Create category — SECURITY DEFINER, INSERT + RETURNING as jsonb';
 
-CREATE OR REPLACE FUNCTION catalog.categorie_delete(p_id text)
+CREATE OR REPLACE FUNCTION catalog.category_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_row catalog.categorie;
+  v_row catalog.category;
 BEGIN
-  DELETE FROM catalog.categorie WHERE id = p_id::int RETURNING * INTO v_row;
+  DELETE FROM catalog.category WHERE id = p_id::int RETURNING * INTO v_row;
   RETURN to_jsonb(v_row);
 END;
 $function$;
-COMMENT ON FUNCTION catalog.categorie_delete(text) IS 'Delete category by id — SECURITY DEFINER, RETURNING deleted row as jsonb';
+COMMENT ON FUNCTION catalog.category_delete(text) IS 'Delete category by id — SECURITY DEFINER';
 
-CREATE OR REPLACE FUNCTION catalog.categorie_list(p_filter text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION catalog.category_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF jsonb
  LANGUAGE plpgsql
  STABLE
@@ -343,45 +328,44 @@ AS $function$
 BEGIN
   RETURN QUERY
     SELECT to_jsonb(c) || jsonb_build_object(
-      'parent_nom', p.nom,
-      'nb_articles', (SELECT count(*)::int FROM catalog.article a WHERE a.categorie_id = c.id)
+      'parent_name', p.name,
+      'article_count', (SELECT count(*)::int FROM catalog.article a WHERE a.category_id = c.id)
     )
-    FROM catalog.categorie c
-    LEFT JOIN catalog.categorie p ON p.id = c.parent_id
+    FROM catalog.category c
+    LEFT JOIN catalog.category p ON p.id = c.parent_id
     WHERE p_filter IS NULL
-       OR c.nom ILIKE '%' || p_filter || '%'
-    ORDER BY COALESCE(p.nom, c.nom), c.nom;
+       OR c.name ILIKE '%' || p_filter || '%'
+    ORDER BY COALESCE(p.name, c.name), c.name;
 END;
 $function$;
-COMMENT ON FUNCTION catalog.categorie_list(text) IS 'List categories with parent name resolved and article count — optional text filter';
+COMMENT ON FUNCTION catalog.category_list(text) IS 'List categories with parent name and article count — optional text filter';
 
-CREATE OR REPLACE FUNCTION catalog.categorie_read(p_id text)
+CREATE OR REPLACE FUNCTION catalog.category_read(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
 AS $function$
 DECLARE
   v_result jsonb;
-  v_nb_articles int;
+  v_article_count int;
   v_has_children boolean;
 BEGIN
   SELECT to_jsonb(c) || jsonb_build_object(
-    'parent_nom', p.nom,
-    'nb_articles', (SELECT count(*)::int FROM catalog.article a WHERE a.categorie_id = c.id)
+    'parent_name', p.name,
+    'article_count', (SELECT count(*)::int FROM catalog.article a WHERE a.category_id = c.id)
   ) INTO v_result
-  FROM catalog.categorie c
-  LEFT JOIN catalog.categorie p ON p.id = c.parent_id
+  FROM catalog.category c
+  LEFT JOIN catalog.category p ON p.id = c.parent_id
   WHERE c.id = p_id::int;
 
   IF v_result IS NULL THEN RETURN NULL; END IF;
 
-  -- HATEOAS: delete only if no articles and no children
-  v_nb_articles := (v_result->>'nb_articles')::int;
-  v_has_children := EXISTS(SELECT 1 FROM catalog.categorie WHERE parent_id = p_id::int);
+  v_article_count := (v_result->>'article_count')::int;
+  v_has_children := EXISTS(SELECT 1 FROM catalog.category WHERE parent_id = p_id::int);
 
-  IF v_nb_articles = 0 AND NOT v_has_children THEN
+  IF v_article_count = 0 AND NOT v_has_children THEN
     v_result := v_result || jsonb_build_object('actions', jsonb_build_array(
-      jsonb_build_object('method', 'delete', 'uri', 'catalog://categorie/' || p_id)
+      jsonb_build_object('method', 'delete', 'uri', 'catalog://category/' || p_id)
     ));
   ELSE
     v_result := v_result || jsonb_build_object('actions', '[]'::jsonb);
@@ -390,114 +374,105 @@ BEGIN
   RETURN v_result;
 END;
 $function$;
-COMMENT ON FUNCTION catalog.categorie_read(text) IS 'Read category by id — enriched with parent name, article count + HATEOAS actions';
+COMMENT ON FUNCTION catalog.category_read(text) IS 'Read category by id — enriched + HATEOAS actions';
 
-CREATE OR REPLACE FUNCTION catalog.categorie_ui(p_slug text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION catalog.category_ui(p_slug text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
 AS $function$
 DECLARE
-  v_cat catalog.categorie;
-  v_parent_nom text;
-  v_nb_articles int;
+  v_cat catalog.category;
+  v_parent_name text;
+  v_article_count int;
 BEGIN
-  -- List mode
   IF p_slug IS NULL THEN
     RETURN jsonb_build_object(
       'ui', pgv.ui_column(
         pgv.ui_heading(pgv.t('catalog.nav_categories')),
         pgv.ui_table('categories', jsonb_build_array(
-          pgv.ui_col('nom', pgv.t('catalog.col_nom'), pgv.ui_link('{nom}', '/catalog/categorie/{id}')),
-          pgv.ui_col('parent_nom', pgv.t('catalog.col_parente')),
-          pgv.ui_col('nb_articles', pgv.t('catalog.col_articles'))
+          pgv.ui_col('name', pgv.t('catalog.col_name'), pgv.ui_link('{name}', '/catalog/category/{id}')),
+          pgv.ui_col('parent_name', pgv.t('catalog.col_parent')),
+          pgv.ui_col('article_count', pgv.t('catalog.col_articles'))
         ))
       ),
       'datasources', jsonb_build_object(
-        'categories', pgv.ui_datasource('catalog://categorie', 20, true, 'nom')
+        'categories', pgv.ui_datasource('catalog://category', 20, true, 'name')
       )
     );
   END IF;
 
-  -- Detail mode
-  SELECT * INTO v_cat FROM catalog.categorie WHERE id = p_slug::int;
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
+  SELECT * INTO v_cat FROM catalog.category WHERE id = p_slug::int;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error', 'not_found'); END IF;
 
-  SELECT p.nom INTO v_parent_nom FROM catalog.categorie p WHERE p.id = v_cat.parent_id;
-  SELECT count(*)::int INTO v_nb_articles FROM catalog.article a WHERE a.categorie_id = v_cat.id;
+  SELECT p.name INTO v_parent_name FROM catalog.category p WHERE p.id = v_cat.parent_id;
+  SELECT count(*)::int INTO v_article_count FROM catalog.article a WHERE a.category_id = v_cat.id;
 
   RETURN jsonb_build_object(
     'ui', pgv.ui_column(
       pgv.ui_row(
         pgv.ui_link('← ' || pgv.t('catalog.nav_categories'), '/catalog/categories'),
-        pgv.ui_heading(v_cat.nom)
+        pgv.ui_heading(v_cat.name)
       ),
-
       pgv.ui_row(
-        pgv.ui_text(pgv.t('catalog.col_parente') || ': ' || coalesce(v_parent_nom, '—')),
-        pgv.ui_text(pgv.t('catalog.col_articles') || ': ' || v_nb_articles)
+        pgv.ui_text(pgv.t('catalog.col_parent') || ': ' || coalesce(v_parent_name, '—')),
+        pgv.ui_text(pgv.t('catalog.col_articles') || ': ' || v_article_count)
       ),
-
       pgv.ui_text(pgv.t('catalog.detail_created_at') || ': ' || to_char(v_cat.created_at, 'DD/MM/YYYY HH24:MI'))
     )
   );
 END;
 $function$;
-COMMENT ON FUNCTION catalog.categorie_ui(text) IS 'SDUI view: categorie list (table+datasource) and detail (static components)';
+COMMENT ON FUNCTION catalog.category_ui(text) IS 'SDUI view: category list + detail — English names';
 
-CREATE OR REPLACE FUNCTION catalog.categorie_update(p_row catalog.categorie)
+CREATE OR REPLACE FUNCTION catalog.category_update(p_row catalog.category)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 BEGIN
-  UPDATE catalog.categorie SET
-    nom = COALESCE(p_row.nom, nom),
+  UPDATE catalog.category SET
+    name = COALESCE(p_row.name, name),
     parent_id = COALESCE(p_row.parent_id, parent_id),
-    ordre = COALESCE(p_row.ordre, ordre)
+    sort_order = COALESCE(p_row.sort_order, sort_order)
   WHERE id = p_row.id
   RETURNING * INTO p_row;
 
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION catalog.categorie_update(catalog.categorie) IS 'Update category by id — SECURITY DEFINER, partial COALESCE merge + RETURNING as jsonb';
+COMMENT ON FUNCTION catalog.category_update(catalog.category) IS 'Update category by id — SECURITY DEFINER, partial COALESCE merge';
 
-CREATE OR REPLACE FUNCTION catalog.categorie_view()
+CREATE OR REPLACE FUNCTION catalog.category_view()
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
 AS $function$
 BEGIN
   RETURN jsonb_build_object(
-    'uri', 'catalog://categorie',
-    'label', 'catalog.entity_categorie',
+    'uri', 'catalog://category',
+    'label', 'catalog.entity_category',
 
     'template', jsonb_build_object(
       'compact', jsonb_build_object(
-        'fields', jsonb_build_array('nom', 'parent_nom', 'nb_articles')
+        'fields', jsonb_build_array('name', 'parent_name', 'article_count')
       ),
-
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('nom', 'parent_nom', 'nb_articles', 'ordre')
+        'fields', jsonb_build_array('name', 'parent_name', 'article_count', 'sort_order')
       ),
-
       'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('nom', 'parent_nom', 'nb_articles', 'ordre', 'created_at'),
+        'fields', jsonb_build_array('name', 'parent_name', 'article_count', 'sort_order', 'created_at'),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'catalog://article', 'filter', 'categorie_id={id}', 'label', 'catalog.col_articles')
+          jsonb_build_object('entity', 'catalog://article', 'filter', 'category_id={id}', 'label', 'catalog.col_articles')
         )
       ),
-
       'form', jsonb_build_object(
         'sections', jsonb_build_array(
           jsonb_build_object('label', 'catalog.section_identity', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'nom', 'label', 'catalog.field_nom', 'type', 'text', 'required', true),
-            jsonb_build_object('key', 'parent_id', 'label', 'catalog.field_categorie_parente', 'type', 'combobox',
-              'source', 'catalog://categorie', 'display', 'nom'),
-            jsonb_build_object('key', 'ordre', 'label', 'catalog.field_ordre', 'type', 'number')
+            jsonb_build_object('key', 'name', 'label', 'catalog.field_name', 'type', 'text', 'required', true),
+            jsonb_build_object('key', 'parent_id', 'label', 'catalog.field_parent_category', 'type', 'combobox',
+              'source', 'catalog://category', 'display', 'name'),
+            jsonb_build_object('key', 'sort_order', 'label', 'catalog.field_sort_order', 'type', 'number')
           ))
         )
       )
@@ -509,7 +484,7 @@ BEGIN
   );
 END;
 $function$;
-COMMENT ON FUNCTION catalog.categorie_view() IS 'View template for categorie entity: compact, standard, expanded, form, actions';
+COMMENT ON FUNCTION catalog.category_view() IS 'View template for category entity: compact, standard, expanded, form, actions';
 
 CREATE OR REPLACE FUNCTION catalog.get_article(p_id integer)
  RETURNS text
@@ -517,61 +492,58 @@ CREATE OR REPLACE FUNCTION catalog.get_article(p_id integer)
 AS $function$
 DECLARE
   v_art catalog.article;
-  v_categorie text;
-  v_unite_label text;
+  v_category_name text;
+  v_unit_label text;
   v_body text;
 BEGIN
   SELECT * INTO v_art FROM catalog.article WHERE id = p_id;
   IF NOT FOUND THEN RETURN pgv.empty(pgv.t('catalog.err_not_found')); END IF;
 
-  SELECT c.nom INTO v_categorie FROM catalog.categorie c WHERE c.id = v_art.categorie_id;
-  SELECT u.label INTO v_unite_label FROM catalog.unite u WHERE u.code = v_art.unite;
+  SELECT c.name INTO v_category_name FROM catalog.category c WHERE c.id = v_art.category_id;
+  SELECT u.label INTO v_unit_label FROM catalog.unit u WHERE u.code = v_art.unit;
 
-  -- Stats
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat(pgv.t('catalog.field_prix_vente'),
-      CASE WHEN v_art.prix_vente IS NOT NULL
-        THEN to_char(v_art.prix_vente, 'FM999G990D00') || ' EUR'
+    pgv.stat(pgv.t('catalog.field_sale_price'),
+      CASE WHEN v_art.sale_price IS NOT NULL
+        THEN to_char(v_art.sale_price, 'FM999G990D00') || ' EUR'
         ELSE '—' END),
-    pgv.stat(pgv.t('catalog.field_prix_achat'),
-      CASE WHEN v_art.prix_achat IS NOT NULL
-        THEN to_char(v_art.prix_achat, 'FM999G990D00') || ' EUR'
+    pgv.stat(pgv.t('catalog.field_purchase_price'),
+      CASE WHEN v_art.purchase_price IS NOT NULL
+        THEN to_char(v_art.purchase_price, 'FM999G990D00') || ' EUR'
         ELSE '—' END),
-    pgv.stat(pgv.t('catalog.field_tva'), v_art.tva || '%'),
-    pgv.stat(pgv.t('catalog.field_unite'), coalesce(v_unite_label, v_art.unite))
+    pgv.stat(pgv.t('catalog.field_vat_rate'), v_art.vat_rate || '%'),
+    pgv.stat(pgv.t('catalog.field_unit'), coalesce(v_unit_label, v_art.unit))
   ]);
 
-  -- Détails
   v_body := v_body || pgv.dl(VARIADIC ARRAY[
     pgv.t('catalog.field_reference'), coalesce(pgv.esc(v_art.reference), '—'),
-    pgv.t('catalog.field_designation'), pgv.esc(v_art.designation),
-    pgv.t('catalog.field_categorie'), coalesce(pgv.badge(v_categorie), '—'),
+    pgv.t('catalog.field_name'), pgv.esc(v_art.name),
+    pgv.t('catalog.field_category'), coalesce(pgv.badge(v_category_name), '—'),
     pgv.t('catalog.field_description'), coalesce(pgv.esc(v_art.description), '—'),
-    pgv.t('catalog.field_statut'), CASE WHEN v_art.actif THEN pgv.badge(pgv.t('catalog.badge_actif'), 'success') ELSE pgv.badge(pgv.t('catalog.badge_inactif'), 'warning') END,
+    pgv.t('catalog.field_status'), CASE WHEN v_art.active THEN pgv.badge(pgv.t('catalog.badge_active'), 'success') ELSE pgv.badge(pgv.t('catalog.badge_inactive'), 'warning') END,
     pgv.t('catalog.detail_created_at'), to_char(v_art.created_at, 'DD/MM/YYYY HH24:MI'),
     pgv.t('catalog.detail_updated_at'), to_char(v_art.updated_at, 'DD/MM/YYYY HH24:MI')
   ]);
 
-  -- Actions
   v_body := v_body || '<p>'
     || format('<a href="%s" role="button">%s</a> ',
        pgv.call_ref('get_article_form', jsonb_build_object('p_id', p_id)),
-       pgv.t('catalog.btn_modifier'))
-    || CASE WHEN v_art.actif
-       THEN pgv.action('post_article_modifier',
-              pgv.t('catalog.btn_desactiver'),
-              jsonb_build_object('id', p_id, 'actif', 'false'),
-              pgv.t('catalog.confirm_desactiver'), 'danger')
-       ELSE pgv.action('post_article_modifier',
-              pgv.t('catalog.btn_reactiver'),
-              jsonb_build_object('id', p_id, 'actif', 'true'))
+       pgv.t('catalog.btn_edit'))
+    || CASE WHEN v_art.active
+       THEN pgv.action('post_article_update',
+              pgv.t('catalog.action_deactivate'),
+              jsonb_build_object('id', p_id, 'active', 'false'),
+              pgv.t('catalog.confirm_deactivate'), 'danger')
+       ELSE pgv.action('post_article_update',
+              pgv.t('catalog.action_activate'),
+              jsonb_build_object('id', p_id, 'active', 'true'))
        END
     || '</p>';
 
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION catalog.get_article(integer) IS 'Fiche article: infos, prix, catégorie, boutons modifier/désactiver (i18n)';
+COMMENT ON FUNCTION catalog.get_article(integer) IS 'Article detail page — English column names';
 
 CREATE OR REPLACE FUNCTION catalog.get_article_form(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
@@ -582,58 +554,56 @@ DECLARE
   v_art catalog.article;
   v_body text;
   v_cat_opts jsonb;
-  v_unite_opts jsonb;
-  v_tva_opts jsonb;
+  v_unit_opts jsonb;
+  v_vat_opts jsonb;
 BEGIN
   IF v_id IS NOT NULL THEN
     SELECT * INTO v_art FROM catalog.article WHERE id = v_id;
     IF NOT FOUND THEN RETURN pgv.empty(pgv.t('catalog.err_not_found')); END IF;
   END IF;
 
-  -- Build option arrays
-  SELECT COALESCE(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.nom) ORDER BY c.nom), '[]'::jsonb)
-  INTO v_cat_opts FROM catalog.categorie c;
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.name) ORDER BY c.name), '[]'::jsonb)
+  INTO v_cat_opts FROM catalog.category c;
 
   SELECT COALESCE(jsonb_agg(jsonb_build_object('value', u.code, 'label', u.label) ORDER BY u.label), '[]'::jsonb)
-  INTO v_unite_opts FROM catalog.unite u;
+  INTO v_unit_opts FROM catalog.unit u;
 
-  v_tva_opts := jsonb_build_array(
+  v_vat_opts := jsonb_build_array(
     jsonb_build_object('value', '20.00', 'label', '20%'),
     jsonb_build_object('value', '10.00', 'label', '10%'),
     jsonb_build_object('value', '5.50', 'label', '5,5%'),
     jsonb_build_object('value', '0.00', 'label', '0%')
   );
 
-  -- Form body
   v_body := CASE WHEN v_id IS NOT NULL
     THEN format('<input type="hidden" name="id" value="%s">', v_id)
     ELSE '' END;
 
   v_body := v_body || '<div class="grid">'
     || pgv.input('reference', 'text', pgv.t('catalog.field_reference'), v_art.reference)
-    || pgv.input('designation', 'text', pgv.t('catalog.field_designation'), v_art.designation, true)
+    || pgv.input('name', 'text', pgv.t('catalog.field_name'), v_art.name, true)
     || '</div>'
     || '<div class="grid">'
-    || pgv.sel('categorie_id', pgv.t('catalog.field_categorie'), v_cat_opts, v_art.categorie_id::text)
-    || pgv.sel('unite', pgv.t('catalog.field_unite'), v_unite_opts, coalesce(v_art.unite, 'u'))
-    || pgv.sel('tva', pgv.t('catalog.field_tva'), v_tva_opts, coalesce(v_art.tva, 20.00)::text)
+    || pgv.sel('category_id', pgv.t('catalog.field_category'), v_cat_opts, v_art.category_id::text)
+    || pgv.sel('unit', pgv.t('catalog.field_unit'), v_unit_opts, coalesce(v_art.unit, 'u'))
+    || pgv.sel('vat_rate', pgv.t('catalog.field_vat_rate'), v_vat_opts, coalesce(v_art.vat_rate, 20.00)::text)
     || '</div>'
     || '<div class="grid">'
-    || pgv.input('prix_vente', 'number', pgv.t('catalog.field_prix_vente'),
-         CASE WHEN v_art.prix_vente IS NOT NULL THEN v_art.prix_vente::text ELSE NULL END)
-    || pgv.input('prix_achat', 'number', pgv.t('catalog.field_prix_achat'),
-         CASE WHEN v_art.prix_achat IS NOT NULL THEN v_art.prix_achat::text ELSE NULL END)
+    || pgv.input('sale_price', 'number', pgv.t('catalog.field_sale_price'),
+         CASE WHEN v_art.sale_price IS NOT NULL THEN v_art.sale_price::text ELSE NULL END)
+    || pgv.input('purchase_price', 'number', pgv.t('catalog.field_purchase_price'),
+         CASE WHEN v_art.purchase_price IS NOT NULL THEN v_art.purchase_price::text ELSE NULL END)
     || '</div>'
     || pgv.textarea('description', pgv.t('catalog.field_description'), v_art.description);
 
   RETURN pgv.form(
-    CASE WHEN v_id IS NOT NULL THEN 'post_article_modifier' ELSE 'post_article_creer' END,
+    CASE WHEN v_id IS NOT NULL THEN 'post_article_update' ELSE 'post_article_create' END,
     v_body,
-    CASE WHEN v_id IS NOT NULL THEN pgv.t('catalog.btn_modifier') ELSE pgv.t('catalog.btn_creer') END
+    CASE WHEN v_id IS NOT NULL THEN pgv.t('catalog.btn_edit') ELSE pgv.t('catalog.btn_create') END
   );
 END;
 $function$;
-COMMENT ON FUNCTION catalog.get_article_form(jsonb) IS 'Formulaire création/édition article (i18n, primitives pgv.*)';
+COMMENT ON FUNCTION catalog.get_article_form(jsonb) IS 'Article create/edit form — English column names';
 
 CREATE OR REPLACE FUNCTION catalog.get_articles(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
@@ -641,58 +611,55 @@ CREATE OR REPLACE FUNCTION catalog.get_articles(p_params jsonb DEFAULT '{}'::jso
 AS $function$
 DECLARE
   v_q text := NULLIF(trim(COALESCE(p_params->>'q', '')), '');
-  v_categorie_id text := NULLIF(trim(COALESCE(p_params->>'categorie_id', '')), '');
-  v_actif text := NULLIF(trim(COALESCE(p_params->>'actif', '')), '');
+  v_category_id text := NULLIF(trim(COALESCE(p_params->>'category_id', '')), '');
+  v_active text := NULLIF(trim(COALESCE(p_params->>'active', '')), '');
   v_body text;
   v_rows text[];
   v_cat_opts jsonb;
   r record;
 BEGIN
-  -- Build category options
-  SELECT COALESCE(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.nom) ORDER BY c.nom), '[]'::jsonb)
-  INTO v_cat_opts FROM catalog.categorie c;
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.name) ORDER BY c.name), '[]'::jsonb)
+  INTO v_cat_opts FROM catalog.category c;
 
-  -- Filter form (GET)
   v_body := '<form>'
     || '<div class="grid">'
     || pgv.input('q', 'search', pgv.t('catalog.field_search'), v_q)
-    || pgv.sel('categorie_id', pgv.t('catalog.field_categorie'), v_cat_opts, COALESCE(v_categorie_id, ''))
-    || pgv.sel('actif', pgv.t('catalog.field_statut'), jsonb_build_array(
-         jsonb_build_object('label', pgv.t('catalog.filter_actifs'), 'value', 'oui'),
-         jsonb_build_object('label', pgv.t('catalog.filter_inactifs'), 'value', 'non')
-       ), COALESCE(v_actif, ''))
+    || pgv.sel('category_id', pgv.t('catalog.field_category'), v_cat_opts, COALESCE(v_category_id, ''))
+    || pgv.sel('active', pgv.t('catalog.field_status'), jsonb_build_array(
+         jsonb_build_object('label', pgv.t('catalog.filter_active'), 'value', 'yes'),
+         jsonb_build_object('label', pgv.t('catalog.filter_inactive'), 'value', 'no')
+       ), COALESCE(v_active, ''))
     || '</div>'
     || '<button type="submit" class="outline">' || pgv.t('catalog.btn_filter') || '</button>'
     || '</form>';
 
-  -- Article list
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT a.id, a.reference, a.designation, c.nom AS categorie,
-           a.prix_vente, a.prix_achat, u.label AS unite_label, a.tva, a.actif
+    SELECT a.id, a.reference, a.name, c.name AS category_name,
+           a.sale_price, a.purchase_price, u.label AS unit_label, a.vat_rate, a.active
     FROM catalog.article a
-    LEFT JOIN catalog.categorie c ON c.id = a.categorie_id
-    LEFT JOIN catalog.unite u ON u.code = a.unite
-    WHERE (v_q IS NULL OR a.designation ILIKE '%' || v_q || '%' OR a.reference ILIKE '%' || v_q || '%')
-      AND (v_categorie_id IS NULL OR a.categorie_id = v_categorie_id::int)
-      AND (v_actif IS NULL OR (v_actif = 'oui' AND a.actif) OR (v_actif = 'non' AND NOT a.actif))
-    ORDER BY a.designation
+    LEFT JOIN catalog.category c ON c.id = a.category_id
+    LEFT JOIN catalog.unit u ON u.code = a.unit
+    WHERE (v_q IS NULL OR a.name ILIKE '%' || v_q || '%' OR a.reference ILIKE '%' || v_q || '%')
+      AND (v_category_id IS NULL OR a.category_id = v_category_id::int)
+      AND (v_active IS NULL OR (v_active = 'yes' AND a.active) OR (v_active = 'no' AND NOT a.active))
+    ORDER BY a.name
   LOOP
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>',
         pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)),
         pgv.esc(coalesce(r.reference, '#' || r.id))),
-      pgv.esc(r.designation),
-      coalesce(pgv.badge(r.categorie), '—'),
-      CASE WHEN r.prix_vente IS NOT NULL
-        THEN to_char(r.prix_vente, 'FM999G990D00') || ' EUR'
+      pgv.esc(r.name),
+      coalesce(pgv.badge(r.category_name), '—'),
+      CASE WHEN r.sale_price IS NOT NULL
+        THEN to_char(r.sale_price, 'FM999G990D00') || ' EUR'
         ELSE '—' END,
-      CASE WHEN r.prix_achat IS NOT NULL
-        THEN to_char(r.prix_achat, 'FM999G990D00') || ' EUR'
+      CASE WHEN r.purchase_price IS NOT NULL
+        THEN to_char(r.purchase_price, 'FM999G990D00') || ' EUR'
         ELSE '—' END,
-      coalesce(r.unite_label, '—'),
-      r.tva || '%',
-      CASE WHEN r.actif THEN pgv.badge(pgv.t('catalog.badge_actif'), 'success') ELSE pgv.badge(pgv.t('catalog.badge_inactif'), 'warning') END
+      coalesce(r.unit_label, '—'),
+      r.vat_rate || '%',
+      CASE WHEN r.active THEN pgv.badge(pgv.t('catalog.badge_active'), 'success') ELSE pgv.badge(pgv.t('catalog.badge_inactive'), 'warning') END
     ];
   END LOOP;
 
@@ -700,7 +667,7 @@ BEGIN
     v_body := v_body || pgv.empty(pgv.t('catalog.empty_no_article_found'), pgv.t('catalog.empty_adjust_filters'));
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY[pgv.t('catalog.col_ref'), pgv.t('catalog.col_designation'), pgv.t('catalog.col_categorie'), pgv.t('catalog.col_pv_ht'), pgv.t('catalog.col_pa_ht'), pgv.t('catalog.col_unite'), pgv.t('catalog.col_tva'), pgv.t('catalog.col_statut')],
+      ARRAY[pgv.t('catalog.col_ref'), pgv.t('catalog.col_name'), pgv.t('catalog.col_category'), pgv.t('catalog.col_sale_price'), pgv.t('catalog.col_purchase_price'), pgv.t('catalog.col_unit'), pgv.t('catalog.col_vat_rate'), pgv.t('catalog.col_status')],
       v_rows, 20
     );
   END IF;
@@ -711,7 +678,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION catalog.get_articles(jsonb) IS 'Liste articles avec recherche texte, filtre catégorie et actif/inactif, pagination (i18n)';
+COMMENT ON FUNCTION catalog.get_articles(jsonb) IS 'Article list with filters — English column names';
 
 CREATE OR REPLACE FUNCTION catalog.get_categories()
  RETURNS text
@@ -726,48 +693,46 @@ DECLARE
 BEGIN
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT c.id, c.nom, p.nom AS parent_nom,
-           (SELECT count(*)::int FROM catalog.article a WHERE a.categorie_id = c.id) AS nb_articles
-    FROM catalog.categorie c
-    LEFT JOIN catalog.categorie p ON p.id = c.parent_id
-    ORDER BY coalesce(p.nom, c.nom), c.nom
+    SELECT c.id, c.name, p.name AS parent_name,
+           (SELECT count(*)::int FROM catalog.article a WHERE a.category_id = c.id) AS article_count
+    FROM catalog.category c
+    LEFT JOIN catalog.category p ON p.id = c.parent_id
+    ORDER BY coalesce(p.name, c.name), c.name
   LOOP
     v_rows := v_rows || ARRAY[
-      pgv.esc(r.nom),
-      coalesce(pgv.esc(r.parent_nom), '—'),
-      r.nb_articles::text,
+      pgv.esc(r.name),
+      coalesce(pgv.esc(r.parent_name), '—'),
+      r.article_count::text,
       format('<a href="%s">%s</a>',
-        pgv.call_ref('get_articles', jsonb_build_object('categorie_id', r.id)),
+        pgv.call_ref('get_articles', jsonb_build_object('category_id', r.id)),
         pgv.t('catalog.nav_articles'))
     ];
   END LOOP;
 
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := pgv.empty(pgv.t('catalog.empty_no_categorie'), pgv.t('catalog.empty_first_categorie'));
+    v_body := pgv.empty(pgv.t('catalog.empty_no_category'), pgv.t('catalog.empty_first_category'));
   ELSE
     v_body := pgv.md_table(
-      ARRAY[pgv.t('catalog.col_nom'), pgv.t('catalog.col_parente'), pgv.t('catalog.col_articles'), pgv.t('catalog.col_voir')],
+      ARRAY[pgv.t('catalog.col_name'), pgv.t('catalog.col_parent'), pgv.t('catalog.col_articles'), pgv.t('catalog.col_articles')],
       v_rows
     );
   END IF;
 
-  -- Parent category options
-  SELECT COALESCE(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.nom) ORDER BY c.nom), '[]'::jsonb)
-  INTO v_parent_opts FROM catalog.categorie c WHERE c.parent_id IS NULL;
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.name) ORDER BY c.name), '[]'::jsonb)
+  INTO v_parent_opts FROM catalog.category c WHERE c.parent_id IS NULL;
 
-  -- Inline create form
-  v_body := v_body || '<h3>' || pgv.t('catalog.title_new_categorie') || '</h3>';
+  v_body := v_body || '<h3>' || pgv.t('catalog.title_new_category') || '</h3>';
   v_form_body := '<div class="grid">'
-    || pgv.input('nom', 'text', pgv.t('catalog.col_nom'), NULL, true)
-    || pgv.sel('parent_id', pgv.t('catalog.field_categorie_parente'), v_parent_opts)
+    || pgv.input('name', 'text', pgv.t('catalog.col_name'), NULL, true)
+    || pgv.sel('parent_id', pgv.t('catalog.field_parent_category'), v_parent_opts)
     || '</div>';
 
-  v_body := v_body || pgv.form('post_categorie_creer', v_form_body, pgv.t('catalog.btn_creer'));
+  v_body := v_body || pgv.form('post_category_create', v_form_body, pgv.t('catalog.btn_create'));
 
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION catalog.get_categories() IS 'Liste catégories avec compteur articles et arborescence (i18n, primitives pgv.*)';
+COMMENT ON FUNCTION catalog.get_categories() IS 'Category list with article counts — English column names';
 
 CREATE OR REPLACE FUNCTION catalog.get_index(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
@@ -776,29 +741,28 @@ AS $function$
 DECLARE
   v_nb_articles int;
   v_nb_categories int;
-  v_prix_moyen numeric;
+  v_avg_price numeric;
   v_body text;
   v_rows text[];
   r record;
 BEGIN
-  SELECT count(*)::int INTO v_nb_articles FROM catalog.article WHERE actif;
-  SELECT count(*)::int INTO v_nb_categories FROM catalog.categorie;
-  SELECT coalesce(round(avg(prix_vente), 2), 0) INTO v_prix_moyen
-  FROM catalog.article WHERE actif AND prix_vente IS NOT NULL;
+  SELECT count(*)::int INTO v_nb_articles FROM catalog.article WHERE active;
+  SELECT count(*)::int INTO v_nb_categories FROM catalog.category;
+  SELECT coalesce(round(avg(sale_price), 2), 0) INTO v_avg_price
+  FROM catalog.article WHERE active AND sale_price IS NOT NULL;
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat(pgv.t('catalog.stat_articles_actifs'), v_nb_articles::text),
+    pgv.stat(pgv.t('catalog.stat_active_articles'), v_nb_articles::text),
     pgv.stat(pgv.t('catalog.stat_categories'), v_nb_categories::text),
-    pgv.stat(pgv.t('catalog.stat_prix_moyen'), to_char(v_prix_moyen, 'FM999G990D00') || ' EUR HT')
+    pgv.stat(pgv.t('catalog.stat_avg_sale_price'), to_char(v_avg_price, 'FM999G990D00') || ' EUR HT')
   ]);
 
-  -- Articles récents
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT a.id, a.reference, a.designation, c.nom AS categorie,
-           a.prix_vente, a.unite, a.actif
+    SELECT a.id, a.reference, a.name, c.name AS category_name,
+           a.sale_price, a.unit, a.active
     FROM catalog.article a
-    LEFT JOIN catalog.categorie c ON c.id = a.categorie_id
+    LEFT JOIN catalog.category c ON c.id = a.category_id
     ORDER BY a.created_at DESC
     LIMIT 10
   LOOP
@@ -806,13 +770,13 @@ BEGIN
       format('<a href="%s">%s</a>',
         pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)),
         pgv.esc(coalesce(r.reference, '#' || r.id))),
-      pgv.esc(r.designation),
-      coalesce(pgv.badge(r.categorie), '—'),
-      CASE WHEN r.prix_vente IS NOT NULL
-        THEN to_char(r.prix_vente, 'FM999G990D00') || ' EUR'
+      pgv.esc(r.name),
+      coalesce(pgv.badge(r.category_name), '—'),
+      CASE WHEN r.sale_price IS NOT NULL
+        THEN to_char(r.sale_price, 'FM999G990D00') || ' EUR'
         ELSE '—' END,
-      r.unite,
-      CASE WHEN r.actif THEN pgv.badge(pgv.t('catalog.badge_actif'), 'success') ELSE pgv.badge(pgv.t('catalog.badge_inactif'), 'warning') END
+      r.unit,
+      CASE WHEN r.active THEN pgv.badge(pgv.t('catalog.badge_active'), 'success') ELSE pgv.badge(pgv.t('catalog.badge_inactive'), 'warning') END
     ];
   END LOOP;
 
@@ -820,7 +784,7 @@ BEGIN
     v_body := v_body || pgv.empty(pgv.t('catalog.empty_no_article'), pgv.t('catalog.empty_first_article'));
   ELSE
     v_body := v_body || '<h3>' || pgv.t('catalog.title_recent') || '</h3>' || pgv.md_table(
-      ARRAY[pgv.t('catalog.col_ref'), pgv.t('catalog.col_designation'), pgv.t('catalog.col_categorie'), pgv.t('catalog.col_prix_vente'), pgv.t('catalog.col_unite'), pgv.t('catalog.col_statut')],
+      ARRAY[pgv.t('catalog.col_ref'), pgv.t('catalog.col_name'), pgv.t('catalog.col_category'), pgv.t('catalog.col_sale_price'), pgv.t('catalog.col_unit'), pgv.t('catalog.col_status')],
       v_rows
     );
   END IF;
@@ -831,7 +795,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION catalog.get_index(jsonb) IS 'Dashboard catalogue: stats (nb articles, catégories, prix moyen) + articles récents (i18n)';
+COMMENT ON FUNCTION catalog.get_index(jsonb) IS 'Dashboard: stats + recent articles — English column names';
 
 CREATE OR REPLACE FUNCTION catalog.i18n_seed()
  RETURNS void
@@ -846,113 +810,143 @@ BEGIN
 
     -- Entity labels
     ('fr', 'catalog.entity_article', 'Article'),
-    ('fr', 'catalog.entity_categorie', 'Catégorie'),
+    ('fr', 'catalog.entity_category', 'Catégorie'),
 
     -- Stats
-    ('fr', 'catalog.stat_articles_actifs', 'Articles actifs'),
+    ('fr', 'catalog.stat_active_articles', 'Articles actifs'),
     ('fr', 'catalog.stat_categories', 'Catégories'),
-    ('fr', 'catalog.stat_prix_moyen', 'Prix moyen vente'),
+    ('fr', 'catalog.stat_avg_sale_price', 'Prix moyen vente'),
 
     -- Field labels
     ('fr', 'catalog.field_reference', 'Référence'),
-    ('fr', 'catalog.field_designation', 'Désignation'),
-    ('fr', 'catalog.field_categorie', 'Catégorie'),
+    ('fr', 'catalog.field_name', 'Nom'),
+    ('fr', 'catalog.field_category', 'Catégorie'),
     ('fr', 'catalog.field_description', 'Description'),
-    ('fr', 'catalog.field_unite', 'Unité'),
-    ('fr', 'catalog.field_tva', 'TVA'),
-    ('fr', 'catalog.field_prix_vente', 'Prix vente HT'),
-    ('fr', 'catalog.field_prix_achat', 'Prix achat HT'),
-    ('fr', 'catalog.field_statut', 'Statut'),
+    ('fr', 'catalog.field_unit', 'Unité'),
+    ('fr', 'catalog.field_vat_rate', 'TVA'),
+    ('fr', 'catalog.field_sale_price', 'Prix vente HT'),
+    ('fr', 'catalog.field_purchase_price', 'Prix achat HT'),
+    ('fr', 'catalog.field_status', 'Statut'),
     ('fr', 'catalog.field_search', 'Recherche'),
-    ('fr', 'catalog.field_categorie_placeholder', '-- Catégorie --'),
-    ('fr', 'catalog.field_categorie_parente', 'Catégorie parente'),
-    ('fr', 'catalog.field_categorie_parente_placeholder', '-- Aucune (racine) --'),
-    ('fr', 'catalog.field_nom', 'Nom'),
-    ('fr', 'catalog.field_ordre', 'Ordre'),
-    ('fr', 'catalog.field_actif', 'Actif'),
+    ('fr', 'catalog.field_parent_category', 'Catégorie parente'),
+    ('fr', 'catalog.field_sort_order', 'Ordre'),
+    ('fr', 'catalog.field_active', 'Actif'),
 
     -- Table headers
     ('fr', 'catalog.col_ref', 'Réf.'),
-    ('fr', 'catalog.col_designation', 'Désignation'),
-    ('fr', 'catalog.col_categorie', 'Catégorie'),
-    ('fr', 'catalog.col_pv_ht', 'PV HT'),
-    ('fr', 'catalog.col_pa_ht', 'PA HT'),
-    ('fr', 'catalog.col_prix_vente', 'Prix vente'),
-    ('fr', 'catalog.col_unite', 'Unité'),
-    ('fr', 'catalog.col_tva', 'TVA'),
-    ('fr', 'catalog.col_statut', 'Statut'),
-    ('fr', 'catalog.col_nom', 'Nom'),
-    ('fr', 'catalog.col_parente', 'Parente'),
+    ('fr', 'catalog.col_name', 'Nom'),
+    ('fr', 'catalog.col_category', 'Catégorie'),
+    ('fr', 'catalog.col_sale_price', 'PV HT'),
+    ('fr', 'catalog.col_purchase_price', 'PA HT'),
+    ('fr', 'catalog.col_unit', 'Unité'),
+    ('fr', 'catalog.col_vat_rate', 'TVA'),
+    ('fr', 'catalog.col_status', 'Statut'),
+    ('fr', 'catalog.col_parent', 'Parente'),
     ('fr', 'catalog.col_articles', 'Articles'),
-    ('fr', 'catalog.col_voir', 'Voir'),
 
     -- Detail labels
     ('fr', 'catalog.detail_created_at', 'Créé le'),
     ('fr', 'catalog.detail_updated_at', 'Modifié le'),
 
-    -- Values / badges
-    ('fr', 'catalog.badge_actif', 'Actif'),
-    ('fr', 'catalog.badge_inactif', 'Inactif'),
+    -- Badges
+    ('fr', 'catalog.badge_active', 'Actif'),
+    ('fr', 'catalog.badge_inactive', 'Inactif'),
 
     -- Filters
     ('fr', 'catalog.filter_all_categories', 'Toutes catégories'),
     ('fr', 'catalog.filter_all', 'Tous'),
-    ('fr', 'catalog.filter_actifs', 'Actifs'),
-    ('fr', 'catalog.filter_inactifs', 'Inactifs'),
+    ('fr', 'catalog.filter_active', 'Actifs'),
+    ('fr', 'catalog.filter_inactive', 'Inactifs'),
 
-    -- Buttons / Actions
+    -- Buttons
     ('fr', 'catalog.btn_filter', 'Filtrer'),
     ('fr', 'catalog.btn_new_article', 'Nouvel article'),
-    ('fr', 'catalog.btn_modifier', 'Modifier'),
-    ('fr', 'catalog.btn_creer', 'Créer'),
-    ('fr', 'catalog.btn_desactiver', 'Désactiver'),
-    ('fr', 'catalog.btn_reactiver', 'Réactiver'),
+    ('fr', 'catalog.btn_edit', 'Modifier'),
+    ('fr', 'catalog.btn_create', 'Créer'),
 
-    -- _view() actions
+    -- Actions
     ('fr', 'catalog.action_deactivate', 'Désactiver'),
     ('fr', 'catalog.action_activate', 'Réactiver'),
     ('fr', 'catalog.action_delete', 'Supprimer'),
     ('fr', 'catalog.confirm_deactivate', 'Désactiver cet article ?'),
     ('fr', 'catalog.confirm_delete', 'Supprimer définitivement ?'),
 
-    -- _view() form sections
+    -- Form sections
     ('fr', 'catalog.section_identity', 'Identité'),
     ('fr', 'catalog.section_pricing', 'Tarification'),
     ('fr', 'catalog.section_classification', 'Classification'),
 
-    -- _view() related
+    -- Related
     ('fr', 'catalog.related_quotes', 'Devis'),
     ('fr', 'catalog.related_stock', 'Stock'),
     ('fr', 'catalog.related_purchases', 'Commandes fournisseur'),
 
     -- Titles
     ('fr', 'catalog.title_recent', 'Articles récents'),
-    ('fr', 'catalog.title_new_categorie', 'Nouvelle catégorie'),
+    ('fr', 'catalog.title_new_category', 'Nouvelle catégorie'),
 
     -- Empty states
     ('fr', 'catalog.empty_no_article', 'Aucun article'),
     ('fr', 'catalog.empty_first_article', 'Créez votre premier article pour commencer.'),
     ('fr', 'catalog.empty_no_article_found', 'Aucun article trouvé'),
     ('fr', 'catalog.empty_adjust_filters', 'Modifiez vos filtres ou créez un article.'),
-    ('fr', 'catalog.empty_no_categorie', 'Aucune catégorie'),
-    ('fr', 'catalog.empty_first_categorie', 'Créez votre première catégorie.'),
+    ('fr', 'catalog.empty_no_category', 'Aucune catégorie'),
+    ('fr', 'catalog.empty_first_category', 'Créez votre première catégorie.'),
 
-    -- Error messages
+    -- Errors / toasts
     ('fr', 'catalog.err_not_found', 'Article introuvable'),
     ('fr', 'catalog.err_id_missing', 'ID article manquant'),
-
-    -- Toast messages
     ('fr', 'catalog.toast_article_created', 'Article créé'),
+    ('fr', 'catalog.toast_article_updated', 'Article modifié'),
+    ('fr', 'catalog.toast_category_created', 'Catégorie créée'),
+
+    -- Legacy keys (kept for pgView backward compat)
+    ('fr', 'catalog.stat_articles_actifs', 'Articles actifs'),
+    ('fr', 'catalog.stat_prix_moyen', 'Prix moyen vente'),
+    ('fr', 'catalog.field_designation', 'Désignation'),
+    ('fr', 'catalog.field_categorie', 'Catégorie'),
+    ('fr', 'catalog.field_unite', 'Unité'),
+    ('fr', 'catalog.field_tva', 'TVA'),
+    ('fr', 'catalog.field_prix_vente', 'Prix vente HT'),
+    ('fr', 'catalog.field_prix_achat', 'Prix achat HT'),
+    ('fr', 'catalog.field_statut', 'Statut'),
+    ('fr', 'catalog.col_designation', 'Désignation'),
+    ('fr', 'catalog.col_categorie', 'Catégorie'),
+    ('fr', 'catalog.col_pv_ht', 'PV HT'),
+    ('fr', 'catalog.col_pa_ht', 'PA HT'),
+    ('fr', 'catalog.col_unite', 'Unité'),
+    ('fr', 'catalog.col_tva', 'TVA'),
+    ('fr', 'catalog.col_statut', 'Statut'),
+    ('fr', 'catalog.col_nom', 'Nom'),
+    ('fr', 'catalog.col_parente', 'Parente'),
+    ('fr', 'catalog.col_prix_vente', 'Prix vente'),
+    ('fr', 'catalog.col_voir', 'Voir'),
+    ('fr', 'catalog.badge_actif', 'Actif'),
+    ('fr', 'catalog.badge_inactif', 'Inactif'),
+    ('fr', 'catalog.filter_actifs', 'Actifs'),
+    ('fr', 'catalog.filter_inactifs', 'Inactifs'),
+    ('fr', 'catalog.btn_modifier', 'Modifier'),
+    ('fr', 'catalog.btn_creer', 'Créer'),
+    ('fr', 'catalog.btn_desactiver', 'Désactiver'),
+    ('fr', 'catalog.btn_reactiver', 'Réactiver'),
     ('fr', 'catalog.toast_article_modified', 'Article modifié'),
     ('fr', 'catalog.toast_categorie_created', 'Catégorie créée'),
-
-    -- Confirm dialogs (legacy)
-    ('fr', 'catalog.confirm_desactiver', 'Désactiver cet article ?')
+    ('fr', 'catalog.confirm_desactiver', 'Désactiver cet article ?'),
+    ('fr', 'catalog.empty_no_categorie', 'Aucune catégorie'),
+    ('fr', 'catalog.empty_first_categorie', 'Créez votre première catégorie.'),
+    ('fr', 'catalog.title_new_categorie', 'Nouvelle catégorie'),
+    ('fr', 'catalog.entity_categorie', 'Catégorie'),
+    ('fr', 'catalog.field_categorie_placeholder', '-- Catégorie --'),
+    ('fr', 'catalog.field_categorie_parente', 'Catégorie parente'),
+    ('fr', 'catalog.field_categorie_parente_placeholder', '-- Aucune (racine) --'),
+    ('fr', 'catalog.field_nom', 'Nom'),
+    ('fr', 'catalog.field_ordre', 'Ordre'),
+    ('fr', 'catalog.field_actif', 'Actif')
 
   ON CONFLICT DO NOTHING;
 END;
 $function$;
-COMMENT ON FUNCTION catalog.i18n_seed() IS 'Seed French translations for catalog module into pgv.i18n';
+COMMENT ON FUNCTION catalog.i18n_seed() IS 'Seed French translations — English keys + legacy backward compat keys';
 
 CREATE OR REPLACE FUNCTION catalog.nav_items()
  RETURNS jsonb
@@ -960,13 +954,13 @@ CREATE OR REPLACE FUNCTION catalog.nav_items()
  STABLE
 AS $function$
 SELECT jsonb_build_array(
-    jsonb_build_object('label', pgv.t('catalog.nav_articles'),    'href', '/articles', 'entity', 'article'),
-    jsonb_build_object('label', pgv.t('catalog.nav_categories'),  'href', '/categories', 'entity', 'categorie')
+    jsonb_build_object('label', pgv.t('catalog.nav_articles'), 'href', '/articles', 'entity', 'article', 'uri', 'catalog://article'),
+    jsonb_build_object('label', pgv.t('catalog.nav_categories'), 'href', '/categories', 'entity', 'category', 'uri', 'catalog://category')
 );
 $function$;
-COMMENT ON FUNCTION catalog.nav_items() IS 'Navigation items for catalog module (i18n) with entity mapping';
+COMMENT ON FUNCTION catalog.nav_items() IS 'Navigation items for catalog module — entity=category (renamed)';
 
-CREATE OR REPLACE FUNCTION catalog.post_article_creer(p_params jsonb)
+CREATE OR REPLACE FUNCTION catalog.post_article_create(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -974,25 +968,25 @@ AS $function$
 DECLARE
   v_id int;
 BEGIN
-  INSERT INTO catalog.article (reference, designation, description, categorie_id, unite, prix_vente, prix_achat, tva)
+  INSERT INTO catalog.article (reference, name, description, category_id, unit, sale_price, purchase_price, vat_rate)
   VALUES (
     nullif(trim(p_params->>'reference'), ''),
-    trim(p_params->>'designation'),
+    trim(p_params->>'name'),
     nullif(trim(p_params->>'description'), ''),
-    nullif(p_params->>'categorie_id', '')::int,
-    coalesce(nullif(p_params->>'unite', ''), 'u'),
-    nullif(p_params->>'prix_vente', '')::numeric,
-    nullif(p_params->>'prix_achat', '')::numeric,
-    coalesce(nullif(p_params->>'tva', '')::numeric, 20.00)
+    nullif(p_params->>'category_id', '')::int,
+    coalesce(nullif(p_params->>'unit', ''), 'u'),
+    nullif(p_params->>'sale_price', '')::numeric,
+    nullif(p_params->>'purchase_price', '')::numeric,
+    coalesce(nullif(p_params->>'vat_rate', '')::numeric, 20.00)
   ) RETURNING id INTO v_id;
 
   RETURN pgv.toast(pgv.t('catalog.toast_article_created'))
     || pgv.redirect(pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION catalog.post_article_creer(jsonb) IS 'Créer un article — SECURITY DEFINER';
+COMMENT ON FUNCTION catalog.post_article_create(jsonb) IS 'Create article via form — SECURITY DEFINER';
 
-CREATE OR REPLACE FUNCTION catalog.post_article_modifier(p_params jsonb)
+CREATE OR REPLACE FUNCTION catalog.post_article_update(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -1004,48 +998,48 @@ BEGIN
     RETURN pgv.toast(pgv.t('catalog.err_id_missing'), 'error');
   END IF;
 
-  IF p_params ? 'designation' THEN
+  IF p_params ? 'name' THEN
     UPDATE catalog.article SET
       reference = nullif(trim(p_params->>'reference'), ''),
-      designation = trim(p_params->>'designation'),
+      name = trim(p_params->>'name'),
       description = nullif(trim(p_params->>'description'), ''),
-      categorie_id = nullif(p_params->>'categorie_id', '')::int,
-      unite = coalesce(nullif(p_params->>'unite', ''), 'u'),
-      prix_vente = nullif(p_params->>'prix_vente', '')::numeric,
-      prix_achat = nullif(p_params->>'prix_achat', '')::numeric,
-      tva = coalesce(nullif(p_params->>'tva', '')::numeric, 20.00),
+      category_id = nullif(p_params->>'category_id', '')::int,
+      unit = coalesce(nullif(p_params->>'unit', ''), 'u'),
+      sale_price = nullif(p_params->>'sale_price', '')::numeric,
+      purchase_price = nullif(p_params->>'purchase_price', '')::numeric,
+      vat_rate = coalesce(nullif(p_params->>'vat_rate', '')::numeric, 20.00),
       updated_at = now()
     WHERE id = v_id;
   ELSE
     UPDATE catalog.article SET
-      actif = coalesce((p_params->>'actif')::boolean, actif),
+      active = coalesce((p_params->>'active')::boolean, active),
       updated_at = now()
     WHERE id = v_id;
   END IF;
 
-  RETURN pgv.toast(pgv.t('catalog.toast_article_modified'))
+  RETURN pgv.toast(pgv.t('catalog.toast_article_updated'))
     || pgv.redirect(pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION catalog.post_article_modifier(jsonb) IS 'Modifier un article — SECURITY DEFINER';
+COMMENT ON FUNCTION catalog.post_article_update(jsonb) IS 'Update article via form — SECURITY DEFINER';
 
-CREATE OR REPLACE FUNCTION catalog.post_categorie_creer(p_params jsonb)
+CREATE OR REPLACE FUNCTION catalog.post_category_create(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 BEGIN
-  INSERT INTO catalog.categorie (nom, parent_id)
+  INSERT INTO catalog.category (name, parent_id)
   VALUES (
-    trim(p_params->>'nom'),
+    trim(p_params->>'name'),
     nullif(p_params->>'parent_id', '')::int
   );
 
-  RETURN pgv.toast(pgv.t('catalog.toast_categorie_created'))
+  RETURN pgv.toast(pgv.t('catalog.toast_category_created'))
     || pgv.redirect(pgv.call_ref('get_categories'));
 END;
 $function$;
-COMMENT ON FUNCTION catalog.post_categorie_creer(jsonb) IS 'Créer une catégorie — SECURITY DEFINER';
+COMMENT ON FUNCTION catalog.post_category_create(jsonb) IS 'Create category via form — SECURITY DEFINER';
 
 GRANT USAGE ON SCHEMA catalog TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog TO anon;

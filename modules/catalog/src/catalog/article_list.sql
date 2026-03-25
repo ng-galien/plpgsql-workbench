@@ -6,15 +6,15 @@ AS $function$
 BEGIN
   RETURN QUERY
     SELECT to_jsonb(a) || jsonb_build_object(
-      'categorie_nom', c.nom,
-      'unite_label', u.label
+      'category_name', c.name,
+      'unit_label', u.label
     )
     FROM catalog.article a
-    LEFT JOIN catalog.categorie c ON c.id = a.categorie_id
-    LEFT JOIN catalog.unite u ON u.code = a.unite
+    LEFT JOIN catalog.category c ON c.id = a.category_id
+    LEFT JOIN catalog.unit u ON u.code = a.unit
     WHERE p_filter IS NULL
-       OR a.designation ILIKE '%' || p_filter || '%'
+       OR a.name ILIKE '%' || p_filter || '%'
        OR a.reference ILIKE '%' || p_filter || '%'
-    ORDER BY a.designation;
+    ORDER BY a.name;
 END;
 $function$;

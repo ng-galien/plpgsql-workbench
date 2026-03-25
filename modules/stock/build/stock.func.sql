@@ -3,6 +3,27 @@
 
 CREATE SCHEMA IF NOT EXISTS stock;
 
+CREATE OR REPLACE FUNCTION stock._current_stock(p_article_id integer, p_warehouse_id integer DEFAULT NULL::integer)
+ RETURNS numeric
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_qty numeric;
+BEGIN
+  IF p_warehouse_id IS NOT NULL THEN
+    SELECT coalesce(sum(quantity), 0) INTO v_qty
+    FROM stock.movement
+    WHERE article_id = p_article_id AND warehouse_id = p_warehouse_id;
+  ELSE
+    SELECT coalesce(sum(quantity), 0) INTO v_qty
+    FROM stock.movement
+    WHERE article_id = p_article_id;
+  END IF;
+  RETURN v_qty;
+END;
+$function$;
+COMMENT ON FUNCTION stock._current_stock(integer,integer) IS 'Calculate current stock for an article (all warehouses or specific warehouse)';
+
 CREATE OR REPLACE FUNCTION stock._recalc_pmp(p_article_id integer)
  RETURNS void
  LANGUAGE plpgsql
@@ -29,6 +50,32 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock._recalc_pmp(integer) IS 'Recalcule le PMP (prix moyen pondéré) d''un article à partir de toutes les entrées';
+
+CREATE OR REPLACE FUNCTION stock._recalc_wap(p_article_id integer)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_total_qty numeric := 0;
+  v_total_val numeric := 0;
+  r record;
+BEGIN
+  FOR r IN
+    SELECT quantity, unit_price
+    FROM stock.movement
+    WHERE article_id = p_article_id AND type = 'entry'
+    ORDER BY created_at
+  LOOP
+    v_total_val := v_total_val + (r.quantity * coalesce(r.unit_price, 0));
+    v_total_qty := v_total_qty + r.quantity;
+  END LOOP;
+
+  UPDATE stock.article
+  SET wap = CASE WHEN v_total_qty > 0 THEN v_total_val / v_total_qty ELSE 0 END
+  WHERE id = p_article_id;
+END;
+$function$;
+COMMENT ON FUNCTION stock._recalc_wap(integer) IS 'Recalculate WAP (weighted average price) for an article from all entries';
 
 CREATE OR REPLACE FUNCTION stock._set_updated_at()
  RETURNS trigger
@@ -75,8 +122,8 @@ BEGIN
   p_row.created_at := now();
   p_row.updated_at := now();
 
-  INSERT INTO stock.article (tenant_id, reference, designation, categorie, unite, prix_achat, pmp, seuil_mini, fournisseur_id, notes, active, created_at, updated_at, catalog_article_id)
-  VALUES (p_row.tenant_id, p_row.reference, p_row.designation, p_row.categorie, coalesce(p_row.unite, 'u'), p_row.prix_achat, coalesce(p_row.pmp, 0), coalesce(p_row.seuil_mini, 0), p_row.fournisseur_id, coalesce(p_row.notes, ''), coalesce(p_row.active, true), p_row.created_at, p_row.updated_at, p_row.catalog_article_id)
+  INSERT INTO stock.article (tenant_id, reference, description, category, unit, purchase_price, wap, min_threshold, supplier_id, notes, active, created_at, updated_at, catalog_article_id)
+  VALUES (p_row.tenant_id, p_row.reference, p_row.description, p_row.category, coalesce(p_row.unit, 'ea'), p_row.purchase_price, coalesce(p_row.wap, 0), coalesce(p_row.min_threshold, 0), p_row.supplier_id, coalesce(p_row.notes, ''), coalesce(p_row.active, true), p_row.created_at, p_row.updated_at, p_row.catalog_article_id)
   RETURNING * INTO p_row;
 
   RETURN to_jsonb(p_row);
@@ -109,24 +156,24 @@ BEGIN
   IF p_filter IS NULL THEN
     RETURN QUERY
       SELECT to_jsonb(a) || jsonb_build_object(
-        'fournisseur_name', c.name,
-        'stock_actuel', stock._stock_actuel(a.id)
+        'supplier_name', c.name,
+        'current_stock', stock._current_stock(a.id)
       )
       FROM stock.article a
-      LEFT JOIN crm.client c ON c.id = a.fournisseur_id
+      LEFT JOIN crm.client c ON c.id = a.supplier_id
       WHERE a.tenant_id = current_setting('app.tenant_id', true)
-      ORDER BY a.designation;
+      ORDER BY a.description;
   ELSE
     RETURN QUERY EXECUTE
       'SELECT to_jsonb(a) || jsonb_build_object(
-        ''fournisseur_name'', c.name,
-        ''stock_actuel'', stock._stock_actuel(a.id)
+        ''supplier_name'', c.name,
+        ''current_stock'', stock._current_stock(a.id)
       )
       FROM stock.article a
-      LEFT JOIN crm.client c ON c.id = a.fournisseur_id
+      LEFT JOIN crm.client c ON c.id = a.supplier_id
       WHERE a.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
       || ' AND ' || pgv.rsql_to_where(p_filter, 'stock', 'article')
-      || ' ORDER BY a.designation';
+      || ' ORDER BY a.description';
   END IF;
 END;
 $function$;
@@ -135,7 +182,6 @@ COMMENT ON FUNCTION stock.article_list(text) IS 'List articles for current tenan
 CREATE OR REPLACE FUNCTION stock.article_options(p_search text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
- STABLE
 AS $function$
 BEGIN
   RETURN coalesce((
@@ -143,14 +189,14 @@ BEGIN
     FROM (
       SELECT
         a.id::text AS value,
-        a.designation AS label,
-        a.reference || ' — ' || a.categorie || ' (' || a.unite || ')' AS detail
+        a.description AS label,
+        a.reference || ' — ' || a.category || ' (' || a.unit || ')' AS detail
       FROM stock.article a
       WHERE a.active
         AND (p_search IS NULL OR p_search = ''
-          OR a.designation ILIKE '%' || p_search || '%'
+          OR a.description ILIKE '%' || p_search || '%'
           OR a.reference ILIKE '%' || p_search || '%')
-      ORDER BY a.designation
+      ORDER BY a.description
       LIMIT 20
     ) r
   ), '[]'::jsonb);
@@ -168,12 +214,12 @@ DECLARE
   v_active boolean;
 BEGIN
   SELECT to_jsonb(a) || jsonb_build_object(
-    'fournisseur_name', c.name,
-    'stock_actuel', stock._stock_actuel(a.id)
+    'supplier_name', c.name,
+    'current_stock', stock._current_stock(a.id)
   )
   INTO v_data
   FROM stock.article a
-  LEFT JOIN crm.client c ON c.id = a.fournisseur_id
+  LEFT JOIN crm.client c ON c.id = a.supplier_id
   WHERE a.id = p_id::int AND a.tenant_id = current_setting('app.tenant_id', true);
 
   IF v_data IS NULL THEN RETURN NULL; END IF;
@@ -206,66 +252,56 @@ CREATE OR REPLACE FUNCTION stock.article_ui(p_slug text DEFAULT NULL::text)
 AS $function$
 DECLARE
   v_art stock.article;
-  v_fournisseur text;
+  v_supplier text;
   v_stock_total numeric;
 BEGIN
-  -- List mode
   IF p_slug IS NULL THEN
     RETURN jsonb_build_object(
       'ui', pgv.ui_column(
         pgv.ui_heading(pgv.t('stock.nav_articles')),
         pgv.ui_table('articles', jsonb_build_array(
           pgv.ui_col('reference', pgv.t('stock.col_ref'), pgv.ui_link('{reference}', '/stock/article/{id}')),
-          pgv.ui_col('designation', pgv.t('stock.col_designation')),
-          pgv.ui_col('categorie', pgv.t('stock.col_categorie'), pgv.ui_badge('{categorie}')),
-          pgv.ui_col('stock_actuel', pgv.t('stock.col_stock')),
-          pgv.ui_col('unite', pgv.t('stock.col_unite')),
-          pgv.ui_col('pmp', pgv.t('stock.col_pmp')),
-          pgv.ui_col('fournisseur_name', pgv.t('stock.col_fournisseur')),
+          pgv.ui_col('description', pgv.t('stock.col_designation')),
+          pgv.ui_col('category', pgv.t('stock.col_categorie'), pgv.ui_badge('{category}')),
+          pgv.ui_col('current_stock', pgv.t('stock.col_stock')),
+          pgv.ui_col('unit', pgv.t('stock.col_unite')),
+          pgv.ui_col('wap', pgv.t('stock.col_pmp')),
+          pgv.ui_col('supplier_name', pgv.t('stock.col_fournisseur')),
           pgv.ui_col('active', pgv.t('stock.col_actif'), pgv.ui_badge('{active}'))
         ))
       ),
       'datasources', jsonb_build_object(
-        'articles', pgv.ui_datasource('stock://article', 20, true, 'designation')
+        'articles', pgv.ui_datasource('stock://article', 20, true, 'description')
       )
     );
   END IF;
 
-  -- Detail mode
   SELECT * INTO v_art FROM stock.article WHERE id = p_slug::int AND tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error', 'not_found'); END IF;
 
-  SELECT name INTO v_fournisseur FROM crm.client WHERE id = v_art.fournisseur_id;
-  v_stock_total := stock._stock_actuel(v_art.id);
+  SELECT name INTO v_supplier FROM crm.client WHERE id = v_art.supplier_id;
+  v_stock_total := stock._current_stock(v_art.id);
 
   RETURN jsonb_build_object(
     'ui', pgv.ui_column(
+      pgv.ui_row(pgv.ui_link('← ' || pgv.t('stock.nav_articles'), '/stock/articles'), pgv.ui_heading(v_art.description)),
       pgv.ui_row(
-        pgv.ui_link('← ' || pgv.t('stock.nav_articles'), '/stock/articles'),
-        pgv.ui_heading(v_art.designation)
+        pgv.ui_text(pgv.t('stock.stat_stock_total') || ' : ' || v_stock_total::text || ' ' || v_art.unit),
+        pgv.ui_text(pgv.t('stock.stat_pmp') || ' : ' || CASE WHEN v_art.wap > 0 THEN to_char(v_art.wap, 'FM999G990D00') || ' EUR' ELSE '—' END),
+        pgv.ui_text(pgv.t('stock.stat_seuil_mini') || ' : ' || CASE WHEN v_art.min_threshold > 0 THEN v_art.min_threshold::text || ' ' || v_art.unit ELSE '—' END)
       ),
-      -- Stats
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('stock.stat_stock_total') || ' : ' || v_stock_total::text || ' ' || v_art.unite),
-        pgv.ui_text(pgv.t('stock.stat_pmp') || ' : ' || CASE WHEN v_art.pmp > 0 THEN to_char(v_art.pmp, 'FM999G990D00') || ' EUR' ELSE '—' END),
-        pgv.ui_text(pgv.t('stock.stat_seuil_mini') || ' : ' || CASE WHEN v_art.seuil_mini > 0 THEN v_art.seuil_mini::text || ' ' || v_art.unite ELSE '—' END)
-      ),
-      -- Info
       pgv.ui_heading(pgv.t('stock.title_infos'), 3),
       pgv.ui_row(
         pgv.ui_text(pgv.t('stock.label_ref') || ' ' || v_art.reference),
-        pgv.ui_badge(v_art.categorie),
+        pgv.ui_badge(v_art.category),
         pgv.ui_badge(CASE WHEN v_art.active THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END, CASE WHEN v_art.active THEN 'success' ELSE 'error' END)
       ),
-      -- Fournisseur
-      pgv.ui_text(pgv.t('stock.stat_fournisseur') || ' : ' || coalesce(v_fournisseur, '—'))
+      pgv.ui_text(pgv.t('stock.stat_fournisseur') || ' : ' || coalesce(v_supplier, '—'))
     )
   );
 END;
 $function$;
-COMMENT ON FUNCTION stock.article_ui(text) IS 'SDUI view: article list + detail with stock, PMP, fournisseur';
+COMMENT ON FUNCTION stock.article_ui(text) IS 'SDUI view: article list + detail (deprecated, use article_view)';
 
 CREATE OR REPLACE FUNCTION stock.article_update(p_row stock.article)
  RETURNS jsonb
@@ -275,12 +311,12 @@ AS $function$
 BEGIN
   UPDATE stock.article SET
     reference = COALESCE(NULLIF(p_row.reference, ''), reference),
-    designation = COALESCE(NULLIF(p_row.designation, ''), designation),
-    categorie = COALESCE(NULLIF(p_row.categorie, ''), categorie),
-    unite = COALESCE(NULLIF(p_row.unite, ''), unite),
-    prix_achat = COALESCE(p_row.prix_achat, prix_achat),
-    seuil_mini = COALESCE(p_row.seuil_mini, seuil_mini),
-    fournisseur_id = COALESCE(p_row.fournisseur_id, fournisseur_id),
+    description = COALESCE(NULLIF(p_row.description, ''), description),
+    category = COALESCE(NULLIF(p_row.category, ''), category),
+    unit = COALESCE(NULLIF(p_row.unit, ''), unit),
+    purchase_price = COALESCE(p_row.purchase_price, purchase_price),
+    min_threshold = COALESCE(p_row.min_threshold, min_threshold),
+    supplier_id = COALESCE(p_row.supplier_id, supplier_id),
     notes = COALESCE(p_row.notes, notes),
     active = COALESCE(p_row.active, active),
     catalog_article_id = COALESCE(p_row.catalog_article_id, catalog_article_id),
@@ -304,28 +340,28 @@ AS $function$
 
     'template', jsonb_build_object(
       'compact', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'designation', 'stock_actuel', 'unite')
+        'fields', jsonb_build_array('reference', 'description', 'current_stock', 'unit')
       ),
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'designation', 'categorie', 'unite', 'fournisseur_name'),
+        'fields', jsonb_build_array('reference', 'description', 'category', 'unit', 'supplier_name'),
         'stats', jsonb_build_array(
-          jsonb_build_object('key', 'stock_actuel', 'label', 'stock.stat_stock_total'),
-          jsonb_build_object('key', 'pmp', 'label', 'stock.stat_pmp'),
-          jsonb_build_object('key', 'seuil_mini', 'label', 'stock.stat_seuil_mini')
+          jsonb_build_object('key', 'current_stock', 'label', 'stock.stat_stock_total'),
+          jsonb_build_object('key', 'wap', 'label', 'stock.stat_pmp'),
+          jsonb_build_object('key', 'min_threshold', 'label', 'stock.stat_seuil_mini')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'crm://client', 'label', 'stock.rel_fournisseur', 'filter', 'id={fournisseur_id}')
+          jsonb_build_object('entity', 'crm://client', 'label', 'stock.rel_fournisseur', 'filter', 'id={supplier_id}')
         )
       ),
       'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'designation', 'categorie', 'unite', 'prix_achat', 'pmp', 'seuil_mini', 'fournisseur_name', 'notes', 'active', 'created_at', 'updated_at'),
+        'fields', jsonb_build_array('reference', 'description', 'category', 'unit', 'purchase_price', 'wap', 'min_threshold', 'supplier_name', 'notes', 'active', 'created_at', 'updated_at'),
         'stats', jsonb_build_array(
-          jsonb_build_object('key', 'stock_actuel', 'label', 'stock.stat_stock_total'),
-          jsonb_build_object('key', 'pmp', 'label', 'stock.stat_pmp'),
-          jsonb_build_object('key', 'seuil_mini', 'label', 'stock.stat_seuil_mini')
+          jsonb_build_object('key', 'current_stock', 'label', 'stock.stat_stock_total'),
+          jsonb_build_object('key', 'wap', 'label', 'stock.stat_pmp'),
+          jsonb_build_object('key', 'min_threshold', 'label', 'stock.stat_seuil_mini')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'crm://client', 'label', 'stock.rel_fournisseur', 'filter', 'id={fournisseur_id}'),
+          jsonb_build_object('entity', 'crm://client', 'label', 'stock.rel_fournisseur', 'filter', 'id={supplier_id}'),
           jsonb_build_object('entity', 'catalog://article', 'label', 'stock.rel_catalog', 'filter', 'id={catalog_article_id}')
         )
       ),
@@ -333,17 +369,17 @@ AS $function$
         'sections', jsonb_build_array(
           jsonb_build_object('label', 'stock.section_identity', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'reference', 'type', 'text', 'label', 'stock.field_reference', 'required', true),
-            jsonb_build_object('key', 'designation', 'type', 'text', 'label', 'stock.field_designation', 'required', true),
-            jsonb_build_object('key', 'categorie', 'type', 'select', 'label', 'stock.field_categorie', 'required', true, 'options', 'stock.categorie_options'),
-            jsonb_build_object('key', 'unite', 'type', 'select', 'label', 'stock.field_unite', 'required', true, 'options', 'stock.unite_options')
+            jsonb_build_object('key', 'description', 'type', 'text', 'label', 'stock.field_designation', 'required', true),
+            jsonb_build_object('key', 'category', 'type', 'select', 'label', 'stock.field_categorie', 'required', true, 'options', 'stock.categorie_options'),
+            jsonb_build_object('key', 'unit', 'type', 'select', 'label', 'stock.field_unite', 'required', true, 'options', 'stock.unite_options')
           )),
           jsonb_build_object('label', 'stock.section_pricing', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'prix_achat', 'type', 'number', 'label', 'stock.field_prix_achat'),
-            jsonb_build_object('key', 'seuil_mini', 'type', 'number', 'label', 'stock.field_seuil_mini')
+            jsonb_build_object('key', 'purchase_price', 'type', 'number', 'label', 'stock.field_prix_achat'),
+            jsonb_build_object('key', 'min_threshold', 'type', 'number', 'label', 'stock.field_seuil_mini')
           )),
           jsonb_build_object('label', 'stock.section_links', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'fournisseur_id', 'type', 'combobox', 'label', 'stock.field_fournisseur', 'source', 'crm://client', 'display', 'name', 'filter', 'type=company;active=true'),
-            jsonb_build_object('key', 'catalog_article_id', 'type', 'combobox', 'label', 'stock.field_article_catalog', 'source', 'catalog://article', 'display', 'designation'),
+            jsonb_build_object('key', 'supplier_id', 'type', 'combobox', 'label', 'stock.field_fournisseur', 'source', 'crm://client', 'display', 'name', 'filter', 'type=company;active=true'),
+            jsonb_build_object('key', 'catalog_article_id', 'type', 'combobox', 'label', 'stock.field_article_catalog', 'source', 'catalog://article', 'display', 'description'),
             jsonb_build_object('key', 'notes', 'type', 'textarea', 'label', 'stock.field_notes')
           ))
         )
@@ -368,7 +404,7 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION stock.brand() IS 'Brand name for stock module (i18n)';
 
-CREATE OR REPLACE FUNCTION stock.depot_create(p_row stock.depot)
+CREATE OR REPLACE FUNCTION stock.depot_create(p_row stock.warehouse)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -384,7 +420,7 @@ BEGIN
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION stock.depot_create(stock.depot) IS 'Create depot — INSERT + RETURNING (SECURITY DEFINER)';
+COMMENT ON FUNCTION stock.depot_create(stock.warehouse) IS 'Create depot — INSERT + RETURNING (SECURITY DEFINER)';
 
 CREATE OR REPLACE FUNCTION stock.depot_delete(p_id text)
  RETURNS jsonb
@@ -525,7 +561,7 @@ END;
 $function$;
 COMMENT ON FUNCTION stock.depot_ui(text) IS 'SDUI view: depot list + detail with type, adresse, nb articles';
 
-CREATE OR REPLACE FUNCTION stock.depot_update(p_row stock.depot)
+CREATE OR REPLACE FUNCTION stock.depot_update(p_row stock.warehouse)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -542,7 +578,7 @@ BEGIN
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION stock.depot_update(stock.depot) IS 'Update depot by id — partial update + RETURNING (SECURITY DEFINER)';
+COMMENT ON FUNCTION stock.depot_update(stock.warehouse) IS 'Update depot by id — partial update + RETURNING (SECURITY DEFINER)';
 
 CREATE OR REPLACE FUNCTION stock.depot_view()
  RETURNS jsonb
@@ -713,6 +749,54 @@ END;
 $function$;
 COMMENT ON FUNCTION stock.get_alertes() IS 'Articles sous seuil minimum d''alerte, lien fournisseur CRM (i18n)';
 
+CREATE OR REPLACE FUNCTION stock.get_alerts()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_rows text[];
+  r record;
+  v_qty numeric;
+BEGIN
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT a.id, a.reference, a.description, a.unit, a.min_threshold, a.supplier_id,
+           c.name AS supplier
+    FROM stock.article a
+    LEFT JOIN crm.client c ON c.id = a.supplier_id
+    WHERE a.active AND a.min_threshold > 0
+    ORDER BY a.description
+  LOOP
+    v_qty := stock._current_stock(r.id);
+    IF v_qty < r.min_threshold THEN
+      v_rows := v_rows || ARRAY[
+        format('<a href="%s">%s</a>', pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)), pgv.esc(r.reference)),
+        pgv.esc(r.description),
+        v_qty::text || ' ' || r.unit,
+        r.min_threshold::text || ' ' || r.unit,
+        pgv.badge(pgv.t('stock.col_alerte'), 'danger'),
+        CASE WHEN r.supplier IS NOT NULL
+          THEN format('<a href="/crm/client?p_id=%s">%s</a>', r.supplier_id, pgv.esc(r.supplier))
+          ELSE '—'
+        END
+      ];
+    END IF;
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NULL THEN
+    v_body := pgv.empty(pgv.t('stock.empty_no_alerte'), pgv.t('stock.empty_all_above'));
+  ELSE
+    v_body := pgv.md_table(
+      ARRAY[pgv.t('stock.col_ref'), pgv.t('stock.col_designation'), pgv.t('stock.col_stock'), pgv.t('stock.col_seuil'), pgv.t('stock.col_statut'), pgv.t('stock.col_fournisseur')],
+      v_rows);
+  END IF;
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_alerts() IS 'Articles below minimum threshold, supplier CRM link (i18n)';
+
 CREATE OR REPLACE FUNCTION stock.get_article(p_id integer)
  RETURNS text
  LANGUAGE plpgsql
@@ -721,8 +805,8 @@ DECLARE
   v_art stock.article;
   v_body text;
   v_rows text[];
-  v_fournisseur text;
-  v_fournisseur_link text;
+  v_supplier text;
+  v_supplier_link text;
   v_stock_total numeric;
   v_catalog_link text;
   r record;
@@ -730,13 +814,13 @@ BEGIN
   SELECT * INTO v_art FROM stock.article WHERE id = p_id;
   IF NOT FOUND THEN RETURN pgv.empty(pgv.t('stock.empty_article_not_found'), ''); END IF;
 
-  SELECT name INTO v_fournisseur FROM crm.client WHERE id = v_art.fournisseur_id;
-  v_stock_total := stock._stock_actuel(p_id);
+  SELECT name INTO v_supplier FROM crm.client WHERE id = v_art.supplier_id;
+  v_stock_total := stock._current_stock(p_id);
 
-  IF v_fournisseur IS NOT NULL THEN
-    v_fournisseur_link := format('<a href="/crm/client?p_id=%s">%s</a>', v_art.fournisseur_id, pgv.esc(v_fournisseur));
+  IF v_supplier IS NOT NULL THEN
+    v_supplier_link := format('<a href="/crm/client?p_id=%s">%s</a>', v_art.supplier_id, pgv.esc(v_supplier));
   ELSE
-    v_fournisseur_link := '—';
+    v_supplier_link := '—';
   END IF;
 
   v_catalog_link := '—';
@@ -750,15 +834,15 @@ BEGIN
   END IF;
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat(pgv.t('stock.stat_stock_total'), v_stock_total::text || ' ' || v_art.unite),
-    pgv.stat(pgv.t('stock.stat_pmp'), CASE WHEN v_art.pmp > 0 THEN to_char(v_art.pmp, 'FM999G990D00') || ' EUR' ELSE '—' END),
-    pgv.stat(pgv.t('stock.stat_seuil_mini'), CASE WHEN v_art.seuil_mini > 0 THEN v_art.seuil_mini::text || ' ' || v_art.unite ELSE '—' END),
-    pgv.stat(pgv.t('stock.stat_fournisseur'), v_fournisseur_link)
+    pgv.stat(pgv.t('stock.stat_stock_total'), v_stock_total::text || ' ' || v_art.unit),
+    pgv.stat(pgv.t('stock.stat_pmp'), CASE WHEN v_art.wap > 0 THEN to_char(v_art.wap, 'FM999G990D00') || ' EUR' ELSE '—' END),
+    pgv.stat(pgv.t('stock.stat_seuil_mini'), CASE WHEN v_art.min_threshold > 0 THEN v_art.min_threshold::text || ' ' || v_art.unit ELSE '—' END),
+    pgv.stat(pgv.t('stock.stat_fournisseur'), v_supplier_link)
   ]);
 
   v_body := v_body || format('<p><strong>%s</strong> %s | <strong>%s</strong> %s | <strong>%s</strong> %s</p>',
     pgv.t('stock.label_ref'), pgv.esc(v_art.reference),
-    pgv.t('stock.label_categorie'), pgv.badge(v_art.categorie, NULL),
+    pgv.t('stock.label_categorie'), pgv.badge(v_art.category, NULL),
     pgv.t('stock.label_actif'), CASE WHEN v_art.active THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END
   );
 
@@ -766,49 +850,36 @@ BEGIN
     v_body := v_body || format('<p><strong>%s</strong> %s</p>', pgv.t('stock.label_catalog'), v_catalog_link);
   END IF;
 
-  -- Stock par dépôt
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT d.id, d.nom, stock._stock_actuel(p_id, d.id) AS qty
-    FROM stock.depot d
-    WHERE d.actif
-      AND EXISTS (SELECT 1 FROM stock.mouvement m WHERE m.article_id = p_id AND m.depot_id = d.id)
-    ORDER BY d.nom
+    SELECT w.id, w.name, stock._current_stock(p_id, w.id) AS qty
+    FROM stock.warehouse w
+    WHERE w.active
+      AND EXISTS (SELECT 1 FROM stock.movement m WHERE m.article_id = p_id AND m.warehouse_id = w.id)
+    ORDER BY w.name
   LOOP
-    v_rows := v_rows || ARRAY[
-      pgv.esc(r.nom),
-      r.qty::text || ' ' || v_art.unite
-    ];
+    v_rows := v_rows || ARRAY[pgv.esc(r.name), r.qty::text || ' ' || v_art.unit];
   END LOOP;
 
   IF array_length(v_rows, 1) IS NOT NULL THEN
     v_body := v_body || '<h3>' || pgv.t('stock.title_stock_depot') || '</h3>' || pgv.md_table(
-      ARRAY[pgv.t('stock.col_depot'), pgv.t('stock.col_quantite')],
-      v_rows
+      ARRAY[pgv.t('stock.col_depot'), pgv.t('stock.col_quantite')], v_rows
     );
   END IF;
 
-  -- Derniers mouvements
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT m.created_at, d.nom AS depot_nom, m.type, m.quantite, m.prix_unitaire, m.reference
-    FROM stock.mouvement m
-    JOIN stock.depot d ON d.id = m.depot_id
+    SELECT m.created_at, w.name AS warehouse_name, m.type, m.quantity, m.unit_price, m.reference
+    FROM stock.movement m
+    JOIN stock.warehouse w ON w.id = m.warehouse_id
     WHERE m.article_id = p_id
-    ORDER BY m.created_at DESC
-    LIMIT 20
+    ORDER BY m.created_at DESC LIMIT 20
   LOOP
     v_rows := v_rows || ARRAY[
-      to_char(r.created_at, 'DD/MM HH24:MI'),
-      pgv.esc(r.depot_nom),
-      pgv.badge(r.type, CASE r.type
-        WHEN 'entree' THEN 'success'
-        WHEN 'sortie' THEN 'danger'
-        WHEN 'transfert' THEN 'info'
-        WHEN 'inventaire' THEN 'warning'
-      END),
-      r.quantite::text,
-      CASE WHEN r.prix_unitaire IS NOT NULL THEN to_char(r.prix_unitaire, 'FM999G990D00') ELSE '—' END,
+      to_char(r.created_at, 'DD/MM HH24:MI'), pgv.esc(r.warehouse_name),
+      pgv.badge(r.type, CASE r.type WHEN 'entry' THEN 'success' WHEN 'exit' THEN 'danger' WHEN 'transfer' THEN 'info' WHEN 'inventory' THEN 'warning' END),
+      r.quantity::text,
+      CASE WHEN r.unit_price IS NOT NULL THEN to_char(r.unit_price, 'FM999G990D00') ELSE '—' END,
       coalesce(r.reference, '')
     ];
   END LOOP;
@@ -820,7 +891,6 @@ BEGIN
     );
   END IF;
 
-  -- Actions
   v_body := v_body || '<p>' || pgv.form_dialog(
     'dlg-edit-art-' || p_id, pgv.t('stock.btn_modifier'), '', 'post_article_save',
     pgv.t('stock.btn_modifier'), 'outline',
@@ -832,7 +902,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION stock.get_article(integer) IS 'Fiche article: infos, stock par dépôt, historique mouvements, lien fournisseur CRM, lien catalog (i18n)';
+COMMENT ON FUNCTION stock.get_article(integer) IS 'Article detail: info, stock per warehouse, movement history, supplier CRM link, catalog link (i18n)';
 
 CREATE OR REPLACE FUNCTION stock.get_article_form(p_id integer DEFAULT NULL::integer)
  RETURNS text
@@ -842,7 +912,7 @@ DECLARE
   v_art stock.article;
   v_cat_opts jsonb;
   v_unit_opts jsonb;
-  v_fournisseur_opts jsonb;
+  v_supplier_opts jsonb;
   v_catalog_search text;
   v_catalog_display text;
 BEGIN
@@ -852,16 +922,16 @@ BEGIN
   END IF;
 
   v_cat_opts := jsonb_build_array(
-    jsonb_build_object('value', 'bois', 'label', pgv.t('stock.cat_bois')),
-    jsonb_build_object('value', 'quincaillerie', 'label', pgv.t('stock.cat_quincaillerie')),
-    jsonb_build_object('value', 'panneau', 'label', pgv.t('stock.cat_panneau')),
-    jsonb_build_object('value', 'isolant', 'label', pgv.t('stock.cat_isolant')),
-    jsonb_build_object('value', 'finition', 'label', pgv.t('stock.cat_finition')),
-    jsonb_build_object('value', 'autre', 'label', pgv.t('stock.cat_autre'))
+    jsonb_build_object('value', 'wood', 'label', pgv.t('stock.cat_bois')),
+    jsonb_build_object('value', 'hardware', 'label', pgv.t('stock.cat_quincaillerie')),
+    jsonb_build_object('value', 'panel', 'label', pgv.t('stock.cat_panneau')),
+    jsonb_build_object('value', 'insulation', 'label', pgv.t('stock.cat_isolant')),
+    jsonb_build_object('value', 'finish', 'label', pgv.t('stock.cat_finition')),
+    jsonb_build_object('value', 'other', 'label', pgv.t('stock.cat_autre'))
   );
 
   v_unit_opts := jsonb_build_array(
-    jsonb_build_object('value', 'u', 'label', pgv.t('stock.unit_u')),
+    jsonb_build_object('value', 'ea', 'label', pgv.t('stock.unit_u')),
     jsonb_build_object('value', 'm', 'label', pgv.t('stock.unit_m')),
     jsonb_build_object('value', 'm2', 'label', pgv.t('stock.unit_m2')),
     jsonb_build_object('value', 'm3', 'label', pgv.t('stock.unit_m3')),
@@ -870,38 +940,36 @@ BEGIN
   );
 
   SELECT coalesce(jsonb_agg(jsonb_build_object('value', c.id::text, 'label', c.name) ORDER BY c.name), '[]'::jsonb)
-  INTO v_fournisseur_opts
+  INTO v_supplier_opts
   FROM crm.client c WHERE c.type = 'company' AND c.active;
 
   v_catalog_search := '';
   IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'catalog') THEN
     v_catalog_display := NULL;
     IF v_art.catalog_article_id IS NOT NULL THEN
-      SELECT ca.designation INTO v_catalog_display
+      SELECT ca.description INTO v_catalog_display
       FROM catalog.article ca WHERE ca.id = v_art.catalog_article_id;
     END IF;
     v_catalog_search := pgv.select_search(
       'catalog_article_id', pgv.t('stock.field_article_catalog'),
-      'catalog.article_options',
-      pgv.t('stock.ph_search_catalog'),
-      v_art.catalog_article_id::text,
-      v_catalog_display
+      'catalog.article_options', pgv.t('stock.ph_search_catalog'),
+      v_art.catalog_article_id::text, v_catalog_display
     );
   END IF;
 
   RETURN '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
     || pgv.input('reference', 'text', pgv.t('stock.field_reference'), coalesce(v_art.reference, ''), true)
-    || pgv.input('designation', 'text', pgv.t('stock.field_designation'), coalesce(v_art.designation, ''), true)
-    || pgv.sel('categorie', pgv.t('stock.field_categorie'), v_cat_opts, v_art.categorie)
-    || pgv.sel('unite', pgv.t('stock.field_unite'), v_unit_opts, coalesce(v_art.unite, 'u'))
-    || pgv.input('prix_achat', 'number', pgv.t('stock.field_prix_achat'), coalesce(v_art.prix_achat::text, ''))
-    || pgv.input('seuil_mini', 'number', pgv.t('stock.field_seuil_mini'), coalesce(v_art.seuil_mini::text, '0'))
-    || pgv.sel('fournisseur_id', pgv.t('stock.field_fournisseur'), v_fournisseur_opts, v_art.fournisseur_id::text)
+    || pgv.input('description', 'text', pgv.t('stock.field_designation'), coalesce(v_art.description, ''), true)
+    || pgv.sel('category', pgv.t('stock.field_categorie'), v_cat_opts, v_art.category)
+    || pgv.sel('unit', pgv.t('stock.field_unite'), v_unit_opts, coalesce(v_art.unit, 'ea'))
+    || pgv.input('purchase_price', 'number', pgv.t('stock.field_prix_achat'), coalesce(v_art.purchase_price::text, ''))
+    || pgv.input('min_threshold', 'number', pgv.t('stock.field_seuil_mini'), coalesce(v_art.min_threshold::text, '0'))
+    || pgv.sel('supplier_id', pgv.t('stock.field_fournisseur'), v_supplier_opts, v_art.supplier_id::text)
     || v_catalog_search
     || pgv.textarea('notes', pgv.t('stock.field_notes'), v_art.notes);
 END;
 $function$;
-COMMENT ON FUNCTION stock.get_article_form(integer) IS 'Corps formulaire création/édition article — retourne inputs sans wrapper form (pour form_dialog)';
+COMMENT ON FUNCTION stock.get_article_form(integer) IS 'Article form body — returns inputs without form wrapper (for form_dialog)';
 
 CREATE OR REPLACE FUNCTION stock.get_articles()
  RETURNS text
@@ -914,31 +982,31 @@ DECLARE
 BEGIN
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT a.id, a.reference, a.designation, a.categorie, a.unite,
-           a.prix_achat, a.pmp, a.seuil_mini, a.active, a.fournisseur_id,
-           stock._stock_actuel(a.id) AS qty,
-           c.name AS fournisseur
+    SELECT a.id, a.reference, a.description, a.category, a.unit,
+           a.purchase_price, a.wap, a.min_threshold, a.active, a.supplier_id,
+           stock._current_stock(a.id) AS qty,
+           c.name AS supplier
     FROM stock.article a
-    LEFT JOIN crm.client c ON c.id = a.fournisseur_id
-    ORDER BY a.designation
+    LEFT JOIN crm.client c ON c.id = a.supplier_id
+    ORDER BY a.description
   LOOP
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)), pgv.esc(r.reference)),
-      pgv.esc(r.designation),
-      pgv.badge(r.categorie, CASE r.categorie
-        WHEN 'bois' THEN 'success'
-        WHEN 'quincaillerie' THEN 'info'
-        WHEN 'panneau' THEN 'warning'
+      pgv.esc(r.description),
+      pgv.badge(r.category, CASE r.category
+        WHEN 'wood' THEN 'success'
+        WHEN 'hardware' THEN 'info'
+        WHEN 'panel' THEN 'warning'
         ELSE NULL
       END),
-      r.qty::text || ' ' || r.unite,
-      CASE WHEN r.pmp > 0 THEN to_char(r.pmp, 'FM999G990D00') ELSE '—' END,
-      CASE WHEN r.seuil_mini > 0 AND r.qty < r.seuil_mini
+      r.qty::text || ' ' || r.unit,
+      CASE WHEN r.wap > 0 THEN to_char(r.wap, 'FM999G990D00') ELSE '—' END,
+      CASE WHEN r.min_threshold > 0 AND r.qty < r.min_threshold
         THEN pgv.badge(pgv.t('stock.col_alerte'), 'danger')
         ELSE '—'
       END,
-      CASE WHEN r.fournisseur IS NOT NULL
-        THEN format('<a href="/crm/client?p_id=%s">%s</a>', r.fournisseur_id, pgv.esc(r.fournisseur))
+      CASE WHEN r.supplier IS NOT NULL
+        THEN format('<a href="/crm/client?p_id=%s">%s</a>', r.supplier_id, pgv.esc(r.supplier))
         ELSE '—'
       END,
       CASE WHEN r.active THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END
@@ -950,8 +1018,7 @@ BEGIN
   ELSE
     v_body := pgv.md_table(
       ARRAY[pgv.t('stock.col_ref'), pgv.t('stock.col_designation'), pgv.t('stock.col_categorie'), pgv.t('stock.col_stock'), pgv.t('stock.col_pmp'), pgv.t('stock.col_alerte'), pgv.t('stock.col_fournisseur'), pgv.t('stock.col_actif')],
-      v_rows,
-      20
+      v_rows, 20
     );
   END IF;
 
@@ -963,7 +1030,7 @@ BEGIN
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION stock.get_articles() IS 'Liste des articles avec stock actuel, PMP, alertes, lien fournisseur CRM (i18n)';
+COMMENT ON FUNCTION stock.get_articles() IS 'Article list with current stock, WAP, alerts, supplier CRM link (i18n)';
 
 CREATE OR REPLACE FUNCTION stock.get_depot(p_id integer)
  RETURNS text
@@ -1138,10 +1205,10 @@ CREATE OR REPLACE FUNCTION stock.get_index()
 AS $function$
 DECLARE
   v_nb_articles int;
-  v_nb_alertes int;
-  v_mvt_semaine int;
-  v_mvt_semaine_prec int;
-  v_valeur_totale numeric;
+  v_nb_alerts int;
+  v_mvt_week int;
+  v_mvt_week_prev int;
+  v_total_value numeric;
   v_body text;
   v_rows text[];
   v_variation text;
@@ -1149,59 +1216,59 @@ DECLARE
 BEGIN
   SELECT count(*)::int INTO v_nb_articles FROM stock.article WHERE active;
 
-  SELECT count(*)::int INTO v_nb_alertes
+  SELECT count(*)::int INTO v_nb_alerts
   FROM stock.article a
-  WHERE a.active AND a.seuil_mini > 0
-    AND stock._stock_actuel(a.id) < a.seuil_mini;
+  WHERE a.active AND a.min_threshold > 0
+    AND stock._current_stock(a.id) < a.min_threshold;
 
-  SELECT count(*)::int INTO v_mvt_semaine
-  FROM stock.mouvement
+  SELECT count(*)::int INTO v_mvt_week
+  FROM stock.movement
   WHERE created_at >= date_trunc('week', now());
 
-  SELECT count(*)::int INTO v_mvt_semaine_prec
-  FROM stock.mouvement
+  SELECT count(*)::int INTO v_mvt_week_prev
+  FROM stock.movement
   WHERE created_at >= date_trunc('week', now()) - interval '7 days'
     AND created_at < date_trunc('week', now());
 
-  IF v_mvt_semaine_prec > 0 THEN
+  IF v_mvt_week_prev > 0 THEN
     v_variation := CASE
-      WHEN v_mvt_semaine > v_mvt_semaine_prec THEN '+' || round(((v_mvt_semaine - v_mvt_semaine_prec)::numeric / v_mvt_semaine_prec) * 100)::text || '%'
-      WHEN v_mvt_semaine < v_mvt_semaine_prec THEN '-' || round(((v_mvt_semaine_prec - v_mvt_semaine)::numeric / v_mvt_semaine_prec) * 100)::text || '%'
+      WHEN v_mvt_week > v_mvt_week_prev THEN '+' || round(((v_mvt_week - v_mvt_week_prev)::numeric / v_mvt_week_prev) * 100)::text || '%'
+      WHEN v_mvt_week < v_mvt_week_prev THEN '-' || round(((v_mvt_week_prev - v_mvt_week)::numeric / v_mvt_week_prev) * 100)::text || '%'
       ELSE '='
     END;
   ELSE
     v_variation := NULL;
   END IF;
 
-  SELECT coalesce(sum(stock._stock_actuel(a.id) * a.pmp), 0)
-  INTO v_valeur_totale
+  SELECT coalesce(sum(stock._current_stock(a.id) * a.wap), 0)
+  INTO v_total_value
   FROM stock.article a
-  WHERE a.active AND a.pmp > 0;
+  WHERE a.active AND a.wap > 0;
 
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat(pgv.t('stock.stat_articles'), v_nb_articles::text),
-    pgv.stat(pgv.t('stock.stat_valeur_stock'), to_char(v_valeur_totale, 'FM999G999G990D00') || ' EUR'),
-    pgv.stat(pgv.t('stock.stat_alertes'), v_nb_alertes::text, CASE WHEN v_nb_alertes > 0 THEN 'danger' ELSE NULL END),
-    pgv.stat(pgv.t('stock.stat_mvt_semaine'), v_mvt_semaine::text || coalesce(' (' || v_variation || ')', ''))
+    pgv.stat(pgv.t('stock.stat_valeur_stock'), to_char(v_total_value, 'FM999G999G990D00') || ' EUR'),
+    pgv.stat(pgv.t('stock.stat_alertes'), v_nb_alerts::text, CASE WHEN v_nb_alerts > 0 THEN 'danger' ELSE NULL END),
+    pgv.stat(pgv.t('stock.stat_mvt_semaine'), v_mvt_week::text || coalesce(' (' || v_variation || ')', ''))
   ]);
 
-  IF v_nb_alertes > 0 THEN
+  IF v_nb_alerts > 0 THEN
     v_rows := ARRAY[]::text[];
     FOR r IN
-      SELECT a.id, a.reference, a.designation, a.unite, a.seuil_mini, stock._stock_actuel(a.id) AS qty
+      SELECT a.id, a.reference, a.description, a.unit, a.min_threshold, stock._current_stock(a.id) AS qty
       FROM stock.article a
-      WHERE a.active AND a.seuil_mini > 0
-        AND stock._stock_actuel(a.id) < a.seuil_mini
-      ORDER BY (stock._stock_actuel(a.id) / a.seuil_mini)
+      WHERE a.active AND a.min_threshold > 0
+        AND stock._current_stock(a.id) < a.min_threshold
+      ORDER BY (stock._current_stock(a.id) / a.min_threshold)
       LIMIT 10
     LOOP
       v_rows := v_rows || ARRAY[
         format('<a href="%s">%s</a>',
           pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)),
-          pgv.esc(r.designation)),
+          pgv.esc(r.description)),
         pgv.esc(r.reference),
-        pgv.badge(r.qty::text || ' ' || r.unite, 'danger'),
-        r.seuil_mini::text || ' ' || r.unite
+        pgv.badge(r.qty::text || ' ' || r.unit, 'danger'),
+        r.min_threshold::text || ' ' || r.unit
       ];
     END LOOP;
     v_body := v_body || '<h3>' || pgv.t('stock.title_stock_bas') || '</h3>' || pgv.md_table(
@@ -1212,18 +1279,18 @@ BEGIN
 
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT a.id, a.designation, count(*) AS nb_mvt, sum(m.quantite) AS total_qty
-    FROM stock.mouvement m
+    SELECT a.id, a.description, count(*) AS nb_mvt, sum(m.quantity) AS total_qty
+    FROM stock.movement m
     JOIN stock.article a ON a.id = m.article_id
     WHERE m.created_at >= date_trunc('month', now())
-    GROUP BY a.id, a.designation
+    GROUP BY a.id, a.description
     ORDER BY nb_mvt DESC
     LIMIT 5
   LOOP
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>',
         pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)),
-        pgv.esc(r.designation)),
+        pgv.esc(r.description)),
       r.nb_mvt::text,
       r.total_qty::text
     ];
@@ -1238,24 +1305,24 @@ BEGIN
 
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT m.created_at, a.designation, d.nom AS depot_nom, m.type, m.quantite, m.reference
-    FROM stock.mouvement m
+    SELECT m.created_at, a.description, w.name AS warehouse_name, m.type, m.quantity, m.reference
+    FROM stock.movement m
     JOIN stock.article a ON a.id = m.article_id
-    JOIN stock.depot d ON d.id = m.depot_id
+    JOIN stock.warehouse w ON w.id = m.warehouse_id
     ORDER BY m.created_at DESC
     LIMIT 10
   LOOP
     v_rows := v_rows || ARRAY[
       to_char(r.created_at, 'DD/MM HH24:MI'),
-      pgv.esc(r.designation),
-      pgv.esc(r.depot_nom),
+      pgv.esc(r.description),
+      pgv.esc(r.warehouse_name),
       pgv.badge(r.type, CASE r.type
-        WHEN 'entree' THEN 'success'
-        WHEN 'sortie' THEN 'danger'
-        WHEN 'transfert' THEN 'info'
-        WHEN 'inventaire' THEN 'warning'
+        WHEN 'entry' THEN 'success'
+        WHEN 'exit' THEN 'danger'
+        WHEN 'transfer' THEN 'info'
+        WHEN 'inventory' THEN 'warning'
       END),
-      r.quantite::text,
+      r.quantity::text,
       coalesce(r.reference, '')
     ];
   END LOOP;
@@ -1270,14 +1337,14 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>' || pgv.form_dialog(
-    'dlg-new-mvt', pgv.t('stock.btn_nouveau_mvt'), '', 'post_mouvement_save',
-    NULL, NULL, pgv.call_ref('get_mouvement_form')
+    'dlg-new-mvt', pgv.t('stock.btn_nouveau_mvt'), '', 'post_movement_save',
+    NULL, NULL, pgv.call_ref('get_movement_form')
   ) || '</p>';
 
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION stock.get_index() IS 'Dashboard stock: stats tendance, alertes stock bas, top articles, derniers mouvements (i18n)';
+COMMENT ON FUNCTION stock.get_index() IS 'Dashboard stock: stats, alerts, top articles, recent movements (i18n)';
 
 CREATE OR REPLACE FUNCTION stock.get_inventaire(p_depot_id integer DEFAULT NULL::integer)
  RETURNS text
@@ -1364,6 +1431,79 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock.get_inventaire(integer) IS 'Formulaire d inventaire physique pour un dépôt — saisie quantités réelles (i18n + pgv primitives)';
+
+CREATE OR REPLACE FUNCTION stock.get_inventory(p_warehouse_id integer DEFAULT NULL::integer)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_warehouse_name text;
+  v_rows text[];
+  r record;
+  v_qty numeric;
+  v_form_body text;
+BEGIN
+  IF p_warehouse_id IS NULL THEN
+    v_rows := ARRAY[]::text[];
+    FOR r IN
+      SELECT w.id, w.name, w.type FROM stock.warehouse w WHERE w.active ORDER BY w.name
+    LOOP
+      v_rows := v_rows || ARRAY[
+        format('<a href="%s">%s</a>',
+          pgv.call_ref('get_inventory', jsonb_build_object('p_warehouse_id', r.id)),
+          pgv.esc(r.name)),
+        pgv.badge(r.type, CASE r.type
+          WHEN 'storage' THEN 'info' WHEN 'workshop' THEN 'success' WHEN 'job_site' THEN 'warning' WHEN 'vehicle' THEN 'primary'
+        END)
+      ];
+    END LOOP;
+
+    IF array_length(v_rows, 1) IS NULL THEN
+      RETURN pgv.empty(pgv.t('stock.empty_no_depot'), pgv.t('stock.empty_depot_create_first'));
+    END IF;
+
+    RETURN '<p>' || pgv.t('stock.title_select_depot') || '</p>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_depot'), pgv.t('stock.col_type')], v_rows);
+  END IF;
+
+  SELECT name INTO v_warehouse_name FROM stock.warehouse WHERE id = p_warehouse_id AND active;
+  IF v_warehouse_name IS NULL THEN
+    RETURN pgv.empty(pgv.t('stock.empty_depot_not_found'), pgv.t('stock.empty_depot_inactive'));
+  END IF;
+
+  v_body := format('<h3>%s : %s</h3>', pgv.t('stock.nav_inventaire'), pgv.esc(v_warehouse_name));
+
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT a.id, a.reference, a.description, a.unit
+    FROM stock.article a WHERE a.active ORDER BY a.description
+  LOOP
+    v_qty := stock._current_stock(r.id, p_warehouse_id);
+    v_rows := v_rows || ARRAY[
+      pgv.esc(r.reference), pgv.esc(r.description), r.unit, v_qty::text,
+      format('<input type="number" name="qty_%s" value="%s" step="0.01" class="pgv-input-sm">', r.id, v_qty)
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NULL THEN
+    v_form_body := format('<input type="hidden" name="p_warehouse_id" value="%s">', p_warehouse_id)
+      || pgv.empty(pgv.t('stock.empty_no_article'), pgv.t('stock.empty_no_article_actif'));
+    v_body := v_body || pgv.form('post_inventory_validate', v_form_body, pgv.t('stock.btn_valider_inventaire'));
+    RETURN v_body;
+  END IF;
+
+  v_form_body := format('<input type="hidden" name="p_warehouse_id" value="%s">', p_warehouse_id)
+    || pgv.md_table(
+      ARRAY[pgv.t('stock.col_ref'), pgv.t('stock.col_designation'), pgv.t('stock.col_unite'), pgv.t('stock.col_theorique'), pgv.t('stock.col_reel')],
+      v_rows);
+
+  v_body := v_body || pgv.form('post_inventory_validate', v_form_body, pgv.t('stock.btn_valider_inventaire'));
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_inventory(integer) IS 'Physical inventory form for a warehouse — enter actual quantities (i18n + pgv primitives)';
 
 CREATE OR REPLACE FUNCTION stock.get_mouvement_form(p_type text DEFAULT 'entree'::text)
  RETURNS text
@@ -1463,6 +1603,94 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock.get_mouvements() IS 'Historique des mouvements de stock (i18n)';
+
+CREATE OR REPLACE FUNCTION stock.get_movement_form(p_type text DEFAULT 'entry'::text)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_warehouse_opts jsonb;
+  v_type_opts jsonb;
+  v_article_search text;
+BEGIN
+  v_article_search := pgv.select_search(
+    'article_id', pgv.t('stock.col_article'),
+    'article_options', pgv.t('stock.ph_search_article')
+  );
+
+  SELECT coalesce(
+    jsonb_build_array(jsonb_build_object('value', '', 'label', pgv.t('stock.ph_depot')))
+    || jsonb_agg(jsonb_build_object('value', w.id::text, 'label', w.name) ORDER BY w.name),
+    jsonb_build_array(jsonb_build_object('value', '', 'label', pgv.t('stock.ph_depot')))
+  ) INTO v_warehouse_opts
+  FROM stock.warehouse w WHERE w.active;
+
+  v_type_opts := jsonb_build_array(
+    jsonb_build_object('value', 'entry', 'label', pgv.t('stock.type_entree')),
+    jsonb_build_object('value', 'exit', 'label', pgv.t('stock.type_sortie')),
+    jsonb_build_object('value', 'transfer', 'label', pgv.t('stock.type_transfert')),
+    jsonb_build_object('value', 'inventory', 'label', pgv.t('stock.type_inventaire'))
+  );
+
+  RETURN pgv.sel('type', pgv.t('stock.field_type'), v_type_opts, p_type)
+    || v_article_search
+    || pgv.sel('warehouse_id', pgv.t('stock.col_depot'), v_warehouse_opts, '')
+    || pgv.input('quantity', 'number', pgv.t('stock.field_quantite'), '', true)
+    || pgv.input('unit_price', 'number', pgv.t('stock.field_prix_unitaire'), '')
+    || pgv.sel('destination_warehouse_id', pgv.t('stock.field_depot_dest'), v_warehouse_opts, '')
+    || pgv.input('reference', 'text', pgv.t('stock.field_ref_doc'), '')
+    || pgv.textarea('notes', pgv.t('stock.field_notes'), '');
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_movement_form(text) IS 'Movement form body — returns inputs without form wrapper (for form_dialog)';
+
+CREATE OR REPLACE FUNCTION stock.get_movements()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_rows text[];
+  r record;
+BEGIN
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT m.id, m.created_at, a.reference, a.description, w.name AS warehouse_name,
+           m.type, m.quantity, m.unit_price, m.reference AS ref_doc,
+           ww.name AS dest_name
+    FROM stock.movement m
+    JOIN stock.article a ON a.id = m.article_id
+    JOIN stock.warehouse w ON w.id = m.warehouse_id
+    LEFT JOIN stock.warehouse ww ON ww.id = m.destination_warehouse_id
+    ORDER BY m.created_at DESC
+  LOOP
+    v_rows := v_rows || ARRAY[
+      to_char(r.created_at, 'DD/MM/YY HH24:MI'),
+      format('<a href="%s">%s</a>', pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)), pgv.esc(r.reference)),
+      pgv.esc(r.description),
+      pgv.esc(r.warehouse_name) || CASE WHEN r.dest_name IS NOT NULL THEN ' -> ' || pgv.esc(r.dest_name) ELSE '' END,
+      pgv.badge(r.type, CASE r.type WHEN 'entry' THEN 'success' WHEN 'exit' THEN 'danger' WHEN 'transfer' THEN 'info' WHEN 'inventory' THEN 'warning' END),
+      r.quantity::text, coalesce(r.ref_doc, '')
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NULL THEN
+    v_body := pgv.empty(pgv.t('stock.empty_no_mouvement'), pgv.t('stock.empty_first_mouvement_short'));
+  ELSE
+    v_body := pgv.md_table(
+      ARRAY[pgv.t('stock.col_date'), pgv.t('stock.col_ref'), pgv.t('stock.col_article'), pgv.t('stock.col_depot'), pgv.t('stock.col_type'), pgv.t('stock.col_qty'), pgv.t('stock.col_ref_doc')],
+      v_rows, 20);
+  END IF;
+
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-mvt', pgv.t('stock.btn_nouveau_mvt'), '', 'post_movement_save',
+    NULL, NULL, pgv.call_ref('get_movement_form')
+  ) || '</p>';
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_movements() IS 'Movement history (i18n)';
 
 CREATE OR REPLACE FUNCTION stock.get_valorisation()
  RETURNS text
@@ -1564,6 +1792,228 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock.get_valorisation() IS 'Valorisation du stock par dépôt et catégorie, avec totaux (i18n)';
+
+CREATE OR REPLACE FUNCTION stock.get_valuation()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_total_value numeric;
+  v_nb_articles int;
+  v_nb_alerts int;
+  v_rows text[];
+  r record;
+BEGIN
+  SELECT count(*)::int INTO v_nb_articles FROM stock.article WHERE active;
+
+  SELECT coalesce(sum(stock._current_stock(a.id) * a.wap), 0)
+  INTO v_total_value
+  FROM stock.article a WHERE a.active AND a.wap > 0;
+
+  SELECT count(*)::int INTO v_nb_alerts
+  FROM stock.article a
+  WHERE a.active AND a.min_threshold > 0
+    AND stock._current_stock(a.id) < a.min_threshold;
+
+  v_body := pgv.grid(VARIADIC ARRAY[
+    pgv.stat(pgv.t('stock.stat_valeur_totale'), to_char(v_total_value, 'FM999G999G990D00') || ' EUR'),
+    pgv.stat(pgv.t('stock.stat_articles_stock'), v_nb_articles::text),
+    pgv.stat(pgv.t('stock.stat_en_alerte'), v_nb_alerts::text, CASE WHEN v_nb_alerts > 0 THEN 'danger' ELSE NULL END)
+  ]);
+
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT w.name AS warehouse_name, w.type AS warehouse_type,
+           count(DISTINCT m.article_id)::int AS nb_articles,
+           coalesce(sum(m.quantity * a.wap), 0) AS value
+    FROM stock.warehouse w
+    LEFT JOIN stock.movement m ON m.warehouse_id = w.id
+    LEFT JOIN stock.article a ON a.id = m.article_id AND a.active
+    WHERE w.active
+    GROUP BY w.id, w.name, w.type
+    ORDER BY value DESC
+  LOOP
+    v_rows := v_rows || ARRAY[
+      pgv.esc(r.warehouse_name),
+      pgv.badge(r.warehouse_type, CASE r.warehouse_type
+        WHEN 'storage' THEN 'info' WHEN 'workshop' THEN 'success' WHEN 'job_site' THEN 'warning' WHEN 'vehicle' THEN 'primary'
+      END),
+      r.nb_articles::text,
+      to_char(r.value, 'FM999G999G990D00') || ' EUR'
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NOT NULL THEN
+    v_body := v_body || '<h3>' || pgv.t('stock.title_par_depot') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_depot'), pgv.t('stock.col_type'), pgv.t('stock.col_articles'), pgv.t('stock.col_valeur')], v_rows);
+  END IF;
+
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT a.category, count(*)::int AS nb_articles,
+           coalesce(sum(stock._current_stock(a.id) * a.wap), 0) AS value
+    FROM stock.article a WHERE a.active AND a.wap > 0
+    GROUP BY a.category ORDER BY value DESC
+  LOOP
+    v_rows := v_rows || ARRAY[
+      pgv.badge(r.category, CASE r.category
+        WHEN 'wood' THEN 'success' WHEN 'hardware' THEN 'info' WHEN 'panel' THEN 'warning' WHEN 'insulation' THEN 'primary' WHEN 'finish' THEN 'default' ELSE NULL
+      END),
+      r.nb_articles::text,
+      to_char(r.value, 'FM999G999G990D00') || ' EUR'
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NOT NULL THEN
+    v_body := v_body || '<h3>' || pgv.t('stock.title_par_categorie') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_categorie'), pgv.t('stock.col_articles'), pgv.t('stock.col_valeur')], v_rows);
+  END IF;
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_valuation() IS 'Stock valuation by warehouse and category, with totals (i18n)';
+
+CREATE OR REPLACE FUNCTION stock.get_warehouse(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_wh stock.warehouse;
+  v_body text;
+  v_rows text[];
+  r record;
+BEGIN
+  SELECT * INTO v_wh FROM stock.warehouse WHERE id = p_id;
+  IF NOT FOUND THEN RETURN pgv.empty(pgv.t('stock.empty_depot_not_found'), ''); END IF;
+
+  v_body := format('<p><strong>%s</strong> %s | <strong>%s</strong> %s | <strong>%s</strong> %s</p>',
+    pgv.t('stock.label_type'), pgv.badge(v_wh.type, NULL),
+    pgv.t('stock.label_adresse'), coalesce(pgv.esc(v_wh.address), '—'),
+    pgv.t('stock.label_actif'), CASE WHEN v_wh.active THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END
+  );
+
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT a.id, a.reference, a.description, a.unit, stock._current_stock(a.id, p_id) AS qty
+    FROM stock.article a
+    WHERE a.active
+      AND EXISTS (SELECT 1 FROM stock.movement m WHERE m.article_id = a.id AND m.warehouse_id = p_id)
+    ORDER BY a.description
+  LOOP
+    IF r.qty <> 0 THEN
+      v_rows := v_rows || ARRAY[
+        format('<a href="%s">%s</a>', pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)), pgv.esc(r.reference)),
+        pgv.esc(r.description), r.qty::text || ' ' || r.unit
+      ];
+    END IF;
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NOT NULL THEN
+    v_body := v_body || '<h3>' || pgv.t('stock.title_contenu') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_ref'), pgv.t('stock.col_designation'), pgv.t('stock.col_quantite')], v_rows);
+  ELSE
+    v_body := v_body || pgv.empty(pgv.t('stock.empty_depot_vide'), '');
+  END IF;
+
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT m.created_at, a.description, m.type, m.quantity, m.reference
+    FROM stock.movement m JOIN stock.article a ON a.id = m.article_id
+    WHERE m.warehouse_id = p_id ORDER BY m.created_at DESC LIMIT 20
+  LOOP
+    v_rows := v_rows || ARRAY[
+      to_char(r.created_at, 'DD/MM HH24:MI'), pgv.esc(r.description),
+      pgv.badge(r.type, CASE r.type WHEN 'entry' THEN 'success' WHEN 'exit' THEN 'danger' WHEN 'transfer' THEN 'info' WHEN 'inventory' THEN 'warning' END),
+      r.quantity::text, coalesce(r.reference, '')
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NOT NULL THEN
+    v_body := v_body || '<h3>' || pgv.t('stock.title_mvt_recents') || '</h3>' || pgv.md_table(
+      ARRAY[pgv.t('stock.col_date'), pgv.t('stock.col_article'), pgv.t('stock.col_type'), pgv.t('stock.col_qty'), pgv.t('stock.col_ref')], v_rows, 10);
+  END IF;
+
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-edit-wh-' || p_id, pgv.t('stock.btn_modifier'), '', 'post_warehouse_save',
+    pgv.t('stock.btn_modifier'), 'outline',
+    pgv.call_ref('get_warehouse_form', jsonb_build_object('p_id', p_id))
+  ) || '</p>';
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_warehouse(integer) IS 'Warehouse detail: content + recent movements (i18n)';
+
+CREATE OR REPLACE FUNCTION stock.get_warehouse_form(p_id integer DEFAULT NULL::integer)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_wh stock.warehouse;
+  v_type_opts jsonb;
+BEGIN
+  IF p_id IS NOT NULL THEN
+    SELECT * INTO v_wh FROM stock.warehouse WHERE id = p_id;
+    IF NOT FOUND THEN RETURN pgv.empty(pgv.t('stock.empty_depot_not_found'), ''); END IF;
+  END IF;
+
+  v_type_opts := jsonb_build_array(
+    jsonb_build_object('value', '', 'label', pgv.t('stock.ph_type')),
+    jsonb_build_object('value', 'workshop', 'label', pgv.t('stock.depot_atelier')),
+    jsonb_build_object('value', 'job_site', 'label', pgv.t('stock.depot_chantier')),
+    jsonb_build_object('value', 'vehicle', 'label', pgv.t('stock.depot_vehicule')),
+    jsonb_build_object('value', 'storage', 'label', pgv.t('stock.depot_entrepot'))
+  );
+
+  RETURN '<input type="hidden" name="id" value="' || coalesce(p_id::text, '') || '">'
+    || pgv.input('name', 'text', pgv.t('stock.field_nom'), coalesce(pgv.esc(v_wh.name), ''), true)
+    || pgv.sel('type', pgv.t('stock.field_type'), v_type_opts, coalesce(v_wh.type, ''))
+    || pgv.input('address', 'text', pgv.t('stock.field_adresse'), coalesce(pgv.esc(v_wh.address), ''));
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_warehouse_form(integer) IS 'Warehouse form body — returns inputs without form wrapper (for form_dialog)';
+
+CREATE OR REPLACE FUNCTION stock.get_warehouses()
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_body text;
+  v_rows text[];
+  r record;
+BEGIN
+  v_rows := ARRAY[]::text[];
+  FOR r IN
+    SELECT w.id, w.name, w.type, w.address, w.active,
+           (SELECT count(DISTINCT m.article_id) FROM stock.movement m WHERE m.warehouse_id = w.id)::int AS nb_articles
+    FROM stock.warehouse w ORDER BY w.name
+  LOOP
+    v_rows := v_rows || ARRAY[
+      format('<a href="%s">%s</a>', pgv.call_ref('get_warehouse', jsonb_build_object('p_id', r.id)), pgv.esc(r.name)),
+      pgv.badge(r.type, CASE r.type WHEN 'workshop' THEN 'success' WHEN 'job_site' THEN 'warning' WHEN 'vehicle' THEN 'info' WHEN 'storage' THEN NULL END),
+      coalesce(r.address, '—'), r.nb_articles::text,
+      CASE WHEN r.active THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END
+    ];
+  END LOOP;
+
+  IF array_length(v_rows, 1) IS NULL THEN
+    v_body := pgv.empty(pgv.t('stock.empty_no_depot'), pgv.t('stock.empty_first_depot'));
+  ELSE
+    v_body := pgv.md_table(
+      ARRAY[pgv.t('stock.col_nom'), pgv.t('stock.col_type'), pgv.t('stock.col_adresse'), pgv.t('stock.col_articles'), pgv.t('stock.col_actif')], v_rows);
+  END IF;
+
+  v_body := v_body || '<p>' || pgv.form_dialog(
+    'dlg-new-wh', pgv.t('stock.btn_nouveau_depot'), '', 'post_warehouse_save',
+    NULL, NULL, pgv.call_ref('get_warehouse_form')
+  ) || '</p>';
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION stock.get_warehouses() IS 'Warehouse list with article count (i18n)';
 
 CREATE OR REPLACE FUNCTION stock.i18n_seed()
  RETURNS void
@@ -1795,12 +2245,12 @@ CREATE OR REPLACE FUNCTION stock.nav_items()
  LANGUAGE sql
 AS $function$
   SELECT jsonb_build_array(
-    jsonb_build_object('label', pgv.t('stock.nav_articles'),      'href', '/articles',      'entity', 'article'),
-    jsonb_build_object('label', pgv.t('stock.nav_depots'),        'href', '/depots',         'entity', 'depot'),
-    jsonb_build_object('label', pgv.t('stock.nav_mouvements'),    'href', '/mouvements'),
-    jsonb_build_object('label', pgv.t('stock.nav_alertes'),       'href', '/alertes'),
-    jsonb_build_object('label', pgv.t('stock.nav_valorisation'),  'href', '/valorisation'),
-    jsonb_build_object('label', pgv.t('stock.nav_inventaire'),    'href', '/inventaire')
+    jsonb_build_object('label', pgv.t('stock.nav_articles'),      'href', '/articles',      'entity', 'article',    'uri', 'stock://article'),
+    jsonb_build_object('label', pgv.t('stock.nav_depots'),        'href', '/warehouses',    'entity', 'warehouse',  'uri', 'stock://warehouse'),
+    jsonb_build_object('label', pgv.t('stock.nav_mouvements'),    'href', '/movements'),
+    jsonb_build_object('label', pgv.t('stock.nav_alertes'),       'href', '/alerts'),
+    jsonb_build_object('label', pgv.t('stock.nav_valorisation'),  'href', '/valuation'),
+    jsonb_build_object('label', pgv.t('stock.nav_inventaire'),    'href', '/inventory')
   );
 $function$;
 COMMENT ON FUNCTION stock.nav_items() IS 'Navigation items for stock module (i18n) with entity mapping';
@@ -1832,12 +2282,12 @@ BEGIN
   IF v_id IS NOT NULL AND v_id > 0 THEN
     UPDATE stock.article SET
       reference = p_data->>'reference',
-      designation = p_data->>'designation',
-      categorie = p_data->>'categorie',
-      unite = p_data->>'unite',
-      prix_achat = nullif(p_data->>'prix_achat', '')::numeric,
-      seuil_mini = coalesce(nullif(p_data->>'seuil_mini', '')::numeric, 0),
-      fournisseur_id = nullif(p_data->>'fournisseur_id', '')::int,
+      description = p_data->>'description',
+      category = p_data->>'category',
+      unit = p_data->>'unit',
+      purchase_price = nullif(p_data->>'purchase_price', '')::numeric,
+      min_threshold = coalesce(nullif(p_data->>'min_threshold', '')::numeric, 0),
+      supplier_id = nullif(p_data->>'supplier_id', '')::int,
       catalog_article_id = nullif(p_data->>'catalog_article_id', '')::int,
       notes = coalesce(p_data->>'notes', '')
     WHERE id = v_id;
@@ -1845,15 +2295,15 @@ BEGIN
     RETURN pgv.toast(pgv.t('stock.toast_article_modifie'))
       || pgv.redirect(pgv.call_ref('get_article', jsonb_build_object('p_id', v_id)));
   ELSE
-    INSERT INTO stock.article (reference, designation, categorie, unite, prix_achat, seuil_mini, fournisseur_id, catalog_article_id, notes)
+    INSERT INTO stock.article (reference, description, category, unit, purchase_price, min_threshold, supplier_id, catalog_article_id, notes)
     VALUES (
       p_data->>'reference',
-      p_data->>'designation',
-      p_data->>'categorie',
-      p_data->>'unite',
-      nullif(p_data->>'prix_achat', '')::numeric,
-      coalesce(nullif(p_data->>'seuil_mini', '')::numeric, 0),
-      nullif(p_data->>'fournisseur_id', '')::int,
+      p_data->>'description',
+      p_data->>'category',
+      p_data->>'unit',
+      nullif(p_data->>'purchase_price', '')::numeric,
+      coalesce(nullif(p_data->>'min_threshold', '')::numeric, 0),
+      nullif(p_data->>'supplier_id', '')::int,
       nullif(p_data->>'catalog_article_id', '')::int,
       coalesce(p_data->>'notes', '')
     ) RETURNING id INTO v_id;
@@ -1863,7 +2313,7 @@ BEGIN
   END IF;
 END;
 $function$;
-COMMENT ON FUNCTION stock.post_article_save(jsonb) IS 'Créer ou modifier un article avec lien catalog optionnel (i18n, SECURITY DEFINER)';
+COMMENT ON FUNCTION stock.post_article_save(jsonb) IS 'Create or update article with optional catalog link (i18n, SECURITY DEFINER)';
 
 CREATE OR REPLACE FUNCTION stock.post_depot_save(p_data jsonb)
  RETURNS text
@@ -1943,6 +2393,54 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock.post_inventaire_valider(jsonb) IS 'Valide un inventaire physique — génère mouvements d écart (i18n, SECURITY DEFINER)';
+
+CREATE OR REPLACE FUNCTION stock.post_inventory_validate(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_warehouse_id int := (p_data->>'p_warehouse_id')::int;
+  v_key text;
+  v_val text;
+  v_article_id int;
+  v_qty_actual numeric;
+  v_qty_theoretical numeric;
+  v_diff numeric;
+  v_nb_adjustments int := 0;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM stock.warehouse WHERE id = v_warehouse_id AND active) THEN
+    RETURN pgv.toast(pgv.t('stock.err_depot_not_found'), 'error');
+  END IF;
+
+  FOR v_key, v_val IN SELECT key, value FROM jsonb_each_text(p_data) WHERE key LIKE 'qty_%'
+  LOOP
+    v_article_id := replace(v_key, 'qty_', '')::int;
+    v_qty_actual := v_val::numeric;
+    v_qty_theoretical := stock._current_stock(v_article_id, v_warehouse_id);
+    v_diff := v_qty_actual - v_qty_theoretical;
+
+    IF v_diff = 0 THEN
+      CONTINUE;
+    END IF;
+
+    INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, reference)
+    VALUES (v_article_id, v_warehouse_id, 'inventory', v_diff,
+            'INV-' || to_char(now(), 'YYYYMMDD'));
+
+    v_nb_adjustments := v_nb_adjustments + 1;
+  END LOOP;
+
+  IF v_nb_adjustments = 0 THEN
+    RETURN pgv.toast(pgv.t('stock.toast_stock_conforme'))
+      || pgv.redirect(pgv.call_ref('get_inventory', jsonb_build_object('p_warehouse_id', v_warehouse_id)));
+  END IF;
+
+  RETURN pgv.toast(format(pgv.t('stock.toast_inventaire_valide'), v_nb_adjustments))
+    || pgv.redirect(pgv.call_ref('get_warehouse', jsonb_build_object('p_id', v_warehouse_id)));
+END;
+$function$;
+COMMENT ON FUNCTION stock.post_inventory_validate(jsonb) IS 'Validate physical inventory — generate adjustment movements (i18n, SECURITY DEFINER)';
 
 CREATE OR REPLACE FUNCTION stock.post_mouvement_save(p_data jsonb)
  RETURNS text
@@ -2031,6 +2529,413 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock.post_mouvement_save(jsonb) IS 'Enregistrer un mouvement de stock avec recalcul PMP (i18n, SECURITY DEFINER)';
+
+CREATE OR REPLACE FUNCTION stock.post_movement_save(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_type text;
+  v_article_id int;
+  v_warehouse_id int;
+  v_dest_id int;
+  v_qty numeric;
+  v_up numeric;
+  v_art stock.article;
+BEGIN
+  v_type := p_data->>'type';
+  v_article_id := (p_data->>'article_id')::int;
+  v_warehouse_id := (p_data->>'warehouse_id')::int;
+  v_dest_id := nullif(p_data->>'destination_warehouse_id', '')::int;
+  v_qty := (p_data->>'quantity')::numeric;
+  v_up := nullif(p_data->>'unit_price', '')::numeric;
+
+  SELECT * INTO v_art FROM stock.article WHERE id = v_article_id;
+  IF NOT FOUND THEN
+    RETURN pgv.toast(pgv.t('stock.err_article_not_found'), 'error');
+  END IF;
+
+  IF v_type = 'transfer' AND v_dest_id IS NULL THEN
+    RETURN pgv.toast(pgv.t('stock.err_depot_dest_requis'), 'error');
+  END IF;
+  IF v_type = 'transfer' AND v_warehouse_id = v_dest_id THEN
+    RETURN pgv.toast(pgv.t('stock.err_depot_src_dest_identiques'), 'error');
+  END IF;
+
+  IF v_type = 'exit' THEN
+    IF stock._current_stock(v_article_id, v_warehouse_id) < v_qty THEN
+      RETURN pgv.toast(pgv.t('stock.err_stock_insuffisant'), 'error');
+    END IF;
+  END IF;
+
+  IF v_type = 'entry' THEN
+    INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, reference, notes)
+    VALUES (v_article_id, v_warehouse_id, 'entry', v_qty, coalesce(v_up, v_art.purchase_price), nullif(p_data->>'reference', ''), coalesce(p_data->>'notes', ''));
+
+    PERFORM stock._recalc_wap(v_article_id);
+    IF v_up IS NOT NULL THEN
+      UPDATE stock.article SET purchase_price = v_up WHERE id = v_article_id;
+    END IF;
+
+  ELSIF v_type = 'exit' THEN
+    INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, reference, notes)
+    VALUES (v_article_id, v_warehouse_id, 'exit', -v_qty, v_art.wap, nullif(p_data->>'reference', ''), coalesce(p_data->>'notes', ''));
+
+  ELSIF v_type = 'transfer' THEN
+    IF stock._current_stock(v_article_id, v_warehouse_id) < v_qty THEN
+      RETURN pgv.toast(pgv.t('stock.err_stock_insuffisant_transfert'), 'error');
+    END IF;
+
+    INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, reference, destination_warehouse_id, notes)
+    VALUES (v_article_id, v_warehouse_id, 'transfer', -v_qty, v_art.wap, nullif(p_data->>'reference', ''), v_dest_id, coalesce(p_data->>'notes', ''));
+
+    INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, reference, destination_warehouse_id, notes)
+    VALUES (v_article_id, v_dest_id, 'transfer', v_qty, v_art.wap, nullif(p_data->>'reference', ''), v_warehouse_id, coalesce(p_data->>'notes', ''));
+
+  ELSIF v_type = 'inventory' THEN
+    DECLARE
+      v_current numeric;
+      v_diff numeric;
+    BEGIN
+      v_current := stock._current_stock(v_article_id, v_warehouse_id);
+      v_diff := v_qty - v_current;
+
+      IF v_diff = 0 THEN
+        RETURN pgv.toast(pgv.t('stock.toast_stock_correct'));
+      END IF;
+
+      INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, reference, notes)
+      VALUES (v_article_id, v_warehouse_id, 'inventory', v_diff, v_art.wap,
+              'INV-' || to_char(now(), 'YYYYMMDD'),
+              format('Inventory: %s -> %s (diff: %s)', v_current, v_qty, v_diff));
+    END;
+  END IF;
+
+  RETURN pgv.toast(pgv.t('stock.toast_mvt_enregistre'))
+    || pgv.redirect(pgv.call_ref('get_movements'));
+END;
+$function$;
+COMMENT ON FUNCTION stock.post_movement_save(jsonb) IS 'Record a stock movement with WAP recalculation (i18n, SECURITY DEFINER)';
+
+CREATE OR REPLACE FUNCTION stock.post_warehouse_save(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_id int;
+BEGIN
+  v_id := (p_data->>'id')::int;
+
+  IF v_id IS NOT NULL AND v_id > 0 THEN
+    UPDATE stock.warehouse SET
+      name = p_data->>'name',
+      type = p_data->>'type',
+      address = nullif(p_data->>'address', '')
+    WHERE id = v_id;
+
+    RETURN pgv.toast(pgv.t('stock.toast_depot_modifie'))
+      || pgv.redirect(pgv.call_ref('get_warehouse', jsonb_build_object('p_id', v_id)));
+  ELSE
+    INSERT INTO stock.warehouse (name, type, address)
+    VALUES (p_data->>'name', p_data->>'type', nullif(p_data->>'address', ''))
+    RETURNING id INTO v_id;
+
+    RETURN pgv.toast(pgv.t('stock.toast_depot_cree'))
+      || pgv.redirect(pgv.call_ref('get_warehouse', jsonb_build_object('p_id', v_id)));
+  END IF;
+END;
+$function$;
+COMMENT ON FUNCTION stock.post_warehouse_save(jsonb) IS 'Create or update warehouse (i18n, SECURITY DEFINER)';
+
+CREATE OR REPLACE FUNCTION stock.purchase_reception(p_data jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_warehouse_id int := (p_data->>'warehouse_id')::int;
+  v_ref text := coalesce(p_data->>'reception_ref', 'RECEPTION');
+  v_lines jsonb := p_data->'lines';
+  v_line jsonb;
+  v_article_id int;
+  v_quantity numeric;
+  v_price numeric;
+  v_nb_articles int := 0;
+  v_total_qty numeric := 0;
+  v_total_value numeric := 0;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM stock.warehouse WHERE id = v_warehouse_id AND active) THEN
+    RETURN jsonb_build_object('ok', false, 'error', pgv.t('stock.err_depot_inactive'));
+  END IF;
+
+  IF v_lines IS NULL OR jsonb_array_length(v_lines) = 0 THEN
+    RETURN jsonb_build_object('ok', false, 'error', pgv.t('stock.err_no_lignes'));
+  END IF;
+
+  FOR i IN 0 .. jsonb_array_length(v_lines) - 1 LOOP
+    v_line := v_lines->i;
+    v_article_id := (v_line->>'article_id')::int;
+    v_quantity := (v_line->>'quantity')::numeric;
+    v_price := (v_line->>'unit_price')::numeric;
+
+    IF NOT EXISTS (SELECT 1 FROM stock.article WHERE id = v_article_id AND active) THEN
+      CONTINUE;
+    END IF;
+
+    IF v_quantity IS NULL OR v_quantity <= 0 THEN
+      CONTINUE;
+    END IF;
+
+    INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, reference)
+    VALUES (v_article_id, v_warehouse_id, 'entry', v_quantity, v_price, v_ref);
+
+    PERFORM stock._recalc_wap(v_article_id);
+
+    IF v_price IS NOT NULL THEN
+      UPDATE stock.article SET purchase_price = v_price WHERE id = v_article_id;
+    END IF;
+
+    v_nb_articles := v_nb_articles + 1;
+    v_total_qty := v_total_qty + v_quantity;
+    v_total_value := v_total_value + coalesce(v_quantity * v_price, 0);
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'nb_articles', v_nb_articles,
+    'total_quantity', v_total_qty,
+    'total_value', round(v_total_value, 2),
+    'warehouse_id', v_warehouse_id,
+    'reference', v_ref
+  );
+END;
+$function$;
+COMMENT ON FUNCTION stock.purchase_reception(jsonb) IS 'Create stock entry movements from a purchase reception (i18n, SECURITY DEFINER)';
+
+CREATE OR REPLACE FUNCTION stock.warehouse_create(p_row stock.warehouse)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  p_row.tenant_id := current_setting('app.tenant_id', true);
+  p_row.created_at := now();
+
+  INSERT INTO stock.warehouse (tenant_id, name, type, address, active, created_at)
+  VALUES (p_row.tenant_id, p_row.name, p_row.type, p_row.address, coalesce(p_row.active, true), p_row.created_at)
+  RETURNING * INTO p_row;
+
+  RETURN to_jsonb(p_row);
+END;
+$function$;
+COMMENT ON FUNCTION stock.warehouse_create(stock.warehouse) IS 'Create warehouse — INSERT + RETURNING (SECURITY DEFINER)';
+
+CREATE OR REPLACE FUNCTION stock.warehouse_delete(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_row stock.warehouse;
+BEGIN
+  UPDATE stock.warehouse SET active = false
+  WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true)
+  RETURNING * INTO v_row;
+
+  RETURN to_jsonb(v_row);
+END;
+$function$;
+COMMENT ON FUNCTION stock.warehouse_delete(text) IS 'Delete (soft) warehouse by id — sets active=false + RETURNING (SECURITY DEFINER)';
+
+CREATE OR REPLACE FUNCTION stock.warehouse_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF p_filter IS NULL THEN
+    RETURN QUERY
+      SELECT to_jsonb(w) || jsonb_build_object(
+        'article_count', (SELECT count(DISTINCT m.article_id) FROM stock.movement m WHERE m.warehouse_id = w.id)::int
+      )
+      FROM stock.warehouse w
+      WHERE w.tenant_id = current_setting('app.tenant_id', true)
+      ORDER BY w.name;
+  ELSE
+    RETURN QUERY EXECUTE
+      'SELECT to_jsonb(w) || jsonb_build_object(
+        ''article_count'', (SELECT count(DISTINCT m.article_id) FROM stock.movement m WHERE m.warehouse_id = w.id)::int
+      )
+      FROM stock.warehouse w
+      WHERE w.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
+      || ' AND ' || pgv.rsql_to_where(p_filter, 'stock', 'warehouse')
+      || ' ORDER BY w.name';
+  END IF;
+END;
+$function$;
+COMMENT ON FUNCTION stock.warehouse_list(text) IS 'List warehouses for current tenant with article count — optional RSQL filter';
+
+CREATE OR REPLACE FUNCTION stock.warehouse_read(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_data jsonb;
+  v_actions jsonb;
+  v_active boolean;
+BEGIN
+  SELECT to_jsonb(w) || jsonb_build_object(
+    'article_count', (SELECT count(DISTINCT m.article_id) FROM stock.movement m WHERE m.warehouse_id = w.id)::int
+  )
+  INTO v_data
+  FROM stock.warehouse w
+  WHERE w.id = p_id::int AND w.tenant_id = current_setting('app.tenant_id', true);
+
+  IF v_data IS NULL THEN RETURN NULL; END IF;
+
+  v_active := (v_data->>'active')::boolean;
+  v_actions := '[]'::jsonb;
+
+  IF v_active THEN
+    v_actions := v_actions || jsonb_build_array(
+      jsonb_build_object('method', 'deactivate', 'uri', 'stock://warehouse/' || p_id || '/deactivate'),
+      jsonb_build_object('method', 'inventory', 'uri', 'stock://warehouse/' || p_id || '/inventory')
+    );
+  ELSE
+    v_actions := v_actions || jsonb_build_array(
+      jsonb_build_object('method', 'activate', 'uri', 'stock://warehouse/' || p_id || '/activate')
+    );
+  END IF;
+
+  v_actions := v_actions || jsonb_build_array(
+    jsonb_build_object('method', 'delete', 'uri', 'stock://warehouse/' || p_id || '/delete')
+  );
+
+  RETURN v_data || jsonb_build_object('actions', v_actions);
+END;
+$function$;
+COMMENT ON FUNCTION stock.warehouse_read(text) IS 'Read warehouse by id — returns full row with article count + HATEOAS actions';
+
+CREATE OR REPLACE FUNCTION stock.warehouse_ui(p_slug text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_wh stock.warehouse;
+  v_nb_articles int;
+BEGIN
+  IF p_slug IS NULL THEN
+    RETURN jsonb_build_object(
+      'ui', pgv.ui_column(
+        pgv.ui_heading(pgv.t('stock.nav_depots')),
+        pgv.ui_table('warehouses', jsonb_build_array(
+          pgv.ui_col('name', pgv.t('stock.col_nom'), pgv.ui_link('{name}', '/stock/warehouse/{id}')),
+          pgv.ui_col('type', pgv.t('stock.col_type'), pgv.ui_badge('{type}')),
+          pgv.ui_col('address', pgv.t('stock.col_adresse')),
+          pgv.ui_col('article_count', pgv.t('stock.col_articles')),
+          pgv.ui_col('active', pgv.t('stock.col_actif'), pgv.ui_badge('{active}'))
+        ))
+      ),
+      'datasources', jsonb_build_object(
+        'warehouses', pgv.ui_datasource('stock://warehouse', 20, true, 'name')
+      )
+    );
+  END IF;
+
+  SELECT * INTO v_wh FROM stock.warehouse WHERE id = p_slug::int AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RETURN jsonb_build_object('error', 'not_found'); END IF;
+
+  SELECT count(DISTINCT m.article_id)::int INTO v_nb_articles
+  FROM stock.movement m WHERE m.warehouse_id = v_wh.id;
+
+  RETURN jsonb_build_object(
+    'ui', pgv.ui_column(
+      pgv.ui_row(pgv.ui_link('← ' || pgv.t('stock.nav_depots'), '/stock/warehouses'), pgv.ui_heading(v_wh.name)),
+      pgv.ui_row(
+        pgv.ui_badge(v_wh.type),
+        pgv.ui_text(pgv.t('stock.col_adresse') || ' : ' || coalesce(v_wh.address, '—')),
+        pgv.ui_badge(CASE WHEN v_wh.active THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END, CASE WHEN v_wh.active THEN 'success' ELSE 'error' END)
+      ),
+      pgv.ui_text(pgv.t('stock.col_articles') || ' : ' || v_nb_articles::text)
+    )
+  );
+END;
+$function$;
+COMMENT ON FUNCTION stock.warehouse_ui(text) IS 'SDUI view: warehouse list + detail (deprecated, use warehouse_view)';
+
+CREATE OR REPLACE FUNCTION stock.warehouse_update(p_row stock.warehouse)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  UPDATE stock.warehouse SET
+    name = COALESCE(NULLIF(p_row.name, ''), name),
+    type = COALESCE(NULLIF(p_row.type, ''), type),
+    address = COALESCE(p_row.address, address),
+    active = COALESCE(p_row.active, active)
+  WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
+  RETURNING * INTO p_row;
+
+  RETURN to_jsonb(p_row);
+END;
+$function$;
+COMMENT ON FUNCTION stock.warehouse_update(stock.warehouse) IS 'Update warehouse by id — partial update + RETURNING (SECURITY DEFINER)';
+
+CREATE OR REPLACE FUNCTION stock.warehouse_view()
+ RETURNS jsonb
+ LANGUAGE sql
+AS $function$
+  SELECT jsonb_build_object(
+    'uri', 'stock://warehouse',
+    'icon', '🏭',
+    'label', 'stock.entity_depot',
+
+    'template', jsonb_build_object(
+      'compact', jsonb_build_object(
+        'fields', jsonb_build_array('name', 'type', 'article_count')
+      ),
+      'standard', jsonb_build_object(
+        'fields', jsonb_build_array('name', 'type', 'address', 'active'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'article_count', 'label', 'stock.stat_nb_articles')
+        ),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'stock://article', 'label', 'stock.rel_articles', 'filter', 'warehouse_id={id}')
+        )
+      ),
+      'expanded', jsonb_build_object(
+        'fields', jsonb_build_array('name', 'type', 'address', 'active', 'created_at'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'article_count', 'label', 'stock.stat_nb_articles')
+        ),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'stock://article', 'label', 'stock.rel_articles', 'filter', 'warehouse_id={id}')
+        )
+      ),
+      'form', jsonb_build_object(
+        'sections', jsonb_build_array(
+          jsonb_build_object('label', 'stock.section_identity', 'fields', jsonb_build_array(
+            jsonb_build_object('key', 'name', 'type', 'text', 'label', 'stock.field_nom', 'required', true),
+            jsonb_build_object('key', 'type', 'type', 'select', 'label', 'stock.field_type', 'required', true, 'options', 'stock.depot_type_options')
+          )),
+          jsonb_build_object('label', 'stock.section_location', 'fields', jsonb_build_array(
+            jsonb_build_object('key', 'address', 'type', 'text', 'label', 'stock.field_adresse')
+          ))
+        )
+      )
+    ),
+
+    'actions', jsonb_build_object(
+      'deactivate', jsonb_build_object('label', 'stock.action_deactivate', 'icon', '▾', 'variant', 'warning', 'confirm', 'stock.confirm_deactivate'),
+      'activate', jsonb_build_object('label', 'stock.action_activate', 'icon', '▴', 'variant', 'primary'),
+      'inventory', jsonb_build_object('label', 'stock.action_inventory', 'icon', '☰', 'variant', 'default'),
+      'delete', jsonb_build_object('label', 'stock.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'stock.confirm_delete')
+    )
+  );
+$function$;
+COMMENT ON FUNCTION stock.warehouse_view() IS 'SDUI _view() template for warehouse entity — 4 density levels + HATEOAS actions';
 
 GRANT USAGE ON SCHEMA stock TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock TO anon;

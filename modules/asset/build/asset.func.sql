@@ -18,11 +18,11 @@ BEGIN
   p_row.created_at := COALESCE(p_row.created_at, now());
 
   INSERT INTO asset.asset (id, tenant_id, path, filename, mime_type, status,
-    width, height, orientation, title, description, tags, credit, saison,
+    width, height, orientation, title, description, tags, credit, season,
     usage_hint, colors, thumb_path, created_at, classified_at)
   VALUES (p_row.id, p_row.tenant_id, p_row.path, p_row.filename, p_row.mime_type, p_row.status,
     p_row.width, p_row.height, p_row.orientation, p_row.title, p_row.description, p_row.tags,
-    p_row.credit, p_row.saison, p_row.usage_hint, p_row.colors, p_row.thumb_path,
+    p_row.credit, p_row.season, p_row.usage_hint, p_row.colors, p_row.thumb_path,
     p_row.created_at, p_row.classified_at)
   RETURNING * INTO p_row;
   RETURN p_row;
@@ -147,44 +147,33 @@ BEGIN
 
   RETURN jsonb_build_object(
     'ui', pgv.ui_column(
-      -- Header
       pgv.ui_row(
         pgv.ui_link('← ' || pgv.t('asset.nav_assets'), '/asset/'),
         pgv.ui_heading(COALESCE(v_a.title, v_a.filename))
       ),
-
-      -- Status + type
       pgv.ui_row(
         pgv.ui_badge(v_a.status, CASE v_a.status WHEN 'classified' THEN 'success' WHEN 'to_classify' THEN 'warning' ELSE 'info' END),
         pgv.ui_text(v_a.mime_type),
         pgv.ui_text(CASE WHEN v_a.width IS NOT NULL THEN v_a.width::text || ' × ' || v_a.height::text ELSE '' END)
       ),
-
-      -- Description
       pgv.ui_heading(pgv.t('asset.field_description'), 3),
       pgv.ui_text(COALESCE(v_a.description, '—')),
-
-      -- Metadata
-      pgv.ui_heading('Métadonnées', 3),
+      pgv.ui_heading(pgv.t('asset.section_metadata'), 3),
       pgv.ui_row(
         pgv.ui_text(pgv.t('asset.field_filename') || ': ' || v_a.filename),
         pgv.ui_text(pgv.t('asset.field_orientation') || ': ' || COALESCE(v_a.orientation, '—')),
-        pgv.ui_text(pgv.t('asset.field_saison') || ': ' || COALESCE(v_a.saison, '—'))
+        pgv.ui_text(pgv.t('asset.field_season') || ': ' || COALESCE(v_a.season, '—'))
       ),
       pgv.ui_row(
         pgv.ui_text(pgv.t('asset.field_credit') || ': ' || COALESCE(v_a.credit, '—')),
         pgv.ui_text(pgv.t('asset.field_usage_hint') || ': ' || COALESCE(v_a.usage_hint, '—'))
       ),
-
-      -- Colors
       pgv.ui_heading(pgv.t('asset.field_colors'), 3),
       CASE WHEN cardinality(v_a.colors) > 0 THEN
         pgv.ui_row(VARIADIC ARRAY(SELECT pgv.ui_color(c) FROM unnest(v_a.colors) AS c))
       ELSE
         pgv.ui_text('—')
       END,
-
-      -- Tags
       pgv.ui_heading(pgv.t('asset.field_tags'), 3),
       CASE WHEN cardinality(v_a.tags) > 0 THEN
         pgv.ui_row(VARIADIC ARRAY(SELECT pgv.ui_badge(t) FROM unnest(v_a.tags) AS t))
@@ -215,7 +204,7 @@ BEGIN
     description = COALESCE(p_row.description, description),
     tags        = COALESCE(p_row.tags, tags),
     credit      = COALESCE(p_row.credit, credit),
-    saison      = COALESCE(p_row.saison, saison),
+    season      = COALESCE(p_row.season, season),
     usage_hint  = COALESCE(p_row.usage_hint, usage_hint),
     colors      = COALESCE(p_row.colors, colors),
     thumb_path  = COALESCE(p_row.thumb_path, thumb_path),
@@ -252,7 +241,7 @@ BEGIN
 
       'expanded', jsonb_build_object(
         'fields', jsonb_build_array('title', 'description', 'filename', 'path', 'mime_type',
-          'status', 'orientation', 'tags', 'credit', 'saison', 'usage_hint',
+          'status', 'orientation', 'tags', 'credit', 'season', 'usage_hint',
           'colors', 'created_at', 'classified_at'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'width', 'label', 'asset.field_width'),
@@ -280,18 +269,18 @@ BEGIN
           )),
           jsonb_build_object('label', 'asset.section_classification', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'tags', 'label', 'asset.field_tags', 'type', 'text'),
-            jsonb_build_object('key', 'saison', 'label', 'asset.field_saison', 'type', 'select',
+            jsonb_build_object('key', 'season', 'label', 'asset.field_season', 'type', 'select',
               'options', jsonb_build_array(
-                jsonb_build_object('label', 'asset.saison_printemps', 'value', 'printemps'),
-                jsonb_build_object('label', 'asset.saison_ete', 'value', 'été'),
-                jsonb_build_object('label', 'asset.saison_automne', 'value', 'automne'),
-                jsonb_build_object('label', 'asset.saison_hiver', 'value', 'hiver')
+                jsonb_build_object('label', 'asset.season_spring', 'value', 'spring'),
+                jsonb_build_object('label', 'asset.season_summer', 'value', 'summer'),
+                jsonb_build_object('label', 'asset.season_autumn', 'value', 'autumn'),
+                jsonb_build_object('label', 'asset.season_winter', 'value', 'winter')
               )),
             jsonb_build_object('key', 'orientation', 'label', 'asset.field_orientation', 'type', 'select',
               'options', jsonb_build_array(
-                jsonb_build_object('label', 'Paysage', 'value', 'paysage'),
-                jsonb_build_object('label', 'Portrait', 'value', 'portrait'),
-                jsonb_build_object('label', 'Carré', 'value', 'carré')
+                jsonb_build_object('label', 'asset.orientation_landscape', 'value', 'landscape'),
+                jsonb_build_object('label', 'asset.orientation_portrait', 'value', 'portrait'),
+                jsonb_build_object('label', 'asset.orientation_square', 'value', 'square')
               ))
           ))
         )
@@ -321,7 +310,7 @@ END;
 $function$;
 COMMENT ON FUNCTION asset.brand() IS 'Brand name for asset module (i18n)';
 
-CREATE OR REPLACE FUNCTION asset.classify(p_id uuid, p_title text, p_description text DEFAULT NULL::text, p_tags text[] DEFAULT '{}'::text[], p_width integer DEFAULT NULL::integer, p_height integer DEFAULT NULL::integer, p_orientation text DEFAULT NULL::text, p_saison text DEFAULT NULL::text, p_credit text DEFAULT NULL::text, p_usage_hint text DEFAULT NULL::text, p_colors text[] DEFAULT '{}'::text[])
+CREATE OR REPLACE FUNCTION asset.classify(p_id uuid, p_title text, p_description text DEFAULT NULL::text, p_tags text[] DEFAULT '{}'::text[], p_width integer DEFAULT NULL::integer, p_height integer DEFAULT NULL::integer, p_orientation text DEFAULT NULL::text, p_season text DEFAULT NULL::text, p_credit text DEFAULT NULL::text, p_usage_hint text DEFAULT NULL::text, p_colors text[] DEFAULT '{}'::text[])
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -340,7 +329,7 @@ BEGIN
     width         = p_width,
     height        = p_height,
     orientation   = p_orientation,
-    saison        = p_saison,
+    season        = p_season,
     credit        = NULLIF(trim(COALESCE(p_credit,'')), ''),
     usage_hint    = NULLIF(trim(COALESCE(p_usage_hint,'')), ''),
     colors        = COALESCE(p_colors, '{}'),
@@ -423,17 +412,14 @@ BEGIN
     ELSE 'default'
   END;
 
-  -- Breadcrumb
   v_body := pgv.breadcrumb(VARIADIC ARRAY[
     pgv.t('asset.nav_assets'), '/',
     COALESCE(a.title, a.filename)
   ]);
 
-  -- Image
   v_body := v_body
     || '<img src="' || pgv.esc(a.path) || '" style="max-width:100%;border-radius:8px" loading="lazy">';
 
-  -- Tags as badges
   IF cardinality(a.tags) > 0 THEN
     v_tags := array_to_string(
       ARRAY(SELECT pgv.badge(t, 'default') FROM unnest(a.tags) AS t),
@@ -442,7 +428,6 @@ BEGIN
     v_tags := '-';
   END IF;
 
-  -- Colors as inline swatches
   IF cardinality(a.colors) > 0 THEN
     v_colors := array_to_string(
       ARRAY(SELECT '<span style="display:inline-block;width:24px;height:24px;border-radius:4px;background:' || c || ';margin-right:4px;vertical-align:middle" title="' || c || '"></span>' FROM unnest(a.colors) AS c),
@@ -451,7 +436,6 @@ BEGIN
     v_colors := '-';
   END IF;
 
-  -- Metadata DL
   v_dl := ARRAY[
     pgv.t('asset.field_title'), COALESCE(pgv.esc(a.title), '-'),
     pgv.t('asset.field_description'), COALESCE(pgv.esc(a.description), '-'),
@@ -460,7 +444,7 @@ BEGIN
     pgv.t('asset.field_dimensions'), CASE WHEN a.width IS NOT NULL THEN a.width::text || ' × ' || a.height::text ELSE '-' END,
     pgv.t('asset.field_orientation'), COALESCE(a.orientation, '-'),
     pgv.t('asset.field_status'), pgv.badge(a.status, v_status_variant),
-    pgv.t('asset.field_saison'), COALESCE(a.saison, '-'),
+    pgv.t('asset.field_season'), COALESCE(a.season, '-'),
     pgv.t('asset.field_credit'), COALESCE(pgv.esc(a.credit), '-'),
     pgv.t('asset.field_usage_hint'), COALESCE(pgv.esc(a.usage_hint), '-'),
     pgv.t('asset.field_tags'), v_tags,
@@ -470,7 +454,6 @@ BEGIN
   ];
   v_body := v_body || pgv.dl(VARIADIC v_dl);
 
-  -- Actions
   v_body := v_body || '<p>';
   IF a.status = 'to_classify' THEN
     v_body := v_body || pgv.badge(pgv.t('asset.btn_classify'), 'warning') || ' ';
@@ -617,13 +600,15 @@ BEGIN
     ('fr', 'asset.field_filename', 'Fichier'),
     ('fr', 'asset.field_dimensions', 'Dimensions'),
     ('fr', 'asset.field_credit', 'Crédit'),
-    ('fr', 'asset.field_saison', 'Saison'),
+    ('fr', 'asset.field_season', 'Saison'),
     ('fr', 'asset.field_usage_hint', 'Usage recommandé'),
     ('fr', 'asset.field_colors', 'Couleurs dominantes'),
     ('fr', 'asset.field_orientation', 'Orientation'),
     ('fr', 'asset.field_created', 'Créé le'),
     ('fr', 'asset.field_classified', 'Classifié le'),
     ('fr', 'asset.field_path', 'Chemin'),
+    ('fr', 'asset.field_width', 'Largeur'),
+    ('fr', 'asset.field_height', 'Hauteur'),
 
     -- Common
     ('fr', 'asset.filter_all', 'Tous'),
@@ -676,11 +661,16 @@ BEGIN
     ('fr', 'asset.action_delete', 'Supprimer'),
     ('fr', 'asset.action_edit', 'Modifier'),
 
-    -- Saison options
-    ('fr', 'asset.saison_printemps', 'Printemps'),
-    ('fr', 'asset.saison_ete', 'Été'),
-    ('fr', 'asset.saison_automne', 'Automne'),
-    ('fr', 'asset.saison_hiver', 'Hiver')
+    -- Season options
+    ('fr', 'asset.season_spring', 'Printemps'),
+    ('fr', 'asset.season_summer', 'Été'),
+    ('fr', 'asset.season_autumn', 'Automne'),
+    ('fr', 'asset.season_winter', 'Hiver'),
+
+    -- Orientation options
+    ('fr', 'asset.orientation_landscape', 'Paysage'),
+    ('fr', 'asset.orientation_portrait', 'Portrait'),
+    ('fr', 'asset.orientation_square', 'Carré')
 
   ON CONFLICT DO NOTHING;
 END;
@@ -722,7 +712,7 @@ BEGIN
   FROM (
     SELECT a.id, a.filename, a.path, a.mime_type, a.status,
            a.title, a.description, a.tags, a.width, a.height,
-           a.orientation, a.saison, a.credit, a.usage_hint, a.colors,
+           a.orientation, a.season, a.credit, a.usage_hint, a.colors,
            a.created_at, a.classified_at
     FROM asset.asset a
     WHERE (v_status IS NULL OR a.status = v_status)

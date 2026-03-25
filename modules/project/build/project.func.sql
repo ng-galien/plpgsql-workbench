@@ -3,17 +3,6 @@
 
 CREATE SCHEMA IF NOT EXISTS project;
 
-CREATE OR REPLACE FUNCTION project._avancement_global(p_chantier_id integer)
- RETURNS numeric
- LANGUAGE sql
- STABLE
-AS $function$
-  SELECT COALESCE(ROUND(AVG(pct_avancement), 1), 0)
-  FROM project.jalon
-  WHERE chantier_id = p_chantier_id;
-$function$;
-COMMENT ON FUNCTION project._avancement_global(integer) IS 'Calculate global progress % from milestones';
-
 CREATE OR REPLACE FUNCTION project._client_options()
  RETURNS text
  LANGUAGE plpgsql
@@ -54,70 +43,44 @@ END;
 $function$;
 COMMENT ON FUNCTION project._devis_options(integer) IS 'Options HTML des devis acceptes d''un client';
 
-CREATE OR REPLACE FUNCTION project._chantier_form_fields(p_id integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION project._estimate_options(p_client_id integer DEFAULT NULL::integer)
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
-DECLARE
-  v_body text := '';
-  v_objet text := '';
-  v_adresse text := '';
-  v_notes text := '';
-  v_date_debut text := '';
-  v_date_fin text := '';
-  v_client_id int;
-  v_devis_id int;
+DECLARE v_html text := ''; r record;
 BEGIN
-  IF p_id IS NOT NULL THEN
-    SELECT objet, adresse, notes, date_debut::text, date_fin_prevue::text, client_id, devis_id
-      INTO v_objet, v_adresse, v_notes, v_date_debut, v_date_fin, v_client_id, v_devis_id
-      FROM project.chantier WHERE id = p_id;
-    IF NOT FOUND THEN RETURN pgv.empty(pgv.t('project.empty_introuvable')); END IF;
-    v_body := '<input type="hidden" name="id" value="' || p_id || '">';
-    v_objet := pgv.esc(v_objet);
-    v_adresse := pgv.esc(COALESCE(v_adresse, ''));
-    v_notes := pgv.esc(COALESCE(v_notes, ''));
-    v_date_debut := COALESCE(v_date_debut, '');
-    v_date_fin := COALESCE(v_date_fin, '');
-  END IF;
-
-  v_body := v_body
-    || '<label>' || pgv.t('project.field_client') || ' <select name="client_id" required>'
-    || '<option value="">' || pgv.t('project.field_choisir') || '</option>'
-    || project._client_options()
-    || '</select></label>';
-
-  IF v_client_id IS NOT NULL THEN
-    v_body := replace(v_body,
-      'value="' || v_client_id || '">',
-      'value="' || v_client_id || '" selected>');
-  END IF;
-
-  v_body := v_body
-    || '<label>' || pgv.t('project.field_devis') || ' <select name="devis_id">'
-    || '<option value="">' || pgv.t('project.field_aucun') || '</option>'
-    || project._devis_options()
-    || '</select></label>';
-
-  IF v_devis_id IS NOT NULL THEN
-    v_body := replace(v_body,
-      'value="' || v_devis_id || '">',
-      'value="' || v_devis_id || '" selected>');
-  END IF;
-
-  v_body := v_body
-    || pgv.input('objet', 'text', pgv.t('project.field_objet'), v_objet, true)
-    || pgv.input('adresse', 'text', pgv.t('project.field_adresse'), v_adresse)
-    || '<div class="grid">'
-    || pgv.input('date_debut', 'date', pgv.t('project.field_date_debut'), NULLIF(v_date_debut, ''))
-    || pgv.input('date_fin_prevue', 'date', pgv.t('project.field_date_fin_prevue'), NULLIF(v_date_fin, ''))
-    || '</div>'
-    || pgv.textarea('notes', pgv.t('project.field_notes'), v_notes);
-
-  RETURN v_body;
+  FOR r IN SELECT d.id, d.numero, d.objet FROM quote.devis d
+    WHERE d.statut = 'accepte' AND (p_client_id IS NULL OR d.client_id = p_client_id)
+    ORDER BY d.created_at DESC
+  LOOP
+    v_html := v_html || '<option value="' || r.id || '">' || pgv.esc(r.numero || ' — ' || r.objet) || '</option>';
+  END LOOP;
+  RETURN v_html;
 END;
 $function$;
-COMMENT ON FUNCTION project._chantier_form_fields(integer) IS 'Returns form fields HTML for chantier create/edit (used by form_dialog). No form wrapper.';
+COMMENT ON FUNCTION project._estimate_options(integer) IS 'HTML options for linked estimates (accepted quotes)';
+
+CREATE OR REPLACE FUNCTION project._global_progress(p_project_id integer)
+ RETURNS numeric
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT COALESCE(ROUND(AVG(progress_pct), 1), 0)
+    FROM project.milestone WHERE project_id = p_project_id;
+$function$;
+COMMENT ON FUNCTION project._global_progress(integer) IS 'Calculate global progress % from milestones';
+
+CREATE OR REPLACE FUNCTION project._next_code()
+ RETURNS text
+ LANGUAGE sql
+AS $function$
+  SELECT 'PRJ-' || to_char(CURRENT_DATE, 'YYYY') || '-' ||
+    lpad((COALESCE(
+      (SELECT max(substring(code FROM '\d+$')::int) FROM project.project
+       WHERE code LIKE 'PRJ-' || to_char(CURRENT_DATE, 'YYYY') || '-%'), 0) + 1)::text, 3, '0');
+$function$;
+COMMENT ON FUNCTION project._next_code() IS 'Generate next project code PRJ-YYYY-NNN';
 
 CREATE OR REPLACE FUNCTION project._next_numero()
  RETURNS text
@@ -132,6 +95,74 @@ AS $function$
            0) + 1)::text, 3, '0');
 $function$;
 COMMENT ON FUNCTION project._next_numero() IS 'Generate next chantier number CHT-YYYY-NNN';
+
+CREATE OR REPLACE FUNCTION project._project_form_fields(p_id integer DEFAULT NULL::integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_body text := ''; v_subject text := ''; v_address text := ''; v_notes text := '';
+  v_start_date text := ''; v_due_date text := ''; v_client_id int; v_estimate_id int;
+BEGIN
+  IF p_id IS NOT NULL THEN
+    SELECT subject, address, notes, start_date::text, due_date::text, client_id, estimate_id
+      INTO v_subject, v_address, v_notes, v_start_date, v_due_date, v_client_id, v_estimate_id
+      FROM project.project WHERE id = p_id;
+    IF NOT FOUND THEN RETURN pgv.empty(pgv.t('project.empty_not_found')); END IF;
+    v_body := '<input type="hidden" name="id" value="' || p_id || '">';
+    v_subject := pgv.esc(v_subject);
+    v_address := pgv.esc(COALESCE(v_address, ''));
+    v_notes := pgv.esc(COALESCE(v_notes, ''));
+    v_start_date := COALESCE(v_start_date, '');
+    v_due_date := COALESCE(v_due_date, '');
+  END IF;
+  v_body := v_body || '<label>' || pgv.t('project.field_client') || ' <select name="client_id" required>'
+    || '<option value="">' || pgv.t('project.field_choose') || '</option>' || project._client_options() || '</select></label>';
+  IF v_client_id IS NOT NULL THEN
+    v_body := replace(v_body, 'value="' || v_client_id || '">', 'value="' || v_client_id || '" selected>');
+  END IF;
+  v_body := v_body || '<label>' || pgv.t('project.field_estimate') || ' <select name="estimate_id">'
+    || '<option value="">' || pgv.t('project.field_none') || '</option>' || project._estimate_options() || '</select></label>';
+  IF v_estimate_id IS NOT NULL THEN
+    v_body := replace(v_body, 'value="' || v_estimate_id || '">', 'value="' || v_estimate_id || '" selected>');
+  END IF;
+  v_body := v_body
+    || pgv.input('subject', 'text', pgv.t('project.field_subject'), v_subject, true)
+    || pgv.input('address', 'text', pgv.t('project.field_address'), v_address)
+    || '<div class="grid">'
+    || pgv.input('start_date', 'date', pgv.t('project.field_start_date'), NULLIF(v_start_date, ''))
+    || pgv.input('due_date', 'date', pgv.t('project.field_due_date'), NULLIF(v_due_date, ''))
+    || '</div>'
+    || pgv.textarea('notes', pgv.t('project.field_notes'), v_notes);
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION project._project_form_fields(integer) IS 'Form fields HTML for project create/edit (used by form_dialog)';
+
+CREATE OR REPLACE FUNCTION project._status_badge(p_status text)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT pgv.badge(
+    CASE p_status
+      WHEN 'draft' THEN pgv.t('project.status_draft')
+      WHEN 'active' THEN pgv.t('project.status_active')
+      WHEN 'review' THEN pgv.t('project.status_review')
+      WHEN 'closed' THEN pgv.t('project.status_closed')
+      ELSE p_status
+    END,
+    CASE p_status
+      WHEN 'draft' THEN 'secondary'
+      WHEN 'active' THEN 'primary'
+      WHEN 'review' THEN 'warning'
+      WHEN 'closed' THEN 'success'
+      ELSE 'secondary'
+    END
+  );
+$function$;
+COMMENT ON FUNCTION project._status_badge(text) IS 'Render project status as a colored badge';
 
 CREATE OR REPLACE FUNCTION project._statut_badge(p_statut text)
  RETURNS text
@@ -167,7 +198,7 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION project.brand() IS 'Brand name for Project module';
 
-CREATE OR REPLACE FUNCTION project.chantier_create(p_row project.chantier)
+CREATE OR REPLACE FUNCTION project.chantier_create(p_row project.project)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -190,7 +221,7 @@ BEGIN
   RETURN v_result;
 END;
 $function$;
-COMMENT ON FUNCTION project.chantier_create(project.chantier) IS 'Create chantier — auto-generates numero, sets tenant_id and timestamps';
+COMMENT ON FUNCTION project.chantier_create(project.project) IS 'Create chantier — auto-generates numero, sets tenant_id and timestamps';
 
 CREATE OR REPLACE FUNCTION project.chantier_delete(p_id text)
  RETURNS jsonb
@@ -319,7 +350,7 @@ END;
 $function$;
 COMMENT ON FUNCTION project.chantier_read(text) IS 'Read chantier by id — returns enriched jsonb with client name and devis numero';
 
-CREATE OR REPLACE FUNCTION project.chantier_update(p_row project.chantier)
+CREATE OR REPLACE FUNCTION project.chantier_update(p_row project.project)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -342,7 +373,7 @@ BEGIN
   RETURN v_result;
 END;
 $function$;
-COMMENT ON FUNCTION project.chantier_update(project.chantier) IS 'Partial update chantier by id — COALESCE preserves unset fields';
+COMMENT ON FUNCTION project.chantier_update(project.project) IS 'Partial update chantier by id — COALESCE preserves unset fields';
 
 CREATE OR REPLACE FUNCTION project.chantier_view()
  RETURNS jsonb
@@ -793,173 +824,112 @@ COMMENT ON FUNCTION project.get_chantiers(jsonb) IS 'Liste des projets avec filt
 CREATE OR REPLACE FUNCTION project.get_index()
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
-DECLARE
-  v_en_cours int;
-  v_preparation int;
-  v_clos_mois int;
-  v_heures_semaine numeric;
-  v_body text;
-  v_rows text[];
-  v_alert_rows text[];
-  r record;
+DECLARE v_active int; v_draft int; v_closed_month int; v_hours_week numeric;
+  v_body text; v_rows text[]; v_alert_rows text[]; r record;
 BEGIN
-  SELECT count(*)::int INTO v_en_cours
-    FROM project.chantier WHERE statut = 'execution';
-
-  SELECT count(*)::int INTO v_preparation
-    FROM project.chantier WHERE statut = 'preparation';
-
-  SELECT count(*)::int INTO v_clos_mois
-    FROM project.chantier
-   WHERE statut = 'clos'
-     AND date_fin_reelle >= date_trunc('month', CURRENT_DATE);
-
-  SELECT COALESCE(sum(heures), 0) INTO v_heures_semaine
-    FROM project.pointage
-   WHERE date_pointage >= date_trunc('week', CURRENT_DATE);
-
+  SELECT count(*)::int INTO v_active FROM project.project WHERE status = 'active';
+  SELECT count(*)::int INTO v_draft FROM project.project WHERE status = 'draft';
+  SELECT count(*)::int INTO v_closed_month FROM project.project WHERE status = 'closed' AND end_date >= date_trunc('month', CURRENT_DATE);
+  SELECT COALESCE(sum(hours), 0) INTO v_hours_week FROM project.time_entry WHERE entry_date >= date_trunc('week', CURRENT_DATE);
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat(pgv.t('project.stat_en_cours'), v_en_cours::text),
-    pgv.stat(pgv.t('project.stat_preparation'), v_preparation::text),
-    pgv.stat(pgv.t('project.stat_termines_mois'), v_clos_mois::text),
-    pgv.stat(pgv.t('project.stat_heures_semaine'), v_heures_semaine::text || ' h')
-  ]);
-
-  -- Alertes retard
+    pgv.stat(pgv.t('project.stat_active'), v_active::text),
+    pgv.stat(pgv.t('project.stat_draft'), v_draft::text),
+    pgv.stat(pgv.t('project.stat_closed_month'), v_closed_month::text),
+    pgv.stat(pgv.t('project.stat_hours_week'), v_hours_week::text || ' h')]);
   v_alert_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT c.id, c.numero, cl.name AS client, c.objet,
-           project._statut_badge(c.statut) AS statut_badge,
-           (CURRENT_DATE - c.date_fin_prevue) AS jours_retard
-      FROM project.chantier c
-      JOIN crm.client cl ON cl.id = c.client_id
-     WHERE c.date_fin_prevue < CURRENT_DATE
-       AND c.statut NOT IN ('clos', 'reception')
-     ORDER BY c.date_fin_prevue ASC
+  FOR r IN SELECT p.id, p.code, cl.name AS client, p.subject, project._status_badge(p.status) AS badge, (CURRENT_DATE - p.due_date) AS days_late
+    FROM project.project p JOIN crm.client cl ON cl.id = p.client_id WHERE p.due_date < CURRENT_DATE AND p.status NOT IN ('closed','review') ORDER BY p.due_date
   LOOP
     v_alert_rows := v_alert_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_chantier', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-      pgv.esc(r.client),
-      pgv.esc(r.objet),
-      r.statut_badge,
-      pgv.badge(r.jours_retard::text || ' j', 'warning')
-    ];
+      format('<a href="%s">%s</a>', pgv.call_ref('get_project', jsonb_build_object('p_id', r.id)), pgv.esc(r.code)),
+      pgv.esc(r.client), pgv.esc(r.subject), r.badge, pgv.badge(r.days_late::text || ' d', 'warning')];
   END LOOP;
-
   IF array_length(v_alert_rows, 1) IS NOT NULL THEN
-    v_body := v_body || '<h3>' || pgv.t('project.title_alertes_retard') || '</h3>'
-      || pgv.md_table(
-        ARRAY[pgv.t('project.col_numero'), pgv.t('project.col_client'), pgv.t('project.col_objet'), pgv.t('project.col_statut'), pgv.t('project.col_retard')],
-        v_alert_rows
-      );
+    v_body := v_body || '<h3>' || pgv.t('project.title_late_alerts') || '</h3>'
+      || pgv.md_table(ARRAY[pgv.t('project.col_code'), pgv.t('project.col_client'), pgv.t('project.col_subject'), pgv.t('project.col_status'), pgv.t('project.col_late')], v_alert_rows);
   END IF;
-
-  -- Liste projets actifs
   v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT c.id, c.client_id, c.devis_id, c.numero, cl.name AS client, c.objet, c.statut,
-           project._avancement_global(c.id) AS pct,
-           c.date_debut, d.numero AS devis_numero
-      FROM project.chantier c
-      JOIN crm.client cl ON cl.id = c.client_id
-      LEFT JOIN quote.devis d ON d.id = c.devis_id
-     WHERE c.statut IN ('preparation', 'execution', 'reception')
-     ORDER BY c.updated_at DESC
-     LIMIT 20
+  FOR r IN SELECT p.id, p.client_id, p.code, cl.name AS client, p.subject, p.status,
+      project._global_progress(p.id) AS pct, p.start_date
+    FROM project.project p JOIN crm.client cl ON cl.id = p.client_id
+    WHERE p.status IN ('draft','active','review') ORDER BY p.updated_at DESC LIMIT 20
   LOOP
     v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_chantier', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
+      format('<a href="%s">%s</a>', pgv.call_ref('get_project', jsonb_build_object('p_id', r.id)), pgv.esc(r.code)),
       format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
-      pgv.esc(r.objet),
-      project._statut_badge(r.statut),
-      pgv.badge(r.pct::text || ' %'),
-      CASE WHEN r.devis_numero IS NOT NULL
-        THEN format('<a href="/quote/devis?p_id=%s">%s</a>', r.devis_id, pgv.esc(r.devis_numero))
-        ELSE '—' END,
-      COALESCE(to_char(r.date_debut, 'DD/MM/YYYY'), '—')
-    ];
+      pgv.esc(r.subject), project._status_badge(r.status), pgv.badge(r.pct::text || ' %'),
+      COALESCE(to_char(r.start_date, 'DD/MM/YYYY'), '—')];
   END LOOP;
-
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty(pgv.t('project.empty_aucun_actif'), pgv.t('project.empty_premier'));
+    v_body := v_body || pgv.empty(pgv.t('project.empty_none_active'), pgv.t('project.empty_create_first'));
   ELSE
-    v_body := v_body || '<h3>' || pgv.t('project.title_projets_actifs') || '</h3>'
-      || pgv.md_table(
-        ARRAY[pgv.t('project.col_numero'), pgv.t('project.col_client'), pgv.t('project.col_objet'), pgv.t('project.col_statut'), pgv.t('project.col_avancement'), pgv.t('project.col_devis'), pgv.t('project.col_debut')],
-        v_rows, 10
-      );
+    v_body := v_body || '<h3>' || pgv.t('project.title_active_projects') || '</h3>'
+      || pgv.md_table(ARRAY[pgv.t('project.col_code'), pgv.t('project.col_client'), pgv.t('project.col_subject'), pgv.t('project.col_status'), pgv.t('project.col_progress'), pgv.t('project.col_start')], v_rows, 10);
   END IF;
-
-  v_body := v_body || '<p>'
-    || pgv.form_dialog('dlg-new-projet', pgv.t('project.btn_nouveau'),
-         project._chantier_form_fields(), 'post_chantier_save')
-    || '</p>';
-
+  v_body := v_body || '<p>' || pgv.form_dialog('dlg-new-project', pgv.t('project.btn_new'), project._project_form_fields(), 'post_project_save') || '</p>';
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION project.get_index() IS 'Dashboard projets : stats KPI + alertes retard + liste projets actifs';
+COMMENT ON FUNCTION project.get_index() IS 'Dashboard: stats KPI + late alerts + active projects list';
 
 CREATE OR REPLACE FUNCTION project.get_planning()
  RETURNS text
  LANGUAGE plpgsql
+ STABLE
 AS $function$
-DECLARE
-  v_body text;
-  v_rows text[];
-  r record;
-  v_tl_items jsonb;
+DECLARE v_body text; v_rows text[]; r record; v_tl_items jsonb;
 BEGIN
   v_body := '<h3>' || pgv.t('project.title_planning') || '</h3>';
-
   v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT c.id, c.numero, cl.name AS client, c.objet,
-           project._statut_badge(c.statut) AS statut_badge,
-           project._avancement_global(c.id) AS pct,
-           c.date_debut, c.date_fin_prevue,
-           (SELECT count(*)::int FROM project.affectation a WHERE a.chantier_id = c.id) AS nb_intervenants
-      FROM project.chantier c
-      JOIN crm.client cl ON cl.id = c.client_id
-     WHERE c.statut IN ('preparation', 'execution', 'reception')
-     ORDER BY c.date_debut NULLS LAST, c.numero
+  FOR r IN SELECT p.id, p.code, cl.name AS client, p.subject,
+      project._status_badge(p.status) AS status_badge, project._global_progress(p.id) AS pct,
+      p.start_date, p.due_date,
+      (SELECT count(*)::int FROM project.assignment a WHERE a.project_id = p.id) AS nb_workers
+    FROM project.project p JOIN crm.client cl ON cl.id = p.client_id
+    WHERE p.status IN ('draft','active','review') ORDER BY p.start_date NULLS LAST, p.code
   LOOP
-    SELECT COALESCE(jsonb_agg(
-      jsonb_build_object(
-        'date', COALESCE(to_char(j.date_prevue, 'DD/MM/YYYY'), '—'),
-        'label', j.label,
-        'detail', j.pct_avancement || ' %',
-        'badge', CASE j.statut WHEN 'valide' THEN 'success' WHEN 'en_cours' THEN 'info' ELSE 'default' END
-      ) ORDER BY j.sort_order
-    ), '[]'::jsonb)
-    INTO v_tl_items
-    FROM project.jalon j WHERE j.chantier_id = r.id;
-
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'date', COALESCE(to_char(m.planned_date, 'DD/MM/YYYY'), '—'), 'label', m.label,
+      'detail', m.progress_pct || ' %',
+      'badge', CASE m.status WHEN 'done' THEN 'success' WHEN 'in_progress' THEN 'info' ELSE 'default' END
+    ) ORDER BY m.sort_order), '[]'::jsonb) INTO v_tl_items FROM project.milestone m WHERE m.project_id = r.id;
     v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_chantier', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-      pgv.esc(r.client),
-      r.statut_badge,
-      pgv.progress(r.pct, 100),
-      COALESCE(to_char(r.date_debut, 'DD/MM'), '—') || ' -> ' || COALESCE(to_char(r.date_fin_prevue, 'DD/MM'), '—'),
-      r.nb_intervenants::text,
-      CASE WHEN v_tl_items = '[]'::jsonb THEN '—' ELSE pgv.timeline(v_tl_items) END
-    ];
+      format('<a href="%s">%s</a>', pgv.call_ref('get_project', jsonb_build_object('p_id', r.id)), pgv.esc(r.code)),
+      pgv.esc(r.client), r.status_badge, pgv.progress(r.pct, 100),
+      COALESCE(to_char(r.start_date, 'DD/MM'), '—') || ' -> ' || COALESCE(to_char(r.due_date, 'DD/MM'), '—'),
+      r.nb_workers::text,
+      CASE WHEN v_tl_items = '[]'::jsonb THEN '—' ELSE pgv.timeline(v_tl_items) END];
   END LOOP;
-
   IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty(pgv.t('project.empty_aucun_actif'));
+    v_body := v_body || pgv.empty(pgv.t('project.empty_none_active'));
   ELSE
     v_body := v_body || pgv.md_table(
-      ARRAY[pgv.t('project.col_projet'), pgv.t('project.col_client'), pgv.t('project.col_statut'), pgv.t('project.col_avancement'), pgv.t('project.col_periode'), pgv.t('project.col_equipe'), pgv.t('project.col_jalons')],
-      v_rows
-    );
+      ARRAY[pgv.t('project.col_project'), pgv.t('project.col_client'), pgv.t('project.col_status'), pgv.t('project.col_progress'), pgv.t('project.col_period'), pgv.t('project.col_team'), pgv.t('project.col_milestones')], v_rows);
   END IF;
-
   RETURN v_body;
 END;
 $function$;
-COMMENT ON FUNCTION project.get_planning() IS 'Vue planning : projets actifs avec progress bar et timeline jalons';
+COMMENT ON FUNCTION project.get_planning() IS 'Planning view: active projects with milestones timeline';
+
+CREATE OR REPLACE FUNCTION project.get_projects(p_params jsonb DEFAULT '{}'::jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE v_body text := ''; r record;
+BEGIN
+  FOR r IN SELECT * FROM project.project_list() LOOP
+    v_body := v_body || format('<p><a href="%s">%s</a> — %s (%s)</p>',
+      pgv.call_ref('get_project', jsonb_build_object('p_id', (r.project_list->>'id')::int)),
+      pgv.esc(r.project_list->>'code'), pgv.esc(r.project_list->>'subject'), r.project_list->>'status');
+  END LOOP;
+  IF v_body = '' THEN v_body := pgv.empty(pgv.t('project.empty_none_active'), pgv.t('project.empty_create_first')); END IF;
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION project.get_projects(jsonb) IS 'Projects list page (minimal — React shell is primary)';
 
 CREATE OR REPLACE FUNCTION project.i18n_seed()
  RETURNS void
@@ -1187,7 +1157,7 @@ CREATE OR REPLACE FUNCTION project.nav_items()
 AS $function$
   SELECT jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('project.nav_dashboard'), 'icon', 'home'),
-    jsonb_build_object('href', '/chantiers', 'label', pgv.t('project.nav_projets'), 'icon', 'briefcase', 'entity', 'chantier', 'uri', 'project://chantier'),
+    jsonb_build_object('href', '/projects', 'label', pgv.t('project.nav_projects'), 'icon', 'briefcase', 'entity', 'project', 'uri', 'project://project'),
     jsonb_build_object('href', '/planning', 'label', pgv.t('project.nav_planning'), 'icon', 'calendar')
   );
 $function$;
@@ -1240,6 +1210,37 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION project.post_affectation_supprimer(integer) IS 'Supprimer une affectation';
+
+CREATE OR REPLACE FUNCTION project.post_assignment_add(p_project_id integer, p_worker_name text, p_role text DEFAULT ''::text, p_planned_hours numeric DEFAULT NULL::numeric)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM project.project WHERE id = p_project_id AND status != 'closed' AND tenant_id = current_setting('app.tenant_id', true)) THEN
+    RAISE EXCEPTION '%', pgv.t('project.err_project_closed');
+  END IF;
+  INSERT INTO project.assignment (project_id, worker_name, role, planned_hours) VALUES (p_project_id, p_worker_name, p_role, p_planned_hours);
+  RETURN pgv.toast(pgv.t('project.toast_assignment_added')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', p_project_id)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_assignment_add(integer,text,text,numeric) IS 'Add an assignment to a project';
+
+CREATE OR REPLACE FUNCTION project.post_assignment_delete(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_pid int;
+BEGIN
+  SELECT a.project_id INTO v_pid FROM project.assignment a JOIN project.project p ON p.id = a.project_id
+  WHERE a.id = p_id AND p.tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_assignment_not_found'); END IF;
+  DELETE FROM project.assignment WHERE id = p_id;
+  RETURN pgv.toast(pgv.t('project.toast_assignment_deleted')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', v_pid)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_assignment_delete(integer) IS 'Delete an assignment';
 
 CREATE OR REPLACE FUNCTION project.post_chantier_clore(p_id integer)
  RETURNS text
@@ -1467,6 +1468,90 @@ END;
 $function$;
 COMMENT ON FUNCTION project.post_jalon_valider(integer) IS 'Valider un jalon (verification ordre sequentiel)';
 
+CREATE OR REPLACE FUNCTION project.post_milestone_add(p_project_id integer, p_label text)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_order int;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM project.project WHERE id = p_project_id AND status IN ('draft','active') AND tenant_id = current_setting('app.tenant_id', true)) THEN
+    RAISE EXCEPTION '%', pgv.t('project.err_not_editable');
+  END IF;
+  SELECT COALESCE(max(sort_order), 0) + 1 INTO v_order FROM project.milestone WHERE project_id = p_project_id;
+  INSERT INTO project.milestone (project_id, sort_order, label) VALUES (p_project_id, v_order, p_label);
+  RETURN pgv.toast(pgv.t('project.toast_milestone_added')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', p_project_id)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_milestone_add(integer,text) IS 'Add a milestone to a project';
+
+CREATE OR REPLACE FUNCTION project.post_milestone_advance(p_id integer, p_pct numeric)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_pid int; v_new_status text;
+BEGIN
+  SELECT m.project_id INTO v_pid FROM project.milestone m JOIN project.project p ON p.id = m.project_id
+  WHERE m.id = p_id AND p.status IN ('draft','active') AND p.tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_milestone_not_editable'); END IF;
+  v_new_status := CASE WHEN p_pct >= 100 THEN 'done' WHEN p_pct > 0 THEN 'in_progress' ELSE 'todo' END;
+  UPDATE project.milestone SET progress_pct = p_pct, status = v_new_status WHERE id = p_id;
+  RETURN pgv.toast(pgv.t('project.toast_progress_updated')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', v_pid)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_milestone_advance(integer,numeric) IS 'Update milestone progress percentage';
+
+CREATE OR REPLACE FUNCTION project.post_milestone_delete(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_pid int;
+BEGIN
+  SELECT m.project_id INTO v_pid FROM project.milestone m JOIN project.project p ON p.id = m.project_id
+  WHERE m.id = p_id AND p.status IN ('draft','active') AND p.tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_milestone_not_editable'); END IF;
+  DELETE FROM project.milestone WHERE id = p_id;
+  RETURN pgv.toast(pgv.t('project.toast_milestone_deleted')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', v_pid)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_milestone_delete(integer) IS 'Delete a milestone';
+
+CREATE OR REPLACE FUNCTION project.post_milestone_validate(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_pid int; v_order int;
+BEGIN
+  SELECT m.project_id, m.sort_order INTO v_pid, v_order FROM project.milestone m JOIN project.project p ON p.id = m.project_id
+  WHERE m.id = p_id AND m.status != 'done' AND p.status IN ('draft','active') AND p.tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_milestone_already_done'); END IF;
+  IF EXISTS (SELECT 1 FROM project.milestone WHERE project_id = v_pid AND sort_order < v_order AND status != 'done') THEN
+    RAISE EXCEPTION '%', pgv.t('project.err_previous_milestones');
+  END IF;
+  UPDATE project.milestone SET progress_pct = 100, status = 'done', actual_date = CURRENT_DATE WHERE id = p_id;
+  RETURN pgv.toast(pgv.t('project.toast_milestone_validated')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', v_pid)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_milestone_validate(integer) IS 'Validate a milestone (sequential constraint)';
+
+CREATE OR REPLACE FUNCTION project.post_note_add(p_project_id integer, p_content text)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM project.project WHERE id = p_project_id AND status IN ('draft','active') AND tenant_id = current_setting('app.tenant_id', true)) THEN
+    RAISE EXCEPTION '%', pgv.t('project.err_not_editable');
+  END IF;
+  INSERT INTO project.project_note (project_id, content) VALUES (p_project_id, p_content);
+  RETURN pgv.toast(pgv.t('project.toast_note_added')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', p_project_id)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_note_add(integer,text) IS 'Add a note to a project';
+
 CREATE OR REPLACE FUNCTION project.post_note_ajouter(p_chantier_id integer, p_contenu text)
  RETURNS text
  LANGUAGE plpgsql
@@ -1483,6 +1568,22 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION project.post_note_ajouter(integer,text) IS 'Ajouter une note de projet';
+
+CREATE OR REPLACE FUNCTION project.post_note_delete(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_pid int;
+BEGIN
+  SELECT n.project_id INTO v_pid FROM project.project_note n JOIN project.project p ON p.id = n.project_id
+  WHERE n.id = p_id AND p.status IN ('draft','active') AND p.tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_note_not_editable'); END IF;
+  DELETE FROM project.project_note WHERE id = p_id;
+  RETURN pgv.toast(pgv.t('project.toast_note_deleted')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', v_pid)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_note_delete(integer) IS 'Delete a project note';
 
 CREATE OR REPLACE FUNCTION project.post_note_supprimer(p_id integer)
  RETURNS text
@@ -1544,6 +1645,297 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION project.post_pointage_supprimer(integer) IS 'Supprimer un pointage';
+
+CREATE OR REPLACE FUNCTION project.post_project_close(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  UPDATE project.project SET status = 'closed', end_date = CURRENT_DATE, updated_at = now() WHERE id = p_id AND status = 'review' AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_not_review'); END IF;
+  RETURN pgv.toast(pgv.t('project.toast_closed')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', p_id)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_project_close(integer) IS 'Transition project review to closed';
+
+CREATE OR REPLACE FUNCTION project.post_project_delete(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  DELETE FROM project.project WHERE id = p_id AND status = 'draft' AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_not_draft'); END IF;
+  RETURN pgv.toast(pgv.t('project.toast_deleted')) || pgv.redirect(pgv.call_ref('get_projects'));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_project_delete(integer) IS 'Delete a draft project';
+
+CREATE OR REPLACE FUNCTION project.post_project_review(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  UPDATE project.project SET status = 'review', updated_at = now() WHERE id = p_id AND status = 'active' AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_not_active'); END IF;
+  RETURN pgv.toast(pgv.t('project.toast_review')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', p_id)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_project_review(integer) IS 'Transition project active to review';
+
+CREATE OR REPLACE FUNCTION project.post_project_save(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_id int; v_code text;
+BEGIN
+  IF p_data->>'id' IS NOT NULL THEN
+    v_id := (p_data->>'id')::int;
+    IF NOT EXISTS (SELECT 1 FROM project.project WHERE id = v_id AND status IN ('draft','active')) THEN
+      RAISE EXCEPTION '%', pgv.t('project.err_not_editable');
+    END IF;
+    UPDATE project.project SET client_id = (p_data->>'client_id')::int, estimate_id = NULLIF(p_data->>'estimate_id', '')::int,
+      subject = p_data->>'subject', address = coalesce(p_data->>'address', ''),
+      start_date = NULLIF(p_data->>'start_date', '')::date, due_date = NULLIF(p_data->>'due_date', '')::date,
+      notes = coalesce(p_data->>'notes', ''), updated_at = now() WHERE id = v_id;
+  ELSE
+    v_code := project._next_code();
+    INSERT INTO project.project (code, client_id, estimate_id, subject, address, start_date, due_date, notes)
+    VALUES (v_code, (p_data->>'client_id')::int, NULLIF(p_data->>'estimate_id', '')::int, p_data->>'subject',
+      coalesce(p_data->>'address', ''), NULLIF(p_data->>'start_date', '')::date, NULLIF(p_data->>'due_date', '')::date,
+      coalesce(p_data->>'notes', '')) RETURNING id INTO v_id;
+  END IF;
+  RETURN pgv.toast(pgv.t('project.toast_saved')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', v_id)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_project_save(jsonb) IS 'Create or update a project';
+
+CREATE OR REPLACE FUNCTION project.post_project_start(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  UPDATE project.project SET status = 'active', updated_at = now() WHERE id = p_id AND status = 'draft' AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_not_draft'); END IF;
+  RETURN pgv.toast(pgv.t('project.toast_started')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', p_id)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_project_start(integer) IS 'Transition project draft to active';
+
+CREATE OR REPLACE FUNCTION project.post_time_entry_add(p_project_id integer, p_hours numeric, p_description text DEFAULT ''::text, p_date date DEFAULT CURRENT_DATE)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM project.project WHERE id = p_project_id AND status IN ('draft','active') AND tenant_id = current_setting('app.tenant_id', true)) THEN
+    RAISE EXCEPTION '%', pgv.t('project.err_not_editable');
+  END IF;
+  INSERT INTO project.time_entry (project_id, hours, description, entry_date) VALUES (p_project_id, p_hours, p_description, p_date);
+  RETURN pgv.toast(pgv.t('project.toast_time_entry_added')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', p_project_id)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_time_entry_add(integer,numeric,text,date) IS 'Add time entry to a project';
+
+CREATE OR REPLACE FUNCTION project.post_time_entry_delete(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_pid int;
+BEGIN
+  SELECT t.project_id INTO v_pid FROM project.time_entry t JOIN project.project p ON p.id = t.project_id
+  WHERE t.id = p_id AND p.status IN ('draft','active') AND p.tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('project.err_time_entry_not_editable'); END IF;
+  DELETE FROM project.time_entry WHERE id = p_id;
+  RETURN pgv.toast(pgv.t('project.toast_time_entry_deleted')) || pgv.redirect(pgv.call_ref('get_project', jsonb_build_object('p_id', v_pid)));
+END;
+$function$;
+COMMENT ON FUNCTION project.post_time_entry_delete(integer) IS 'Delete a time entry';
+
+CREATE OR REPLACE FUNCTION project.project_create(p_row project.project)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_result jsonb;
+BEGIN
+  p_row.tenant_id := current_setting('app.tenant_id', true);
+  p_row.code := project._next_code();
+  p_row.status := COALESCE(NULLIF(p_row.status, ''), 'draft');
+  p_row.created_at := now(); p_row.updated_at := now();
+  INSERT INTO project.project (code, client_id, estimate_id, subject, address, status, start_date, due_date, notes, created_at, updated_at, tenant_id)
+  VALUES (p_row.code, p_row.client_id, p_row.estimate_id, p_row.subject, p_row.address, p_row.status, p_row.start_date, p_row.due_date, p_row.notes, p_row.created_at, p_row.updated_at, p_row.tenant_id)
+  RETURNING to_jsonb(project.project.*) INTO v_result;
+  RETURN v_result;
+END;
+$function$;
+COMMENT ON FUNCTION project.project_create(project.project) IS 'Create project — auto-generates code, sets tenant_id';
+
+CREATE OR REPLACE FUNCTION project.project_delete(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_result jsonb;
+BEGIN
+  DELETE FROM project.project WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true)
+  RETURNING to_jsonb(project.project.*) INTO v_result;
+  RETURN v_result;
+END;
+$function$;
+COMMENT ON FUNCTION project.project_delete(text) IS 'Delete project by id';
+
+CREATE OR REPLACE FUNCTION project.project_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  IF p_filter IS NULL THEN
+    RETURN QUERY
+      SELECT to_jsonb(p) || jsonb_build_object('client_name', cl.name, 'estimate_code', q.numero, 'progress', project._global_progress(p.id))
+      FROM project.project p JOIN crm.client cl ON cl.id = p.client_id LEFT JOIN quote.devis q ON q.id = p.estimate_id
+      WHERE p.tenant_id = current_setting('app.tenant_id', true) ORDER BY p.updated_at DESC;
+  ELSE
+    RETURN QUERY EXECUTE
+      'SELECT to_jsonb(p) || jsonb_build_object(''client_name'', cl.name, ''estimate_code'', q.numero, ''progress'', project._global_progress(p.id))
+       FROM project.project p JOIN crm.client cl ON cl.id = p.client_id LEFT JOIN quote.devis q ON q.id = p.estimate_id
+       WHERE p.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
+       || ' AND ' || pgv.rsql_to_where(p_filter, 'project', 'project') || ' ORDER BY p.updated_at DESC';
+  END IF;
+END;
+$function$;
+COMMENT ON FUNCTION project.project_list(text) IS 'List projects with client name and estimate code resolved';
+
+CREATE OR REPLACE FUNCTION project.project_options(p_search text DEFAULT ''::text)
+ RETURNS TABLE(value text, label text, detail text)
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN QUERY
+    SELECT p.id::text, p.code || ' — ' || p.subject, pgv.esc(cl.name) || ' · ' || p.status
+    FROM project.project p JOIN crm.client cl ON cl.id = p.client_id
+    WHERE p.tenant_id = current_setting('app.tenant_id', true)
+      AND (p_search = '' OR p.code ILIKE '%'||p_search||'%' OR p.subject ILIKE '%'||p_search||'%' OR cl.name ILIKE '%'||p_search||'%')
+    ORDER BY p.updated_at DESC LIMIT 20;
+END;
+$function$;
+COMMENT ON FUNCTION project.project_options(text) IS 'Search projects for combobox options';
+
+CREATE OR REPLACE FUNCTION project.project_read(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE v_row jsonb; v_status text; v_actions jsonb := '[]'::jsonb; v_uri text;
+BEGIN
+  SELECT to_jsonb(p) || jsonb_build_object('client_name', cl.name, 'estimate_code', q.numero,
+    'progress', project._global_progress(p.id),
+    'total_hours', (SELECT COALESCE(sum(hours), 0) FROM project.time_entry WHERE project_id = p.id),
+    'milestone_count', (SELECT count(*) FROM project.milestone WHERE project_id = p.id)
+  ) INTO v_row FROM project.project p JOIN crm.client cl ON cl.id = p.client_id
+  LEFT JOIN quote.devis q ON q.id = p.estimate_id
+  WHERE p.id = p_id::int AND p.tenant_id = current_setting('app.tenant_id', true);
+  IF v_row IS NULL THEN RETURN NULL; END IF;
+  v_status := v_row ->> 'status'; v_uri := 'project://project/' || p_id;
+  CASE v_status
+    WHEN 'draft' THEN v_actions := jsonb_build_array(jsonb_build_object('method','start','uri',v_uri||'/start'), jsonb_build_object('method','edit','uri',v_uri), jsonb_build_object('method','delete','uri',v_uri||'/delete'));
+    WHEN 'active' THEN v_actions := jsonb_build_array(jsonb_build_object('method','review','uri',v_uri||'/review'), jsonb_build_object('method','edit','uri',v_uri));
+    WHEN 'review' THEN v_actions := jsonb_build_array(jsonb_build_object('method','close','uri',v_uri||'/close'));
+    ELSE v_actions := '[]'::jsonb;
+  END CASE;
+  RETURN v_row || jsonb_build_object('actions', v_actions);
+END;
+$function$;
+COMMENT ON FUNCTION project.project_read(text) IS 'Read project by id with HATEOAS actions based on status';
+
+CREATE OR REPLACE FUNCTION project.get_project(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE v_row jsonb;
+BEGIN
+  v_row := project.project_read(p_id::text);
+  IF v_row IS NULL THEN RETURN pgv.empty(pgv.t('project.empty_not_found')); END IF;
+  RETURN '<h2>' || pgv.esc(v_row->>'code') || ' — ' || pgv.esc(v_row->>'subject') || '</h2>'
+    || '<p>' || project._status_badge(v_row->>'status') || ' ' || pgv.t('project.col_progress') || ': ' || (v_row->>'progress') || '%</p>'
+    || '<p>' || pgv.t('project.col_client') || ': ' || pgv.esc(v_row->>'client_name') || '</p>';
+END;
+$function$;
+COMMENT ON FUNCTION project.get_project(integer) IS 'Project detail page (minimal — React shell is primary)';
+
+CREATE OR REPLACE FUNCTION project.project_update(p_row project.project)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_result jsonb;
+BEGIN
+  UPDATE project.project SET client_id = COALESCE(p_row.client_id, client_id), estimate_id = COALESCE(p_row.estimate_id, estimate_id),
+    subject = COALESCE(NULLIF(p_row.subject, ''), subject), address = COALESCE(p_row.address, address),
+    start_date = COALESCE(p_row.start_date, start_date), due_date = COALESCE(p_row.due_date, due_date),
+    notes = COALESCE(p_row.notes, notes), updated_at = now()
+  WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
+  RETURNING to_jsonb(project.project.*) INTO v_result;
+  RETURN v_result;
+END;
+$function$;
+COMMENT ON FUNCTION project.project_update(project.project) IS 'Partial update project by id';
+
+CREATE OR REPLACE FUNCTION project.project_view()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT jsonb_build_object(
+    'uri', 'project://project', 'icon', '◎', 'label', 'project.entity_project',
+    'template', jsonb_build_object(
+      'compact', jsonb_build_object('fields', jsonb_build_array('code', 'subject', 'status')),
+      'standard', jsonb_build_object(
+        'fields', jsonb_build_array('code', 'subject', 'address', 'start_date', 'due_date'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'progress', 'label', 'project.stat_progress'),
+          jsonb_build_object('key', 'total_hours', 'label', 'project.stat_hours'),
+          jsonb_build_object('key', 'milestone_count', 'label', 'project.stat_milestones')),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'crm://client', 'label', 'project.rel_client', 'filter', 'id={client_id}'),
+          jsonb_build_object('entity', 'quote://estimate', 'label', 'project.rel_estimate', 'filter', 'id={estimate_id}'))),
+      'expanded', jsonb_build_object(
+        'fields', jsonb_build_array('code', 'subject', 'address', 'start_date', 'due_date', 'end_date', 'notes', 'created_at', 'updated_at'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'progress', 'label', 'project.stat_progress'),
+          jsonb_build_object('key', 'total_hours', 'label', 'project.stat_hours'),
+          jsonb_build_object('key', 'milestone_count', 'label', 'project.stat_milestones')),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'crm://client', 'label', 'project.rel_client', 'filter', 'id={client_id}'),
+          jsonb_build_object('entity', 'quote://estimate', 'label', 'project.rel_estimate', 'filter', 'id={estimate_id}'),
+          jsonb_build_object('entity', 'planning://event', 'label', 'project.rel_planning', 'filter', 'project_id={id}'))),
+      'form', jsonb_build_object('sections', jsonb_build_array(
+        jsonb_build_object('label', 'project.section_identity', 'fields', jsonb_build_array(
+          jsonb_build_object('key', 'client_id', 'type', 'combobox', 'label', 'project.field_client', 'required', true, 'source', 'crm://client', 'display', 'name'),
+          jsonb_build_object('key', 'estimate_id', 'type', 'combobox', 'label', 'project.field_estimate', 'source', 'quote://estimate', 'display', 'numero'),
+          jsonb_build_object('key', 'subject', 'type', 'text', 'label', 'project.field_subject', 'required', true),
+          jsonb_build_object('key', 'address', 'type', 'text', 'label', 'project.field_address'))),
+        jsonb_build_object('label', 'project.section_dates', 'fields', jsonb_build_array(
+          jsonb_build_object('key', 'start_date', 'type', 'date', 'label', 'project.field_start_date'),
+          jsonb_build_object('key', 'due_date', 'type', 'date', 'label', 'project.field_due_date'))),
+        jsonb_build_object('label', 'project.section_details', 'fields', jsonb_build_array(
+          jsonb_build_object('key', 'notes', 'type', 'textarea', 'label', 'project.field_notes')))))),
+    'actions', jsonb_build_object(
+      'start', jsonb_build_object('label', 'project.action_start', 'icon', '▶', 'variant', 'primary', 'confirm', 'project.confirm_start'),
+      'review', jsonb_build_object('label', 'project.action_review', 'icon', '✓', 'variant', 'primary', 'confirm', 'project.confirm_review'),
+      'close', jsonb_build_object('label', 'project.action_close', 'icon', '■', 'variant', 'primary', 'confirm', 'project.confirm_close'),
+      'edit', jsonb_build_object('label', 'project.action_edit', 'icon', '✎', 'variant', 'muted'),
+      'delete', jsonb_build_object('label', 'project.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'project.confirm_delete')));
+$function$;
+COMMENT ON FUNCTION project.project_view() IS 'SDUI view template: project entity with 4 density levels';
 
 GRANT USAGE ON SCHEMA project TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA project TO anon;

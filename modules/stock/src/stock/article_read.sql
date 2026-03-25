@@ -8,12 +8,12 @@ DECLARE
   v_active boolean;
 BEGIN
   SELECT to_jsonb(a) || jsonb_build_object(
-    'fournisseur_name', c.name,
-    'stock_actuel', stock._stock_actuel(a.id)
+    'supplier_name', c.name,
+    'current_stock', stock._current_stock(a.id)
   )
   INTO v_data
   FROM stock.article a
-  LEFT JOIN crm.client c ON c.id = a.fournisseur_id
+  LEFT JOIN crm.client c ON c.id = a.supplier_id
   WHERE a.id = p_id::int AND a.tenant_id = current_setting('app.tenant_id', true);
 
   IF v_data IS NULL THEN RETURN NULL; END IF;

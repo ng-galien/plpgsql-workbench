@@ -8,36 +8,35 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
-  -- Setup
-  INSERT INTO hr.employee (nom, prenom) VALUES ('Test', 'Heures') RETURNING id INTO v_emp_id;
+  INSERT INTO hr.employee (last_name, first_name) VALUES ('Test', 'Hours') RETURNING id INTO v_emp_id;
 
   -- Save timesheet
   v_result := hr.post_timesheet_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'date_travail', '2026-03-10', 'heures', 8, 'description', 'Dev feature X'
+    'employee_id', v_emp_id, 'work_date', '2026-03-10', 'hours', 8, 'description', 'Dev feature X'
   ));
   RETURN NEXT ok(v_result LIKE '%enregistrées%', 'timesheet saved');
   RETURN NEXT is(
-    (SELECT heures FROM hr.timesheet WHERE employee_id = v_emp_id AND date_travail = '2026-03-10'),
+    (SELECT hours FROM hr.timesheet WHERE employee_id = v_emp_id AND work_date = '2026-03-10'),
     8::numeric, 'hours stored correctly'
   );
 
   -- Upsert (same date)
   v_result := hr.post_timesheet_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'date_travail', '2026-03-10', 'heures', 7.5, 'description', 'Updated'
+    'employee_id', v_emp_id, 'work_date', '2026-03-10', 'hours', 7.5, 'description', 'Updated'
   ));
   RETURN NEXT ok(v_result LIKE '%enregistrées%', 'upsert works');
   RETURN NEXT is(
-    (SELECT heures FROM hr.timesheet WHERE employee_id = v_emp_id AND date_travail = '2026-03-10'),
+    (SELECT hours FROM hr.timesheet WHERE employee_id = v_emp_id AND work_date = '2026-03-10'),
     7.5::numeric, 'hours updated via upsert'
   );
   RETURN NEXT is(
-    (SELECT count(*)::int FROM hr.timesheet WHERE employee_id = v_emp_id AND date_travail = '2026-03-10'),
+    (SELECT count(*)::int FROM hr.timesheet WHERE employee_id = v_emp_id AND work_date = '2026-03-10'),
     1, 'only one row per employee+date'
   );
 
   -- Validation
   v_result := hr.post_timesheet_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'date_travail', '2026-03-11', 'heures', 25
+    'employee_id', v_emp_id, 'work_date', '2026-03-11', 'hours', 25
   ));
   RETURN NEXT ok(v_result LIKE '%entre 0 et 24%', 'hours > 24 rejected');
 

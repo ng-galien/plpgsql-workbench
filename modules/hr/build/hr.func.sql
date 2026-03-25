@@ -6,43 +6,42 @@ CREATE SCHEMA IF NOT EXISTS hr;
 CREATE OR REPLACE FUNCTION hr._employee_form_body(p_emp hr.employee DEFAULT NULL::hr.employee)
  RETURNS text
  LANGUAGE plpgsql
- STABLE
 AS $function$
 BEGIN
   RETURN CASE WHEN p_emp.id IS NOT NULL THEN '<input type="hidden" name="id" value="' || p_emp.id || '">' ELSE '' END
     || '<div class="grid">'
-    || pgv.input('nom', 'text', 'Nom', p_emp.nom, true)
-    || pgv.input('prenom', 'text', 'Prénom', p_emp.prenom, true)
+    || pgv.input('last_name', 'text', 'Nom', p_emp.last_name, true)
+    || pgv.input('first_name', 'text', 'Prénom', p_emp.first_name, true)
     || '</div>'
     || '<div class="grid">'
     || pgv.input('email', 'email', 'Email', p_emp.email)
     || pgv.input('phone', 'tel', 'Téléphone', p_emp.phone)
     || '</div>'
     || '<div class="grid">'
-    || pgv.input('matricule', 'text', 'Matricule', NULLIF(p_emp.matricule, ''))
-    || pgv.input('date_naissance', 'date', 'Date de naissance', CASE WHEN p_emp.date_naissance IS NOT NULL THEN to_char(p_emp.date_naissance, 'YYYY-MM-DD') END)
+    || pgv.input('employee_code', 'text', 'Matricule', NULLIF(p_emp.employee_code, ''))
+    || pgv.input('birth_date', 'date', 'Date de naissance', CASE WHEN p_emp.birth_date IS NOT NULL THEN to_char(p_emp.birth_date, 'YYYY-MM-DD') END)
     || '</div>'
     || '<div class="grid">'
-    || pgv.sel('sexe', 'Sexe', '[{"label":"—","value":""},{"label":"Homme","value":"M"},{"label":"Femme","value":"F"}]'::jsonb, COALESCE(p_emp.sexe, ''))
-    || pgv.input('nationalite', 'text', 'Nationalit\u00e9', NULLIF(p_emp.nationalite, ''))
+    || pgv.sel('gender', 'Sexe', '[{"label":"—","value":""},{"label":"Homme","value":"M"},{"label":"Femme","value":"F"}]'::jsonb, COALESCE(p_emp.gender, ''))
+    || pgv.input('nationality', 'text', 'Nationalité', NULLIF(p_emp.nationality, ''))
     || '</div>'
     || '<div class="grid">'
-    || pgv.input('poste', 'text', 'Poste', NULLIF(p_emp.poste, ''))
-    || pgv.input('departement', 'text', 'Département', NULLIF(p_emp.departement, ''))
+    || pgv.input('position', 'text', 'Poste', NULLIF(p_emp.position, ''))
+    || pgv.input('department', 'text', 'Département', NULLIF(p_emp.department, ''))
     || '</div>'
     || pgv.input('qualification', 'text', 'Qualification', NULLIF(p_emp.qualification, ''))
     || '<div class="grid">'
-    || pgv.sel('type_contrat', 'Type de contrat', '[{"label":"CDI","value":"cdi"},{"label":"CDD","value":"cdd"},{"label":"Alternance","value":"alternance"},{"label":"Stage","value":"stage"},{"label":"Intérim","value":"interim"}]'::jsonb, COALESCE(p_emp.type_contrat, 'cdi'))
-    || pgv.input('date_embauche', 'date', 'Date d''embauche', to_char(COALESCE(p_emp.date_embauche, CURRENT_DATE), 'YYYY-MM-DD'), true)
+    || pgv.sel('contract_type', 'Type de contrat', '[{"label":"CDI","value":"cdi"},{"label":"CDD","value":"cdd"},{"label":"Alternance","value":"apprenticeship"},{"label":"Stage","value":"internship"},{"label":"Intérim","value":"temp"}]'::jsonb, COALESCE(p_emp.contract_type, 'cdi'))
+    || pgv.input('hire_date', 'date', 'Date d''embauche', to_char(COALESCE(p_emp.hire_date, CURRENT_DATE), 'YYYY-MM-DD'), true)
     || '</div>'
     || '<div class="grid">'
-    || pgv.input('date_fin', 'date', 'Date de fin (CDD/stage)', CASE WHEN p_emp.date_fin IS NOT NULL THEN to_char(p_emp.date_fin, 'YYYY-MM-DD') END)
-    || pgv.input('heures_hebdo', 'number', 'Heures/semaine', COALESCE(p_emp.heures_hebdo, 35)::text)
+    || pgv.input('end_date', 'date', 'Date de fin (CDD/stage)', CASE WHEN p_emp.end_date IS NOT NULL THEN to_char(p_emp.end_date, 'YYYY-MM-DD') END)
+    || pgv.input('weekly_hours', 'number', 'Heures/semaine', COALESCE(p_emp.weekly_hours, 35)::text)
     || '</div>'
     || pgv.textarea('notes', 'Notes', NULLIF(p_emp.notes, ''));
 END;
 $function$;
-COMMENT ON FUNCTION hr._employee_form_body(hr.employee) IS 'Helper: returns employee form inputs HTML (used by form_dialog and get_employee_form)';
+COMMENT ON FUNCTION hr._employee_form_body(hr.employee) IS 'Helper: employee form inputs HTML with English field names';
 
 CREATE OR REPLACE FUNCTION hr._set_updated_at()
  RETURNS trigger
@@ -57,7 +56,7 @@ COMMENT ON FUNCTION hr._set_updated_at() IS 'Trigger function: set updated_at to
 DROP TRIGGER IF EXISTS trg_employee_updated_at ON hr.employee;
 CREATE TRIGGER trg_employee_updated_at BEFORE UPDATE ON hr.employee FOR EACH ROW EXECUTE FUNCTION hr._set_updated_at();
 
-CREATE OR REPLACE FUNCTION hr.absence_create(p_row hr.absence)
+CREATE OR REPLACE FUNCTION hr.absence_create(p_row hr.leave_request)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -66,14 +65,14 @@ BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);
   p_row.created_at := now();
 
-  INSERT INTO hr.absence (tenant_id, employee_id, type_absence, date_debut, date_fin, nb_jours, motif, statut, created_at)
-  VALUES (p_row.tenant_id, p_row.employee_id, COALESCE(p_row.type_absence, 'conge_paye'), p_row.date_debut, p_row.date_fin, COALESCE(p_row.nb_jours, 1), COALESCE(p_row.motif, ''), COALESCE(p_row.statut, 'demande'), p_row.created_at)
+  INSERT INTO hr.leave_request (tenant_id, employee_id, leave_type, start_date, end_date, day_count, reason, status, created_at)
+  VALUES (p_row.tenant_id, p_row.employee_id, COALESCE(p_row.leave_type, 'paid_leave'), p_row.start_date, p_row.end_date, COALESCE(p_row.day_count, 1), COALESCE(p_row.reason, ''), COALESCE(p_row.status, 'pending'), p_row.created_at)
   RETURNING * INTO p_row;
 
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION hr.absence_create(hr.absence) IS 'Create absence — SECURITY DEFINER — returns inserted row as jsonb';
+COMMENT ON FUNCTION hr.absence_create(hr.leave_request) IS 'Create leave request — SECURITY DEFINER';
 
 CREATE OR REPLACE FUNCTION hr.absence_delete(p_id text)
  RETURNS jsonb
@@ -83,31 +82,14 @@ AS $function$
 DECLARE
   v_deleted jsonb;
 BEGIN
-  DELETE FROM hr.absence
+  DELETE FROM hr.leave_request
   WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true)
-  RETURNING to_jsonb(absence.*) INTO v_deleted;
+  RETURNING to_jsonb(leave_request.*) INTO v_deleted;
 
   RETURN v_deleted;
 END;
 $function$;
-COMMENT ON FUNCTION hr.absence_delete(text) IS 'Delete absence by id — SECURITY DEFINER — returns deleted row as jsonb';
-
-CREATE OR REPLACE FUNCTION hr.absence_label(p_type text)
- RETURNS text
- LANGUAGE sql
- IMMUTABLE
-AS $function$
-  SELECT CASE p_type
-    WHEN 'conge_paye' THEN 'Congé payé'
-    WHEN 'rtt' THEN 'RTT'
-    WHEN 'maladie' THEN 'Maladie'
-    WHEN 'sans_solde' THEN 'Sans solde'
-    WHEN 'formation' THEN 'Formation'
-    WHEN 'autre' THEN 'Autre'
-    ELSE p_type
-  END;
-$function$;
-COMMENT ON FUNCTION hr.absence_label(text) IS 'Human-readable label for absence type';
+COMMENT ON FUNCTION hr.absence_delete(text) IS 'Delete leave request — SECURITY DEFINER';
 
 CREATE OR REPLACE FUNCTION hr.absence_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF jsonb
@@ -117,16 +99,16 @@ AS $function$
 BEGIN
   RETURN QUERY
     SELECT to_jsonb(a) || jsonb_build_object(
-      'employee_name', e.prenom || ' ' || e.nom,
-      'type_label', hr.absence_label(a.type_absence)
+      'employee_name', e.first_name || ' ' || e.last_name,
+      'type_label', hr.leave_type_label(a.leave_type)
     )
-    FROM hr.absence a
+    FROM hr.leave_request a
     JOIN hr.employee e ON e.id = a.employee_id
     WHERE a.tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY a.date_debut DESC;
+    ORDER BY a.start_date DESC;
 END;
 $function$;
-COMMENT ON FUNCTION hr.absence_list(text) IS 'List absences for current tenant with employee name and type label resolved';
+COMMENT ON FUNCTION hr.absence_list(text) IS 'List leave requests with employee name and type label resolved';
 
 CREATE OR REPLACE FUNCTION hr.absence_read(p_id text)
  RETURNS jsonb
@@ -136,23 +118,22 @@ AS $function$
 DECLARE
   v_result jsonb;
   v_actions jsonb := '[]'::jsonb;
-  v_statut text;
+  v_status text;
   v_balance numeric;
 BEGIN
   SELECT to_jsonb(a) || jsonb_build_object(
-    'employee_name', e.prenom || ' ' || e.nom,
-    'type_label', hr.absence_label(a.type_absence)
+    'employee_name', e.first_name || ' ' || e.last_name,
+    'type_label', hr.leave_type_label(a.leave_type)
   ) INTO v_result
-  FROM hr.absence a
+  FROM hr.leave_request a
   JOIN hr.employee e ON e.id = a.employee_id
   WHERE a.id = p_id::int AND a.tenant_id = current_setting('app.tenant_id', true);
 
   IF v_result IS NULL THEN RETURN NULL; END IF;
 
-  v_statut := v_result->>'statut';
+  v_status := v_result->>'status';
 
-  -- HATEOAS actions based on absence state
-  IF v_statut = 'demande' THEN
+  IF v_status = 'pending' THEN
     v_actions := jsonb_build_array(
       jsonb_build_object('method', 'validate', 'uri', 'hr://absence/' || p_id || '/validate'),
       jsonb_build_object('method', 'refuse', 'uri', 'hr://absence/' || p_id || '/refuse'),
@@ -160,13 +141,11 @@ BEGIN
       jsonb_build_object('method', 'delete', 'uri', 'hr://absence/' || p_id || '/delete')
     );
   END IF;
-  -- validee, refusee, annulee: terminal states, no actions
 
-  -- Stats: leave balance remaining for this type
   SELECT (lb.allocated - lb.used) INTO v_balance
     FROM hr.leave_balance lb
    WHERE lb.employee_id = (v_result->>'employee_id')::int
-     AND lb.leave_type = v_result->>'type_absence';
+     AND lb.leave_type = v_result->>'leave_type';
 
   v_result := v_result || jsonb_build_object(
     'actions', v_actions,
@@ -176,89 +155,28 @@ BEGIN
   RETURN v_result;
 END;
 $function$;
-COMMENT ON FUNCTION hr.absence_read(text) IS 'Read absence by id — enriched with HATEOAS actions based on statut + leave balance stat';
+COMMENT ON FUNCTION hr.absence_read(text) IS 'Read leave request by id — enriched with HATEOAS actions and leave balance';
 
-CREATE OR REPLACE FUNCTION hr.absence_ui(p_slug text DEFAULT NULL::text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_abs record;
-BEGIN
-  -- List mode
-  IF p_slug IS NULL THEN
-    RETURN jsonb_build_object(
-      'ui', pgv.ui_column(
-        pgv.ui_heading('Absences'),
-        pgv.ui_table('absences', jsonb_build_array(
-          pgv.ui_col('employee_name', 'Salarié', pgv.ui_link('{employee_name}', '/hr/employee/{employee_id}')),
-          pgv.ui_col('type_label', 'Type', pgv.ui_badge('{type_label}')),
-          pgv.ui_col('date_debut', 'Début'),
-          pgv.ui_col('date_fin', 'Fin'),
-          pgv.ui_col('nb_jours', 'Jours'),
-          pgv.ui_col('motif', 'Motif'),
-          pgv.ui_col('statut', 'Statut', pgv.ui_badge('{statut}'))
-        ))
-      ),
-      'datasources', jsonb_build_object(
-        'absences', pgv.ui_datasource('hr://absence', 20, true, '-date_debut')
-      )
-    );
-  END IF;
-
-  -- Detail mode
-  SELECT a.*, e.prenom || ' ' || e.nom AS employee_name
-    INTO v_abs
-    FROM hr.absence a
-    JOIN hr.employee e ON e.id = a.employee_id
-   WHERE a.id = p_slug::int AND a.tenant_id = current_setting('app.tenant_id', true);
-
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
-
-  RETURN jsonb_build_object(
-    'ui', pgv.ui_column(
-      pgv.ui_row(
-        pgv.ui_link('← Absences', '/hr/absences'),
-        pgv.ui_heading('Absence — ' || v_abs.employee_name)
-      ),
-      pgv.ui_row(
-        pgv.ui_badge(hr.absence_label(v_abs.type_absence)),
-        pgv.ui_badge(upper(v_abs.statut))
-      ),
-      pgv.ui_row(
-        pgv.ui_text('Du ' || to_char(v_abs.date_debut, 'DD/MM/YYYY') || ' au ' || to_char(v_abs.date_fin, 'DD/MM/YYYY')),
-        pgv.ui_text(v_abs.nb_jours || ' jour(s)')
-      ),
-      CASE WHEN v_abs.motif != '' THEN pgv.ui_text('Motif : ' || v_abs.motif) ELSE pgv.ui_text('') END
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION hr.absence_ui(text) IS 'SDUI view: absence list with employee name + type label, detail with dates and status';
-
-CREATE OR REPLACE FUNCTION hr.absence_update(p_row hr.absence)
+CREATE OR REPLACE FUNCTION hr.absence_update(p_row hr.leave_request)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 BEGIN
-  UPDATE hr.absence SET
-    type_absence = COALESCE(NULLIF(p_row.type_absence, ''), type_absence),
-    date_debut = COALESCE(p_row.date_debut, date_debut),
-    date_fin = COALESCE(p_row.date_fin, date_fin),
-    nb_jours = COALESCE(p_row.nb_jours, nb_jours),
-    motif = COALESCE(p_row.motif, motif),
-    statut = COALESCE(NULLIF(p_row.statut, ''), statut)
+  UPDATE hr.leave_request SET
+    leave_type = COALESCE(NULLIF(p_row.leave_type, ''), leave_type),
+    start_date = COALESCE(p_row.start_date, start_date),
+    end_date = COALESCE(p_row.end_date, end_date),
+    day_count = COALESCE(p_row.day_count, day_count),
+    reason = COALESCE(p_row.reason, reason),
+    status = COALESCE(NULLIF(p_row.status, ''), status)
   WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
   RETURNING * INTO p_row;
 
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION hr.absence_update(hr.absence) IS 'Update absence by id — SECURITY DEFINER — partial update, returns updated row as jsonb';
+COMMENT ON FUNCTION hr.absence_update(hr.leave_request) IS 'Update leave request — SECURITY DEFINER — partial update';
 
 CREATE OR REPLACE FUNCTION hr.absence_view()
  RETURNS jsonb
@@ -324,21 +242,30 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION hr.brand() IS 'Brand name for HR module via i18n';
 
-CREATE OR REPLACE FUNCTION hr.contrat_label(p_type text)
+CREATE OR REPLACE FUNCTION hr.contract_label(p_type text)
  RETURNS text
  LANGUAGE sql
- IMMUTABLE
+ STABLE
 AS $function$
   SELECT CASE p_type
     WHEN 'cdi' THEN 'CDI'
     WHEN 'cdd' THEN 'CDD'
-    WHEN 'alternance' THEN 'Alternance'
-    WHEN 'stage' THEN 'Stage'
-    WHEN 'interim' THEN 'Intérim'
+    WHEN 'apprenticeship' THEN 'Alternance'
+    WHEN 'internship' THEN 'Stage'
+    WHEN 'temp' THEN 'Intérim'
     ELSE p_type
   END;
 $function$;
-COMMENT ON FUNCTION hr.contrat_label(text) IS 'Human-readable label for contract type';
+COMMENT ON FUNCTION hr.contract_label(text) IS 'Human-readable contract type label';
+
+CREATE OR REPLACE FUNCTION hr.contrat_label(p_type text)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT hr.contract_label(p_type);
+$function$;
+COMMENT ON FUNCTION hr.contrat_label(text) IS 'DEPRECATED — alias for contract_label';
 
 CREATE OR REPLACE FUNCTION hr.employee_create(p_row hr.employee)
  RETURNS jsonb
@@ -350,14 +277,14 @@ BEGIN
   p_row.created_at := now();
   p_row.updated_at := now();
 
-  INSERT INTO hr.employee (tenant_id, matricule, nom, prenom, email, phone, date_naissance, sexe, nationalite, poste, qualification, departement, type_contrat, date_embauche, date_fin, salaire_brut, heures_hebdo, statut, notes, created_at, updated_at)
-  VALUES (p_row.tenant_id, COALESCE(p_row.matricule, ''), p_row.nom, p_row.prenom, p_row.email, p_row.phone, p_row.date_naissance, COALESCE(p_row.sexe, ''), COALESCE(p_row.nationalite, ''), COALESCE(p_row.poste, ''), COALESCE(p_row.qualification, ''), COALESCE(p_row.departement, ''), COALESCE(p_row.type_contrat, 'cdi'), COALESCE(p_row.date_embauche, CURRENT_DATE), p_row.date_fin, p_row.salaire_brut, COALESCE(p_row.heures_hebdo, 35), COALESCE(p_row.statut, 'actif'), COALESCE(p_row.notes, ''), p_row.created_at, p_row.updated_at)
+  INSERT INTO hr.employee (tenant_id, employee_code, last_name, first_name, email, phone, birth_date, gender, nationality, position, qualification, department, contract_type, hire_date, end_date, gross_salary, weekly_hours, status, notes, created_at, updated_at)
+  VALUES (p_row.tenant_id, COALESCE(p_row.employee_code, ''), p_row.last_name, p_row.first_name, p_row.email, p_row.phone, p_row.birth_date, COALESCE(p_row.gender, ''), COALESCE(p_row.nationality, ''), COALESCE(p_row.position, ''), COALESCE(p_row.qualification, ''), COALESCE(p_row.department, ''), COALESCE(p_row.contract_type, 'cdi'), COALESCE(p_row.hire_date, CURRENT_DATE), p_row.end_date, p_row.gross_salary, COALESCE(p_row.weekly_hours, 35), COALESCE(p_row.status, 'active'), COALESCE(p_row.notes, ''), p_row.created_at, p_row.updated_at)
   RETURNING * INTO p_row;
 
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION hr.employee_create(hr.employee) IS 'Create employee — SECURITY DEFINER — returns inserted row as jsonb';
+COMMENT ON FUNCTION hr.employee_create(hr.employee) IS 'Create employee — SECURITY DEFINER';
 
 CREATE OR REPLACE FUNCTION hr.employee_delete(p_id text)
  RETURNS jsonb
@@ -384,12 +311,12 @@ AS $function$
 BEGIN
   RETURN QUERY
     SELECT to_jsonb(e) || jsonb_build_object(
-      'contrat_label', hr.contrat_label(e.type_contrat),
-      'display_name', e.prenom || ' ' || e.nom
+      'contract_label', hr.contract_label(e.contract_type),
+      'display_name', e.first_name || ' ' || e.last_name
     )
     FROM hr.employee e
     WHERE e.tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY e.nom, e.prenom;
+    ORDER BY e.last_name, e.first_name;
 END;
 $function$;
 COMMENT ON FUNCTION hr.employee_list(text) IS 'List employees for current tenant with enriched fields';
@@ -402,175 +329,56 @@ AS $function$
 DECLARE
   v_result jsonb;
   v_actions jsonb := '[]'::jsonb;
-  v_statut text;
+  v_status text;
   v_cp numeric;
   v_rtt numeric;
-  v_heures numeric;
-  v_absence_count int;
+  v_hours numeric;
+  v_leave_count int;
 BEGIN
   SELECT to_jsonb(e) || jsonb_build_object(
-    'contrat_label', hr.contrat_label(e.type_contrat),
-    'display_name', e.prenom || ' ' || e.nom
+    'contract_label', hr.contract_label(e.contract_type),
+    'display_name', e.first_name || ' ' || e.last_name
   ) INTO v_result
   FROM hr.employee e
   WHERE e.id = p_id::int AND e.tenant_id = current_setting('app.tenant_id', true);
 
   IF v_result IS NULL THEN RETURN NULL; END IF;
 
-  v_statut := v_result->>'statut';
+  v_status := v_result->>'status';
 
-  -- HATEOAS actions based on state
-  IF v_statut = 'actif' THEN
+  IF v_status = 'active' THEN
     v_actions := jsonb_build_array(
       jsonb_build_object('method', 'deactivate', 'uri', 'hr://employee/' || p_id || '/deactivate'),
       jsonb_build_object('method', 'delete', 'uri', 'hr://employee/' || p_id || '/delete')
     );
-  ELSIF v_statut = 'inactif' THEN
+  ELSIF v_status = 'inactive' THEN
     v_actions := jsonb_build_array(
       jsonb_build_object('method', 'activate', 'uri', 'hr://employee/' || p_id || '/activate'),
       jsonb_build_object('method', 'delete', 'uri', 'hr://employee/' || p_id || '/delete')
     );
   END IF;
 
-  -- Stats: leave balance + hours + absence count
   SELECT COALESCE(lb.allocated - lb.used, 0) INTO v_cp
-    FROM hr.leave_balance lb WHERE lb.employee_id = p_id::int AND lb.leave_type = 'conge_paye';
+    FROM hr.leave_balance lb WHERE lb.employee_id = p_id::int AND lb.leave_type = 'paid_leave';
   SELECT COALESCE(lb.allocated - lb.used, 0) INTO v_rtt
     FROM hr.leave_balance lb WHERE lb.employee_id = p_id::int AND lb.leave_type = 'rtt';
-  SELECT COALESCE(sum(t.heures), 0) INTO v_heures
-    FROM hr.timesheet t WHERE t.employee_id = p_id::int AND t.date_travail >= CURRENT_DATE - 30;
-  SELECT count(*) INTO v_absence_count
-    FROM hr.absence a WHERE a.employee_id = p_id::int;
+  SELECT COALESCE(sum(t.hours), 0) INTO v_hours
+    FROM hr.timesheet t WHERE t.employee_id = p_id::int AND t.work_date >= CURRENT_DATE - 30;
+  SELECT count(*) INTO v_leave_count
+    FROM hr.leave_request a WHERE a.employee_id = p_id::int;
 
   v_result := v_result || jsonb_build_object(
     'actions', v_actions,
     'cp_remaining', COALESCE(v_cp, 0),
     'rtt_remaining', COALESCE(v_rtt, 0),
-    'heures_30j', v_heures,
-    'absence_count', v_absence_count
+    'hours_30d', v_hours,
+    'leave_count', v_leave_count
   );
 
   RETURN v_result;
 END;
 $function$;
 COMMENT ON FUNCTION hr.employee_read(text) IS 'Read employee by id — enriched with HATEOAS actions, leave balance stats, hours';
-
-CREATE OR REPLACE FUNCTION hr.employee_ui(p_slug text DEFAULT NULL::text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_emp hr.employee;
-  v_balances jsonb[];
-  v_bal record;
-BEGIN
-  -- List mode
-  IF p_slug IS NULL THEN
-    RETURN jsonb_build_object(
-      'ui', pgv.ui_column(
-        pgv.ui_heading('Salariés'),
-        pgv.ui_table('employees', jsonb_build_array(
-          pgv.ui_col('display_name', 'Nom', pgv.ui_link('{display_name}', '/hr/employee/{id}')),
-          pgv.ui_col('matricule', 'Matricule'),
-          pgv.ui_col('poste', 'Poste'),
-          pgv.ui_col('departement', 'Département'),
-          pgv.ui_col('contrat_label', 'Contrat', pgv.ui_badge('{contrat_label}')),
-          pgv.ui_col('date_embauche', 'Embauche'),
-          pgv.ui_col('statut', 'Statut', pgv.ui_badge('{statut}'))
-        ))
-      ),
-      'datasources', jsonb_build_object(
-        'employees', pgv.ui_datasource('hr://employee', 20, true, 'nom')
-      )
-    );
-  END IF;
-
-  -- Detail mode
-  SELECT * INTO v_emp FROM hr.employee WHERE id = p_slug::int AND tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
-
-  -- Collect leave balances
-  v_balances := ARRAY[]::jsonb[];
-  FOR v_bal IN
-    SELECT lb.leave_type, lb.allocated, lb.used, (lb.allocated - lb.used) AS remaining
-      FROM hr.leave_balance lb
-     WHERE lb.employee_id = v_emp.id
-     ORDER BY lb.leave_type
-  LOOP
-    v_balances := v_balances || jsonb_build_object(
-      'type', 'text',
-      'value', hr.absence_label(v_bal.leave_type) || ' : ' || v_bal.remaining || 'j / ' || v_bal.allocated || 'j'
-    );
-  END LOOP;
-
-  RETURN jsonb_build_object(
-    'ui', pgv.ui_column(
-      -- Header
-      pgv.ui_row(
-        pgv.ui_link('← Salariés', '/hr'),
-        pgv.ui_heading(v_emp.prenom || ' ' || v_emp.nom)
-      ),
-      pgv.ui_row(
-        pgv.ui_badge(upper(v_emp.statut)),
-        pgv.ui_badge(hr.contrat_label(v_emp.type_contrat))
-      ),
-
-      -- Identité
-      pgv.ui_heading('Identité', 3),
-      pgv.ui_row(
-        pgv.ui_text('Matricule : ' || CASE WHEN v_emp.matricule = '' THEN '—' ELSE v_emp.matricule END),
-        pgv.ui_text('Email : ' || COALESCE(v_emp.email, '—')),
-        pgv.ui_text('Tél : ' || COALESCE(v_emp.phone, '—'))
-      ),
-      pgv.ui_row(
-        pgv.ui_text('Naissance : ' || CASE WHEN v_emp.date_naissance IS NOT NULL THEN to_char(v_emp.date_naissance, 'DD/MM/YYYY') ELSE '—' END),
-        pgv.ui_text('Sexe : ' || CASE v_emp.sexe WHEN 'M' THEN 'Homme' WHEN 'F' THEN 'Femme' ELSE '—' END),
-        pgv.ui_text('Nationalité : ' || CASE WHEN v_emp.nationalite = '' THEN '—' ELSE v_emp.nationalite END)
-      ),
-
-      -- Poste
-      pgv.ui_heading('Poste', 3),
-      pgv.ui_row(
-        pgv.ui_text('Poste : ' || CASE WHEN v_emp.poste = '' THEN '—' ELSE v_emp.poste END),
-        pgv.ui_text('Département : ' || CASE WHEN v_emp.departement = '' THEN '—' ELSE v_emp.departement END),
-        pgv.ui_text('Qualification : ' || CASE WHEN v_emp.qualification = '' THEN '—' ELSE v_emp.qualification END)
-      ),
-
-      -- Contrat
-      pgv.ui_heading('Contrat', 3),
-      pgv.ui_row(
-        pgv.ui_text('Embauche : ' || to_char(v_emp.date_embauche, 'DD/MM/YYYY')),
-        pgv.ui_text('Fin : ' || CASE WHEN v_emp.date_fin IS NOT NULL THEN to_char(v_emp.date_fin, 'DD/MM/YYYY') ELSE '—' END),
-        pgv.ui_text('Heures/sem : ' || v_emp.heures_hebdo || 'h')
-      ),
-
-      -- Soldes congés (si existants)
-      CASE WHEN cardinality(v_balances) > 0 THEN
-        pgv.ui_column(
-          pgv.ui_heading('Soldes congés', 3),
-          pgv.ui_row(VARIADIC v_balances)
-        )
-      ELSE
-        pgv.ui_text('')
-      END,
-
-      -- Notes
-      CASE WHEN v_emp.notes != '' THEN
-        pgv.ui_column(
-          pgv.ui_heading('Notes', 3),
-          pgv.ui_text(v_emp.notes)
-        )
-      ELSE
-        pgv.ui_text('')
-      END
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION hr.employee_ui(text) IS 'SDUI view: employee list + detail with identity, contract, leave balances';
 
 CREATE OR REPLACE FUNCTION hr.employee_update(p_row hr.employee)
  RETURNS jsonb
@@ -579,23 +387,23 @@ CREATE OR REPLACE FUNCTION hr.employee_update(p_row hr.employee)
 AS $function$
 BEGIN
   UPDATE hr.employee SET
-    matricule = COALESCE(NULLIF(p_row.matricule, ''), matricule),
-    nom = COALESCE(NULLIF(p_row.nom, ''), nom),
-    prenom = COALESCE(NULLIF(p_row.prenom, ''), prenom),
+    employee_code = COALESCE(NULLIF(p_row.employee_code, ''), employee_code),
+    last_name = COALESCE(NULLIF(p_row.last_name, ''), last_name),
+    first_name = COALESCE(NULLIF(p_row.first_name, ''), first_name),
     email = COALESCE(p_row.email, email),
     phone = COALESCE(p_row.phone, phone),
-    date_naissance = COALESCE(p_row.date_naissance, date_naissance),
-    sexe = COALESCE(NULLIF(p_row.sexe, ''), sexe),
-    nationalite = COALESCE(NULLIF(p_row.nationalite, ''), nationalite),
-    poste = COALESCE(NULLIF(p_row.poste, ''), poste),
+    birth_date = COALESCE(p_row.birth_date, birth_date),
+    gender = COALESCE(NULLIF(p_row.gender, ''), gender),
+    nationality = COALESCE(NULLIF(p_row.nationality, ''), nationality),
+    position = COALESCE(NULLIF(p_row.position, ''), position),
     qualification = COALESCE(NULLIF(p_row.qualification, ''), qualification),
-    departement = COALESCE(NULLIF(p_row.departement, ''), departement),
-    type_contrat = COALESCE(NULLIF(p_row.type_contrat, ''), type_contrat),
-    date_embauche = COALESCE(p_row.date_embauche, date_embauche),
-    date_fin = p_row.date_fin,
-    salaire_brut = COALESCE(p_row.salaire_brut, salaire_brut),
-    heures_hebdo = COALESCE(p_row.heures_hebdo, heures_hebdo),
-    statut = COALESCE(NULLIF(p_row.statut, ''), statut),
+    department = COALESCE(NULLIF(p_row.department, ''), department),
+    contract_type = COALESCE(NULLIF(p_row.contract_type, ''), contract_type),
+    hire_date = COALESCE(p_row.hire_date, hire_date),
+    end_date = p_row.end_date,
+    gross_salary = COALESCE(p_row.gross_salary, gross_salary),
+    weekly_hours = COALESCE(p_row.weekly_hours, weekly_hours),
+    status = COALESCE(NULLIF(p_row.status, ''), status),
     notes = COALESCE(p_row.notes, notes),
     updated_at = now()
   WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
@@ -604,7 +412,7 @@ BEGIN
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION hr.employee_update(hr.employee) IS 'Update employee by id — SECURITY DEFINER — partial update, returns updated row as jsonb';
+COMMENT ON FUNCTION hr.employee_update(hr.employee) IS 'Update employee by id — SECURITY DEFINER — partial update';
 
 CREATE OR REPLACE FUNCTION hr.employee_view()
  RETURNS jsonb
@@ -1065,6 +873,210 @@ END;
 $function$;
 COMMENT ON FUNCTION hr.i18n_seed() IS 'Seed French translations for HR module into pgv.i18n';
 
+CREATE OR REPLACE FUNCTION hr.leave_type_label(p_type text)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT CASE p_type
+    WHEN 'paid_leave' THEN 'Congé payé'
+    WHEN 'rtt' THEN 'RTT'
+    WHEN 'sick' THEN 'Maladie'
+    WHEN 'unpaid' THEN 'Sans solde'
+    WHEN 'training' THEN 'Formation'
+    WHEN 'other' THEN 'Autre'
+    ELSE p_type
+  END;
+$function$;
+COMMENT ON FUNCTION hr.leave_type_label(text) IS 'Human-readable leave type label';
+
+CREATE OR REPLACE FUNCTION hr.absence_label(p_type text)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT hr.leave_type_label(p_type);
+$function$;
+COMMENT ON FUNCTION hr.absence_label(text) IS 'DEPRECATED — alias for leave_type_label';
+
+CREATE OR REPLACE FUNCTION hr.absence_ui(p_slug text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_abs record;
+BEGIN
+  -- List mode
+  IF p_slug IS NULL THEN
+    RETURN jsonb_build_object(
+      'ui', pgv.ui_column(
+        pgv.ui_heading('Absences'),
+        pgv.ui_table('absences', jsonb_build_array(
+          pgv.ui_col('employee_name', 'Salarié', pgv.ui_link('{employee_name}', '/hr/employee/{employee_id}')),
+          pgv.ui_col('type_label', 'Type', pgv.ui_badge('{type_label}')),
+          pgv.ui_col('date_debut', 'Début'),
+          pgv.ui_col('date_fin', 'Fin'),
+          pgv.ui_col('nb_jours', 'Jours'),
+          pgv.ui_col('motif', 'Motif'),
+          pgv.ui_col('statut', 'Statut', pgv.ui_badge('{statut}'))
+        ))
+      ),
+      'datasources', jsonb_build_object(
+        'absences', pgv.ui_datasource('hr://absence', 20, true, '-date_debut')
+      )
+    );
+  END IF;
+
+  -- Detail mode
+  SELECT a.*, e.prenom || ' ' || e.nom AS employee_name
+    INTO v_abs
+    FROM hr.absence a
+    JOIN hr.employee e ON e.id = a.employee_id
+   WHERE a.id = p_slug::int AND a.tenant_id = current_setting('app.tenant_id', true);
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('error', 'not_found');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'ui', pgv.ui_column(
+      pgv.ui_row(
+        pgv.ui_link('← Absences', '/hr/absences'),
+        pgv.ui_heading('Absence — ' || v_abs.employee_name)
+      ),
+      pgv.ui_row(
+        pgv.ui_badge(hr.absence_label(v_abs.type_absence)),
+        pgv.ui_badge(upper(v_abs.statut))
+      ),
+      pgv.ui_row(
+        pgv.ui_text('Du ' || to_char(v_abs.date_debut, 'DD/MM/YYYY') || ' au ' || to_char(v_abs.date_fin, 'DD/MM/YYYY')),
+        pgv.ui_text(v_abs.nb_jours || ' jour(s)')
+      ),
+      CASE WHEN v_abs.motif != '' THEN pgv.ui_text('Motif : ' || v_abs.motif) ELSE pgv.ui_text('') END
+    )
+  );
+END;
+$function$;
+COMMENT ON FUNCTION hr.absence_ui(text) IS 'SDUI view: absence list with employee name + type label, detail with dates and status';
+
+CREATE OR REPLACE FUNCTION hr.employee_ui(p_slug text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+  v_emp hr.employee;
+  v_balances jsonb[];
+  v_bal record;
+BEGIN
+  -- List mode
+  IF p_slug IS NULL THEN
+    RETURN jsonb_build_object(
+      'ui', pgv.ui_column(
+        pgv.ui_heading('Salariés'),
+        pgv.ui_table('employees', jsonb_build_array(
+          pgv.ui_col('display_name', 'Nom', pgv.ui_link('{display_name}', '/hr/employee/{id}')),
+          pgv.ui_col('matricule', 'Matricule'),
+          pgv.ui_col('poste', 'Poste'),
+          pgv.ui_col('departement', 'Département'),
+          pgv.ui_col('contrat_label', 'Contrat', pgv.ui_badge('{contrat_label}')),
+          pgv.ui_col('date_embauche', 'Embauche'),
+          pgv.ui_col('statut', 'Statut', pgv.ui_badge('{statut}'))
+        ))
+      ),
+      'datasources', jsonb_build_object(
+        'employees', pgv.ui_datasource('hr://employee', 20, true, 'nom')
+      )
+    );
+  END IF;
+
+  -- Detail mode
+  SELECT * INTO v_emp FROM hr.employee WHERE id = p_slug::int AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('error', 'not_found');
+  END IF;
+
+  -- Collect leave balances
+  v_balances := ARRAY[]::jsonb[];
+  FOR v_bal IN
+    SELECT lb.leave_type, lb.allocated, lb.used, (lb.allocated - lb.used) AS remaining
+      FROM hr.leave_balance lb
+     WHERE lb.employee_id = v_emp.id
+     ORDER BY lb.leave_type
+  LOOP
+    v_balances := v_balances || jsonb_build_object(
+      'type', 'text',
+      'value', hr.absence_label(v_bal.leave_type) || ' : ' || v_bal.remaining || 'j / ' || v_bal.allocated || 'j'
+    );
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'ui', pgv.ui_column(
+      -- Header
+      pgv.ui_row(
+        pgv.ui_link('← Salariés', '/hr'),
+        pgv.ui_heading(v_emp.prenom || ' ' || v_emp.nom)
+      ),
+      pgv.ui_row(
+        pgv.ui_badge(upper(v_emp.statut)),
+        pgv.ui_badge(hr.contrat_label(v_emp.type_contrat))
+      ),
+
+      -- Identité
+      pgv.ui_heading('Identité', 3),
+      pgv.ui_row(
+        pgv.ui_text('Matricule : ' || CASE WHEN v_emp.matricule = '' THEN '—' ELSE v_emp.matricule END),
+        pgv.ui_text('Email : ' || COALESCE(v_emp.email, '—')),
+        pgv.ui_text('Tél : ' || COALESCE(v_emp.phone, '—'))
+      ),
+      pgv.ui_row(
+        pgv.ui_text('Naissance : ' || CASE WHEN v_emp.date_naissance IS NOT NULL THEN to_char(v_emp.date_naissance, 'DD/MM/YYYY') ELSE '—' END),
+        pgv.ui_text('Sexe : ' || CASE v_emp.sexe WHEN 'M' THEN 'Homme' WHEN 'F' THEN 'Femme' ELSE '—' END),
+        pgv.ui_text('Nationalité : ' || CASE WHEN v_emp.nationalite = '' THEN '—' ELSE v_emp.nationalite END)
+      ),
+
+      -- Poste
+      pgv.ui_heading('Poste', 3),
+      pgv.ui_row(
+        pgv.ui_text('Poste : ' || CASE WHEN v_emp.poste = '' THEN '—' ELSE v_emp.poste END),
+        pgv.ui_text('Département : ' || CASE WHEN v_emp.departement = '' THEN '—' ELSE v_emp.departement END),
+        pgv.ui_text('Qualification : ' || CASE WHEN v_emp.qualification = '' THEN '—' ELSE v_emp.qualification END)
+      ),
+
+      -- Contrat
+      pgv.ui_heading('Contrat', 3),
+      pgv.ui_row(
+        pgv.ui_text('Embauche : ' || to_char(v_emp.date_embauche, 'DD/MM/YYYY')),
+        pgv.ui_text('Fin : ' || CASE WHEN v_emp.date_fin IS NOT NULL THEN to_char(v_emp.date_fin, 'DD/MM/YYYY') ELSE '—' END),
+        pgv.ui_text('Heures/sem : ' || v_emp.heures_hebdo || 'h')
+      ),
+
+      -- Soldes congés (si existants)
+      CASE WHEN cardinality(v_balances) > 0 THEN
+        pgv.ui_column(
+          pgv.ui_heading('Soldes congés', 3),
+          pgv.ui_row(VARIADIC v_balances)
+        )
+      ELSE
+        pgv.ui_text('')
+      END,
+
+      -- Notes
+      CASE WHEN v_emp.notes != '' THEN
+        pgv.ui_column(
+          pgv.ui_heading('Notes', 3),
+          pgv.ui_text(v_emp.notes)
+        )
+      ELSE
+        pgv.ui_text('')
+      END
+    )
+  );
+END;
+$function$;
+COMMENT ON FUNCTION hr.employee_ui(text) IS 'SDUI view: employee list + detail with identity, contract, leave balances';
+
 CREATE OR REPLACE FUNCTION hr.nav_items()
  RETURNS jsonb
  LANGUAGE sql
@@ -1086,9 +1098,9 @@ CREATE OR REPLACE FUNCTION hr.post_absence_save(p_data jsonb)
 AS $function$
 DECLARE
   v_employee_id int := (p_data->>'employee_id')::int;
-  v_date_debut date;
-  v_date_fin date;
-  v_nb_jours numeric;
+  v_start date;
+  v_end date;
+  v_days numeric;
   v_type text;
   v_balance numeric;
   v_warning text := '';
@@ -1097,45 +1109,45 @@ BEGIN
     RETURN pgv.toast('Salarié manquant.', 'error');
   END IF;
 
-  v_date_debut := (p_data->>'date_debut')::date;
-  v_date_fin := (p_data->>'date_fin')::date;
-  v_nb_jours := (p_data->>'nb_jours')::numeric;
-  v_type := COALESCE(NULLIF(trim(p_data->>'type_absence'), ''), 'conge_paye');
+  v_start := (p_data->>'start_date')::date;
+  v_end := (p_data->>'end_date')::date;
+  v_days := (p_data->>'day_count')::numeric;
+  v_type := COALESCE(NULLIF(trim(p_data->>'leave_type'), ''), 'paid_leave');
 
-  IF v_date_debut IS NULL OR v_date_fin IS NULL OR v_nb_jours IS NULL THEN
+  IF v_start IS NULL OR v_end IS NULL OR v_days IS NULL THEN
     RETURN pgv.toast('Dates et nombre de jours obligatoires.', 'error');
   END IF;
 
-  IF v_date_fin < v_date_debut THEN
+  IF v_end < v_start THEN
     RETURN pgv.toast('La date de fin doit être après la date de début.', 'error');
   END IF;
 
-  IF v_type IN ('conge_paye', 'rtt') THEN
+  IF v_type IN ('paid_leave', 'rtt') THEN
     SELECT (lb.allocated - lb.used) INTO v_balance
       FROM hr.leave_balance lb
      WHERE lb.employee_id = v_employee_id
        AND lb.leave_type = v_type;
 
-    IF v_balance IS NOT NULL AND v_balance < v_nb_jours THEN
+    IF v_balance IS NOT NULL AND v_balance < v_days THEN
       v_warning := ' Attention : solde insuffisant (' || v_balance || 'j restants).';
     END IF;
   END IF;
 
-  INSERT INTO hr.absence (employee_id, type_absence, date_debut, date_fin, nb_jours, motif)
+  INSERT INTO hr.leave_request (employee_id, leave_type, start_date, end_date, day_count, reason)
   VALUES (
     v_employee_id,
     v_type,
-    v_date_debut,
-    v_date_fin,
-    v_nb_jours,
-    COALESCE(trim(p_data->>'motif'), '')
+    v_start,
+    v_end,
+    v_days,
+    COALESCE(trim(p_data->>'reason'), '')
   );
 
   RETURN pgv.toast('Absence déclarée.' || v_warning)
     || pgv.redirect(pgv.call_ref('get_employee', jsonb_build_object('p_id', v_employee_id)));
 END;
 $function$;
-COMMENT ON FUNCTION hr.post_absence_save(jsonb) IS 'Declare a new absence — SECURITY DEFINER — warns if leave balance insufficient';
+COMMENT ON FUNCTION hr.post_absence_save(jsonb) IS 'Declare a new leave request — SECURITY DEFINER — warns if balance insufficient';
 
 CREATE OR REPLACE FUNCTION hr.post_absence_validate(p_data jsonb)
  RETURNS text
@@ -1146,63 +1158,70 @@ DECLARE
   v_id int := (p_data->>'id')::int;
   v_action text := COALESCE(p_data->>'action', '');
   v_employee_id int;
-  v_new_statut text;
-  v_absence record;
+  v_new_status text;
+  v_leave record;
   v_balance numeric;
 BEGIN
-  IF v_action = 'valider' THEN
-    v_new_statut := 'validee';
+  IF v_action = 'validate' THEN
+    v_new_status := 'approved';
+  ELSIF v_action = 'refuse' THEN
+    v_new_status := 'rejected';
+  ELSIF v_action = 'cancel' THEN
+    v_new_status := 'cancelled';
+  -- Legacy French action names for backward compat with pgView forms
+  ELSIF v_action = 'valider' THEN
+    v_new_status := 'approved';
   ELSIF v_action = 'refuser' THEN
-    v_new_statut := 'refusee';
+    v_new_status := 'rejected';
   ELSIF v_action = 'annuler' THEN
-    v_new_statut := 'annulee';
+    v_new_status := 'cancelled';
   ELSE
     RETURN pgv.toast('Action invalide.', 'error');
   END IF;
 
-  SELECT a.employee_id, a.type_absence, a.nb_jours, a.statut
-    INTO v_absence
-    FROM hr.absence a WHERE a.id = v_id;
+  SELECT a.employee_id, a.leave_type, a.day_count, a.status
+    INTO v_leave
+    FROM hr.leave_request a WHERE a.id = v_id;
 
-  IF v_absence IS NULL THEN
+  IF v_leave IS NULL THEN
     RETURN pgv.toast('Absence introuvable.', 'error');
   END IF;
 
-  IF v_absence.statut <> 'demande' THEN
+  IF v_leave.status <> 'pending' THEN
     RETURN pgv.toast('Absence déjà traitée.', 'error');
   END IF;
 
-  IF v_action = 'valider' AND v_absence.type_absence IN ('conge_paye', 'rtt') THEN
+  IF v_new_status = 'approved' AND v_leave.leave_type IN ('paid_leave', 'rtt') THEN
     SELECT (lb.allocated - lb.used) INTO v_balance
       FROM hr.leave_balance lb
-     WHERE lb.employee_id = v_absence.employee_id
-       AND lb.leave_type = v_absence.type_absence;
+     WHERE lb.employee_id = v_leave.employee_id
+       AND lb.leave_type = v_leave.leave_type;
 
-    IF v_balance IS NOT NULL AND v_balance < v_absence.nb_jours THEN
-      RETURN pgv.toast('Solde insuffisant : ' || v_balance || 'j restants sur ' || v_absence.nb_jours || 'j demandés.', 'error');
+    IF v_balance IS NOT NULL AND v_balance < v_leave.day_count THEN
+      RETURN pgv.toast('Solde insuffisant : ' || v_balance || 'j restants sur ' || v_leave.day_count || 'j demandés.', 'error');
     END IF;
   END IF;
 
-  UPDATE hr.absence SET statut = v_new_statut
-    WHERE id = v_id AND statut = 'demande'
+  UPDATE hr.leave_request SET status = v_new_status
+    WHERE id = v_id AND status = 'pending'
     RETURNING employee_id INTO v_employee_id;
 
   IF NOT FOUND THEN
     RETURN pgv.toast('Absence introuvable ou déjà traitée.', 'error');
   END IF;
 
-  IF v_action = 'valider' THEN
+  IF v_new_status = 'approved' THEN
     UPDATE hr.leave_balance
-       SET used = used + v_absence.nb_jours
+       SET used = used + v_leave.day_count
      WHERE employee_id = v_employee_id
-       AND leave_type = v_absence.type_absence;
+       AND leave_type = v_leave.leave_type;
   END IF;
 
-  RETURN pgv.toast('Absence ' || v_new_statut || '.')
+  RETURN pgv.toast('Absence ' || v_new_status || '.')
     || pgv.redirect(pgv.call_ref('get_employee', jsonb_build_object('p_id', v_employee_id)));
 END;
 $function$;
-COMMENT ON FUNCTION hr.post_absence_validate(jsonb) IS 'Validate/refuse/cancel absence — SECURITY DEFINER — decrements leave balance on validation';
+COMMENT ON FUNCTION hr.post_absence_validate(jsonb) IS 'Validate/refuse/cancel leave request — SECURITY DEFINER — decrements leave balance on approval';
 
 CREATE OR REPLACE FUNCTION hr.post_employee_delete(p_data jsonb)
  RETURNS text
@@ -1229,10 +1248,10 @@ CREATE OR REPLACE FUNCTION hr.post_employee_save(p_data jsonb)
 AS $function$
 DECLARE
   v_id int;
-  v_nom text := trim(COALESCE(p_data->>'nom', ''));
-  v_prenom text := trim(COALESCE(p_data->>'prenom', ''));
+  v_last text := trim(COALESCE(p_data->>'last_name', p_data->>'nom', ''));
+  v_first text := trim(COALESCE(p_data->>'first_name', p_data->>'prenom', ''));
 BEGIN
-  IF v_nom = '' OR v_prenom = '' THEN
+  IF v_last = '' OR v_first = '' THEN
     RETURN pgv.toast('Nom et prénom obligatoires.', 'error');
   END IF;
 
@@ -1240,22 +1259,22 @@ BEGIN
 
   IF v_id IS NOT NULL THEN
     UPDATE hr.employee SET
-      nom = v_nom,
-      prenom = v_prenom,
+      last_name = v_last,
+      first_name = v_first,
       email = NULLIF(trim(COALESCE(p_data->>'email', '')), ''),
       phone = NULLIF(trim(COALESCE(p_data->>'phone', '')), ''),
-      matricule = COALESCE(trim(p_data->>'matricule'), ''),
-      date_naissance = (NULLIF(trim(COALESCE(p_data->>'date_naissance', '')), ''))::date,
-      poste = COALESCE(trim(p_data->>'poste'), ''),
-      departement = COALESCE(trim(p_data->>'departement'), ''),
-      sexe = COALESCE(NULLIF(trim(p_data->>'sexe'), ''), ''),
-      nationalite = COALESCE(trim(p_data->>'nationalite'), ''),
-      qualification = COALESCE(trim(p_data->>'qualification'), ''),
-      type_contrat = COALESCE(NULLIF(trim(p_data->>'type_contrat'), ''), 'cdi'),
-      date_embauche = COALESCE((NULLIF(trim(p_data->>'date_embauche'), ''))::date, CURRENT_DATE),
-      date_fin = (NULLIF(trim(COALESCE(p_data->>'date_fin', '')), ''))::date,
-      heures_hebdo = COALESCE((NULLIF(trim(p_data->>'heures_hebdo'), ''))::numeric, 35),
-      notes = COALESCE(trim(p_data->>'notes'), '')
+      employee_code = COALESCE(trim(p_data->>'employee_code'), employee_code),
+      birth_date = (NULLIF(trim(COALESCE(p_data->>'birth_date', '')), ''))::date,
+      position = COALESCE(trim(p_data->>'position'), position),
+      department = COALESCE(trim(p_data->>'department'), department),
+      gender = COALESCE(NULLIF(trim(p_data->>'gender'), ''), gender),
+      nationality = COALESCE(trim(p_data->>'nationality'), nationality),
+      qualification = COALESCE(trim(p_data->>'qualification'), qualification),
+      contract_type = COALESCE(NULLIF(trim(p_data->>'contract_type'), ''), contract_type),
+      hire_date = COALESCE((NULLIF(trim(p_data->>'hire_date'), ''))::date, hire_date),
+      end_date = (NULLIF(trim(COALESCE(p_data->>'end_date', '')), ''))::date,
+      weekly_hours = COALESCE((NULLIF(trim(p_data->>'weekly_hours'), ''))::numeric, weekly_hours),
+      notes = COALESCE(trim(p_data->>'notes'), notes)
     WHERE id = v_id;
 
     IF NOT FOUND THEN
@@ -1265,22 +1284,22 @@ BEGIN
     RETURN pgv.toast('Salarié mis à jour.')
       || pgv.redirect(pgv.call_ref('get_employee', jsonb_build_object('p_id', v_id)));
   ELSE
-    INSERT INTO hr.employee (nom, prenom, email, phone, matricule, date_naissance, sexe, nationalite, poste, departement, qualification, type_contrat, date_embauche, date_fin, heures_hebdo, notes)
+    INSERT INTO hr.employee (last_name, first_name, email, phone, employee_code, birth_date, gender, nationality, position, department, qualification, contract_type, hire_date, end_date, weekly_hours, notes)
     VALUES (
-      v_nom, v_prenom,
+      v_last, v_first,
       NULLIF(trim(COALESCE(p_data->>'email', '')), ''),
       NULLIF(trim(COALESCE(p_data->>'phone', '')), ''),
-      COALESCE(trim(p_data->>'matricule'), ''),
-      (NULLIF(trim(COALESCE(p_data->>'date_naissance', '')), ''))::date,
-      COALESCE(NULLIF(trim(p_data->>'sexe'), ''), ''),
-      COALESCE(trim(p_data->>'nationalite'), ''),
-      COALESCE(trim(p_data->>'poste'), ''),
-      COALESCE(trim(p_data->>'departement'), ''),
+      COALESCE(trim(p_data->>'employee_code'), ''),
+      (NULLIF(trim(COALESCE(p_data->>'birth_date', '')), ''))::date,
+      COALESCE(NULLIF(trim(p_data->>'gender'), ''), ''),
+      COALESCE(trim(p_data->>'nationality'), ''),
+      COALESCE(trim(p_data->>'position'), ''),
+      COALESCE(trim(p_data->>'department'), ''),
       COALESCE(trim(p_data->>'qualification'), ''),
-      COALESCE(NULLIF(trim(p_data->>'type_contrat'), ''), 'cdi'),
-      COALESCE((NULLIF(trim(p_data->>'date_embauche'), ''))::date, CURRENT_DATE),
-      (NULLIF(trim(COALESCE(p_data->>'date_fin', '')), ''))::date,
-      COALESCE((NULLIF(trim(p_data->>'heures_hebdo'), ''))::numeric, 35),
+      COALESCE(NULLIF(trim(p_data->>'contract_type'), ''), 'cdi'),
+      COALESCE((NULLIF(trim(p_data->>'hire_date'), ''))::date, CURRENT_DATE),
+      (NULLIF(trim(COALESCE(p_data->>'end_date', '')), ''))::date,
+      COALESCE((NULLIF(trim(p_data->>'weekly_hours'), ''))::numeric, 35),
       COALESCE(trim(p_data->>'notes'), '')
     )
     RETURNING id INTO v_id;
@@ -1290,7 +1309,7 @@ BEGIN
   END IF;
 END;
 $function$;
-COMMENT ON FUNCTION hr.post_employee_save(jsonb) IS 'Create or update an employee — SECURITY DEFINER';
+COMMENT ON FUNCTION hr.post_employee_save(jsonb) IS 'Create or update employee — SECURITY DEFINER';
 
 CREATE OR REPLACE FUNCTION hr.post_timesheet_save(p_data jsonb)
  RETURNS text
@@ -1300,27 +1319,27 @@ AS $function$
 DECLARE
   v_employee_id int := (p_data->>'employee_id')::int;
   v_date date;
-  v_heures numeric;
+  v_hours numeric;
 BEGIN
   IF v_employee_id IS NULL THEN
     RETURN pgv.toast('Salarié manquant.', 'error');
   END IF;
 
-  v_date := (p_data->>'date_travail')::date;
-  v_heures := (p_data->>'heures')::numeric;
+  v_date := (COALESCE(p_data->>'work_date', p_data->>'date_travail'))::date;
+  v_hours := (COALESCE(p_data->>'hours', p_data->>'heures'))::numeric;
 
-  IF v_date IS NULL OR v_heures IS NULL THEN
+  IF v_date IS NULL OR v_hours IS NULL THEN
     RETURN pgv.toast('Date et heures obligatoires.', 'error');
   END IF;
 
-  IF v_heures < 0 OR v_heures > 24 THEN
+  IF v_hours < 0 OR v_hours > 24 THEN
     RETURN pgv.toast('Heures entre 0 et 24.', 'error');
   END IF;
 
-  INSERT INTO hr.timesheet (employee_id, date_travail, heures, description)
-  VALUES (v_employee_id, v_date, v_heures, COALESCE(trim(p_data->>'description'), ''))
-  ON CONFLICT (employee_id, date_travail)
-  DO UPDATE SET heures = EXCLUDED.heures, description = EXCLUDED.description;
+  INSERT INTO hr.timesheet (employee_id, work_date, hours, description)
+  VALUES (v_employee_id, v_date, v_hours, COALESCE(trim(p_data->>'description'), ''))
+  ON CONFLICT (employee_id, work_date)
+  DO UPDATE SET hours = EXCLUDED.hours, description = EXCLUDED.description;
 
   RETURN pgv.toast('Heures enregistrées.')
     || pgv.redirect(pgv.call_ref('get_employee', jsonb_build_object('p_id', v_employee_id)));
@@ -1328,22 +1347,197 @@ END;
 $function$;
 COMMENT ON FUNCTION hr.post_timesheet_save(jsonb) IS 'Save/upsert timesheet entry — SECURITY DEFINER';
 
-CREATE OR REPLACE FUNCTION hr.statut_variant(p_statut text)
+CREATE OR REPLACE FUNCTION hr.status_variant(p_status text)
  RETURNS text
  LANGUAGE sql
- IMMUTABLE
+ STABLE
 AS $function$
-  SELECT CASE p_statut
-    WHEN 'actif' THEN 'success'
-    WHEN 'inactif' THEN 'default'
-    WHEN 'demande' THEN 'warning'
-    WHEN 'validee' THEN 'success'
-    WHEN 'refusee' THEN 'danger'
-    WHEN 'annulee' THEN 'default'
+  SELECT CASE p_status
+    WHEN 'active' THEN 'success'
+    WHEN 'inactive' THEN 'muted'
+    WHEN 'pending' THEN 'warning'
+    WHEN 'approved' THEN 'success'
+    WHEN 'rejected' THEN 'danger'
+    WHEN 'cancelled' THEN 'muted'
     ELSE 'default'
   END;
 $function$;
-COMMENT ON FUNCTION hr.statut_variant(text) IS 'Badge variant for employee/absence status';
+COMMENT ON FUNCTION hr.status_variant(text) IS 'Badge variant for status values';
+
+CREATE OR REPLACE FUNCTION hr.get_employee(p_id integer)
+ RETURNS text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_emp hr.employee;
+  v_fiche text;
+  v_absences text;
+  v_heures text;
+  v_body text;
+  v_rows text[];
+  r record;
+  v_total_hours numeric;
+  v_total_leaves int;
+  v_balance_stats text[];
+  v_bal record;
+BEGIN
+  SELECT * INTO v_emp FROM hr.employee WHERE id = p_id;
+  IF NOT FOUND THEN
+    RETURN pgv.alert('Salarié introuvable.', 'danger');
+  END IF;
+
+  -- Fiche
+  v_fiche := pgv.dl(VARIADIC ARRAY[
+    'Matricule', CASE WHEN v_emp.employee_code = '' THEN '—' ELSE pgv.esc(v_emp.employee_code) END,
+    'Email', COALESCE(v_emp.email, '—'),
+    'Téléphone', COALESCE(v_emp.phone, '—'),
+    'Date de naissance', CASE WHEN v_emp.birth_date IS NOT NULL THEN to_char(v_emp.birth_date, 'DD/MM/YYYY') ELSE '—' END,
+    'Sexe', CASE v_emp.gender WHEN 'M' THEN 'Homme' WHEN 'F' THEN 'Femme' ELSE '—' END,
+    'Nationalité', CASE WHEN v_emp.nationality = '' THEN '—' ELSE pgv.esc(v_emp.nationality) END,
+    'Poste', CASE WHEN v_emp.position = '' THEN '—' ELSE pgv.esc(v_emp.position) END,
+    'Département', CASE WHEN v_emp.department = '' THEN '—' ELSE pgv.esc(v_emp.department) END,
+    'Qualification', CASE WHEN v_emp.qualification = '' THEN '—' ELSE pgv.esc(v_emp.qualification) END,
+    'Contrat', hr.contract_label(v_emp.contract_type),
+    'Embauche', to_char(v_emp.hire_date, 'DD/MM/YYYY'),
+    'Fin de contrat', CASE WHEN v_emp.end_date IS NOT NULL THEN to_char(v_emp.end_date, 'DD/MM/YYYY') ELSE '—' END,
+    'Heures/semaine', v_emp.weekly_hours::text || 'h',
+    'Statut', pgv.badge(upper(v_emp.status), hr.status_variant(v_emp.status)),
+    'Notes', CASE WHEN v_emp.notes = '' THEN '—' ELSE pgv.esc(v_emp.notes) END
+  ]);
+
+  v_fiche := v_fiche || '<hr>'
+    || pgv.form_dialog('dlg-edit-' || p_id,
+      'Modifier ' || pgv.esc(v_emp.first_name) || ' ' || pgv.esc(v_emp.last_name),
+      hr._employee_form_body(v_emp),
+      'post_employee_save',
+      'Modifier', 'outline') || ' '
+    || pgv.action('post_employee_delete', 'Supprimer', jsonb_build_object('id', p_id), 'Supprimer définitivement ce salarié et tout son historique ?', 'danger');
+
+  -- Leave balance stats
+  v_balance_stats := ARRAY[]::text[];
+  FOR v_bal IN
+    SELECT lb.leave_type, lb.allocated, lb.used, (lb.allocated - lb.used) AS remaining
+      FROM hr.leave_balance lb
+     WHERE lb.employee_id = p_id
+     ORDER BY lb.leave_type
+  LOOP
+    v_balance_stats := v_balance_stats || pgv.stat(
+      hr.leave_type_label(v_bal.leave_type),
+      v_bal.remaining::text || 'j / ' || v_bal.allocated::text || 'j',
+      CASE WHEN v_bal.remaining <= 0 THEN 'danger' WHEN v_bal.remaining <= 3 THEN 'warning' ELSE NULL END
+    );
+  END LOOP;
+
+  -- Absences
+  v_rows := ARRAY[]::text[];
+  SELECT count(*)::int INTO v_total_leaves FROM hr.leave_request WHERE employee_id = p_id;
+
+  FOR r IN
+    SELECT a.id, a.leave_type, a.start_date, a.end_date, a.day_count, a.reason, a.status
+      FROM hr.leave_request a
+     WHERE a.employee_id = p_id
+     ORDER BY a.start_date DESC
+  LOOP
+    v_rows := v_rows || ARRAY[
+      hr.leave_type_label(r.leave_type),
+      to_char(r.start_date, 'DD/MM/YYYY'),
+      to_char(r.end_date, 'DD/MM/YYYY'),
+      r.day_count::text || 'j',
+      pgv.badge(upper(r.status), hr.status_variant(r.status)),
+      CASE WHEN r.status = 'pending' THEN
+        pgv.action('post_absence_validate', 'Valider', jsonb_build_object('id', r.id, 'action', 'validate'))
+        || ' ' || pgv.action('post_absence_validate', 'Refuser', jsonb_build_object('id', r.id, 'action', 'refuse'), NULL, 'danger')
+      ELSE '—' END
+    ];
+  END LOOP;
+
+  IF cardinality(v_balance_stats) > 0 THEN
+    v_absences := pgv.grid(VARIADIC v_balance_stats);
+  ELSE
+    v_absences := '';
+  END IF;
+
+  IF v_total_leaves = 0 THEN
+    v_absences := v_absences || pgv.empty('Aucune absence enregistrée');
+  ELSE
+    v_absences := v_absences || pgv.md_table(
+      ARRAY['Type', 'Début', 'Fin', 'Jours', 'Statut', 'Actions'],
+      v_rows, 10
+    );
+  END IF;
+
+  v_absences := v_absences ||
+    pgv.accordion(VARIADIC ARRAY[
+      'Déclarer une absence',
+      pgv.form('post_absence_save',
+        '<input type="hidden" name="employee_id" value="' || p_id || '">'
+        || pgv.sel('leave_type', 'Type', '[{"label":"Congé payé","value":"paid_leave"},{"label":"RTT","value":"rtt"},{"label":"Maladie","value":"sick"},{"label":"Sans solde","value":"unpaid"},{"label":"Formation","value":"training"},{"label":"Autre","value":"other"}]'::jsonb, 'paid_leave')
+        || '<div class="grid">'
+        || pgv.input('start_date', 'date', 'Date début', NULL, true)
+        || pgv.input('end_date', 'date', 'Date fin', NULL, true)
+        || pgv.input('day_count', 'number', 'Nb jours', NULL, true)
+        || '</div>'
+        || pgv.input('reason', 'text', 'Motif'),
+        'Déclarer')
+    ]);
+
+  -- Hours (30 days)
+  v_rows := ARRAY[]::text[];
+  SELECT COALESCE(sum(t.hours), 0) INTO v_total_hours FROM hr.timesheet t
+    WHERE t.employee_id = p_id AND t.work_date >= CURRENT_DATE - 30;
+
+  FOR r IN
+    SELECT t.work_date, t.hours, t.description
+      FROM hr.timesheet t
+     WHERE t.employee_id = p_id
+     ORDER BY t.work_date DESC
+     LIMIT 30
+  LOOP
+    v_rows := v_rows || ARRAY[
+      to_char(r.work_date, 'DD/MM/YYYY'),
+      r.hours::text || 'h',
+      COALESCE(NULLIF(r.description, ''), '—')
+    ];
+  END LOOP;
+
+  IF cardinality(v_rows) = 0 THEN
+    v_heures := pgv.empty('Aucune heure saisie');
+  ELSE
+    v_heures := pgv.grid(VARIADIC ARRAY[
+      pgv.stat('Heures (30j)', v_total_hours::text || 'h')
+    ])
+    || pgv.md_table(ARRAY['Date', 'Heures', 'Description'], v_rows, 10);
+  END IF;
+
+  v_heures := v_heures ||
+    pgv.accordion(VARIADIC ARRAY[
+      'Saisir des heures',
+      pgv.form('post_timesheet_save',
+        '<input type="hidden" name="employee_id" value="' || p_id || '">'
+        || '<div class="grid">'
+        || pgv.input('work_date', 'date', 'Date', to_char(CURRENT_DATE, 'YYYY-MM-DD'), true)
+        || pgv.input('hours', 'number', 'Heures', NULL, true)
+        || '</div>'
+        || pgv.input('description', 'text', 'Description'),
+        'Enregistrer')
+    ]);
+
+  v_body := pgv.breadcrumb(VARIADIC ARRAY['Salariés', pgv.call_ref('get_index'), v_emp.first_name || ' ' || v_emp.last_name])
+    || pgv.tabs(VARIADIC ARRAY['Fiche', v_fiche, 'Absences (' || v_total_leaves || ')', v_absences, 'Heures', v_heures]);
+
+  RETURN v_body;
+END;
+$function$;
+COMMENT ON FUNCTION hr.get_employee(integer) IS 'Employee detail page — fiche, absences with leave balance, timesheet tabs';
+
+CREATE OR REPLACE FUNCTION hr.statut_variant(p_status text)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+AS $function$
+  SELECT hr.status_variant(p_status);
+$function$;
+COMMENT ON FUNCTION hr.statut_variant(text) IS 'DEPRECATED — alias for status_variant';
 
 CREATE OR REPLACE FUNCTION hr.get_absences(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
@@ -1420,173 +1614,6 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION hr.get_absences(jsonb) IS 'Global absences list — all employees, filters by status/type/month';
-
-CREATE OR REPLACE FUNCTION hr.get_employee(p_id integer)
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_emp hr.employee;
-  v_fiche text;
-  v_absences text;
-  v_heures text;
-  v_body text;
-  v_rows text[];
-  r record;
-  v_total_heures numeric;
-  v_total_absences int;
-  v_balance_stats text[];
-  v_bal record;
-BEGIN
-  SELECT * INTO v_emp FROM hr.employee WHERE id = p_id;
-  IF NOT FOUND THEN
-    RETURN pgv.alert('Salarié introuvable.', 'danger');
-  END IF;
-
-  -- Fiche
-  v_fiche := pgv.dl(VARIADIC ARRAY[
-    'Matricule', CASE WHEN v_emp.matricule = '' THEN '—' ELSE pgv.esc(v_emp.matricule) END,
-    'Email', COALESCE(v_emp.email, '—'),
-    'Téléphone', COALESCE(v_emp.phone, '—'),
-    'Date de naissance', CASE WHEN v_emp.date_naissance IS NOT NULL THEN to_char(v_emp.date_naissance, 'DD/MM/YYYY') ELSE '—' END,
-    'Sexe', CASE v_emp.sexe WHEN 'M' THEN 'Homme' WHEN 'F' THEN 'Femme' ELSE '—' END,
-    'Nationalité', CASE WHEN v_emp.nationalite = '' THEN '—' ELSE pgv.esc(v_emp.nationalite) END,
-    'Poste', CASE WHEN v_emp.poste = '' THEN '—' ELSE pgv.esc(v_emp.poste) END,
-    'Département', CASE WHEN v_emp.departement = '' THEN '—' ELSE pgv.esc(v_emp.departement) END,
-    'Qualification', CASE WHEN v_emp.qualification = '' THEN '—' ELSE pgv.esc(v_emp.qualification) END,
-    'Contrat', hr.contrat_label(v_emp.type_contrat),
-    'Embauche', to_char(v_emp.date_embauche, 'DD/MM/YYYY'),
-    'Fin de contrat', CASE WHEN v_emp.date_fin IS NOT NULL THEN to_char(v_emp.date_fin, 'DD/MM/YYYY') ELSE '—' END,
-    'Heures/semaine', v_emp.heures_hebdo::text || 'h',
-    'Statut', pgv.badge(upper(v_emp.statut), hr.statut_variant(v_emp.statut)),
-    'Notes', CASE WHEN v_emp.notes = '' THEN '—' ELSE pgv.esc(v_emp.notes) END
-  ]);
-
-  v_fiche := v_fiche || '<hr>'
-    || pgv.form_dialog('dlg-edit-' || p_id,
-      'Modifier ' || pgv.esc(v_emp.prenom) || ' ' || pgv.esc(v_emp.nom),
-      hr._employee_form_body(v_emp),
-      'post_employee_save',
-      'Modifier', 'outline') || ' '
-    || pgv.action('post_employee_delete', 'Supprimer', jsonb_build_object('id', p_id), 'Supprimer définitivement ce salarié et tout son historique ?', 'danger');
-
-  -- Leave balance stats
-  v_balance_stats := ARRAY[]::text[];
-  FOR v_bal IN
-    SELECT lb.leave_type, lb.allocated, lb.used, (lb.allocated - lb.used) AS remaining
-      FROM hr.leave_balance lb
-     WHERE lb.employee_id = p_id
-     ORDER BY lb.leave_type
-  LOOP
-    v_balance_stats := v_balance_stats || pgv.stat(
-      hr.absence_label(v_bal.leave_type),
-      v_bal.remaining::text || 'j / ' || v_bal.allocated::text || 'j',
-      CASE WHEN v_bal.remaining <= 0 THEN 'danger' WHEN v_bal.remaining <= 3 THEN 'warning' ELSE NULL END
-    );
-  END LOOP;
-
-  -- Absences
-  v_rows := ARRAY[]::text[];
-  SELECT count(*)::int INTO v_total_absences FROM hr.absence WHERE employee_id = p_id;
-
-  FOR r IN
-    SELECT a.id, a.type_absence, a.date_debut, a.date_fin, a.nb_jours, a.motif, a.statut
-      FROM hr.absence a
-     WHERE a.employee_id = p_id
-     ORDER BY a.date_debut DESC
-  LOOP
-    v_rows := v_rows || ARRAY[
-      hr.absence_label(r.type_absence),
-      to_char(r.date_debut, 'DD/MM/YYYY'),
-      to_char(r.date_fin, 'DD/MM/YYYY'),
-      r.nb_jours::text || 'j',
-      pgv.badge(upper(r.statut), hr.statut_variant(r.statut)),
-      CASE WHEN r.statut = 'demande' THEN
-        pgv.action('post_absence_validate', 'Valider', jsonb_build_object('id', r.id, 'action', 'valider'))
-        || ' ' || pgv.action('post_absence_validate', 'Refuser', jsonb_build_object('id', r.id, 'action', 'refuser'), NULL, 'danger')
-      ELSE '—' END
-    ];
-  END LOOP;
-
-  IF cardinality(v_balance_stats) > 0 THEN
-    v_absences := pgv.grid(VARIADIC v_balance_stats);
-  ELSE
-    v_absences := '';
-  END IF;
-
-  IF v_total_absences = 0 THEN
-    v_absences := v_absences || pgv.empty('Aucune absence enregistrée');
-  ELSE
-    v_absences := v_absences || pgv.md_table(
-      ARRAY['Type', 'Début', 'Fin', 'Jours', 'Statut', 'Actions'],
-      v_rows,
-      10
-    );
-  END IF;
-
-  v_absences := v_absences ||
-    pgv.accordion(VARIADIC ARRAY[
-      'Déclarer une absence',
-      pgv.form('post_absence_save',
-        '<input type="hidden" name="employee_id" value="' || p_id || '">'
-        || pgv.sel('type_absence', 'Type', '[{"label":"Congé payé","value":"conge_paye"},{"label":"RTT","value":"rtt"},{"label":"Maladie","value":"maladie"},{"label":"Sans solde","value":"sans_solde"},{"label":"Formation","value":"formation"},{"label":"Autre","value":"autre"}]'::jsonb, 'conge_paye')
-        || '<div class="grid">'
-        || pgv.input('date_debut', 'date', 'Date début', NULL, true)
-        || pgv.input('date_fin', 'date', 'Date fin', NULL, true)
-        || pgv.input('nb_jours', 'number', 'Nb jours', NULL, true)
-        || '</div>'
-        || pgv.input('motif', 'text', 'Motif'),
-        'Déclarer')
-    ]);
-
-  -- Heures (30 derniers jours)
-  v_rows := ARRAY[]::text[];
-  SELECT COALESCE(sum(t.heures), 0) INTO v_total_heures FROM hr.timesheet t
-    WHERE t.employee_id = p_id AND t.date_travail >= CURRENT_DATE - 30;
-
-  FOR r IN
-    SELECT t.date_travail, t.heures, t.description
-      FROM hr.timesheet t
-     WHERE t.employee_id = p_id
-     ORDER BY t.date_travail DESC
-     LIMIT 30
-  LOOP
-    v_rows := v_rows || ARRAY[
-      to_char(r.date_travail, 'DD/MM/YYYY'),
-      r.heures::text || 'h',
-      COALESCE(NULLIF(r.description, ''), '—')
-    ];
-  END LOOP;
-
-  IF cardinality(v_rows) = 0 THEN
-    v_heures := pgv.empty('Aucune heure saisie');
-  ELSE
-    v_heures := pgv.grid(VARIADIC ARRAY[
-      pgv.stat('Heures (30j)', v_total_heures::text || 'h')
-    ])
-    || pgv.md_table(ARRAY['Date', 'Heures', 'Description'], v_rows, 10);
-  END IF;
-
-  v_heures := v_heures ||
-    pgv.accordion(VARIADIC ARRAY[
-      'Saisir des heures',
-      pgv.form('post_timesheet_save',
-        '<input type="hidden" name="employee_id" value="' || p_id || '">'
-        || '<div class="grid">'
-        || pgv.input('date_travail', 'date', 'Date', to_char(CURRENT_DATE, 'YYYY-MM-DD'), true)
-        || pgv.input('heures', 'number', 'Heures', NULL, true)
-        || '</div>'
-        || pgv.input('description', 'text', 'Description'),
-        'Enregistrer')
-    ]);
-
-  v_body := pgv.breadcrumb(VARIADIC ARRAY['Salariés', pgv.call_ref('get_index'), v_emp.prenom || ' ' || v_emp.nom])
-    || pgv.tabs(VARIADIC ARRAY['Fiche', v_fiche, 'Absences (' || v_total_absences || ')', v_absences, 'Heures', v_heures]);
-
-  RETURN v_body;
-END;
-$function$;
-COMMENT ON FUNCTION hr.get_employee(integer) IS 'Employee detail page — fiche, absences with leave balance, timesheet tabs';
 
 CREATE OR REPLACE FUNCTION hr.get_index(p_params jsonb DEFAULT '{}'::jsonb)
  RETURNS text
@@ -1688,14 +1715,14 @@ BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);
   p_row.created_at := now();
 
-  INSERT INTO hr.timesheet (tenant_id, employee_id, date_travail, heures, description, created_at)
-  VALUES (p_row.tenant_id, p_row.employee_id, p_row.date_travail, p_row.heures, COALESCE(p_row.description, ''), p_row.created_at)
+  INSERT INTO hr.timesheet (tenant_id, employee_id, work_date, hours, description, created_at)
+  VALUES (p_row.tenant_id, p_row.employee_id, p_row.work_date, p_row.hours, COALESCE(p_row.description, ''), p_row.created_at)
   RETURNING * INTO p_row;
 
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION hr.timesheet_create(hr.timesheet) IS 'Create timesheet entry — SECURITY DEFINER — returns inserted row as jsonb';
+COMMENT ON FUNCTION hr.timesheet_create(hr.timesheet) IS 'Create timesheet entry — SECURITY DEFINER';
 
 CREATE OR REPLACE FUNCTION hr.timesheet_delete(p_id text)
  RETURNS jsonb
@@ -1722,15 +1749,15 @@ AS $function$
 BEGIN
   RETURN QUERY
     SELECT to_jsonb(t) || jsonb_build_object(
-      'employee_name', e.prenom || ' ' || e.nom
+      'employee_name', e.first_name || ' ' || e.last_name
     )
     FROM hr.timesheet t
     JOIN hr.employee e ON e.id = t.employee_id
     WHERE t.tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY t.date_travail DESC;
+    ORDER BY t.work_date DESC;
 END;
 $function$;
-COMMENT ON FUNCTION hr.timesheet_list(text) IS 'List timesheet entries for current tenant with employee name resolved';
+COMMENT ON FUNCTION hr.timesheet_list(text) IS 'List timesheet entries with employee name resolved';
 
 CREATE OR REPLACE FUNCTION hr.timesheet_read(p_id text)
  RETURNS jsonb
@@ -1741,7 +1768,7 @@ DECLARE
   v_result jsonb;
 BEGIN
   SELECT to_jsonb(t) || jsonb_build_object(
-    'employee_name', e.prenom || ' ' || e.nom
+    'employee_name', e.first_name || ' ' || e.last_name
   ) INTO v_result
   FROM hr.timesheet t
   JOIN hr.employee e ON e.id = t.employee_id
@@ -1758,7 +1785,7 @@ BEGIN
   RETURN v_result;
 END;
 $function$;
-COMMENT ON FUNCTION hr.timesheet_read(text) IS 'Read timesheet entry by id — enriched with HATEOAS actions';
+COMMENT ON FUNCTION hr.timesheet_read(text) IS 'Read timesheet entry — enriched with HATEOAS actions';
 
 CREATE OR REPLACE FUNCTION hr.timesheet_ui(p_slug text DEFAULT NULL::text)
  RETURNS jsonb
@@ -1821,8 +1848,8 @@ CREATE OR REPLACE FUNCTION hr.timesheet_update(p_row hr.timesheet)
 AS $function$
 BEGIN
   UPDATE hr.timesheet SET
-    date_travail = COALESCE(p_row.date_travail, date_travail),
-    heures = COALESCE(p_row.heures, heures),
+    work_date = COALESCE(p_row.work_date, work_date),
+    hours = COALESCE(p_row.hours, hours),
     description = COALESCE(p_row.description, description)
   WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
   RETURNING * INTO p_row;
@@ -1830,7 +1857,7 @@ BEGIN
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION hr.timesheet_update(hr.timesheet) IS 'Update timesheet entry by id — SECURITY DEFINER — partial update, returns updated row as jsonb';
+COMMENT ON FUNCTION hr.timesheet_update(hr.timesheet) IS 'Update timesheet entry — SECURITY DEFINER — partial update';
 
 CREATE OR REPLACE FUNCTION hr.timesheet_view()
  RETURNS jsonb

@@ -14,8 +14,8 @@ ALTER FUNCTION ledger.post_entry_post(jsonb) SECURITY DEFINER;
 ALTER FUNCTION ledger.post_entry_delete(jsonb) SECURITY DEFINER;
 ALTER FUNCTION ledger.post_line_add(jsonb) SECURITY DEFINER;
 ALTER FUNCTION ledger.post_line_delete(jsonb) SECURITY DEFINER;
-ALTER FUNCTION ledger.post_cloture(jsonb) SECURITY DEFINER;
-ALTER FUNCTION ledger.post_from_facture(jsonb) SECURITY DEFINER;
+ALTER FUNCTION ledger.post_close_year(jsonb) SECURITY DEFINER;
+ALTER FUNCTION ledger.post_from_invoice(jsonb) SECURITY DEFINER;
 ALTER FUNCTION ledger.post_from_expense(jsonb) SECURITY DEFINER;
 
 -- REVOKE direct table writes from anon (SELECT stays via pg_pack GRANT)

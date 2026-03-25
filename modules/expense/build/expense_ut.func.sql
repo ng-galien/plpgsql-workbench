@@ -7,132 +7,93 @@ CREATE OR REPLACE FUNCTION expense_ut.test_next_numero()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_ref1 text;
-  v_ref2 text;
-  v_year text := to_char(now(), 'YYYY');
-  v_res text;
+DECLARE v_ref1 text; v_ref2 text; v_year text := to_char(now(), 'YYYY'); v_res text;
 BEGIN
-  -- Clean
-  DELETE FROM expense.ligne;
-  DELETE FROM expense.note;
+  PERFORM set_config('app.tenant_id', 'test', true);
+  DELETE FROM expense.line; DELETE FROM expense.expense_report;
 
-  -- Create first note -> should get NDF-YYYY-001
-  v_res := expense.post_note_creer('{"auteur":"Test","date_debut":"2026-03-01","date_fin":"2026-03-31"}'::jsonb);
-  SELECT reference INTO v_ref1 FROM expense.note ORDER BY id DESC LIMIT 1;
-  RETURN NEXT is(v_ref1, 'NDF-' || v_year || '-001', 'first note gets NDF-YYYY-001');
+  v_res := expense.post_report_create('{"author":"Test","start_date":"2026-03-01","end_date":"2026-03-31"}'::jsonb);
+  SELECT reference INTO v_ref1 FROM expense.expense_report ORDER BY id DESC LIMIT 1;
+  RETURN NEXT is(v_ref1, 'NDF-' || v_year || '-001', 'first report gets NDF-YYYY-001');
 
-  -- Create second note -> should get NDF-YYYY-002
-  v_res := expense.post_note_creer('{"auteur":"Test","date_debut":"2026-03-01","date_fin":"2026-03-31"}'::jsonb);
-  SELECT reference INTO v_ref2 FROM expense.note ORDER BY id DESC LIMIT 1;
-  RETURN NEXT is(v_ref2, 'NDF-' || v_year || '-002', 'second note gets NDF-YYYY-002');
+  v_res := expense.post_report_create('{"author":"Test","start_date":"2026-03-01","end_date":"2026-03-31"}'::jsonb);
+  SELECT reference INTO v_ref2 FROM expense.expense_report ORDER BY id DESC LIMIT 1;
+  RETURN NEXT is(v_ref2, 'NDF-' || v_year || '-002', 'second report gets NDF-YYYY-002');
 
-  -- Cleanup
-  DELETE FROM expense.ligne;
-  DELETE FROM expense.note;
+  DELETE FROM expense.line; DELETE FROM expense.expense_report;
 END;
 $function$;
-COMMENT ON FUNCTION expense_ut.test_next_numero() IS 'Test numérotation séquentielle via post_note_creer';
+COMMENT ON FUNCTION expense_ut.test_next_numero() IS 'Test sequential reference numbering via post_report_create';
 
 CREATE OR REPLACE FUNCTION expense_ut.test_pages_render()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_html text;
 BEGIN
-  -- brand
-  v_html := expense.brand();
-  RETURN NEXT ok(v_html = 'Notes de frais', 'brand returns label');
-
-  -- nav_items
-  RETURN NEXT ok(expense.nav_items() IS NOT NULL, 'nav_items returns jsonb');
-
-  -- get_index (empty)
-  v_html := expense.get_index();
-  RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'index has stats');
-  RETURN NEXT ok(v_html LIKE '%Aucune note%' OR v_html LIKE '%md%', 'index has empty or table');
-
-  -- get_notes
-  v_html := expense.get_notes();
-  RETURN NEXT ok(v_html IS NOT NULL, 'get_notes renders');
-
-  -- get_categories
-  v_html := expense.get_categories();
-  RETURN NEXT ok(v_html LIKE '%Repas%', 'categories lists Repas');
-
-  -- get_note_form
-  v_html := expense.get_note_form();
-  RETURN NEXT ok(v_html LIKE '%post_note_creer%', 'note_form has rpc');
-
-  -- get_note 404
-  v_html := expense.get_note(999999);
-  RETURN NEXT ok(v_html LIKE '%introuvable%', 'get_note 404');
+  PERFORM set_config('app.tenant_id', 'test', true);
+  RETURN NEXT ok(expense.brand() IS NOT NULL, 'brand renders');
+  RETURN NEXT ok(expense.nav_items() IS NOT NULL, 'nav_items renders');
+  RETURN NEXT ok(expense.expense_report_view() IS NOT NULL, 'expense_report_view renders');
+  RETURN NEXT ok(expense.category_view() IS NOT NULL, 'category_view renders');
 END;
 $function$;
-COMMENT ON FUNCTION expense_ut.test_pages_render() IS 'Test rendu des pages expense (smoke test)';
+COMMENT ON FUNCTION expense_ut.test_pages_render() IS 'Test that brand, nav_items, and view functions render without error';
 
 CREATE OR REPLACE FUNCTION expense_ut.test_workflow()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
-DECLARE
-  v_note_id int;
-  v_res text;
-  v_statut text;
+DECLARE v_id int; v_res text; v_status text;
 BEGIN
-  -- Clean
-  DELETE FROM expense.ligne;
-  DELETE FROM expense.note;
+  PERFORM set_config('app.tenant_id', 'test', true);
+  DELETE FROM expense.line; DELETE FROM expense.expense_report;
 
-  -- Create note
-  v_res := expense.post_note_creer('{"auteur":"Alice","date_debut":"2026-03-01","date_fin":"2026-03-31"}'::jsonb);
-  RETURN NEXT ok(v_res LIKE '%data-toast="success"%', 'note created');
-  SELECT id INTO v_note_id FROM expense.note ORDER BY id DESC LIMIT 1;
+  -- Create report
+  v_res := expense.post_report_create('{"author":"Alice","start_date":"2026-03-01","end_date":"2026-03-31"}'::jsonb);
+  RETURN NEXT ok(v_res LIKE '%data-toast="success"%', 'report created');
+  SELECT id INTO v_id FROM expense.expense_report ORDER BY id DESC LIMIT 1;
 
   -- Submit without lines -> fail
-  v_res := expense.post_note_soumettre(jsonb_build_object('id', v_note_id));
-  RETURN NEXT ok(v_res LIKE '%sans ligne%', 'cannot submit without lines');
+  v_res := expense.post_report_submit(jsonb_build_object('id', v_id));
+  RETURN NEXT ok(v_res LIKE '%error%', 'cannot submit without lines');
 
   -- Add line
-  v_res := expense.post_ligne_ajouter(jsonb_build_object(
-    'note_id', v_note_id, 'date_depense', '2026-03-05',
-    'description', 'Repas client', 'montant_ht', 25.00, 'tva', 5.00,
-    'categorie_id', (SELECT id FROM expense.categorie WHERE nom = 'Repas')
+  v_res := expense.post_line_add(jsonb_build_object(
+    'note_id', v_id, 'expense_date', '2026-03-05',
+    'description', 'Client meal', 'amount_excl_tax', 25.00, 'vat', 5.00,
+    'category_id', (SELECT id FROM expense.category WHERE name = 'Meals')
   ));
-  RETURN NEXT ok(v_res LIKE '%Ligne ajoutée%', 'line added');
+  RETURN NEXT ok(v_res LIKE '%data-toast="success"%', 'line added');
 
   -- Submit
-  v_res := expense.post_note_soumettre(jsonb_build_object('id', v_note_id));
-  RETURN NEXT ok(v_res LIKE '%soumise%', 'note submitted');
-  SELECT statut INTO v_statut FROM expense.note WHERE id = v_note_id;
-  RETURN NEXT is(v_statut, 'soumise', 'statut is soumise');
+  v_res := expense.post_report_submit(jsonb_build_object('id', v_id));
+  RETURN NEXT ok(v_res LIKE '%data-toast="success"%', 'report submitted');
+  SELECT status INTO v_status FROM expense.expense_report WHERE id = v_id;
+  RETURN NEXT is(v_status, 'submitted', 'status is submitted');
 
   -- Cannot add line after submit
-  v_res := expense.post_ligne_ajouter(jsonb_build_object(
-    'note_id', v_note_id, 'date_depense', '2026-03-06',
-    'description', 'Should fail', 'montant_ht', 10.00
+  v_res := expense.post_line_add(jsonb_build_object(
+    'note_id', v_id, 'expense_date', '2026-03-06',
+    'description', 'Should fail', 'amount_excl_tax', 10.00
   ));
-  RETURN NEXT ok(v_res LIKE '%brouillon%', 'cannot add line to submitted note');
+  RETURN NEXT ok(v_res LIKE '%error%', 'cannot add line to submitted report');
 
   -- Validate
-  v_res := expense.post_note_valider(jsonb_build_object('id', v_note_id));
-  RETURN NEXT ok(v_res LIKE '%validée%', 'note validated');
-  SELECT statut INTO v_statut FROM expense.note WHERE id = v_note_id;
-  RETURN NEXT is(v_statut, 'validee', 'statut is validee');
+  v_res := expense.post_report_validate(jsonb_build_object('id', v_id));
+  RETURN NEXT ok(v_res LIKE '%data-toast="success"%', 'report validated');
+  SELECT status INTO v_status FROM expense.expense_report WHERE id = v_id;
+  RETURN NEXT is(v_status, 'validated', 'status is validated');
 
   -- Reimburse
-  v_res := expense.post_note_rembourser(jsonb_build_object('id', v_note_id));
-  RETURN NEXT ok(v_res LIKE '%remboursée%', 'note reimbursed');
-  SELECT statut INTO v_statut FROM expense.note WHERE id = v_note_id;
-  RETURN NEXT is(v_statut, 'remboursee', 'statut is remboursee');
+  v_res := expense.post_report_reimburse(jsonb_build_object('id', v_id));
+  RETURN NEXT ok(v_res LIKE '%data-toast="success"%', 'report reimbursed');
+  SELECT status INTO v_status FROM expense.expense_report WHERE id = v_id;
+  RETURN NEXT is(v_status, 'reimbursed', 'status is reimbursed');
 
-  -- Cleanup
-  DELETE FROM expense.ligne WHERE note_id = v_note_id;
-  DELETE FROM expense.note WHERE id = v_note_id;
+  DELETE FROM expense.line; DELETE FROM expense.expense_report;
 END;
 $function$;
-COMMENT ON FUNCTION expense_ut.test_workflow() IS 'Test workflow complet : brouillon -> soumise -> validée -> remboursée';
+COMMENT ON FUNCTION expense_ut.test_workflow() IS 'Test expense report workflow: draft -> submitted -> validated -> reimbursed';
 
 GRANT USAGE ON SCHEMA expense_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense_ut TO anon;

@@ -4,80 +4,75 @@ CREATE SCHEMA IF NOT EXISTS hr;
 CREATE SCHEMA IF NOT EXISTS hr_ut;
 CREATE SCHEMA IF NOT EXISTS hr_qa;
 
--- Salariés (registre du personnel)
+-- Employees (staff register)
 CREATE TABLE IF NOT EXISTS hr.employee (
   id serial PRIMARY KEY,
   tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
-  matricule text NOT NULL DEFAULT '',
-  nom text NOT NULL,
-  prenom text NOT NULL,
+  employee_code text NOT NULL DEFAULT '',
+  last_name text NOT NULL,
+  first_name text NOT NULL,
   email text,
   phone text,
-  date_naissance date,
-  sexe text NOT NULL DEFAULT '' CHECK (sexe IN ('', 'M', 'F')),
-  nationalite text NOT NULL DEFAULT '',
-  poste text NOT NULL DEFAULT '',
+  birth_date date,
+  gender text NOT NULL DEFAULT '' CHECK (gender IN ('', 'M', 'F')),
+  nationality text NOT NULL DEFAULT '',
+  position text NOT NULL DEFAULT '',
   qualification text NOT NULL DEFAULT '',
-  departement text NOT NULL DEFAULT '',
-  type_contrat text NOT NULL DEFAULT 'cdi' CHECK (type_contrat IN ('cdi', 'cdd', 'alternance', 'stage', 'interim')),
-  date_embauche date NOT NULL DEFAULT CURRENT_DATE,
-  date_fin date,
-  salaire_brut numeric,
-  heures_hebdo numeric NOT NULL DEFAULT 35,
-  statut text NOT NULL DEFAULT 'actif' CHECK (statut IN ('actif', 'inactif')),
+  department text NOT NULL DEFAULT '',
+  contract_type text NOT NULL DEFAULT 'cdi' CHECK (contract_type IN ('cdi', 'cdd', 'apprenticeship', 'internship', 'temp')),
+  hire_date date NOT NULL DEFAULT CURRENT_DATE,
+  end_date date,
+  gross_salary numeric,
+  weekly_hours numeric NOT NULL DEFAULT 35,
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
   notes text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Registre du personnel — colonnes obligatoires (Art. L1221-13)
-ALTER TABLE hr.employee ADD COLUMN IF NOT EXISTS sexe text NOT NULL DEFAULT '' CHECK (sexe IN ('', 'M', 'F'));
-ALTER TABLE hr.employee ADD COLUMN IF NOT EXISTS nationalite text NOT NULL DEFAULT '';
-ALTER TABLE hr.employee ADD COLUMN IF NOT EXISTS qualification text NOT NULL DEFAULT '';
-
 CREATE INDEX IF NOT EXISTS idx_employee_tenant ON hr.employee(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_employee_statut_nom ON hr.employee(statut, nom);
+CREATE INDEX IF NOT EXISTS idx_employee_status_name ON hr.employee(status, last_name);
 
--- Absences et congés
-CREATE TABLE IF NOT EXISTS hr.absence (
+-- Leave requests
+CREATE TABLE IF NOT EXISTS hr.leave_request (
   id serial PRIMARY KEY,
   tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   employee_id int NOT NULL REFERENCES hr.employee(id) ON DELETE CASCADE,
-  type_absence text NOT NULL CHECK (type_absence IN ('conge_paye', 'rtt', 'maladie', 'sans_solde', 'formation', 'autre')),
-  date_debut date NOT NULL,
-  date_fin date NOT NULL,
-  nb_jours numeric NOT NULL DEFAULT 1,
-  motif text NOT NULL DEFAULT '',
-  statut text NOT NULL DEFAULT 'demande' CHECK (statut IN ('demande', 'validee', 'refusee', 'annulee')),
+  leave_type text NOT NULL CHECK (leave_type IN ('paid_leave', 'rtt', 'sick', 'unpaid', 'training', 'other')),
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  day_count numeric NOT NULL DEFAULT 1,
+  reason text NOT NULL DEFAULT '',
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT absence_dates_check CHECK (date_fin >= date_debut)
+  CONSTRAINT leave_request_dates_check CHECK (end_date >= start_date)
 );
 
-CREATE INDEX IF NOT EXISTS idx_absence_tenant ON hr.absence(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_absence_employee ON hr.absence(employee_id);
-CREATE INDEX IF NOT EXISTS idx_absence_dates ON hr.absence(date_debut, date_fin);
+CREATE INDEX IF NOT EXISTS idx_leave_request_tenant ON hr.leave_request(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_leave_request_employee ON hr.leave_request(employee_id);
+CREATE INDEX IF NOT EXISTS idx_leave_request_dates ON hr.leave_request(start_date, end_date);
 
--- Heures travaillées (timesheet)
+-- Timesheets
 CREATE TABLE IF NOT EXISTS hr.timesheet (
   id serial PRIMARY KEY,
   tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   employee_id int NOT NULL REFERENCES hr.employee(id) ON DELETE CASCADE,
-  date_travail date NOT NULL,
-  heures numeric NOT NULL CHECK (heures >= 0 AND heures <= 24),
+  work_date date NOT NULL,
+  hours numeric NOT NULL CHECK (hours >= 0 AND hours <= 24),
   description text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT timesheet_unique UNIQUE (employee_id, date_travail)
+  CONSTRAINT timesheet_employee_date_unique UNIQUE (employee_id, work_date)
 );
 
 CREATE INDEX IF NOT EXISTS idx_timesheet_tenant ON hr.timesheet(tenant_id);
-CREATE INDEX IF NOT EXISTS idx_timesheet_employee_date ON hr.timesheet(employee_id, date_travail DESC);
+CREATE INDEX IF NOT EXISTS idx_timesheet_employee_date ON hr.timesheet(employee_id, work_date DESC);
 
--- Soldes congés (compteur par type et par salarié)
+-- Leave balances
 CREATE TABLE IF NOT EXISTS hr.leave_balance (
   id serial PRIMARY KEY,
   tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id', true),
   employee_id int NOT NULL REFERENCES hr.employee(id) ON DELETE CASCADE,
-  leave_type text NOT NULL CHECK (leave_type IN ('conge_paye', 'rtt', 'maladie', 'sans_solde', 'formation', 'autre')),
+  leave_type text NOT NULL CHECK (leave_type IN ('paid_leave', 'rtt', 'sick', 'unpaid', 'training', 'other')),
   allocated numeric NOT NULL DEFAULT 0,
   used numeric NOT NULL DEFAULT 0,
   CONSTRAINT leave_balance_unique UNIQUE (employee_id, leave_type),
@@ -90,15 +85,15 @@ CREATE INDEX IF NOT EXISTS idx_leave_balance_employee ON hr.leave_balance(employ
 
 -- Row Level Security
 ALTER TABLE hr.employee ENABLE ROW LEVEL SECURITY;
-ALTER TABLE hr.absence ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hr.leave_request ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hr.timesheet ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hr.leave_balance ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS tenant_isolation ON hr.employee;
 CREATE POLICY tenant_isolation ON hr.employee
   USING (tenant_id = current_setting('app.tenant_id', true));
-DROP POLICY IF EXISTS tenant_isolation ON hr.absence;
-CREATE POLICY tenant_isolation ON hr.absence
+DROP POLICY IF EXISTS tenant_isolation ON hr.leave_request;
+CREATE POLICY tenant_isolation ON hr.leave_request
   USING (tenant_id = current_setting('app.tenant_id', true));
 DROP POLICY IF EXISTS tenant_isolation ON hr.timesheet;
 CREATE POLICY tenant_isolation ON hr.timesheet
@@ -109,7 +104,7 @@ CREATE POLICY tenant_isolation ON hr.leave_balance
 
 -- Permissions: SELECT only on tables (writes via SECURITY DEFINER functions)
 GRANT SELECT ON hr.employee TO anon;
-GRANT SELECT ON hr.absence TO anon;
+GRANT SELECT ON hr.leave_request TO anon;
 GRANT SELECT ON hr.timesheet TO anon;
 GRANT SELECT ON hr.leave_balance TO anon;
 GRANT USAGE ON SEQUENCE hr.employee_id_seq TO anon;

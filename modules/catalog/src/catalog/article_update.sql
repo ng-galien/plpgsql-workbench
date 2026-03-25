@@ -6,14 +6,14 @@ AS $function$
 BEGIN
   UPDATE catalog.article SET
     reference = COALESCE(p_row.reference, reference),
-    designation = COALESCE(p_row.designation, designation),
+    name = COALESCE(p_row.name, name),
     description = COALESCE(p_row.description, description),
-    categorie_id = COALESCE(p_row.categorie_id, categorie_id),
-    unite = COALESCE(p_row.unite, unite),
-    prix_vente = COALESCE(p_row.prix_vente, prix_vente),
-    prix_achat = COALESCE(p_row.prix_achat, prix_achat),
-    tva = COALESCE(p_row.tva, tva),
-    actif = COALESCE(p_row.actif, actif),
+    category_id = COALESCE(p_row.category_id, category_id),
+    unit = COALESCE(p_row.unit, unit),
+    sale_price = COALESCE(p_row.sale_price, sale_price),
+    purchase_price = COALESCE(p_row.purchase_price, purchase_price),
+    vat_rate = COALESCE(p_row.vat_rate, vat_rate),
+    active = COALESCE(p_row.active, active),
     updated_at = now()
   WHERE id = p_row.id
   RETURNING * INTO p_row;

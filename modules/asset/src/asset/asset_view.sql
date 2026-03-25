@@ -23,7 +23,7 @@ BEGIN
 
       'expanded', jsonb_build_object(
         'fields', jsonb_build_array('title', 'description', 'filename', 'path', 'mime_type',
-          'status', 'orientation', 'tags', 'credit', 'saison', 'usage_hint',
+          'status', 'orientation', 'tags', 'credit', 'season', 'usage_hint',
           'colors', 'created_at', 'classified_at'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'width', 'label', 'asset.field_width'),
@@ -51,18 +51,18 @@ BEGIN
           )),
           jsonb_build_object('label', 'asset.section_classification', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'tags', 'label', 'asset.field_tags', 'type', 'text'),
-            jsonb_build_object('key', 'saison', 'label', 'asset.field_saison', 'type', 'select',
+            jsonb_build_object('key', 'season', 'label', 'asset.field_season', 'type', 'select',
               'options', jsonb_build_array(
-                jsonb_build_object('label', 'asset.saison_printemps', 'value', 'printemps'),
-                jsonb_build_object('label', 'asset.saison_ete', 'value', 'été'),
-                jsonb_build_object('label', 'asset.saison_automne', 'value', 'automne'),
-                jsonb_build_object('label', 'asset.saison_hiver', 'value', 'hiver')
+                jsonb_build_object('label', 'asset.season_spring', 'value', 'spring'),
+                jsonb_build_object('label', 'asset.season_summer', 'value', 'summer'),
+                jsonb_build_object('label', 'asset.season_autumn', 'value', 'autumn'),
+                jsonb_build_object('label', 'asset.season_winter', 'value', 'winter')
               )),
             jsonb_build_object('key', 'orientation', 'label', 'asset.field_orientation', 'type', 'select',
               'options', jsonb_build_array(
-                jsonb_build_object('label', 'Paysage', 'value', 'paysage'),
-                jsonb_build_object('label', 'Portrait', 'value', 'portrait'),
-                jsonb_build_object('label', 'Carré', 'value', 'carré')
+                jsonb_build_object('label', 'asset.orientation_landscape', 'value', 'landscape'),
+                jsonb_build_object('label', 'asset.orientation_portrait', 'value', 'portrait'),
+                jsonb_build_object('label', 'asset.orientation_square', 'value', 'square')
               ))
           ))
         )

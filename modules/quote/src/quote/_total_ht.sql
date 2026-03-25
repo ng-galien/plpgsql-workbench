@@ -1,13 +1,14 @@
-CREATE OR REPLACE FUNCTION quote._total_ht(p_devis_id integer DEFAULT NULL::integer, p_facture_id integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION quote._total_ht(p_estimate_id integer DEFAULT NULL::integer, p_invoice_id integer DEFAULT NULL::integer)
  RETURNS numeric
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 BEGIN
   RETURN COALESCE((
-    SELECT sum(round(quantite * prix_unitaire, 2))
-    FROM quote.ligne
-    WHERE devis_id IS NOT DISTINCT FROM p_devis_id
-      AND facture_id IS NOT DISTINCT FROM p_facture_id
+    SELECT sum(round(quantity * unit_price, 2))
+    FROM quote.line_item
+    WHERE estimate_id IS NOT DISTINCT FROM p_estimate_id
+      AND invoice_id IS NOT DISTINCT FROM p_invoice_id
   ), 0);
 END;
 $function$;

@@ -5,29 +5,28 @@ AS $function$
 DECLARE
   v_nb_articles int;
   v_nb_categories int;
-  v_prix_moyen numeric;
+  v_avg_price numeric;
   v_body text;
   v_rows text[];
   r record;
 BEGIN
-  SELECT count(*)::int INTO v_nb_articles FROM catalog.article WHERE actif;
-  SELECT count(*)::int INTO v_nb_categories FROM catalog.categorie;
-  SELECT coalesce(round(avg(prix_vente), 2), 0) INTO v_prix_moyen
-  FROM catalog.article WHERE actif AND prix_vente IS NOT NULL;
+  SELECT count(*)::int INTO v_nb_articles FROM catalog.article WHERE active;
+  SELECT count(*)::int INTO v_nb_categories FROM catalog.category;
+  SELECT coalesce(round(avg(sale_price), 2), 0) INTO v_avg_price
+  FROM catalog.article WHERE active AND sale_price IS NOT NULL;
 
   v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat(pgv.t('catalog.stat_articles_actifs'), v_nb_articles::text),
+    pgv.stat(pgv.t('catalog.stat_active_articles'), v_nb_articles::text),
     pgv.stat(pgv.t('catalog.stat_categories'), v_nb_categories::text),
-    pgv.stat(pgv.t('catalog.stat_prix_moyen'), to_char(v_prix_moyen, 'FM999G990D00') || ' EUR HT')
+    pgv.stat(pgv.t('catalog.stat_avg_sale_price'), to_char(v_avg_price, 'FM999G990D00') || ' EUR HT')
   ]);
 
-  -- Articles récents
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT a.id, a.reference, a.designation, c.nom AS categorie,
-           a.prix_vente, a.unite, a.actif
+    SELECT a.id, a.reference, a.name, c.name AS category_name,
+           a.sale_price, a.unit, a.active
     FROM catalog.article a
-    LEFT JOIN catalog.categorie c ON c.id = a.categorie_id
+    LEFT JOIN catalog.category c ON c.id = a.category_id
     ORDER BY a.created_at DESC
     LIMIT 10
   LOOP
@@ -35,13 +34,13 @@ BEGIN
       format('<a href="%s">%s</a>',
         pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)),
         pgv.esc(coalesce(r.reference, '#' || r.id))),
-      pgv.esc(r.designation),
-      coalesce(pgv.badge(r.categorie), '—'),
-      CASE WHEN r.prix_vente IS NOT NULL
-        THEN to_char(r.prix_vente, 'FM999G990D00') || ' EUR'
+      pgv.esc(r.name),
+      coalesce(pgv.badge(r.category_name), '—'),
+      CASE WHEN r.sale_price IS NOT NULL
+        THEN to_char(r.sale_price, 'FM999G990D00') || ' EUR'
         ELSE '—' END,
-      r.unite,
-      CASE WHEN r.actif THEN pgv.badge(pgv.t('catalog.badge_actif'), 'success') ELSE pgv.badge(pgv.t('catalog.badge_inactif'), 'warning') END
+      r.unit,
+      CASE WHEN r.active THEN pgv.badge(pgv.t('catalog.badge_active'), 'success') ELSE pgv.badge(pgv.t('catalog.badge_inactive'), 'warning') END
     ];
   END LOOP;
 
@@ -49,7 +48,7 @@ BEGIN
     v_body := v_body || pgv.empty(pgv.t('catalog.empty_no_article'), pgv.t('catalog.empty_first_article'));
   ELSE
     v_body := v_body || '<h3>' || pgv.t('catalog.title_recent') || '</h3>' || pgv.md_table(
-      ARRAY[pgv.t('catalog.col_ref'), pgv.t('catalog.col_designation'), pgv.t('catalog.col_categorie'), pgv.t('catalog.col_prix_vente'), pgv.t('catalog.col_unite'), pgv.t('catalog.col_statut')],
+      ARRAY[pgv.t('catalog.col_ref'), pgv.t('catalog.col_name'), pgv.t('catalog.col_category'), pgv.t('catalog.col_sale_price'), pgv.t('catalog.col_unit'), pgv.t('catalog.col_status')],
       v_rows
     );
   END IF;

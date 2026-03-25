@@ -1,14 +1,14 @@
--- expense — seed data (catégories de référence)
+-- expense — seed data (reference categories)
 
 SELECT set_config('app.tenant_id', '_ref', false);
 
-INSERT INTO expense.categorie (nom, code_comptable) VALUES
-  ('Déplacement véhicule', '625100'),
-  ('Transport (train, avion)', '625200'),
-  ('Hébergement', '625600'),
-  ('Repas', '625700'),
-  ('Fournitures', '606400'),
-  ('Outillage', '606300'),
-  ('Téléphone/Internet', '626000'),
-  ('Divers', '625800')
+INSERT INTO expense.category (name, accounting_code) VALUES
+  ('Vehicle travel', '625100'),
+  ('Transport (train, plane)', '625200'),
+  ('Accommodation', '625600'),
+  ('Meals', '625700'),
+  ('Supplies', '606400'),
+  ('Tools', '606300'),
+  ('Phone/Internet', '626000'),
+  ('Miscellaneous', '625800')
 ON CONFLICT DO NOTHING;

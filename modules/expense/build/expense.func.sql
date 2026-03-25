@@ -3,65 +3,50 @@
 
 CREATE SCHEMA IF NOT EXISTS expense;
 
-CREATE OR REPLACE FUNCTION expense._next_numero()
+CREATE OR REPLACE FUNCTION expense._next_reference()
  RETURNS text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_year text := to_char(now(), 'YYYY');
-  v_pattern text := 'NDF-' || v_year || '-';
+  v_year text := extract(year FROM now())::text;
   v_max int;
 BEGIN
-  SELECT coalesce(max(substring(reference FROM length(v_pattern) + 1)::int), 0)
-    INTO v_max
-    FROM expense.note
-   WHERE reference LIKE v_pattern || '%';
-
-  RETURN v_pattern || lpad((v_max + 1)::text, 3, '0');
+  SELECT max(substring(reference FROM 'NDF-' || v_year || '-(\d+)')::int)
+  INTO v_max
+  FROM expense.expense_report
+  WHERE reference LIKE 'NDF-' || v_year || '-%';
+  RETURN 'NDF-' || v_year || '-' || lpad((coalesce(v_max, 0) + 1)::text, 3, '0');
 END;
 $function$;
-COMMENT ON FUNCTION expense._next_numero() IS 'Génère le prochain numéro NDF-YYYY-NNN séquentiel';
+COMMENT ON FUNCTION expense._next_reference() IS 'Generate next expense report reference (NDF-YYYY-NNN)';
 
-CREATE OR REPLACE FUNCTION expense._note_form_body()
+CREATE OR REPLACE FUNCTION expense._status_badge(p_status text)
  RETURNS text
  LANGUAGE plpgsql
-AS $function$
-BEGIN
-  RETURN pgv.input('auteur', 'text', pgv.t('expense.field_auteur'), NULL, true)
-    || '<div class="pgv-grid">'
-    || pgv.input('date_debut', 'date', pgv.t('expense.field_date_debut'), to_char(date_trunc('month', now()), 'YYYY-MM-DD'), true)
-    || pgv.input('date_fin', 'date', pgv.t('expense.field_date_fin'), to_char(now()::date, 'YYYY-MM-DD'), true)
-    || '</div>'
-    || pgv.textarea('commentaire', pgv.t('expense.field_commentaire'));
-END;
-$function$;
-COMMENT ON FUNCTION expense._note_form_body() IS 'Build form body HTML for note creation dialog';
-
-CREATE OR REPLACE FUNCTION expense._statut_badge(p_statut text)
- RETURNS text
- LANGUAGE plpgsql
+ STABLE
 AS $function$
 BEGIN
   RETURN pgv.badge(
-    CASE p_statut
-      WHEN 'brouillon'   THEN pgv.t('expense.statut_brouillon')
-      WHEN 'soumise'     THEN pgv.t('expense.statut_soumise')
-      WHEN 'validee'     THEN pgv.t('expense.statut_validee')
-      WHEN 'remboursee'  THEN pgv.t('expense.statut_remboursee')
-      WHEN 'rejetee'     THEN pgv.t('expense.statut_rejetee')
-      ELSE initcap(p_statut)
+    CASE p_status
+      WHEN 'draft' THEN pgv.t('expense.status_draft')
+      WHEN 'submitted' THEN pgv.t('expense.status_submitted')
+      WHEN 'validated' THEN pgv.t('expense.status_validated')
+      WHEN 'reimbursed' THEN pgv.t('expense.status_reimbursed')
+      WHEN 'rejected' THEN pgv.t('expense.status_rejected')
+      ELSE p_status
     END,
-    CASE p_statut
-      WHEN 'brouillon'   THEN 'warning'
-      WHEN 'soumise'     THEN 'info'
-      WHEN 'validee'     THEN 'success'
-      WHEN 'remboursee'  THEN 'success'
-      WHEN 'rejetee'     THEN 'danger'
+    CASE p_status
+      WHEN 'draft' THEN 'secondary'
+      WHEN 'submitted' THEN 'warning'
+      WHEN 'validated' THEN 'info'
+      WHEN 'reimbursed' THEN 'success'
+      WHEN 'rejected' THEN 'danger'
+      ELSE 'secondary'
     END
   );
 END;
 $function$;
-COMMENT ON FUNCTION expense._statut_badge(text) IS 'Badge coloré pour un statut de note de frais';
+COMMENT ON FUNCTION expense._status_badge(text) IS 'Render status badge for expense report';
 
 CREATE OR REPLACE FUNCTION expense.brand()
  RETURNS text
@@ -73,38 +58,141 @@ END;
 $function$;
 COMMENT ON FUNCTION expense.brand() IS 'Brand label for Expense module';
 
-CREATE OR REPLACE FUNCTION expense.categorie_create(p_row expense.categorie)
+CREATE OR REPLACE FUNCTION expense.category_create(p_row expense.category)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_result expense.category;
+BEGIN
+  INSERT INTO expense.category (name, accounting_code) VALUES (p_row.name, p_row.accounting_code) RETURNING * INTO v_result;
+  RETURN to_jsonb(v_result);
+END;
+$function$;
+COMMENT ON FUNCTION expense.category_create(expense.category) IS 'Create an expense category';
+
+CREATE OR REPLACE FUNCTION expense.category_delete(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_result expense.category;
+BEGIN
+  DELETE FROM expense.category WHERE id = p_id::int RETURNING * INTO v_result;
+  RETURN to_jsonb(v_result);
+END;
+$function$;
+COMMENT ON FUNCTION expense.category_delete(text) IS 'Delete an expense category by id';
+
+CREATE OR REPLACE FUNCTION expense.category_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  IF p_filter IS NULL THEN
+    RETURN QUERY SELECT to_jsonb(c) FROM expense.category c ORDER BY c.name;
+  ELSE
+    RETURN QUERY EXECUTE
+      'SELECT to_jsonb(c) FROM expense.category c WHERE '
+      || pgv.rsql_to_where(p_filter, 'expense', 'category') || ' ORDER BY c.name';
+  END IF;
+END;
+$function$;
+COMMENT ON FUNCTION expense.category_list(text) IS 'List expense categories — optional RSQL filter';
+
+CREATE OR REPLACE FUNCTION expense.category_read(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE v_result jsonb;
+BEGIN
+  v_result := (SELECT to_jsonb(c) FROM expense.category c WHERE c.id = p_id::int);
+  IF v_result IS NULL THEN RETURN NULL; END IF;
+  RETURN v_result || jsonb_build_object('actions', jsonb_build_array(
+    jsonb_build_object('method', 'edit', 'uri', 'expense://category/' || (v_result->>'id') || '/edit'),
+    jsonb_build_object('method', 'delete', 'uri', 'expense://category/' || (v_result->>'id') || '/delete')
+  ));
+END;
+$function$;
+COMMENT ON FUNCTION expense.category_read(text) IS 'Read a single expense category with HATEOAS actions';
+
+CREATE OR REPLACE FUNCTION expense.category_update(p_row expense.category)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_result expense.category;
+BEGIN
+  UPDATE expense.category SET name = COALESCE(p_row.name, name), accounting_code = COALESCE(p_row.accounting_code, accounting_code)
+  WHERE id = p_row.id RETURNING * INTO v_result;
+  RETURN to_jsonb(v_result);
+END;
+$function$;
+COMMENT ON FUNCTION expense.category_update(expense.category) IS 'Update an expense category by id';
+
+CREATE OR REPLACE FUNCTION expense.category_view()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN jsonb_build_object(
+    'uri', 'expense://category', 'icon', '🏷', 'label', 'expense.entity_category',
+    'template', jsonb_build_object(
+      'compact', jsonb_build_object('fields', jsonb_build_array('name', 'accounting_code')),
+      'standard', jsonb_build_object('fields', jsonb_build_array('name', 'accounting_code')),
+      'expanded', jsonb_build_object('fields', jsonb_build_array('name', 'accounting_code', 'created_at')),
+      'form', jsonb_build_object('sections', jsonb_build_array(
+        jsonb_build_object('label', 'expense.section_info', 'fields', jsonb_build_array(
+          jsonb_build_object('key', 'name', 'type', 'text', 'label', 'expense.field_name', 'required', true),
+          jsonb_build_object('key', 'accounting_code', 'type', 'text', 'label', 'expense.field_accounting_code')
+        ))
+      ))
+    ),
+    'actions', jsonb_build_object(
+      'edit', jsonb_build_object('label', 'expense.action_edit', 'icon', '✏', 'variant', 'muted'),
+      'delete', jsonb_build_object('label', 'expense.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'expense.confirm_delete_category')
+    )
+  );
+END;
+$function$;
+COMMENT ON FUNCTION expense.category_view() IS 'SDUI _view() template for expense category';
+
+CREATE OR REPLACE FUNCTION expense.expense_report_create(p_row expense.expense_report)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_result expense.categorie;
+  v_ref text;
+  v_result expense.expense_report;
 BEGIN
-  INSERT INTO expense.categorie (nom, code_comptable)
-  VALUES (p_row.nom, p_row.code_comptable)
+  v_ref := expense._next_reference();
+  INSERT INTO expense.expense_report (reference, author, start_date, end_date, comment)
+  VALUES (v_ref, p_row.author, p_row.start_date, p_row.end_date, p_row.comment)
   RETURNING * INTO v_result;
   RETURN to_jsonb(v_result);
 END;
 $function$;
-COMMENT ON FUNCTION expense.categorie_create(expense.categorie) IS 'Create an expense category';
+COMMENT ON FUNCTION expense.expense_report_create(expense.expense_report) IS 'Create an expense report with auto-generated reference';
 
-CREATE OR REPLACE FUNCTION expense.categorie_delete(p_id text)
+CREATE OR REPLACE FUNCTION expense.expense_report_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
-DECLARE
-  v_result expense.categorie;
+DECLARE v_result expense.expense_report;
 BEGIN
-  DELETE FROM expense.categorie WHERE id = p_id::int
+  DELETE FROM expense.expense_report WHERE (id = p_id::int OR reference = p_id) AND status = 'draft'
   RETURNING * INTO v_result;
   RETURN to_jsonb(v_result);
 END;
 $function$;
-COMMENT ON FUNCTION expense.categorie_delete(text) IS 'Delete an expense category by id';
+COMMENT ON FUNCTION expense.expense_report_delete(text) IS 'Delete an expense report (only if draft) — by id or reference';
 
-CREATE OR REPLACE FUNCTION expense.categorie_list(p_filter text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION expense.expense_report_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF jsonb
  LANGUAGE plpgsql
  STABLE
@@ -112,506 +200,169 @@ AS $function$
 BEGIN
   IF p_filter IS NULL THEN
     RETURN QUERY
-      SELECT to_jsonb(c)
-      FROM expense.categorie c
-      ORDER BY c.nom;
+      SELECT to_jsonb(r) || jsonb_build_object(
+        'line_count', COALESCE(l.cnt, 0),
+        'total_excl_tax', COALESCE(l.sum_excl, 0),
+        'total_incl_tax', COALESCE(l.sum_incl, 0)
+      )
+      FROM expense.expense_report r
+      LEFT JOIN LATERAL (
+        SELECT count(*) as cnt, sum(amount_excl_tax) as sum_excl, sum(amount_incl_tax) as sum_incl
+        FROM expense.line WHERE note_id = r.id
+      ) l ON true
+      ORDER BY r.updated_at DESC;
   ELSE
     RETURN QUERY EXECUTE
-      'SELECT to_jsonb(c)
-       FROM expense.categorie c
-       WHERE ' || pgv.rsql_to_where(p_filter, 'expense', 'categorie')
-       || ' ORDER BY c.nom';
+      'SELECT to_jsonb(r) || jsonb_build_object(
+        ''line_count'', COALESCE(l.cnt, 0),
+        ''total_excl_tax'', COALESCE(l.sum_excl, 0),
+        ''total_incl_tax'', COALESCE(l.sum_incl, 0)
+      )
+      FROM expense.expense_report r
+      LEFT JOIN LATERAL (
+        SELECT count(*) as cnt, sum(amount_excl_tax) as sum_excl, sum(amount_incl_tax) as sum_incl
+        FROM expense.line WHERE note_id = r.id
+      ) l ON true
+      WHERE ' || pgv.rsql_to_where(p_filter, 'expense', 'expense_report')
+      || ' ORDER BY r.updated_at DESC';
   END IF;
 END;
 $function$;
-COMMENT ON FUNCTION expense.categorie_list(text) IS 'List expense categories — optional RSQL filter';
+COMMENT ON FUNCTION expense.expense_report_list(text) IS 'List expense reports with line totals — optional RSQL filter';
 
-CREATE OR REPLACE FUNCTION expense.categorie_read(p_id text)
+CREATE OR REPLACE FUNCTION expense.expense_report_read(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
 AS $function$
 DECLARE
   v_result jsonb;
+  v_status text;
+  v_id int;
+  v_line_count int;
+  v_actions jsonb := '[]'::jsonb;
 BEGIN
-  v_result := (SELECT to_jsonb(c) FROM expense.categorie c WHERE c.id = p_id::int);
-
-  IF v_result IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  RETURN v_result || jsonb_build_object(
-    'actions', jsonb_build_array(
-      jsonb_build_object('method', 'edit', 'uri', 'expense://categorie/' || (v_result->>'id') || '/edit'),
-      jsonb_build_object('method', 'delete', 'uri', 'expense://categorie/' || (v_result->>'id') || '/delete')
+  v_result := (
+    SELECT to_jsonb(r) || jsonb_build_object(
+      'lines', COALESCE((
+        SELECT jsonb_agg(to_jsonb(lg) || jsonb_build_object('category_name', c.name) ORDER BY lg.expense_date)
+        FROM expense.line lg
+        LEFT JOIN expense.category c ON c.id = lg.category_id
+        WHERE lg.note_id = r.id
+      ), '[]'::jsonb),
+      'total_excl_tax', COALESCE((SELECT sum(amount_excl_tax) FROM expense.line WHERE note_id = r.id), 0),
+      'total_incl_tax', COALESCE((SELECT sum(amount_incl_tax) FROM expense.line WHERE note_id = r.id), 0),
+      'line_count', (SELECT count(*) FROM expense.line WHERE note_id = r.id)::int
     )
+    FROM expense.expense_report r
+    WHERE r.id = p_id::int OR r.reference = p_id
   );
+  IF v_result IS NULL THEN RETURN NULL; END IF;
+
+  v_status := v_result->>'status';
+  v_id := (v_result->>'id')::int;
+  v_line_count := (v_result->>'line_count')::int;
+
+  CASE v_status
+    WHEN 'draft' THEN
+      v_actions := jsonb_build_array(
+        jsonb_build_object('method', 'edit', 'uri', 'expense://expense_report/' || v_id || '/edit'),
+        jsonb_build_object('method', 'add_line', 'uri', 'expense://expense_report/' || v_id || '/add_line')
+      );
+      IF v_line_count > 0 THEN
+        v_actions := v_actions || jsonb_build_array(jsonb_build_object('method', 'submit', 'uri', 'expense://expense_report/' || v_id || '/submit'));
+      END IF;
+      v_actions := v_actions || jsonb_build_array(jsonb_build_object('method', 'delete', 'uri', 'expense://expense_report/' || v_id || '/delete'));
+    WHEN 'submitted' THEN
+      v_actions := jsonb_build_array(
+        jsonb_build_object('method', 'validate', 'uri', 'expense://expense_report/' || v_id || '/validate'),
+        jsonb_build_object('method', 'reject', 'uri', 'expense://expense_report/' || v_id || '/reject')
+      );
+    WHEN 'validated' THEN
+      v_actions := jsonb_build_array(jsonb_build_object('method', 'reimburse', 'uri', 'expense://expense_report/' || v_id || '/reimburse'));
+    ELSE
+      v_actions := '[]'::jsonb;
+  END CASE;
+
+  RETURN v_result || jsonb_build_object('actions', v_actions);
 END;
 $function$;
-COMMENT ON FUNCTION expense.categorie_read(text) IS 'Read a single expense category with HATEOAS actions';
+COMMENT ON FUNCTION expense.expense_report_read(text) IS 'Read a single expense report with lines, totals, and HATEOAS actions';
 
-CREATE OR REPLACE FUNCTION expense.categorie_ui(p_slug text DEFAULT NULL::text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_c expense.categorie;
-BEGIN
-  -- List mode
-  IF p_slug IS NULL THEN
-    RETURN jsonb_build_object(
-      'ui', pgv.ui_column(
-        pgv.ui_heading(pgv.t('expense.nav_categories')),
-        pgv.ui_table('categories', jsonb_build_array(
-          pgv.ui_col('nom', pgv.t('expense.col_categorie'), pgv.ui_link('{nom}', '/expense/categories/{id}')),
-          pgv.ui_col('code_comptable', pgv.t('expense.col_code_comptable'))
-        ))
-      ),
-      'datasources', jsonb_build_object(
-        'categories', pgv.ui_datasource('expense://categorie', 20, true, 'nom')
-      )
-    );
-  END IF;
-
-  -- Detail mode
-  SELECT * INTO v_c FROM expense.categorie WHERE id = p_slug::int;
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
-
-  RETURN jsonb_build_object(
-    'ui', pgv.ui_column(
-      pgv.ui_row(
-        pgv.ui_link(E'\u2190 ' || pgv.t('expense.nav_categories'), '/expense/categories'),
-        pgv.ui_heading(v_c.nom)
-      ),
-      pgv.ui_heading(pgv.t('expense.col_code_comptable'), 3),
-      pgv.ui_text(COALESCE(v_c.code_comptable, '—'))
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION expense.categorie_ui(text) IS 'SDUI view: categorie list with datasource + detail view';
-
-CREATE OR REPLACE FUNCTION expense.categorie_update(p_row expense.categorie)
+CREATE OR REPLACE FUNCTION expense.expense_report_update(p_row expense.expense_report)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
-DECLARE
-  v_result expense.categorie;
+DECLARE v_result expense.expense_report;
 BEGIN
-  UPDATE expense.categorie SET
-    nom = COALESCE(p_row.nom, nom),
-    code_comptable = COALESCE(p_row.code_comptable, code_comptable)
-  WHERE id = p_row.id
+  UPDATE expense.expense_report SET
+    author = COALESCE(p_row.author, author),
+    start_date = COALESCE(p_row.start_date, start_date),
+    end_date = COALESCE(p_row.end_date, end_date),
+    comment = COALESCE(p_row.comment, comment),
+    updated_at = now()
+  WHERE id = p_row.id AND status = 'draft'
   RETURNING * INTO v_result;
   RETURN to_jsonb(v_result);
 END;
 $function$;
-COMMENT ON FUNCTION expense.categorie_update(expense.categorie) IS 'Update an expense category by id';
+COMMENT ON FUNCTION expense.expense_report_update(expense.expense_report) IS 'Update an expense report (only if draft)';
 
-CREATE OR REPLACE FUNCTION expense.categorie_view()
+CREATE OR REPLACE FUNCTION expense.expense_report_view()
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
 AS $function$
 BEGIN
   RETURN jsonb_build_object(
-    'uri', 'expense://categorie',
-    'icon', '🏷',
-    'label', 'expense.entity_categorie',
-
+    'uri', 'expense://expense_report', 'icon', '📋', 'label', 'expense.entity_expense_report',
     'template', jsonb_build_object(
-      'compact', jsonb_build_object(
-        'fields', jsonb_build_array('nom', 'code_comptable')
-      ),
+      'compact', jsonb_build_object('fields', jsonb_build_array('reference', 'author', 'status', 'total_incl_tax')),
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('nom', 'code_comptable')
+        'fields', jsonb_build_array('reference', 'author', 'start_date', 'end_date', 'status', 'comment'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'line_count', 'label', 'expense.stat_line_count'),
+          jsonb_build_object('key', 'total_excl_tax', 'label', 'expense.stat_total_excl_tax'),
+          jsonb_build_object('key', 'total_incl_tax', 'label', 'expense.stat_total_incl_tax')
+        ),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'ledger://journal_entry', 'label', 'expense.stat_total', 'filter', 'expense_note_id={id}')
+        )
       ),
       'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('nom', 'code_comptable', 'created_at')
-      ),
-      'form', jsonb_build_object(
-        'sections', jsonb_build_array(
-          jsonb_build_object(
-            'label', 'expense.section_info',
-            'fields', jsonb_build_array(
-              jsonb_build_object('key', 'nom', 'type', 'text', 'label', 'expense.field_nom', 'required', true),
-              jsonb_build_object('key', 'code_comptable', 'type', 'text', 'label', 'expense.field_code_comptable')
-            )
-          )
+        'fields', jsonb_build_array('reference', 'author', 'start_date', 'end_date', 'status', 'comment', 'created_at', 'updated_at'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'line_count', 'label', 'expense.stat_line_count'),
+          jsonb_build_object('key', 'total_excl_tax', 'label', 'expense.stat_total_excl_tax'),
+          jsonb_build_object('key', 'total_incl_tax', 'label', 'expense.stat_total_incl_tax')
+        ),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'ledger://journal_entry', 'label', 'expense.stat_total', 'filter', 'expense_note_id={id}')
         )
-      )
+      ),
+      'form', jsonb_build_object('sections', jsonb_build_array(
+        jsonb_build_object('label', 'expense.section_info', 'fields', jsonb_build_array(
+          jsonb_build_object('key', 'author', 'type', 'text', 'label', 'expense.field_author', 'required', true),
+          jsonb_build_object('key', 'start_date', 'type', 'date', 'label', 'expense.field_start_date', 'required', true),
+          jsonb_build_object('key', 'end_date', 'type', 'date', 'label', 'expense.field_end_date', 'required', true),
+          jsonb_build_object('key', 'comment', 'type', 'textarea', 'label', 'expense.field_comment')
+        ))
+      ))
     ),
-
     'actions', jsonb_build_object(
-      'edit',   jsonb_build_object('label', 'expense.action_edit', 'icon', '✏', 'variant', 'muted'),
-      'delete', jsonb_build_object('label', 'expense.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'expense.confirm_delete_categorie')
+      'edit', jsonb_build_object('label', 'expense.action_edit', 'icon', '✏', 'variant', 'muted'),
+      'add_line', jsonb_build_object('label', 'expense.action_add_line', 'icon', '+', 'variant', 'primary'),
+      'submit', jsonb_build_object('label', 'expense.action_submit', 'icon', '→', 'variant', 'primary', 'confirm', 'expense.confirm_submit'),
+      'validate', jsonb_build_object('label', 'expense.action_validate', 'icon', '✓', 'variant', 'primary', 'confirm', 'expense.confirm_validate'),
+      'reject', jsonb_build_object('label', 'expense.action_reject', 'icon', '✗', 'variant', 'danger', 'confirm', 'expense.confirm_reject'),
+      'reimburse', jsonb_build_object('label', 'expense.action_reimburse', 'icon', '€', 'variant', 'primary', 'confirm', 'expense.confirm_reimburse'),
+      'delete', jsonb_build_object('label', 'expense.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'expense.confirm_delete')
     )
   );
 END;
 $function$;
-COMMENT ON FUNCTION expense.categorie_view() IS 'SDUI _view() template for expense category — 4 density levels + actions catalog';
-
-CREATE OR REPLACE FUNCTION expense.get_categories()
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_rows text[];
-  r record;
-BEGIN
-  v_rows := ARRAY[]::text[];
-  FOR r IN SELECT id, nom, code_comptable FROM expense.categorie ORDER BY nom LOOP
-    v_rows := v_rows || ARRAY[
-      pgv.esc(r.nom),
-      coalesce(pgv.esc(r.code_comptable), '—')
-    ];
-  END LOOP;
-
-  IF array_length(v_rows, 1) IS NULL THEN
-    RETURN pgv.empty(pgv.t('expense.empty_no_categorie'));
-  END IF;
-
-  RETURN pgv.md_table(ARRAY[pgv.t('expense.col_categorie'), pgv.t('expense.col_code_comptable')], v_rows);
-END;
-$function$;
-COMMENT ON FUNCTION expense.get_categories() IS 'Liste des catégories de frais';
-
-CREATE OR REPLACE FUNCTION expense.get_index()
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_nb_notes int;
-  v_total_en_cours numeric(12,2);
-  v_montant_moyen numeric(12,2);
-  v_nb_a_valider int;
-  v_body text;
-  v_rows text[];
-  r record;
-BEGIN
-  SELECT count(*)::int INTO v_nb_notes FROM expense.note;
-
-  SELECT coalesce(sum(l.montant_ttc), 0)
-    INTO v_total_en_cours
-    FROM expense.note n
-    JOIN expense.ligne l ON l.note_id = n.id
-   WHERE n.statut IN ('brouillon', 'soumise', 'validee');
-
-  SELECT coalesce(avg(sub.total), 0)
-    INTO v_montant_moyen
-    FROM (
-      SELECT sum(l.montant_ttc) AS total
-        FROM expense.ligne l
-       GROUP BY l.note_id
-    ) sub;
-
-  SELECT count(*)::int INTO v_nb_a_valider
-    FROM expense.note WHERE statut = 'soumise';
-
-  v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat(pgv.t('expense.stat_notes'), v_nb_notes::text),
-    pgv.stat(pgv.t('expense.stat_total_en_cours'), to_char(v_total_en_cours, 'FM999 990.00') || ' EUR'),
-    pgv.stat(pgv.t('expense.stat_montant_moyen'), to_char(v_montant_moyen, 'FM999 990.00') || ' EUR'),
-    pgv.stat(pgv.t('expense.stat_a_valider'), v_nb_a_valider::text)
-  ]);
-
-  v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT n.id, n.reference, n.auteur, n.statut, n.date_debut, n.date_fin,
-           coalesce(sum(l.montant_ttc), 0) AS total_ttc,
-           count(l.id)::int AS nb_lignes
-      FROM expense.note n
-      LEFT JOIN expense.ligne l ON l.note_id = n.id
-     GROUP BY n.id
-     ORDER BY n.created_at DESC LIMIT 10
-  LOOP
-    v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_note', jsonb_build_object('p_id', r.id)), pgv.esc(coalesce(r.reference, '#' || r.id))),
-      pgv.esc(r.auteur),
-      to_char(r.date_debut, 'DD/MM') || ' - ' || to_char(r.date_fin, 'DD/MM/YYYY'),
-      r.nb_lignes || ' ' || pgv.t('expense.count_lignes'),
-      expense._statut_badge(r.statut),
-      to_char(r.total_ttc, 'FM999 990.00') || ' EUR'
-    ];
-  END LOOP;
-
-  IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty(pgv.t('expense.empty_no_note'), pgv.t('expense.empty_first_note'));
-  ELSE
-    v_body := v_body || pgv.md_table(ARRAY[pgv.t('expense.col_reference'), pgv.t('expense.col_auteur'), pgv.t('expense.col_periode'), pgv.t('expense.col_lignes'), pgv.t('expense.col_statut'), pgv.t('expense.col_total_ttc')], v_rows);
-  END IF;
-
-  v_body := v_body || '<p>'
-    || pgv.form_dialog('dlg-new-note', pgv.t('expense.btn_nouvelle_note'), expense._note_form_body(), 'post_note_creer')
-    || '</p>';
-
-  RETURN v_body;
-END;
-$function$;
-COMMENT ON FUNCTION expense.get_index() IS 'Dashboard expense : stats KPI + notes récentes';
-
-CREATE OR REPLACE FUNCTION expense.get_ligne_form(p_params jsonb DEFAULT '{}'::jsonb)
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_note_id int := (p_params->>'note_id')::int;
-  v_cat_options jsonb;
-  v_body text;
-BEGIN
-  IF v_note_id IS NULL THEN
-    RETURN pgv.error('400', pgv.t('expense.err_note_id_requis'));
-  END IF;
-
-  SELECT jsonb_agg(jsonb_build_object('value', id::text, 'label', nom) ORDER BY nom)
-    INTO v_cat_options
-    FROM expense.categorie;
-
-  v_cat_options := coalesce(v_cat_options, '[]'::jsonb);
-
-  v_body := '<input type="hidden" name="note_id" value="' || v_note_id || '">'
-    || pgv.input('date_depense', 'date', pgv.t('expense.field_date_depense'), to_char(now()::date, 'YYYY-MM-DD'), true)
-    || pgv.sel('categorie_id', pgv.t('expense.field_categorie'), v_cat_options)
-    || pgv.input('description', 'text', pgv.t('expense.field_description'), NULL, true)
-    || '<div class="pgv-grid">'
-    || pgv.input('montant_ht', 'number', pgv.t('expense.field_montant_ht'), NULL, true)
-    || pgv.input('tva', 'number', pgv.t('expense.field_tva'), '0')
-    || pgv.input('km', 'number', pgv.t('expense.field_km'))
-    || '</div>';
-
-  RETURN pgv.form('post_ligne_ajouter', v_body, pgv.t('expense.btn_ajouter_ligne'));
-END;
-$function$;
-COMMENT ON FUNCTION expense.get_ligne_form(jsonb) IS 'Formulaire ajout ligne de dépense';
-
-CREATE OR REPLACE FUNCTION expense.get_note(p_id integer DEFAULT NULL::integer)
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_note record;
-  v_body text;
-  v_rows text[];
-  v_total_ht numeric(12,2);
-  v_total_tva numeric(12,2);
-  v_total_ttc numeric(12,2);
-  v_cat_options jsonb;
-  v_ligne_body text;
-  r record;
-BEGIN
-  IF p_id IS NULL THEN
-    RETURN pgv.error('400', pgv.t('expense.err_id_requis'), pgv.t('expense.err_id_requis_detail'));
-  END IF;
-
-  SELECT * INTO v_note FROM expense.note WHERE id = p_id;
-  IF NOT FOUND THEN
-    RETURN pgv.error('404', pgv.t('expense.err_not_found'), pgv.t('expense.err_not_found_detail'));
-  END IF;
-
-  v_body := pgv.dl(VARIADIC ARRAY[
-    pgv.t('expense.dl_reference'), coalesce(v_note.reference, '#' || v_note.id),
-    pgv.t('expense.dl_auteur'), pgv.esc(v_note.auteur),
-    pgv.t('expense.dl_periode'), to_char(v_note.date_debut, 'DD/MM/YYYY') || ' - ' || to_char(v_note.date_fin, 'DD/MM/YYYY'),
-    pgv.t('expense.dl_statut'), expense._statut_badge(v_note.statut),
-    pgv.t('expense.dl_commentaire'), coalesce(pgv.esc(v_note.commentaire), '—')
-  ]);
-
-  v_rows := ARRAY[]::text[];
-  v_total_ht := 0; v_total_tva := 0; v_total_ttc := 0;
-
-  FOR r IN
-    SELECT l.id, l.date_depense, c.nom AS categorie, l.description,
-           l.montant_ht, l.tva, l.montant_ttc, l.km
-      FROM expense.ligne l
-      LEFT JOIN expense.categorie c ON c.id = l.categorie_id
-     WHERE l.note_id = p_id
-     ORDER BY l.date_depense, l.id
-  LOOP
-    v_total_ht := v_total_ht + r.montant_ht;
-    v_total_tva := v_total_tva + r.tva;
-    v_total_ttc := v_total_ttc + r.montant_ttc;
-
-    v_rows := v_rows || ARRAY[
-      to_char(r.date_depense, 'DD/MM/YYYY'),
-      pgv.esc(coalesce(r.categorie, '—')),
-      pgv.esc(r.description),
-      CASE WHEN r.km IS NOT NULL THEN r.km || ' km' ELSE '—' END,
-      to_char(r.montant_ht, 'FM999 990.00'),
-      to_char(r.tva, 'FM999 990.00'),
-      '<strong>' || to_char(r.montant_ttc, 'FM999 990.00') || '</strong>'
-    ];
-  END LOOP;
-
-  IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty(pgv.t('expense.empty_no_ligne'), pgv.t('expense.empty_add_ligne'));
-  ELSE
-    v_body := v_body || pgv.md_table(
-      ARRAY[pgv.t('expense.col_date'), pgv.t('expense.col_categorie'), pgv.t('expense.col_description'), pgv.t('expense.col_km'), pgv.t('expense.col_ht'), pgv.t('expense.col_tva'), pgv.t('expense.col_ttc')],
-      v_rows
-    );
-    v_body := v_body || pgv.grid(VARIADIC ARRAY[
-      pgv.stat(pgv.t('expense.stat_total_ht'), to_char(v_total_ht, 'FM999 990.00') || ' EUR'),
-      pgv.stat(pgv.t('expense.stat_total_tva'), to_char(v_total_tva, 'FM999 990.00') || ' EUR'),
-      pgv.stat(pgv.t('expense.stat_total_ttc'), to_char(v_total_ttc, 'FM999 990.00') || ' EUR')
-    ]);
-  END IF;
-
-  -- Actions selon statut
-  v_body := v_body || '<p>';
-
-  IF v_note.statut = 'brouillon' THEN
-    -- Build ligne form body inline
-    SELECT jsonb_agg(jsonb_build_object('value', id::text, 'label', nom) ORDER BY nom)
-      INTO v_cat_options
-      FROM expense.categorie;
-    v_cat_options := coalesce(v_cat_options, '[]'::jsonb);
-
-    v_ligne_body := '<input type="hidden" name="note_id" value="' || p_id || '">'
-      || pgv.input('date_depense', 'date', pgv.t('expense.field_date_depense'), to_char(now()::date, 'YYYY-MM-DD'), true)
-      || pgv.sel('categorie_id', pgv.t('expense.field_categorie'), v_cat_options)
-      || pgv.input('description', 'text', pgv.t('expense.field_description'), NULL, true)
-      || '<div class="pgv-grid">'
-      || pgv.input('montant_ht', 'number', pgv.t('expense.field_montant_ht'), NULL, true)
-      || pgv.input('tva', 'number', pgv.t('expense.field_tva'), '0')
-      || pgv.input('km', 'number', pgv.t('expense.field_km'))
-      || '</div>';
-
-    v_body := v_body
-      || pgv.form_dialog('dlg-add-ligne', pgv.t('expense.btn_action_ajouter_ligne'), v_ligne_body, 'post_ligne_ajouter')
-      || ' '
-      || pgv.action('post_note_soumettre', pgv.t('expense.btn_soumettre'),
-           jsonb_build_object('id', p_id),
-           pgv.t('expense.confirm_soumettre'), 'outline');
-  ELSIF v_note.statut = 'soumise' THEN
-    v_body := v_body
-      || pgv.action('post_note_valider', pgv.t('expense.btn_valider'),
-           jsonb_build_object('id', p_id),
-           pgv.t('expense.confirm_valider'), 'primary')
-      || ' '
-      || pgv.action('post_note_rejeter', pgv.t('expense.btn_rejeter'),
-           jsonb_build_object('id', p_id),
-           pgv.t('expense.confirm_rejeter'), 'danger');
-  ELSIF v_note.statut = 'validee' THEN
-    v_body := v_body
-      || pgv.action('post_note_rembourser', pgv.t('expense.btn_rembourser'),
-           jsonb_build_object('id', p_id),
-           pgv.t('expense.confirm_rembourser'), 'primary');
-  END IF;
-
-  v_body := v_body || '</p>';
-
-  RETURN v_body;
-END;
-$function$;
-COMMENT ON FUNCTION expense.get_note(integer) IS 'Détail note de frais : infos, lignes, totaux, workflow';
-
-CREATE OR REPLACE FUNCTION expense.get_note_form(p_params jsonb DEFAULT '{}'::jsonb)
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_id int := (p_params->>'id')::int;
-  v_note record;
-  v_body text;
-BEGIN
-  IF v_id IS NOT NULL THEN
-    SELECT * INTO v_note FROM expense.note WHERE id = v_id;
-    IF NOT FOUND THEN
-      RETURN pgv.error('404', pgv.t('expense.err_not_found'));
-    END IF;
-    IF v_note.statut <> 'brouillon' THEN
-      RETURN pgv.error('400', pgv.t('expense.err_not_modifiable'), pgv.t('expense.err_not_modifiable_detail'));
-    END IF;
-  END IF;
-
-  v_body := '';
-
-  IF v_id IS NOT NULL THEN
-    v_body := v_body || '<input type="hidden" name="id" value="' || v_id || '">';
-  END IF;
-
-  v_body := v_body
-    || pgv.input('auteur', 'text', pgv.t('expense.field_auteur'), v_note.auteur, true)
-    || '<div class="pgv-grid">'
-    || pgv.input('date_debut', 'date', pgv.t('expense.field_date_debut'), CASE WHEN v_note IS NOT NULL THEN to_char(v_note.date_debut, 'YYYY-MM-DD') ELSE to_char(date_trunc('month', now()), 'YYYY-MM-DD') END, true)
-    || pgv.input('date_fin', 'date', pgv.t('expense.field_date_fin'), CASE WHEN v_note IS NOT NULL THEN to_char(v_note.date_fin, 'YYYY-MM-DD') ELSE to_char(now()::date, 'YYYY-MM-DD') END, true)
-    || '</div>'
-    || pgv.textarea('commentaire', pgv.t('expense.field_commentaire'), v_note.commentaire);
-
-  RETURN pgv.form('post_note_creer', v_body, CASE WHEN v_id IS NOT NULL THEN pgv.t('expense.btn_modifier') ELSE pgv.t('expense.btn_creer_note') END);
-END;
-$function$;
-COMMENT ON FUNCTION expense.get_note_form(jsonb) IS 'Formulaire création/édition note de frais';
-
-CREATE OR REPLACE FUNCTION expense.get_notes(p_params jsonb DEFAULT '{}'::jsonb)
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_statut text := p_params->>'statut';
-  v_auteur text := p_params->>'auteur';
-  v_body text;
-  v_rows text[];
-  r record;
-  v_options jsonb;
-BEGIN
-  v_options := jsonb_build_array(
-    jsonb_build_object('value', '', 'label', pgv.t('expense.filter_tous')),
-    jsonb_build_object('value', 'brouillon', 'label', pgv.t('expense.filter_brouillon')),
-    jsonb_build_object('value', 'soumise', 'label', pgv.t('expense.filter_soumise')),
-    jsonb_build_object('value', 'validee', 'label', pgv.t('expense.filter_validee')),
-    jsonb_build_object('value', 'remboursee', 'label', pgv.t('expense.filter_remboursee')),
-    jsonb_build_object('value', 'rejetee', 'label', pgv.t('expense.filter_rejetee'))
-  );
-
-  v_body := '<form action="/notes" method="get">'
-    || '<fieldset role="group">'
-    || pgv.sel('statut', pgv.t('expense.field_statut'), v_options, v_statut)
-    || pgv.input('auteur', 'text', pgv.t('expense.field_auteur'), v_auteur)
-    || '</fieldset>'
-    || '<button type="submit">' || pgv.t('expense.btn_filtrer') || '</button>'
-    || '</form>';
-
-  v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT n.id, n.reference, n.auteur, n.statut, n.date_debut, n.date_fin,
-           coalesce(sum(l.montant_ttc), 0) AS total_ttc,
-           count(l.id)::int AS nb_lignes
-      FROM expense.note n
-      LEFT JOIN expense.ligne l ON l.note_id = n.id
-     WHERE (v_statut IS NULL OR n.statut = v_statut)
-       AND (v_auteur IS NULL OR n.auteur ILIKE '%' || v_auteur || '%')
-     GROUP BY n.id
-     ORDER BY n.created_at DESC
-  LOOP
-    v_rows := v_rows || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_note', jsonb_build_object('p_id', r.id)), pgv.esc(coalesce(r.reference, '#' || r.id))),
-      pgv.esc(r.auteur),
-      to_char(r.date_debut, 'DD/MM') || ' - ' || to_char(r.date_fin, 'DD/MM/YYYY'),
-      r.nb_lignes || ' ' || pgv.t('expense.count_lignes'),
-      expense._statut_badge(r.statut),
-      to_char(r.total_ttc, 'FM999 990.00') || ' EUR'
-    ];
-  END LOOP;
-
-  IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty(pgv.t('expense.empty_no_results'));
-  ELSE
-    v_body := v_body || pgv.md_table(ARRAY[pgv.t('expense.col_reference'), pgv.t('expense.col_auteur'), pgv.t('expense.col_periode'), pgv.t('expense.col_lignes'), pgv.t('expense.col_statut'), pgv.t('expense.col_total_ttc')], v_rows, 15);
-  END IF;
-
-  v_body := v_body || '<p>'
-    || pgv.form_dialog('dlg-new-note', pgv.t('expense.btn_nouvelle_note'), expense._note_form_body(), 'post_note_creer')
-    || '</p>';
-
-  RETURN v_body;
-END;
-$function$;
-COMMENT ON FUNCTION expense.get_notes(jsonb) IS 'Liste filtrée des notes de frais par statut et auteur';
+COMMENT ON FUNCTION expense.expense_report_view() IS 'SDUI _view() template for expense report — 4 density levels + actions catalog';
 
 CREATE OR REPLACE FUNCTION expense.i18n_seed()
  RETURNS void
@@ -622,152 +373,125 @@ BEGIN
     -- Brand / Navigation
     ('fr', 'expense.brand', 'Notes de frais'),
     ('fr', 'expense.nav_dashboard', 'Dashboard'),
-    ('fr', 'expense.nav_notes', 'Notes'),
+    ('fr', 'expense.nav_reports', 'Notes'),
     ('fr', 'expense.nav_categories', 'Catégories'),
 
-    -- Entity labels (_view)
-    ('fr', 'expense.entity_note', 'Note de frais'),
-    ('fr', 'expense.entity_categorie', 'Catégorie de frais'),
+    -- Entity labels
+    ('fr', 'expense.entity_expense_report', 'Note de frais'),
+    ('fr', 'expense.entity_category', 'Catégorie de frais'),
 
-    -- Sections (_view)
+    -- Sections
     ('fr', 'expense.section_info', 'Informations'),
-    ('fr', 'expense.section_lignes', 'Lignes de dépenses'),
+    ('fr', 'expense.section_lines', 'Lignes de dépenses'),
 
-    -- Statuts
-    ('fr', 'expense.statut_brouillon', 'Brouillon'),
-    ('fr', 'expense.statut_soumise', 'Soumise'),
-    ('fr', 'expense.statut_validee', 'Validée'),
-    ('fr', 'expense.statut_remboursee', 'Remboursée'),
-    ('fr', 'expense.statut_rejetee', 'Rejetée'),
+    -- Status values
+    ('fr', 'expense.status_draft', 'Brouillon'),
+    ('fr', 'expense.status_submitted', 'Soumise'),
+    ('fr', 'expense.status_validated', 'Validée'),
+    ('fr', 'expense.status_reimbursed', 'Remboursée'),
+    ('fr', 'expense.status_rejected', 'Rejetée'),
 
     -- Stats
-    ('fr', 'expense.stat_notes', 'Notes de frais'),
-    ('fr', 'expense.stat_total_en_cours', 'Total en cours'),
-    ('fr', 'expense.stat_montant_moyen', 'Montant moyen'),
-    ('fr', 'expense.stat_a_valider', 'A valider'),
-    ('fr', 'expense.stat_total_ht', 'Total HT'),
-    ('fr', 'expense.stat_total_tva', 'Total TVA'),
-    ('fr', 'expense.stat_total_ttc', 'Total TTC'),
-    ('fr', 'expense.stat_nb_lignes', 'Lignes'),
+    ('fr', 'expense.stat_reports', 'Notes de frais'),
+    ('fr', 'expense.stat_current_total', 'Total en cours'),
+    ('fr', 'expense.stat_avg_amount', 'Montant moyen'),
+    ('fr', 'expense.stat_pending_validation', 'A valider'),
+    ('fr', 'expense.stat_total_excl_tax', 'Total HT'),
+    ('fr', 'expense.stat_total_vat', 'Total TVA'),
+    ('fr', 'expense.stat_total_incl_tax', 'Total TTC'),
+    ('fr', 'expense.stat_line_count', 'Lignes'),
     ('fr', 'expense.stat_total', 'Total'),
 
-    -- Table headers
+    -- Column headers
     ('fr', 'expense.col_reference', 'Référence'),
-    ('fr', 'expense.col_auteur', 'Auteur'),
-    ('fr', 'expense.col_periode', 'Période'),
-    ('fr', 'expense.col_lignes', 'Lignes'),
-    ('fr', 'expense.col_statut', 'Statut'),
-    ('fr', 'expense.col_total_ttc', 'Total TTC'),
+    ('fr', 'expense.col_author', 'Auteur'),
+    ('fr', 'expense.col_period', 'Période'),
+    ('fr', 'expense.col_lines', 'Lignes'),
+    ('fr', 'expense.col_status', 'Statut'),
+    ('fr', 'expense.col_total_incl_tax', 'Total TTC'),
     ('fr', 'expense.col_date', 'Date'),
-    ('fr', 'expense.col_categorie', 'Catégorie'),
+    ('fr', 'expense.col_category', 'Catégorie'),
     ('fr', 'expense.col_description', 'Description'),
     ('fr', 'expense.col_km', 'Km'),
-    ('fr', 'expense.col_ht', 'HT'),
-    ('fr', 'expense.col_tva', 'TVA'),
-    ('fr', 'expense.col_ttc', 'TTC'),
-    ('fr', 'expense.col_code_comptable', 'Code comptable'),
-    ('fr', 'expense.col_date_debut', 'Date début'),
-    ('fr', 'expense.col_date_fin', 'Date fin'),
-    ('fr', 'expense.col_nb_lignes', 'Nb lignes'),
-    ('fr', 'expense.col_nom', 'Nom'),
+    ('fr', 'expense.col_excl_tax', 'HT'),
+    ('fr', 'expense.col_vat', 'TVA'),
+    ('fr', 'expense.col_incl_tax', 'TTC'),
+    ('fr', 'expense.col_accounting_code', 'Code comptable'),
+    ('fr', 'expense.col_start_date', 'Date début'),
+    ('fr', 'expense.col_end_date', 'Date fin'),
+    ('fr', 'expense.col_line_count', 'Nb lignes'),
+    ('fr', 'expense.col_name', 'Nom'),
 
     -- Field labels
-    ('fr', 'expense.field_auteur', 'Auteur'),
-    ('fr', 'expense.field_date_debut', 'Date début'),
-    ('fr', 'expense.field_date_fin', 'Date fin'),
-    ('fr', 'expense.field_commentaire', 'Commentaire'),
-    ('fr', 'expense.field_date_depense', 'Date'),
-    ('fr', 'expense.field_categorie', 'Catégorie'),
+    ('fr', 'expense.field_author', 'Auteur'),
+    ('fr', 'expense.field_start_date', 'Date début'),
+    ('fr', 'expense.field_end_date', 'Date fin'),
+    ('fr', 'expense.field_comment', 'Commentaire'),
+    ('fr', 'expense.field_expense_date', 'Date'),
+    ('fr', 'expense.field_category', 'Catégorie'),
     ('fr', 'expense.field_description', 'Description'),
-    ('fr', 'expense.field_montant_ht', 'Montant HT'),
-    ('fr', 'expense.field_tva', 'TVA'),
+    ('fr', 'expense.field_amount_excl_tax', 'Montant HT'),
+    ('fr', 'expense.field_vat', 'TVA'),
     ('fr', 'expense.field_km', 'Km (si déplacement)'),
-    ('fr', 'expense.field_statut', 'Statut'),
-    ('fr', 'expense.field_nom', 'Nom'),
-    ('fr', 'expense.field_code_comptable', 'Code comptable'),
+    ('fr', 'expense.field_status', 'Statut'),
+    ('fr', 'expense.field_name', 'Nom'),
+    ('fr', 'expense.field_accounting_code', 'Code comptable'),
 
-    -- DL labels (note detail)
-    ('fr', 'expense.dl_reference', 'Référence'),
-    ('fr', 'expense.dl_auteur', 'Auteur'),
-    ('fr', 'expense.dl_periode', 'Période'),
-    ('fr', 'expense.dl_statut', 'Statut'),
-    ('fr', 'expense.dl_commentaire', 'Commentaire'),
-
-    -- Buttons / Actions
-    ('fr', 'expense.btn_nouvelle_note', 'Nouvelle note'),
-    ('fr', 'expense.btn_creer_note', 'Créer la note'),
-    ('fr', 'expense.btn_modifier', 'Modifier'),
-    ('fr', 'expense.btn_filtrer', 'Filtrer'),
-    ('fr', 'expense.btn_ajouter_ligne', 'Ajouter la ligne'),
-    ('fr', 'expense.btn_action_ajouter_ligne', 'Ajouter une ligne'),
-    ('fr', 'expense.btn_soumettre', 'Soumettre'),
-    ('fr', 'expense.btn_valider', 'Valider'),
-    ('fr', 'expense.btn_rejeter', 'Rejeter'),
-    ('fr', 'expense.btn_rembourser', 'Rembourser'),
-
-    -- Actions (_view)
+    -- Actions
     ('fr', 'expense.action_edit', 'Modifier'),
     ('fr', 'expense.action_delete', 'Supprimer'),
     ('fr', 'expense.action_submit', 'Soumettre'),
     ('fr', 'expense.action_validate', 'Valider'),
     ('fr', 'expense.action_reject', 'Rejeter'),
     ('fr', 'expense.action_reimburse', 'Rembourser'),
-    ('fr', 'expense.action_add_ligne', 'Ajouter une ligne'),
+    ('fr', 'expense.action_add_line', 'Ajouter une ligne'),
+    ('fr', 'expense.action_new_report', 'Nouvelle note'),
 
     -- Confirm dialogs
-    ('fr', 'expense.confirm_soumettre', 'Soumettre cette note pour validation ?'),
-    ('fr', 'expense.confirm_valider', 'Valider cette note de frais ?'),
-    ('fr', 'expense.confirm_rejeter', 'Rejeter cette note de frais ?'),
-    ('fr', 'expense.confirm_rembourser', 'Marquer cette note comme remboursée ?'),
+    ('fr', 'expense.confirm_submit', 'Soumettre cette note pour validation ?'),
+    ('fr', 'expense.confirm_validate', 'Valider cette note de frais ?'),
+    ('fr', 'expense.confirm_reject', 'Rejeter cette note de frais ?'),
+    ('fr', 'expense.confirm_reimburse', 'Marquer cette note comme remboursée ?'),
     ('fr', 'expense.confirm_delete', 'Supprimer cette note de frais ?'),
-    ('fr', 'expense.confirm_delete_categorie', 'Supprimer cette catégorie ?'),
+    ('fr', 'expense.confirm_delete_category', 'Supprimer cette catégorie ?'),
 
     -- Filter options
-    ('fr', 'expense.filter_tous', 'Tous'),
-    ('fr', 'expense.filter_brouillon', 'Brouillon'),
-    ('fr', 'expense.filter_soumise', 'Soumise'),
-    ('fr', 'expense.filter_validee', 'Validée'),
-    ('fr', 'expense.filter_remboursee', 'Remboursée'),
-    ('fr', 'expense.filter_rejetee', 'Rejetée'),
-
-    -- Count suffixes
-    ('fr', 'expense.count_lignes', 'ligne(s)'),
+    ('fr', 'expense.filter_all', 'Tous'),
+    ('fr', 'expense.filter_draft', 'Brouillon'),
+    ('fr', 'expense.filter_submitted', 'Soumise'),
+    ('fr', 'expense.filter_validated', 'Validée'),
+    ('fr', 'expense.filter_reimbursed', 'Remboursée'),
+    ('fr', 'expense.filter_rejected', 'Rejetée'),
 
     -- Empty states
-    ('fr', 'expense.empty_no_categorie', 'Aucune catégorie'),
-    ('fr', 'expense.empty_no_note', 'Aucune note de frais'),
-    ('fr', 'expense.empty_first_note', 'Créez votre première note pour commencer.'),
+    ('fr', 'expense.empty_no_category', 'Aucune catégorie'),
+    ('fr', 'expense.empty_no_report', 'Aucune note de frais'),
+    ('fr', 'expense.empty_first_report', 'Créez votre première note pour commencer.'),
     ('fr', 'expense.empty_no_results', 'Aucune note trouvée'),
-    ('fr', 'expense.empty_no_ligne', 'Aucune ligne'),
-    ('fr', 'expense.empty_add_ligne', 'Ajoutez des dépenses à cette note.'),
+    ('fr', 'expense.empty_no_line', 'Aucune ligne'),
+    ('fr', 'expense.empty_add_line', 'Ajoutez des dépenses à cette note.'),
 
     -- Error messages
-    ('fr', 'expense.err_id_requis', 'ID requis.'),
-    ('fr', 'expense.err_note_id_requis', 'note_id requis'),
-    ('fr', 'expense.err_id_requis_detail', 'Spécifiez un identifiant de note.'),
-    ('fr', 'expense.err_not_found', 'Note introuvable'),
-    ('fr', 'expense.err_not_found_detail', 'La note n''existe pas.'),
-    ('fr', 'expense.err_not_modifiable', 'Modification impossible'),
-    ('fr', 'expense.err_not_modifiable_detail', 'Seules les notes en brouillon peuvent être modifiées.'),
-    ('fr', 'expense.err_fields_requis', 'Auteur, date début et date fin sont requis.'),
+    ('fr', 'expense.err_id_required', 'ID requis.'),
+    ('fr', 'expense.err_fields_required', 'Auteur, date début et date fin sont requis.'),
     ('fr', 'expense.err_date_order', 'La date de fin doit être postérieure à la date de début.'),
-    ('fr', 'expense.err_note_or_modifiable', 'Note introuvable ou non modifiable.'),
-    ('fr', 'expense.err_ligne_fields', 'Note, date, description et montant HT requis.'),
-    ('fr', 'expense.err_ligne_not_found', 'Note introuvable.'),
-    ('fr', 'expense.err_not_brouillon', 'Ajout impossible : la note n''est plus en brouillon.'),
-    ('fr', 'expense.err_no_ligne', 'Impossible de soumettre une note sans ligne.'),
-    ('fr', 'expense.err_not_brouillon_submit', 'Note introuvable ou pas en brouillon.'),
-    ('fr', 'expense.err_not_soumise', 'Note introuvable ou pas en statut soumise.'),
-    ('fr', 'expense.err_not_validee', 'Note introuvable ou pas en statut validée.'),
+    ('fr', 'expense.err_note_not_modifiable', 'Note introuvable ou non modifiable.'),
+    ('fr', 'expense.err_line_fields', 'Note, date, description et montant HT requis.'),
+    ('fr', 'expense.err_note_not_found', 'Note introuvable.'),
+    ('fr', 'expense.err_not_draft', 'Ajout impossible : la note n''est plus en brouillon.'),
+    ('fr', 'expense.err_no_lines', 'Impossible de soumettre une note sans ligne.'),
+    ('fr', 'expense.err_not_draft_submit', 'Note introuvable ou pas en brouillon.'),
+    ('fr', 'expense.err_not_submitted', 'Note introuvable ou pas en statut soumise.'),
+    ('fr', 'expense.err_not_validated', 'Note introuvable ou pas en statut validée.'),
 
     -- Toast messages
-    ('fr', 'expense.toast_ligne_ajoutee', 'Ligne ajoutée.'),
-    ('fr', 'expense.toast_note_creee', 'Note créée.'),
-    ('fr', 'expense.toast_note_modifiee', 'Note modifiée.'),
-    ('fr', 'expense.toast_note_soumise', 'Note soumise pour validation.'),
-    ('fr', 'expense.toast_note_validee', 'Note validée.'),
-    ('fr', 'expense.toast_note_rejetee', 'Note rejetée.'),
-    ('fr', 'expense.toast_note_remboursee', 'Note remboursée')
+    ('fr', 'expense.toast_line_added', 'Ligne ajoutée.'),
+    ('fr', 'expense.toast_note_created', 'Note créée.'),
+    ('fr', 'expense.toast_note_updated', 'Note modifiée.'),
+    ('fr', 'expense.toast_note_submitted', 'Note soumise pour validation.'),
+    ('fr', 'expense.toast_note_validated', 'Note validée.'),
+    ('fr', 'expense.toast_note_rejected', 'Note rejetée.'),
+    ('fr', 'expense.toast_note_reimbursed', 'Note remboursée')
 
   ON CONFLICT DO NOTHING;
 END;
@@ -782,525 +506,154 @@ AS $function$
 BEGIN
   RETURN jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('expense.nav_dashboard'), 'icon', 'home'),
-    jsonb_build_object('href', '/notes', 'label', pgv.t('expense.nav_notes'), 'icon', 'file-text', 'entity', 'note', 'uri', 'expense://note'),
-    jsonb_build_object('href', '/categories', 'label', pgv.t('expense.nav_categories'), 'icon', 'tag', 'entity', 'categorie', 'uri', 'expense://categorie')
+    jsonb_build_object('href', '/expense_reports', 'label', pgv.t('expense.nav_reports'), 'icon', 'file-text', 'entity', 'expense_report', 'uri', 'expense://expense_report'),
+    jsonb_build_object('href', '/categories', 'label', pgv.t('expense.nav_categories'), 'icon', 'tag', 'entity', 'category', 'uri', 'expense://category')
   );
 END;
 $function$;
 COMMENT ON FUNCTION expense.nav_items() IS 'Navigation items for Expense module with entity and URI mapping';
 
-CREATE OR REPLACE FUNCTION expense.note_create(p_row expense.note)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_ref text;
-  v_result expense.note;
-BEGIN
-  v_ref := expense._next_numero();
-  INSERT INTO expense.note (reference, auteur, date_debut, date_fin, commentaire)
-  VALUES (v_ref, p_row.auteur, p_row.date_debut, p_row.date_fin, p_row.commentaire)
-  RETURNING * INTO v_result;
-  RETURN to_jsonb(v_result);
-END;
-$function$;
-COMMENT ON FUNCTION expense.note_create(expense.note) IS 'Create an expense note with auto-generated reference';
-
-CREATE OR REPLACE FUNCTION expense.note_delete(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_result expense.note;
-BEGIN
-  DELETE FROM expense.note
-  WHERE (id = p_id::int OR reference = p_id) AND statut = 'brouillon'
-  RETURNING * INTO v_result;
-  RETURN to_jsonb(v_result);
-END;
-$function$;
-COMMENT ON FUNCTION expense.note_delete(text) IS 'Delete an expense note (only if brouillon) — by id or reference';
-
-CREATE OR REPLACE FUNCTION expense.note_list(p_filter text DEFAULT NULL::text)
- RETURNS SETOF jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-BEGIN
-  IF p_filter IS NULL THEN
-    RETURN QUERY
-      SELECT to_jsonb(n) || jsonb_build_object(
-        'nb_lignes', COALESCE(l.cnt, 0),
-        'total_ht', COALESCE(l.sum_ht, 0),
-        'total_ttc', COALESCE(l.sum_ttc, 0)
-      )
-      FROM expense.note n
-      LEFT JOIN LATERAL (
-        SELECT count(*) as cnt, sum(montant_ht) as sum_ht, sum(montant_ttc) as sum_ttc
-        FROM expense.ligne WHERE note_id = n.id
-      ) l ON true
-      ORDER BY n.updated_at DESC;
-  ELSE
-    RETURN QUERY EXECUTE
-      'SELECT to_jsonb(n) || jsonb_build_object(
-        ''nb_lignes'', COALESCE(l.cnt, 0),
-        ''total_ht'', COALESCE(l.sum_ht, 0),
-        ''total_ttc'', COALESCE(l.sum_ttc, 0)
-      )
-      FROM expense.note n
-      LEFT JOIN LATERAL (
-        SELECT count(*) as cnt, sum(montant_ht) as sum_ht, sum(montant_ttc) as sum_ttc
-        FROM expense.ligne WHERE note_id = n.id
-      ) l ON true
-      WHERE ' || pgv.rsql_to_where(p_filter, 'expense', 'note')
-      || ' ORDER BY n.updated_at DESC';
-  END IF;
-END;
-$function$;
-COMMENT ON FUNCTION expense.note_list(text) IS 'List expense notes with line totals — optional RSQL filter';
-
-CREATE OR REPLACE FUNCTION expense.note_read(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_result jsonb;
-  v_statut text;
-  v_id int;
-  v_nb_lignes int;
-  v_actions jsonb := '[]'::jsonb;
-BEGIN
-  v_result := (
-    SELECT to_jsonb(n) || jsonb_build_object(
-      'lignes', COALESCE((
-        SELECT jsonb_agg(to_jsonb(lg) || jsonb_build_object('categorie_nom', c.nom) ORDER BY lg.date_depense)
-        FROM expense.ligne lg
-        LEFT JOIN expense.categorie c ON c.id = lg.categorie_id
-        WHERE lg.note_id = n.id
-      ), '[]'::jsonb),
-      'total_ht', COALESCE((SELECT sum(montant_ht) FROM expense.ligne WHERE note_id = n.id), 0),
-      'total_ttc', COALESCE((SELECT sum(montant_ttc) FROM expense.ligne WHERE note_id = n.id), 0),
-      'nb_lignes', (SELECT count(*) FROM expense.ligne WHERE note_id = n.id)::int
-    )
-    FROM expense.note n
-    WHERE n.id = p_id::int OR n.reference = p_id
-  );
-
-  IF v_result IS NULL THEN
-    RETURN NULL;
-  END IF;
-
-  v_statut := v_result->>'statut';
-  v_id := (v_result->>'id')::int;
-  v_nb_lignes := (v_result->>'nb_lignes')::int;
-
-  -- HATEOAS actions based on state
-  CASE v_statut
-    WHEN 'brouillon' THEN
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'edit', 'uri', 'expense://note/' || v_id || '/edit'),
-        jsonb_build_object('method', 'add_ligne', 'uri', 'expense://note/' || v_id || '/add_ligne')
-      );
-      IF v_nb_lignes > 0 THEN
-        v_actions := v_actions || jsonb_build_array(
-          jsonb_build_object('method', 'submit', 'uri', 'expense://note/' || v_id || '/submit')
-        );
-      END IF;
-      v_actions := v_actions || jsonb_build_array(
-        jsonb_build_object('method', 'delete', 'uri', 'expense://note/' || v_id || '/delete')
-      );
-    WHEN 'soumise' THEN
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'validate', 'uri', 'expense://note/' || v_id || '/validate'),
-        jsonb_build_object('method', 'reject', 'uri', 'expense://note/' || v_id || '/reject')
-      );
-    WHEN 'validee' THEN
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'reimburse', 'uri', 'expense://note/' || v_id || '/reimburse')
-      );
-    WHEN 'remboursee' THEN
-      v_actions := '[]'::jsonb;
-    WHEN 'rejetee' THEN
-      v_actions := '[]'::jsonb;
-  END CASE;
-
-  RETURN v_result || jsonb_build_object('actions', v_actions);
-END;
-$function$;
-COMMENT ON FUNCTION expense.note_read(text) IS 'Read a single expense note with lines, totals, and HATEOAS actions';
-
-CREATE OR REPLACE FUNCTION expense.note_ui(p_slug text DEFAULT NULL::text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_n expense.note;
-  v_total_ht numeric;
-  v_total_ttc numeric;
-  v_nb_lignes int;
-BEGIN
-  -- List mode
-  IF p_slug IS NULL THEN
-    RETURN jsonb_build_object(
-      'ui', pgv.ui_column(
-        pgv.ui_heading(pgv.t('expense.nav_notes')),
-        pgv.ui_table('notes', jsonb_build_array(
-          pgv.ui_col('reference', pgv.t('expense.col_reference'), pgv.ui_link('{reference}', '/expense/notes/{id}')),
-          pgv.ui_col('auteur', pgv.t('expense.col_auteur')),
-          pgv.ui_col('date_debut', pgv.t('expense.col_date_debut')),
-          pgv.ui_col('date_fin', pgv.t('expense.col_date_fin')),
-          pgv.ui_col('statut', pgv.t('expense.col_statut'), pgv.ui_badge('{statut}')),
-          pgv.ui_col('nb_lignes', pgv.t('expense.col_nb_lignes')),
-          pgv.ui_col('total_ttc', pgv.t('expense.col_total_ttc'))
-        ))
-      ),
-      'datasources', jsonb_build_object(
-        'notes', pgv.ui_datasource('expense://note', 20, true, 'updated_at:desc')
-      )
-    );
-  END IF;
-
-  -- Detail mode
-  SELECT * INTO v_n FROM expense.note WHERE id = p_slug::int OR reference = p_slug;
-  IF NOT FOUND THEN
-    RETURN jsonb_build_object('error', 'not_found');
-  END IF;
-
-  SELECT count(*), COALESCE(sum(montant_ht), 0), COALESCE(sum(montant_ttc), 0)
-  INTO v_nb_lignes, v_total_ht, v_total_ttc
-  FROM expense.ligne WHERE note_id = v_n.id;
-
-  RETURN jsonb_build_object(
-    'ui', pgv.ui_column(
-      -- Header
-      pgv.ui_row(
-        pgv.ui_link(E'\u2190 ' || pgv.t('expense.nav_notes'), '/expense/notes'),
-        pgv.ui_heading(v_n.reference)
-      ),
-      pgv.ui_badge(v_n.statut),
-
-      -- Info
-      pgv.ui_heading(pgv.t('expense.dl_auteur'), 3),
-      pgv.ui_text(v_n.auteur),
-      pgv.ui_heading(pgv.t('expense.dl_periode'), 3),
-      pgv.ui_text(v_n.date_debut::text || ' → ' || v_n.date_fin::text),
-      pgv.ui_text(COALESCE(v_n.commentaire, '')),
-
-      -- Totaux
-      pgv.ui_heading(pgv.t('expense.stat_total'), 3),
-      pgv.ui_row(
-        pgv.ui_text(pgv.t('expense.col_nb_lignes') || ': ' || v_nb_lignes),
-        pgv.ui_text('HT: ' || v_total_ht::text || ' €'),
-        pgv.ui_text('TTC: ' || v_total_ttc::text || ' €')
-      )
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION expense.note_ui(text) IS 'SDUI view: note list with datasource + detail with totals and status';
-
-CREATE OR REPLACE FUNCTION expense.note_update(p_row expense.note)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_result expense.note;
-BEGIN
-  UPDATE expense.note SET
-    auteur = COALESCE(p_row.auteur, auteur),
-    date_debut = COALESCE(p_row.date_debut, date_debut),
-    date_fin = COALESCE(p_row.date_fin, date_fin),
-    commentaire = COALESCE(p_row.commentaire, commentaire),
-    updated_at = now()
-  WHERE id = p_row.id AND statut = 'brouillon'
-  RETURNING * INTO v_result;
-  RETURN to_jsonb(v_result);
-END;
-$function$;
-COMMENT ON FUNCTION expense.note_update(expense.note) IS 'Update an expense note (only if brouillon)';
-
-CREATE OR REPLACE FUNCTION expense.note_view()
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-BEGIN
-  RETURN jsonb_build_object(
-    'uri', 'expense://note',
-    'icon', '📋',
-    'label', 'expense.entity_note',
-
-    'template', jsonb_build_object(
-      'compact', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'auteur', 'statut', 'total_ttc')
-      ),
-      'standard', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'auteur', 'date_debut', 'date_fin', 'statut', 'commentaire'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'nb_lignes', 'label', 'expense.stat_nb_lignes'),
-          jsonb_build_object('key', 'total_ht', 'label', 'expense.stat_total_ht'),
-          jsonb_build_object('key', 'total_ttc', 'label', 'expense.stat_total_ttc')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'ledger://journal_entry', 'label', 'expense.stat_total', 'filter', 'expense_note_id={id}')
-        )
-      ),
-      'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'auteur', 'date_debut', 'date_fin', 'statut', 'commentaire', 'created_at', 'updated_at'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'nb_lignes', 'label', 'expense.stat_nb_lignes'),
-          jsonb_build_object('key', 'total_ht', 'label', 'expense.stat_total_ht'),
-          jsonb_build_object('key', 'total_ttc', 'label', 'expense.stat_total_ttc')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'ledger://journal_entry', 'label', 'expense.stat_total', 'filter', 'expense_note_id={id}')
-        )
-      ),
-      'form', jsonb_build_object(
-        'sections', jsonb_build_array(
-          jsonb_build_object(
-            'label', 'expense.section_info',
-            'fields', jsonb_build_array(
-              jsonb_build_object('key', 'auteur', 'type', 'text', 'label', 'expense.field_auteur', 'required', true),
-              jsonb_build_object('key', 'date_debut', 'type', 'date', 'label', 'expense.field_date_debut', 'required', true),
-              jsonb_build_object('key', 'date_fin', 'type', 'date', 'label', 'expense.field_date_fin', 'required', true),
-              jsonb_build_object('key', 'commentaire', 'type', 'textarea', 'label', 'expense.field_commentaire')
-            )
-          )
-        )
-      )
-    ),
-
-    'actions', jsonb_build_object(
-      'edit',      jsonb_build_object('label', 'expense.action_edit', 'icon', '✏', 'variant', 'muted'),
-      'add_ligne', jsonb_build_object('label', 'expense.action_add_ligne', 'icon', '+', 'variant', 'primary'),
-      'submit',    jsonb_build_object('label', 'expense.action_submit', 'icon', '→', 'variant', 'primary', 'confirm', 'expense.confirm_soumettre'),
-      'validate',  jsonb_build_object('label', 'expense.action_validate', 'icon', '✓', 'variant', 'primary', 'confirm', 'expense.confirm_valider'),
-      'reject',    jsonb_build_object('label', 'expense.action_reject', 'icon', '✗', 'variant', 'danger', 'confirm', 'expense.confirm_rejeter'),
-      'reimburse', jsonb_build_object('label', 'expense.action_reimburse', 'icon', '€', 'variant', 'primary', 'confirm', 'expense.confirm_rembourser'),
-      'delete',    jsonb_build_object('label', 'expense.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'expense.confirm_delete')
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION expense.note_view() IS 'SDUI _view() template for expense note — 4 density levels + actions catalog';
-
-CREATE OR REPLACE FUNCTION expense.post_ligne_ajouter(p_params jsonb)
+CREATE OR REPLACE FUNCTION expense.post_line_add(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_note_id int := (p_params->>'note_id')::int;
-  v_date date := (p_params->>'date_depense')::date;
-  v_categorie_id int := (p_params->>'categorie_id')::int;
+  v_date date := (p_params->>'expense_date')::date;
+  v_category_id int := (p_params->>'category_id')::int;
   v_description text := p_params->>'description';
-  v_montant_ht numeric(12,2) := (p_params->>'montant_ht')::numeric;
-  v_tva numeric(12,2) := coalesce((p_params->>'tva')::numeric, 0);
+  v_amount numeric(12,2) := (p_params->>'amount_excl_tax')::numeric;
+  v_vat numeric(12,2) := coalesce((p_params->>'vat')::numeric, 0);
   v_km numeric(8,1) := (p_params->>'km')::numeric;
-  v_statut text;
+  v_status text;
 BEGIN
-  IF v_note_id IS NULL OR v_date IS NULL OR v_description IS NULL OR v_montant_ht IS NULL THEN
-    RETURN pgv.toast(pgv.t('expense.err_ligne_fields'), 'error');
+  IF v_note_id IS NULL OR v_date IS NULL OR v_description IS NULL OR v_amount IS NULL THEN
+    RETURN pgv.toast(pgv.t('expense.err_line_fields'), 'error');
   END IF;
-
-  SELECT statut INTO v_statut FROM expense.note WHERE id = v_note_id;
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('expense.err_ligne_not_found'), 'error');
-  END IF;
-  IF v_statut <> 'brouillon' THEN
-    RETURN pgv.toast(pgv.t('expense.err_not_brouillon'), 'error');
-  END IF;
-
-  INSERT INTO expense.ligne (note_id, date_depense, categorie_id, description, montant_ht, tva, km)
-  VALUES (v_note_id, v_date, v_categorie_id, v_description, v_montant_ht, v_tva, v_km);
-
-  RETURN pgv.toast(pgv.t('expense.toast_ligne_ajoutee'))
-    || pgv.redirect('/note?p_id=' || v_note_id);
+  SELECT status INTO v_status FROM expense.expense_report WHERE id = v_note_id;
+  IF NOT FOUND THEN RETURN pgv.toast(pgv.t('expense.err_note_not_found'), 'error'); END IF;
+  IF v_status <> 'draft' THEN RETURN pgv.toast(pgv.t('expense.err_not_draft'), 'error'); END IF;
+  INSERT INTO expense.line (note_id, expense_date, category_id, description, amount_excl_tax, vat, km)
+  VALUES (v_note_id, v_date, v_category_id, v_description, v_amount, v_vat, v_km);
+  RETURN pgv.toast(pgv.t('expense.toast_line_added')) || pgv.redirect('/expense_report?p_id=' || v_note_id);
 END;
 $function$;
-COMMENT ON FUNCTION expense.post_ligne_ajouter(jsonb) IS 'Add an expense line to a note (brouillon only)';
+COMMENT ON FUNCTION expense.post_line_add(jsonb) IS 'Add an expense line to a report (draft only)';
 
-CREATE OR REPLACE FUNCTION expense.post_note_creer(p_params jsonb)
+CREATE OR REPLACE FUNCTION expense.post_report_create(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_params->>'id')::int;
-  v_auteur text := p_params->>'auteur';
-  v_date_debut date := (p_params->>'date_debut')::date;
-  v_date_fin date := (p_params->>'date_fin')::date;
-  v_commentaire text := p_params->>'commentaire';
-  v_note_id int;
+  v_author text := p_params->>'author';
+  v_start_date date := (p_params->>'start_date')::date;
+  v_end_date date := (p_params->>'end_date')::date;
+  v_comment text := p_params->>'comment';
+  v_report_id int;
 BEGIN
-  IF v_auteur IS NULL OR v_date_debut IS NULL OR v_date_fin IS NULL THEN
-    RETURN pgv.toast(pgv.t('expense.err_fields_requis'), 'error');
+  IF v_author IS NULL OR v_start_date IS NULL OR v_end_date IS NULL THEN
+    RETURN pgv.toast(pgv.t('expense.err_fields_required'), 'error');
   END IF;
-
-  IF v_date_fin < v_date_debut THEN
+  IF v_end_date < v_start_date THEN
     RETURN pgv.toast(pgv.t('expense.err_date_order'), 'error');
   END IF;
-
   IF v_id IS NOT NULL THEN
-    UPDATE expense.note
-       SET auteur = v_auteur,
-           date_debut = v_date_debut,
-           date_fin = v_date_fin,
-           commentaire = v_commentaire,
-           updated_at = now()
-     WHERE id = v_id AND statut = 'brouillon';
-
-    IF NOT FOUND THEN
-      RETURN pgv.toast(pgv.t('expense.err_note_or_modifiable'), 'error');
-    END IF;
-    v_note_id := v_id;
+    UPDATE expense.expense_report SET author = v_author, start_date = v_start_date, end_date = v_end_date, comment = v_comment, updated_at = now()
+    WHERE id = v_id AND status = 'draft';
+    IF NOT FOUND THEN RETURN pgv.toast(pgv.t('expense.err_note_not_modifiable'), 'error'); END IF;
+    v_report_id := v_id;
   ELSE
-    INSERT INTO expense.note (reference, auteur, date_debut, date_fin, commentaire)
-    VALUES (expense._next_numero(), v_auteur, v_date_debut, v_date_fin, v_commentaire)
-    RETURNING id INTO v_note_id;
+    INSERT INTO expense.expense_report (reference, author, start_date, end_date, comment)
+    VALUES (expense._next_reference(), v_author, v_start_date, v_end_date, v_comment) RETURNING id INTO v_report_id;
   END IF;
-
-  RETURN pgv.toast(CASE WHEN v_id IS NOT NULL THEN pgv.t('expense.toast_note_modifiee') ELSE pgv.t('expense.toast_note_creee') END)
-    || pgv.redirect('/note?p_id=' || v_note_id);
+  RETURN pgv.toast(CASE WHEN v_id IS NOT NULL THEN pgv.t('expense.toast_note_updated') ELSE pgv.t('expense.toast_note_created') END)
+    || pgv.redirect('/expense_report?p_id=' || v_report_id);
 END;
 $function$;
-COMMENT ON FUNCTION expense.post_note_creer(jsonb) IS 'Create or update an expense note (brouillon only)';
+COMMENT ON FUNCTION expense.post_report_create(jsonb) IS 'Create or update an expense report (draft only)';
 
-CREATE OR REPLACE FUNCTION expense.post_note_rejeter(p_params jsonb)
+CREATE OR REPLACE FUNCTION expense.post_report_reimburse(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_params->>'id')::int;
-BEGIN
-  IF v_id IS NULL THEN
-    RETURN pgv.toast(pgv.t('expense.err_id_requis'), 'error');
-  END IF;
-
-  UPDATE expense.note SET statut = 'rejetee', updated_at = now()
-   WHERE id = v_id AND statut = 'soumise';
-
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('expense.err_not_soumise'), 'error');
-  END IF;
-
-  RETURN pgv.toast(pgv.t('expense.toast_note_rejetee'))
-    || pgv.redirect('/note?p_id=' || v_id);
-END;
-$function$;
-COMMENT ON FUNCTION expense.post_note_rejeter(jsonb) IS 'Reject a submitted note';
-
-CREATE OR REPLACE FUNCTION expense.post_note_rembourser(p_params jsonb)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_id int := (p_params->>'id')::int;
-  v_note record;
-  v_total_ttc numeric(12,2);
+  v_report record;
+  v_total numeric(12,2);
   v_has_ledger boolean;
 BEGIN
-  IF v_id IS NULL THEN
-    RETURN pgv.toast(pgv.t('expense.err_id_requis'), 'error');
-  END IF;
-
-  SELECT * INTO v_note FROM expense.note WHERE id = v_id AND statut = 'validee';
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('expense.err_not_validee'), 'error');
-  END IF;
-
-  SELECT coalesce(sum(montant_ttc), 0) INTO v_total_ttc FROM expense.ligne WHERE note_id = v_id;
-
-  UPDATE expense.note SET statut = 'remboursee', updated_at = now() WHERE id = v_id;
-
+  IF v_id IS NULL THEN RETURN pgv.toast(pgv.t('expense.err_id_required'), 'error'); END IF;
+  SELECT * INTO v_report FROM expense.expense_report WHERE id = v_id AND status = 'validated';
+  IF NOT FOUND THEN RETURN pgv.toast(pgv.t('expense.err_not_validated'), 'error'); END IF;
+  SELECT coalesce(sum(amount_incl_tax), 0) INTO v_total FROM expense.line WHERE note_id = v_id;
+  UPDATE expense.expense_report SET status = 'reimbursed', updated_at = now() WHERE id = v_id;
   SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = 'ledger') INTO v_has_ledger;
   IF v_has_ledger THEN
     BEGIN
-      EXECUTE format(
-        'SELECT ledger.post_ecriture_creer(%L::jsonb)',
-        jsonb_build_object(
-          'journal', 'NDF',
-          'libelle', 'Remboursement ' || coalesce(v_note.reference, '#' || v_id),
+      EXECUTE format('SELECT ledger.post_ecriture_creer(%L::jsonb)',
+        jsonb_build_object('journal', 'NDF', 'libelle', 'Reimbursement ' || coalesce(v_report.reference, '#' || v_id),
           'lignes', jsonb_build_array(
-            jsonb_build_object('compte', '625000', 'debit', v_total_ttc, 'credit', 0),
-            jsonb_build_object('compte', '421000', 'debit', 0, 'credit', v_total_ttc)
-          )
-        )::text
-      );
-    EXCEPTION WHEN OTHERS THEN
-      NULL;
+            jsonb_build_object('compte', '625000', 'debit', v_total, 'credit', 0),
+            jsonb_build_object('compte', '421000', 'debit', 0, 'credit', v_total)))::text);
+    EXCEPTION WHEN OTHERS THEN NULL;
     END;
   END IF;
-
-  RETURN pgv.toast(pgv.t('expense.toast_note_remboursee') || ' (' || to_char(v_total_ttc, 'FM999 990.00') || ' EUR).')
-    || pgv.redirect('/note?p_id=' || v_id);
+  RETURN pgv.toast(pgv.t('expense.toast_note_reimbursed') || ' (' || to_char(v_total, 'FM999 990.00') || ' EUR).')
+    || pgv.redirect('/expense_report?p_id=' || v_id);
 END;
 $function$;
-COMMENT ON FUNCTION expense.post_note_rembourser(jsonb) IS 'Reimburse a validated note (+ ledger entry if available)';
+COMMENT ON FUNCTION expense.post_report_reimburse(jsonb) IS 'Reimburse a validated report (+ ledger entry if available)';
 
-CREATE OR REPLACE FUNCTION expense.post_note_soumettre(p_params jsonb)
+CREATE OR REPLACE FUNCTION expense.post_report_reject(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
-DECLARE
-  v_id int := (p_params->>'id')::int;
-  v_nb_lignes int;
+DECLARE v_id int := (p_params->>'id')::int;
 BEGIN
-  IF v_id IS NULL THEN
-    RETURN pgv.toast(pgv.t('expense.err_id_requis'), 'error');
-  END IF;
-
-  SELECT count(*)::int INTO v_nb_lignes FROM expense.ligne WHERE note_id = v_id;
-  IF v_nb_lignes = 0 THEN
-    RETURN pgv.toast(pgv.t('expense.err_no_ligne'), 'error');
-  END IF;
-
-  UPDATE expense.note SET statut = 'soumise', updated_at = now()
-   WHERE id = v_id AND statut = 'brouillon';
-
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('expense.err_not_brouillon_submit'), 'error');
-  END IF;
-
-  RETURN pgv.toast(pgv.t('expense.toast_note_soumise'))
-    || pgv.redirect('/note?p_id=' || v_id);
+  IF v_id IS NULL THEN RETURN pgv.toast(pgv.t('expense.err_id_required'), 'error'); END IF;
+  UPDATE expense.expense_report SET status = 'rejected', updated_at = now() WHERE id = v_id AND status = 'submitted';
+  IF NOT FOUND THEN RETURN pgv.toast(pgv.t('expense.err_not_submitted'), 'error'); END IF;
+  RETURN pgv.toast(pgv.t('expense.toast_note_rejected')) || pgv.redirect('/expense_report?p_id=' || v_id);
 END;
 $function$;
-COMMENT ON FUNCTION expense.post_note_soumettre(jsonb) IS 'Transition note brouillon -> soumise (guard: at least 1 line)';
+COMMENT ON FUNCTION expense.post_report_reject(jsonb) IS 'Reject a submitted report';
 
-CREATE OR REPLACE FUNCTION expense.post_note_valider(p_params jsonb)
+CREATE OR REPLACE FUNCTION expense.post_report_submit(p_params jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
-DECLARE
-  v_id int := (p_params->>'id')::int;
+DECLARE v_id int := (p_params->>'id')::int; v_cnt int;
 BEGIN
-  IF v_id IS NULL THEN
-    RETURN pgv.toast(pgv.t('expense.err_id_requis'), 'error');
-  END IF;
-
-  UPDATE expense.note SET statut = 'validee', updated_at = now()
-   WHERE id = v_id AND statut = 'soumise';
-
-  IF NOT FOUND THEN
-    RETURN pgv.toast(pgv.t('expense.err_not_soumise'), 'error');
-  END IF;
-
-  RETURN pgv.toast(pgv.t('expense.toast_note_validee'))
-    || pgv.redirect('/note?p_id=' || v_id);
+  IF v_id IS NULL THEN RETURN pgv.toast(pgv.t('expense.err_id_required'), 'error'); END IF;
+  SELECT count(*)::int INTO v_cnt FROM expense.line WHERE note_id = v_id;
+  IF v_cnt = 0 THEN RETURN pgv.toast(pgv.t('expense.err_no_lines'), 'error'); END IF;
+  UPDATE expense.expense_report SET status = 'submitted', updated_at = now() WHERE id = v_id AND status = 'draft';
+  IF NOT FOUND THEN RETURN pgv.toast(pgv.t('expense.err_not_draft_submit'), 'error'); END IF;
+  RETURN pgv.toast(pgv.t('expense.toast_note_submitted')) || pgv.redirect('/expense_report?p_id=' || v_id);
 END;
 $function$;
-COMMENT ON FUNCTION expense.post_note_valider(jsonb) IS 'Transition note soumise -> validee';
+COMMENT ON FUNCTION expense.post_report_submit(jsonb) IS 'Transition report draft -> submitted (guard: at least 1 line)';
+
+CREATE OR REPLACE FUNCTION expense.post_report_validate(p_params jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE v_id int := (p_params->>'id')::int;
+BEGIN
+  IF v_id IS NULL THEN RETURN pgv.toast(pgv.t('expense.err_id_required'), 'error'); END IF;
+  UPDATE expense.expense_report SET status = 'validated', updated_at = now() WHERE id = v_id AND status = 'submitted';
+  IF NOT FOUND THEN RETURN pgv.toast(pgv.t('expense.err_not_submitted'), 'error'); END IF;
+  RETURN pgv.toast(pgv.t('expense.toast_note_validated')) || pgv.redirect('/expense_report?p_id=' || v_id);
+END;
+$function$;
+COMMENT ON FUNCTION expense.post_report_validate(jsonb) IS 'Transition report submitted -> validated';
 
 GRANT USAGE ON SCHEMA expense TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA expense TO anon;

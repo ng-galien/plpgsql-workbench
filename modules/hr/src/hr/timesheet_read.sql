@@ -7,7 +7,7 @@ DECLARE
   v_result jsonb;
 BEGIN
   SELECT to_jsonb(t) || jsonb_build_object(
-    'employee_name', e.prenom || ' ' || e.nom
+    'employee_name', e.first_name || ' ' || e.last_name
   ) INTO v_result
   FROM hr.timesheet t
   JOIN hr.employee e ON e.id = t.employee_id

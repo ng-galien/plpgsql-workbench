@@ -27,13 +27,15 @@ BEGIN
     ('fr', 'asset.field_filename', 'Fichier'),
     ('fr', 'asset.field_dimensions', 'Dimensions'),
     ('fr', 'asset.field_credit', 'Crédit'),
-    ('fr', 'asset.field_saison', 'Saison'),
+    ('fr', 'asset.field_season', 'Saison'),
     ('fr', 'asset.field_usage_hint', 'Usage recommandé'),
     ('fr', 'asset.field_colors', 'Couleurs dominantes'),
     ('fr', 'asset.field_orientation', 'Orientation'),
     ('fr', 'asset.field_created', 'Créé le'),
     ('fr', 'asset.field_classified', 'Classifié le'),
     ('fr', 'asset.field_path', 'Chemin'),
+    ('fr', 'asset.field_width', 'Largeur'),
+    ('fr', 'asset.field_height', 'Hauteur'),
 
     -- Common
     ('fr', 'asset.filter_all', 'Tous'),
@@ -86,11 +88,16 @@ BEGIN
     ('fr', 'asset.action_delete', 'Supprimer'),
     ('fr', 'asset.action_edit', 'Modifier'),
 
-    -- Saison options
-    ('fr', 'asset.saison_printemps', 'Printemps'),
-    ('fr', 'asset.saison_ete', 'Été'),
-    ('fr', 'asset.saison_automne', 'Automne'),
-    ('fr', 'asset.saison_hiver', 'Hiver')
+    -- Season options
+    ('fr', 'asset.season_spring', 'Printemps'),
+    ('fr', 'asset.season_summer', 'Été'),
+    ('fr', 'asset.season_autumn', 'Automne'),
+    ('fr', 'asset.season_winter', 'Hiver'),
+
+    -- Orientation options
+    ('fr', 'asset.orientation_landscape', 'Paysage'),
+    ('fr', 'asset.orientation_portrait', 'Portrait'),
+    ('fr', 'asset.orientation_square', 'Carré')
 
   ON CONFLICT DO NOTHING;
 END;

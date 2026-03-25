@@ -1,8 +1,8 @@
--- catalog — Seed data (référence, partagé entre tenants)
+-- catalog — Seed data (reference, shared across tenants)
 SELECT set_config('app.tenant_id', '_ref', false);
 
--- Unités de mesure
-INSERT INTO catalog.unite (code, label) VALUES
+-- Units of measure
+INSERT INTO catalog.unit (code, label) VALUES
   ('u', 'Unité'),
   ('m', 'Mètre'),
   ('m2', 'Mètre carré'),

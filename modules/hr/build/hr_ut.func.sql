@@ -15,72 +15,71 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
-  -- Setup: create employee
-  INSERT INTO hr.employee (nom, prenom) VALUES ('Test', 'Absence') RETURNING id INTO v_emp_id;
+  INSERT INTO hr.employee (last_name, first_name) VALUES ('Test', 'Absence') RETURNING id INTO v_emp_id;
 
-  -- Declare absence
+  -- Declare leave request
   v_result := hr.post_absence_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'type_absence', 'conge_paye',
-    'date_debut', '2026-04-01', 'date_fin', '2026-04-05', 'nb_jours', 5
+    'employee_id', v_emp_id, 'leave_type', 'paid_leave',
+    'start_date', '2026-04-01', 'end_date', '2026-04-05', 'day_count', 5
   ));
-  RETURN NEXT ok(v_result LIKE '%déclarée%', 'absence declared');
+  RETURN NEXT ok(v_result LIKE '%déclarée%', 'leave request declared');
 
-  SELECT id INTO v_abs_id FROM hr.absence WHERE employee_id = v_emp_id;
-  RETURN NEXT ok(v_abs_id IS NOT NULL, 'absence inserted');
-  RETURN NEXT is((SELECT statut FROM hr.absence WHERE id = v_abs_id), 'demande', 'initial status is demande');
+  SELECT id INTO v_abs_id FROM hr.leave_request WHERE employee_id = v_emp_id;
+  RETURN NEXT ok(v_abs_id IS NOT NULL, 'leave request inserted');
+  RETURN NEXT is((SELECT status FROM hr.leave_request WHERE id = v_abs_id), 'pending', 'initial status is pending');
 
   -- Validate
-  v_result := hr.post_absence_validate(jsonb_build_object('id', v_abs_id, 'action', 'valider'));
-  RETURN NEXT ok(v_result LIKE '%validee%', 'validate returns success');
-  RETURN NEXT is((SELECT statut FROM hr.absence WHERE id = v_abs_id), 'validee', 'status updated to validee');
+  v_result := hr.post_absence_validate(jsonb_build_object('id', v_abs_id, 'action', 'validate'));
+  RETURN NEXT ok(v_result LIKE '%approved%', 'validate returns success');
+  RETURN NEXT is((SELECT status FROM hr.leave_request WHERE id = v_abs_id), 'approved', 'status updated to approved');
 
   -- Cannot validate again
-  v_result := hr.post_absence_validate(jsonb_build_object('id', v_abs_id, 'action', 'refuser'));
+  v_result := hr.post_absence_validate(jsonb_build_object('id', v_abs_id, 'action', 'refuse'));
   RETURN NEXT ok(v_result LIKE '%déjà traitée%', 'double validation rejected');
 
-  -- Validation errors
+  -- Date validation
   v_result := hr.post_absence_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'type_absence', 'rtt',
-    'date_debut', '2026-04-10', 'date_fin', '2026-04-05', 'nb_jours', 3
+    'employee_id', v_emp_id, 'leave_type', 'rtt',
+    'start_date', '2026-04-10', 'end_date', '2026-04-05', 'day_count', 3
   ));
-  RETURN NEXT ok(v_result LIKE '%après la date%', 'date_fin < date_debut rejected');
+  RETURN NEXT ok(v_result LIKE '%après la date%', 'end_date < start_date rejected');
 
-  -- Leave balance: setup balance for employee
-  DELETE FROM hr.absence WHERE employee_id = v_emp_id;
+  -- Leave balance: setup
+  DELETE FROM hr.leave_request WHERE employee_id = v_emp_id;
   INSERT INTO hr.leave_balance (employee_id, leave_type, allocated, used)
-    VALUES (v_emp_id, 'conge_paye', 25, 0);
+    VALUES (v_emp_id, 'paid_leave', 25, 0);
 
   -- Declare + validate: should decrement used
   v_result := hr.post_absence_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'type_absence', 'conge_paye',
-    'date_debut', '2026-06-01', 'date_fin', '2026-06-05', 'nb_jours', 5
+    'employee_id', v_emp_id, 'leave_type', 'paid_leave',
+    'start_date', '2026-06-01', 'end_date', '2026-06-05', 'day_count', 5
   ));
-  SELECT id INTO v_abs_id FROM hr.absence WHERE employee_id = v_emp_id AND date_debut = '2026-06-01';
-  v_result := hr.post_absence_validate(jsonb_build_object('id', v_abs_id, 'action', 'valider'));
-  SELECT used INTO v_used FROM hr.leave_balance WHERE employee_id = v_emp_id AND leave_type = 'conge_paye';
+  SELECT id INTO v_abs_id FROM hr.leave_request WHERE employee_id = v_emp_id AND start_date = '2026-06-01';
+  v_result := hr.post_absence_validate(jsonb_build_object('id', v_abs_id, 'action', 'validate'));
+  SELECT used INTO v_used FROM hr.leave_balance WHERE employee_id = v_emp_id AND leave_type = 'paid_leave';
   RETURN NEXT is(v_used, 5::numeric, 'balance decremented after validation');
 
   -- Declare with insufficient balance: should warn
-  UPDATE hr.leave_balance SET allocated = 25, used = 23 WHERE employee_id = v_emp_id AND leave_type = 'conge_paye';
+  UPDATE hr.leave_balance SET allocated = 25, used = 23 WHERE employee_id = v_emp_id AND leave_type = 'paid_leave';
   v_result := hr.post_absence_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'type_absence', 'conge_paye',
-    'date_debut', '2026-07-01', 'date_fin', '2026-07-05', 'nb_jours', 5
+    'employee_id', v_emp_id, 'leave_type', 'paid_leave',
+    'start_date', '2026-07-01', 'end_date', '2026-07-05', 'day_count', 5
   ));
   RETURN NEXT ok(v_result LIKE '%insuffisant%', 'warning on insufficient balance at declaration');
 
   -- Validate with insufficient balance: should block
-  SELECT id INTO v_abs_id FROM hr.absence WHERE employee_id = v_emp_id AND date_debut = '2026-07-01';
-  v_result := hr.post_absence_validate(jsonb_build_object('id', v_abs_id, 'action', 'valider'));
+  SELECT id INTO v_abs_id FROM hr.leave_request WHERE employee_id = v_emp_id AND start_date = '2026-07-01';
+  v_result := hr.post_absence_validate(jsonb_build_object('id', v_abs_id, 'action', 'validate'));
   RETURN NEXT ok(v_result LIKE '%insuffisant%', 'validation blocked on insufficient balance');
-  RETURN NEXT is((SELECT statut FROM hr.absence WHERE id = v_abs_id), 'demande', 'absence stays demande when balance insufficient');
+  RETURN NEXT is((SELECT status FROM hr.leave_request WHERE id = v_abs_id), 'pending', 'leave request stays pending when balance insufficient');
 
   -- Cleanup
   DELETE FROM hr.leave_balance WHERE employee_id = v_emp_id;
-  DELETE FROM hr.absence WHERE employee_id = v_emp_id;
+  DELETE FROM hr.leave_request WHERE employee_id = v_emp_id;
   DELETE FROM hr.employee WHERE id = v_emp_id;
 END;
 $function$;
-COMMENT ON FUNCTION hr_ut.test_absence_workflow() IS 'Unit test: absence declaration, validation workflow, and leave balance';
+COMMENT ON FUNCTION hr_ut.test_absence_workflow() IS 'Unit test: leave request declaration, validation workflow, and leave balance';
 
 CREATE OR REPLACE FUNCTION hr_ut.test_employee_crud()
  RETURNS SETOF text
@@ -94,27 +93,27 @@ BEGIN
 
   -- Create
   v_result := hr.post_employee_save(jsonb_build_object(
-    'nom', 'Dupont', 'prenom', 'Jean', 'email', 'jean@test.com',
-    'poste', 'Développeur', 'departement', 'IT', 'type_contrat', 'cdi'
+    'last_name', 'Dupont', 'first_name', 'Jean', 'email', 'jean@test.com',
+    'position', 'Développeur', 'department', 'IT', 'contract_type', 'cdi'
   ));
-  RETURN NEXT ok(v_result LIKE '%Salarié créé%', 'create employee returns success toast');
+  RETURN NEXT ok(v_result LIKE '%créé%', 'create employee returns success toast');
 
-  SELECT id INTO v_id FROM hr.employee WHERE nom = 'Dupont' AND prenom = 'Jean';
+  SELECT id INTO v_id FROM hr.employee WHERE last_name = 'Dupont' AND first_name = 'Jean';
   RETURN NEXT ok(v_id IS NOT NULL, 'employee inserted in DB');
 
   -- Read
   v_result := hr.get_employee(v_id);
   RETURN NEXT ok(v_result LIKE '%Dupont%', 'get_employee contains name');
-  RETURN NEXT ok(v_result LIKE '%Développeur%', 'get_employee contains poste');
+  RETURN NEXT ok(v_result LIKE '%veloppeur%', 'get_employee contains position');
   RETURN NEXT ok(v_result LIKE '%CDI%', 'get_employee contains contract type');
 
   -- Update
   v_result := hr.post_employee_save(jsonb_build_object(
-    'id', v_id, 'nom', 'Dupont', 'prenom', 'Jean',
-    'poste', 'Lead Dev', 'departement', 'IT', 'type_contrat', 'cdi'
+    'id', v_id, 'last_name', 'Dupont', 'first_name', 'Jean',
+    'position', 'Lead Dev', 'department', 'IT', 'contract_type', 'cdi'
   ));
   RETURN NEXT ok(v_result LIKE '%mis à jour%', 'update employee returns success toast');
-  RETURN NEXT ok((SELECT poste FROM hr.employee WHERE id = v_id) = 'Lead Dev', 'poste updated in DB');
+  RETURN NEXT ok((SELECT position FROM hr.employee WHERE id = v_id) = 'Lead Dev', 'position updated in DB');
 
   -- Delete
   v_result := hr.post_employee_delete(jsonb_build_object('id', v_id));
@@ -122,8 +121,8 @@ BEGIN
   RETURN NEXT ok(NOT EXISTS(SELECT 1 FROM hr.employee WHERE id = v_id), 'employee deleted from DB');
 
   -- Validation
-  v_result := hr.post_employee_save(jsonb_build_object('nom', '', 'prenom', ''));
-  RETURN NEXT ok(v_result LIKE '%obligatoires%', 'empty name/prenom rejected');
+  v_result := hr.post_employee_save(jsonb_build_object('last_name', '', 'first_name', ''));
+  RETURN NEXT ok(v_result LIKE '%obligatoires%', 'empty name rejected');
 END;
 $function$;
 COMMENT ON FUNCTION hr_ut.test_employee_crud() IS 'Unit test: employee CRUD operations';
@@ -138,36 +137,35 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
-  -- Setup
-  INSERT INTO hr.employee (nom, prenom) VALUES ('Test', 'Heures') RETURNING id INTO v_emp_id;
+  INSERT INTO hr.employee (last_name, first_name) VALUES ('Test', 'Hours') RETURNING id INTO v_emp_id;
 
   -- Save timesheet
   v_result := hr.post_timesheet_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'date_travail', '2026-03-10', 'heures', 8, 'description', 'Dev feature X'
+    'employee_id', v_emp_id, 'work_date', '2026-03-10', 'hours', 8, 'description', 'Dev feature X'
   ));
   RETURN NEXT ok(v_result LIKE '%enregistrées%', 'timesheet saved');
   RETURN NEXT is(
-    (SELECT heures FROM hr.timesheet WHERE employee_id = v_emp_id AND date_travail = '2026-03-10'),
+    (SELECT hours FROM hr.timesheet WHERE employee_id = v_emp_id AND work_date = '2026-03-10'),
     8::numeric, 'hours stored correctly'
   );
 
   -- Upsert (same date)
   v_result := hr.post_timesheet_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'date_travail', '2026-03-10', 'heures', 7.5, 'description', 'Updated'
+    'employee_id', v_emp_id, 'work_date', '2026-03-10', 'hours', 7.5, 'description', 'Updated'
   ));
   RETURN NEXT ok(v_result LIKE '%enregistrées%', 'upsert works');
   RETURN NEXT is(
-    (SELECT heures FROM hr.timesheet WHERE employee_id = v_emp_id AND date_travail = '2026-03-10'),
+    (SELECT hours FROM hr.timesheet WHERE employee_id = v_emp_id AND work_date = '2026-03-10'),
     7.5::numeric, 'hours updated via upsert'
   );
   RETURN NEXT is(
-    (SELECT count(*)::int FROM hr.timesheet WHERE employee_id = v_emp_id AND date_travail = '2026-03-10'),
+    (SELECT count(*)::int FROM hr.timesheet WHERE employee_id = v_emp_id AND work_date = '2026-03-10'),
     1, 'only one row per employee+date'
   );
 
   -- Validation
   v_result := hr.post_timesheet_save(jsonb_build_object(
-    'employee_id', v_emp_id, 'date_travail', '2026-03-11', 'heures', 25
+    'employee_id', v_emp_id, 'work_date', '2026-03-11', 'hours', 25
   ));
   RETURN NEXT ok(v_result LIKE '%entre 0 et 24%', 'hours > 24 rejected');
 

@@ -6,11 +6,11 @@ AS $function$
 BEGIN
   RETURN QUERY
     SELECT to_jsonb(e) || jsonb_build_object(
-      'contrat_label', hr.contrat_label(e.type_contrat),
-      'display_name', e.prenom || ' ' || e.nom
+      'contract_label', hr.contract_label(e.contract_type),
+      'display_name', e.first_name || ' ' || e.last_name
     )
     FROM hr.employee e
     WHERE e.tenant_id = current_setting('app.tenant_id', true)
-    ORDER BY e.nom, e.prenom;
+    ORDER BY e.last_name, e.first_name;
 END;
 $function$;

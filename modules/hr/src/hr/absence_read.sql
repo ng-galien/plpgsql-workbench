@@ -6,23 +6,22 @@ AS $function$
 DECLARE
   v_result jsonb;
   v_actions jsonb := '[]'::jsonb;
-  v_statut text;
+  v_status text;
   v_balance numeric;
 BEGIN
   SELECT to_jsonb(a) || jsonb_build_object(
-    'employee_name', e.prenom || ' ' || e.nom,
-    'type_label', hr.absence_label(a.type_absence)
+    'employee_name', e.first_name || ' ' || e.last_name,
+    'type_label', hr.leave_type_label(a.leave_type)
   ) INTO v_result
-  FROM hr.absence a
+  FROM hr.leave_request a
   JOIN hr.employee e ON e.id = a.employee_id
   WHERE a.id = p_id::int AND a.tenant_id = current_setting('app.tenant_id', true);
 
   IF v_result IS NULL THEN RETURN NULL; END IF;
 
-  v_statut := v_result->>'statut';
+  v_status := v_result->>'status';
 
-  -- HATEOAS actions based on absence state
-  IF v_statut = 'demande' THEN
+  IF v_status = 'pending' THEN
     v_actions := jsonb_build_array(
       jsonb_build_object('method', 'validate', 'uri', 'hr://absence/' || p_id || '/validate'),
       jsonb_build_object('method', 'refuse', 'uri', 'hr://absence/' || p_id || '/refuse'),
@@ -30,13 +29,11 @@ BEGIN
       jsonb_build_object('method', 'delete', 'uri', 'hr://absence/' || p_id || '/delete')
     );
   END IF;
-  -- validee, refusee, annulee: terminal states, no actions
 
-  -- Stats: leave balance remaining for this type
   SELECT (lb.allocated - lb.used) INTO v_balance
     FROM hr.leave_balance lb
    WHERE lb.employee_id = (v_result->>'employee_id')::int
-     AND lb.leave_type = v_result->>'type_absence';
+     AND lb.leave_type = v_result->>'leave_type';
 
   v_result := v_result || jsonb_build_object(
     'actions', v_actions,

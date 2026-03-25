@@ -31,8 +31,8 @@ BEGIN
           jsonb_build_object('key', 'interaction_count', 'label', 'crm.col_interactions')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'quote://devis', 'filter', 'client_id={id}', 'label', 'crm.related_quotes'),
-          jsonb_build_object('entity', 'quote://facture', 'filter', 'client_id={id}', 'label', 'crm.related_invoices')
+          jsonb_build_object('entity', 'quote://estimate', 'filter', 'client_id={id}', 'label', 'crm.related_quotes'),
+          jsonb_build_object('entity', 'quote://invoice', 'filter', 'client_id={id}', 'label', 'crm.related_invoices')
         )
       ),
 

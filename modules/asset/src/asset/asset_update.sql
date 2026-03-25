@@ -16,7 +16,7 @@ BEGIN
     description = COALESCE(p_row.description, description),
     tags        = COALESCE(p_row.tags, tags),
     credit      = COALESCE(p_row.credit, credit),
-    saison      = COALESCE(p_row.saison, saison),
+    season      = COALESCE(p_row.season, season),
     usage_hint  = COALESCE(p_row.usage_hint, usage_hint),
     colors      = COALESCE(p_row.colors, colors),
     thumb_path  = COALESCE(p_row.thumb_path, thumb_path),

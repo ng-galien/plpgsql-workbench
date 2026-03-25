@@ -6,12 +6,12 @@ AS $function$
 BEGIN
   UPDATE stock.article SET
     reference = COALESCE(NULLIF(p_row.reference, ''), reference),
-    designation = COALESCE(NULLIF(p_row.designation, ''), designation),
-    categorie = COALESCE(NULLIF(p_row.categorie, ''), categorie),
-    unite = COALESCE(NULLIF(p_row.unite, ''), unite),
-    prix_achat = COALESCE(p_row.prix_achat, prix_achat),
-    seuil_mini = COALESCE(p_row.seuil_mini, seuil_mini),
-    fournisseur_id = COALESCE(p_row.fournisseur_id, fournisseur_id),
+    description = COALESCE(NULLIF(p_row.description, ''), description),
+    category = COALESCE(NULLIF(p_row.category, ''), category),
+    unit = COALESCE(NULLIF(p_row.unit, ''), unit),
+    purchase_price = COALESCE(p_row.purchase_price, purchase_price),
+    min_threshold = COALESCE(p_row.min_threshold, min_threshold),
+    supplier_id = COALESCE(p_row.supplier_id, supplier_id),
     notes = COALESCE(p_row.notes, notes),
     active = COALESCE(p_row.active, active),
     catalog_article_id = COALESCE(p_row.catalog_article_id, catalog_article_id),

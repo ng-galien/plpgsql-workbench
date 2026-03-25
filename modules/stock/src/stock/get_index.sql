@@ -4,10 +4,10 @@ CREATE OR REPLACE FUNCTION stock.get_index()
 AS $function$
 DECLARE
   v_nb_articles int;
-  v_nb_alertes int;
-  v_mvt_semaine int;
-  v_mvt_semaine_prec int;
-  v_valeur_totale numeric;
+  v_nb_alerts int;
+  v_mvt_week int;
+  v_mvt_week_prev int;
+  v_total_value numeric;
   v_body text;
   v_rows text[];
   v_variation text;
@@ -15,59 +15,59 @@ DECLARE
 BEGIN
   SELECT count(*)::int INTO v_nb_articles FROM stock.article WHERE active;
 
-  SELECT count(*)::int INTO v_nb_alertes
+  SELECT count(*)::int INTO v_nb_alerts
   FROM stock.article a
-  WHERE a.active AND a.seuil_mini > 0
-    AND stock._stock_actuel(a.id) < a.seuil_mini;
+  WHERE a.active AND a.min_threshold > 0
+    AND stock._current_stock(a.id) < a.min_threshold;
 
-  SELECT count(*)::int INTO v_mvt_semaine
-  FROM stock.mouvement
+  SELECT count(*)::int INTO v_mvt_week
+  FROM stock.movement
   WHERE created_at >= date_trunc('week', now());
 
-  SELECT count(*)::int INTO v_mvt_semaine_prec
-  FROM stock.mouvement
+  SELECT count(*)::int INTO v_mvt_week_prev
+  FROM stock.movement
   WHERE created_at >= date_trunc('week', now()) - interval '7 days'
     AND created_at < date_trunc('week', now());
 
-  IF v_mvt_semaine_prec > 0 THEN
+  IF v_mvt_week_prev > 0 THEN
     v_variation := CASE
-      WHEN v_mvt_semaine > v_mvt_semaine_prec THEN '+' || round(((v_mvt_semaine - v_mvt_semaine_prec)::numeric / v_mvt_semaine_prec) * 100)::text || '%'
-      WHEN v_mvt_semaine < v_mvt_semaine_prec THEN '-' || round(((v_mvt_semaine_prec - v_mvt_semaine)::numeric / v_mvt_semaine_prec) * 100)::text || '%'
+      WHEN v_mvt_week > v_mvt_week_prev THEN '+' || round(((v_mvt_week - v_mvt_week_prev)::numeric / v_mvt_week_prev) * 100)::text || '%'
+      WHEN v_mvt_week < v_mvt_week_prev THEN '-' || round(((v_mvt_week_prev - v_mvt_week)::numeric / v_mvt_week_prev) * 100)::text || '%'
       ELSE '='
     END;
   ELSE
     v_variation := NULL;
   END IF;
 
-  SELECT coalesce(sum(stock._stock_actuel(a.id) * a.pmp), 0)
-  INTO v_valeur_totale
+  SELECT coalesce(sum(stock._current_stock(a.id) * a.wap), 0)
+  INTO v_total_value
   FROM stock.article a
-  WHERE a.active AND a.pmp > 0;
+  WHERE a.active AND a.wap > 0;
 
   v_body := pgv.grid(VARIADIC ARRAY[
     pgv.stat(pgv.t('stock.stat_articles'), v_nb_articles::text),
-    pgv.stat(pgv.t('stock.stat_valeur_stock'), to_char(v_valeur_totale, 'FM999G999G990D00') || ' EUR'),
-    pgv.stat(pgv.t('stock.stat_alertes'), v_nb_alertes::text, CASE WHEN v_nb_alertes > 0 THEN 'danger' ELSE NULL END),
-    pgv.stat(pgv.t('stock.stat_mvt_semaine'), v_mvt_semaine::text || coalesce(' (' || v_variation || ')', ''))
+    pgv.stat(pgv.t('stock.stat_valeur_stock'), to_char(v_total_value, 'FM999G999G990D00') || ' EUR'),
+    pgv.stat(pgv.t('stock.stat_alertes'), v_nb_alerts::text, CASE WHEN v_nb_alerts > 0 THEN 'danger' ELSE NULL END),
+    pgv.stat(pgv.t('stock.stat_mvt_semaine'), v_mvt_week::text || coalesce(' (' || v_variation || ')', ''))
   ]);
 
-  IF v_nb_alertes > 0 THEN
+  IF v_nb_alerts > 0 THEN
     v_rows := ARRAY[]::text[];
     FOR r IN
-      SELECT a.id, a.reference, a.designation, a.unite, a.seuil_mini, stock._stock_actuel(a.id) AS qty
+      SELECT a.id, a.reference, a.description, a.unit, a.min_threshold, stock._current_stock(a.id) AS qty
       FROM stock.article a
-      WHERE a.active AND a.seuil_mini > 0
-        AND stock._stock_actuel(a.id) < a.seuil_mini
-      ORDER BY (stock._stock_actuel(a.id) / a.seuil_mini)
+      WHERE a.active AND a.min_threshold > 0
+        AND stock._current_stock(a.id) < a.min_threshold
+      ORDER BY (stock._current_stock(a.id) / a.min_threshold)
       LIMIT 10
     LOOP
       v_rows := v_rows || ARRAY[
         format('<a href="%s">%s</a>',
           pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)),
-          pgv.esc(r.designation)),
+          pgv.esc(r.description)),
         pgv.esc(r.reference),
-        pgv.badge(r.qty::text || ' ' || r.unite, 'danger'),
-        r.seuil_mini::text || ' ' || r.unite
+        pgv.badge(r.qty::text || ' ' || r.unit, 'danger'),
+        r.min_threshold::text || ' ' || r.unit
       ];
     END LOOP;
     v_body := v_body || '<h3>' || pgv.t('stock.title_stock_bas') || '</h3>' || pgv.md_table(
@@ -78,18 +78,18 @@ BEGIN
 
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT a.id, a.designation, count(*) AS nb_mvt, sum(m.quantite) AS total_qty
-    FROM stock.mouvement m
+    SELECT a.id, a.description, count(*) AS nb_mvt, sum(m.quantity) AS total_qty
+    FROM stock.movement m
     JOIN stock.article a ON a.id = m.article_id
     WHERE m.created_at >= date_trunc('month', now())
-    GROUP BY a.id, a.designation
+    GROUP BY a.id, a.description
     ORDER BY nb_mvt DESC
     LIMIT 5
   LOOP
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>',
         pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)),
-        pgv.esc(r.designation)),
+        pgv.esc(r.description)),
       r.nb_mvt::text,
       r.total_qty::text
     ];
@@ -104,24 +104,24 @@ BEGIN
 
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT m.created_at, a.designation, d.nom AS depot_nom, m.type, m.quantite, m.reference
-    FROM stock.mouvement m
+    SELECT m.created_at, a.description, w.name AS warehouse_name, m.type, m.quantity, m.reference
+    FROM stock.movement m
     JOIN stock.article a ON a.id = m.article_id
-    JOIN stock.depot d ON d.id = m.depot_id
+    JOIN stock.warehouse w ON w.id = m.warehouse_id
     ORDER BY m.created_at DESC
     LIMIT 10
   LOOP
     v_rows := v_rows || ARRAY[
       to_char(r.created_at, 'DD/MM HH24:MI'),
-      pgv.esc(r.designation),
-      pgv.esc(r.depot_nom),
+      pgv.esc(r.description),
+      pgv.esc(r.warehouse_name),
       pgv.badge(r.type, CASE r.type
-        WHEN 'entree' THEN 'success'
-        WHEN 'sortie' THEN 'danger'
-        WHEN 'transfert' THEN 'info'
-        WHEN 'inventaire' THEN 'warning'
+        WHEN 'entry' THEN 'success'
+        WHEN 'exit' THEN 'danger'
+        WHEN 'transfer' THEN 'info'
+        WHEN 'inventory' THEN 'warning'
       END),
-      r.quantite::text,
+      r.quantity::text,
       coalesce(r.reference, '')
     ];
   END LOOP;
@@ -136,8 +136,8 @@ BEGIN
   END IF;
 
   v_body := v_body || '<p>' || pgv.form_dialog(
-    'dlg-new-mvt', pgv.t('stock.btn_nouveau_mvt'), '', 'post_mouvement_save',
-    NULL, NULL, pgv.call_ref('get_mouvement_form')
+    'dlg-new-mvt', pgv.t('stock.btn_nouveau_mvt'), '', 'post_movement_save',
+    NULL, NULL, pgv.call_ref('get_movement_form')
   ) || '</p>';
 
   RETURN v_body;

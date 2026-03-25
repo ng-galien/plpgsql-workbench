@@ -9,31 +9,31 @@ DECLARE
 BEGIN
   v_rows := ARRAY[]::text[];
   FOR r IN
-    SELECT a.id, a.reference, a.designation, a.categorie, a.unite,
-           a.prix_achat, a.pmp, a.seuil_mini, a.active, a.fournisseur_id,
-           stock._stock_actuel(a.id) AS qty,
-           c.name AS fournisseur
+    SELECT a.id, a.reference, a.description, a.category, a.unit,
+           a.purchase_price, a.wap, a.min_threshold, a.active, a.supplier_id,
+           stock._current_stock(a.id) AS qty,
+           c.name AS supplier
     FROM stock.article a
-    LEFT JOIN crm.client c ON c.id = a.fournisseur_id
-    ORDER BY a.designation
+    LEFT JOIN crm.client c ON c.id = a.supplier_id
+    ORDER BY a.description
   LOOP
     v_rows := v_rows || ARRAY[
       format('<a href="%s">%s</a>', pgv.call_ref('get_article', jsonb_build_object('p_id', r.id)), pgv.esc(r.reference)),
-      pgv.esc(r.designation),
-      pgv.badge(r.categorie, CASE r.categorie
-        WHEN 'bois' THEN 'success'
-        WHEN 'quincaillerie' THEN 'info'
-        WHEN 'panneau' THEN 'warning'
+      pgv.esc(r.description),
+      pgv.badge(r.category, CASE r.category
+        WHEN 'wood' THEN 'success'
+        WHEN 'hardware' THEN 'info'
+        WHEN 'panel' THEN 'warning'
         ELSE NULL
       END),
-      r.qty::text || ' ' || r.unite,
-      CASE WHEN r.pmp > 0 THEN to_char(r.pmp, 'FM999G990D00') ELSE '—' END,
-      CASE WHEN r.seuil_mini > 0 AND r.qty < r.seuil_mini
+      r.qty::text || ' ' || r.unit,
+      CASE WHEN r.wap > 0 THEN to_char(r.wap, 'FM999G990D00') ELSE '—' END,
+      CASE WHEN r.min_threshold > 0 AND r.qty < r.min_threshold
         THEN pgv.badge(pgv.t('stock.col_alerte'), 'danger')
         ELSE '—'
       END,
-      CASE WHEN r.fournisseur IS NOT NULL
-        THEN format('<a href="/crm/client?p_id=%s">%s</a>', r.fournisseur_id, pgv.esc(r.fournisseur))
+      CASE WHEN r.supplier IS NOT NULL
+        THEN format('<a href="/crm/client?p_id=%s">%s</a>', r.supplier_id, pgv.esc(r.supplier))
         ELSE '—'
       END,
       CASE WHEN r.active THEN pgv.t('stock.yes') ELSE pgv.t('stock.no') END
@@ -45,8 +45,7 @@ BEGIN
   ELSE
     v_body := pgv.md_table(
       ARRAY[pgv.t('stock.col_ref'), pgv.t('stock.col_designation'), pgv.t('stock.col_categorie'), pgv.t('stock.col_stock'), pgv.t('stock.col_pmp'), pgv.t('stock.col_alerte'), pgv.t('stock.col_fournisseur'), pgv.t('stock.col_actif')],
-      v_rows,
-      20
+      v_rows, 20
     );
   END IF;
 

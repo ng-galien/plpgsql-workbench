@@ -9,8 +9,8 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
 
-  INSERT INTO stock.article (reference, designation, categorie, tenant_id)
-  VALUES ('TEST-DEL-01', 'À désactiver', 'bois', 'test')
+  INSERT INTO stock.article (reference, description, category, tenant_id)
+  VALUES ('TEST-DEL-01', 'To deactivate', 'wood', 'test')
   RETURNING id INTO v_id;
 
   v_result := stock.post_article_delete(jsonb_build_object('id', v_id));
@@ -20,7 +20,6 @@ BEGIN
   SELECT * INTO v_art FROM stock.article WHERE id = v_id;
   RETURN NEXT is(v_art.active, false, 'article soft-deleted');
 
-  -- Cleanup
   DELETE FROM stock.article WHERE tenant_id = 'test';
 END;
 $function$;

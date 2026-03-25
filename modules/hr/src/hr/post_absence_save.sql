@@ -5,9 +5,9 @@ CREATE OR REPLACE FUNCTION hr.post_absence_save(p_data jsonb)
 AS $function$
 DECLARE
   v_employee_id int := (p_data->>'employee_id')::int;
-  v_date_debut date;
-  v_date_fin date;
-  v_nb_jours numeric;
+  v_start date;
+  v_end date;
+  v_days numeric;
   v_type text;
   v_balance numeric;
   v_warning text := '';
@@ -16,38 +16,38 @@ BEGIN
     RETURN pgv.toast('Salarié manquant.', 'error');
   END IF;
 
-  v_date_debut := (p_data->>'date_debut')::date;
-  v_date_fin := (p_data->>'date_fin')::date;
-  v_nb_jours := (p_data->>'nb_jours')::numeric;
-  v_type := COALESCE(NULLIF(trim(p_data->>'type_absence'), ''), 'conge_paye');
+  v_start := (p_data->>'start_date')::date;
+  v_end := (p_data->>'end_date')::date;
+  v_days := (p_data->>'day_count')::numeric;
+  v_type := COALESCE(NULLIF(trim(p_data->>'leave_type'), ''), 'paid_leave');
 
-  IF v_date_debut IS NULL OR v_date_fin IS NULL OR v_nb_jours IS NULL THEN
+  IF v_start IS NULL OR v_end IS NULL OR v_days IS NULL THEN
     RETURN pgv.toast('Dates et nombre de jours obligatoires.', 'error');
   END IF;
 
-  IF v_date_fin < v_date_debut THEN
+  IF v_end < v_start THEN
     RETURN pgv.toast('La date de fin doit être après la date de début.', 'error');
   END IF;
 
-  IF v_type IN ('conge_paye', 'rtt') THEN
+  IF v_type IN ('paid_leave', 'rtt') THEN
     SELECT (lb.allocated - lb.used) INTO v_balance
       FROM hr.leave_balance lb
      WHERE lb.employee_id = v_employee_id
        AND lb.leave_type = v_type;
 
-    IF v_balance IS NOT NULL AND v_balance < v_nb_jours THEN
+    IF v_balance IS NOT NULL AND v_balance < v_days THEN
       v_warning := ' Attention : solde insuffisant (' || v_balance || 'j restants).';
     END IF;
   END IF;
 
-  INSERT INTO hr.absence (employee_id, type_absence, date_debut, date_fin, nb_jours, motif)
+  INSERT INTO hr.leave_request (employee_id, leave_type, start_date, end_date, day_count, reason)
   VALUES (
     v_employee_id,
     v_type,
-    v_date_debut,
-    v_date_fin,
-    v_nb_jours,
-    COALESCE(trim(p_data->>'motif'), '')
+    v_start,
+    v_end,
+    v_days,
+    COALESCE(trim(p_data->>'reason'), '')
   );
 
   RETURN pgv.toast('Absence déclarée.' || v_warning)

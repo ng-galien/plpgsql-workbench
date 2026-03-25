@@ -10,41 +10,38 @@ BEGIN
 
     'template', jsonb_build_object(
       'compact', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'designation', 'prix_vente', 'actif')
+        'fields', jsonb_build_array('reference', 'name', 'sale_price', 'active')
       ),
-
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'designation', 'prix_vente', 'prix_achat', 'tva', 'unite', 'actif'),
+        'fields', jsonb_build_array('reference', 'name', 'sale_price', 'purchase_price', 'vat_rate', 'unit', 'active'),
         'stats', jsonb_build_array(
-          jsonb_build_object('key', 'categorie_nom', 'label', 'catalog.field_categorie'),
-          jsonb_build_object('key', 'unite_label', 'label', 'catalog.field_unite')
+          jsonb_build_object('key', 'category_name', 'label', 'catalog.field_category'),
+          jsonb_build_object('key', 'unit_label', 'label', 'catalog.field_unit')
         )
       ),
-
       'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'designation', 'description', 'prix_vente', 'prix_achat', 'tva', 'unite', 'actif', 'created_at', 'updated_at'),
+        'fields', jsonb_build_array('reference', 'name', 'description', 'sale_price', 'purchase_price', 'vat_rate', 'unit', 'active', 'created_at', 'updated_at'),
         'stats', jsonb_build_array(
-          jsonb_build_object('key', 'categorie_nom', 'label', 'catalog.field_categorie'),
-          jsonb_build_object('key', 'unite_label', 'label', 'catalog.field_unite')
+          jsonb_build_object('key', 'category_name', 'label', 'catalog.field_category'),
+          jsonb_build_object('key', 'unit_label', 'label', 'catalog.field_unit')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'quote://ligne', 'filter', 'article_id={id}', 'label', 'catalog.related_quotes'),
-          jsonb_build_object('entity', 'stock://mouvement', 'filter', 'article_id={id}', 'label', 'catalog.related_stock'),
-          jsonb_build_object('entity', 'purchase://ligne', 'filter', 'article_id={id}', 'label', 'catalog.related_purchases')
+          jsonb_build_object('entity', 'quote://line_item', 'filter', 'article_id={id}', 'label', 'catalog.related_quotes'),
+          jsonb_build_object('entity', 'stock://movement', 'filter', 'article_id={id}', 'label', 'catalog.related_stock'),
+          jsonb_build_object('entity', 'purchase://order_line', 'filter', 'article_id={id}', 'label', 'catalog.related_purchases')
         )
       ),
-
       'form', jsonb_build_object(
         'sections', jsonb_build_array(
           jsonb_build_object('label', 'catalog.section_identity', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'reference', 'label', 'catalog.field_reference', 'type', 'text'),
-            jsonb_build_object('key', 'designation', 'label', 'catalog.field_designation', 'type', 'text', 'required', true),
+            jsonb_build_object('key', 'name', 'label', 'catalog.field_name', 'type', 'text', 'required', true),
             jsonb_build_object('key', 'description', 'label', 'catalog.field_description', 'type', 'textarea')
           )),
           jsonb_build_object('label', 'catalog.section_pricing', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'prix_vente', 'label', 'catalog.field_prix_vente', 'type', 'number'),
-            jsonb_build_object('key', 'prix_achat', 'label', 'catalog.field_prix_achat', 'type', 'number'),
-            jsonb_build_object('key', 'tva', 'label', 'catalog.field_tva', 'type', 'select',
+            jsonb_build_object('key', 'sale_price', 'label', 'catalog.field_sale_price', 'type', 'number'),
+            jsonb_build_object('key', 'purchase_price', 'label', 'catalog.field_purchase_price', 'type', 'number'),
+            jsonb_build_object('key', 'vat_rate', 'label', 'catalog.field_vat_rate', 'type', 'select',
               'options', jsonb_build_array(
                 jsonb_build_object('label', '20%', 'value', '20.00'),
                 jsonb_build_object('label', '10%', 'value', '10.00'),
@@ -53,10 +50,10 @@ BEGIN
               ))
           )),
           jsonb_build_object('label', 'catalog.section_classification', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'categorie_id', 'label', 'catalog.field_categorie', 'type', 'combobox',
-              'source', 'catalog://categorie', 'display', 'nom'),
-            jsonb_build_object('key', 'unite', 'label', 'catalog.field_unite', 'type', 'select',
-              'options', (SELECT COALESCE(jsonb_agg(jsonb_build_object('label', u.label, 'value', u.code) ORDER BY u.label), '[]'::jsonb) FROM catalog.unite u))
+            jsonb_build_object('key', 'category_id', 'label', 'catalog.field_category', 'type', 'combobox',
+              'source', 'catalog://category', 'display', 'name'),
+            jsonb_build_object('key', 'unit', 'label', 'catalog.field_unit', 'type', 'select',
+              'options', (SELECT COALESCE(jsonb_agg(jsonb_build_object('label', u.label, 'value', u.code) ORDER BY u.label), '[]'::jsonb) FROM catalog.unit u))
           ))
         )
       )

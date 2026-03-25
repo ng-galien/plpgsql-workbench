@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION asset.classify(p_id uuid, p_title text, p_description text DEFAULT NULL::text, p_tags text[] DEFAULT '{}'::text[], p_width integer DEFAULT NULL::integer, p_height integer DEFAULT NULL::integer, p_orientation text DEFAULT NULL::text, p_saison text DEFAULT NULL::text, p_credit text DEFAULT NULL::text, p_usage_hint text DEFAULT NULL::text, p_colors text[] DEFAULT '{}'::text[])
+CREATE OR REPLACE FUNCTION asset.classify(p_id uuid, p_title text, p_description text DEFAULT NULL::text, p_tags text[] DEFAULT '{}'::text[], p_width integer DEFAULT NULL::integer, p_height integer DEFAULT NULL::integer, p_orientation text DEFAULT NULL::text, p_season text DEFAULT NULL::text, p_credit text DEFAULT NULL::text, p_usage_hint text DEFAULT NULL::text, p_colors text[] DEFAULT '{}'::text[])
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -17,7 +17,7 @@ BEGIN
     width         = p_width,
     height        = p_height,
     orientation   = p_orientation,
-    saison        = p_saison,
+    season        = p_season,
     credit        = NULLIF(trim(COALESCE(p_credit,'')), ''),
     usage_hint    = NULLIF(trim(COALESCE(p_usage_hint,'')), ''),
     colors        = COALESCE(p_colors, '{}'),

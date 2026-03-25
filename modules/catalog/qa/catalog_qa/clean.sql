@@ -4,8 +4,7 @@ CREATE OR REPLACE FUNCTION catalog_qa.clean()
 AS $function$
 BEGIN
   DELETE FROM catalog.article;
-  DELETE FROM catalog.categorie;
-  -- Re-seed
+  DELETE FROM catalog.category;
   PERFORM catalog_qa.seed();
 END;
 $function$;

@@ -3,8 +3,8 @@ CREATE OR REPLACE FUNCTION expense_qa.clean()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  DELETE FROM expense.ligne;
-  DELETE FROM expense.note;
+  DELETE FROM expense.line;
+  DELETE FROM expense.expense_report;
   RETURN 'expense data cleaned';
 END;
 $function$;

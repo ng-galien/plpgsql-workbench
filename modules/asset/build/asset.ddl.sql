@@ -16,12 +16,12 @@ CREATE TABLE IF NOT EXISTS asset.asset (
   width         INTEGER,
   height        INTEGER,
   orientation   TEXT,
-  -- Métadonnées (remplies par Claude via classify)
+  -- Metadata (filled by Claude via classify)
   title         TEXT,
   description   TEXT,
   tags          TEXT[] DEFAULT '{}',
   credit        TEXT,
-  saison        TEXT,
+  season        TEXT,
   usage_hint    TEXT,
   colors        TEXT[] DEFAULT '{}',
   -- Thumbnail
@@ -36,12 +36,29 @@ CREATE TABLE IF NOT EXISTS asset.asset (
   ) STORED
 );
 
--- Migration: add thumb_path if missing (CREATE TABLE IF NOT EXISTS doesn't alter)
+-- Migration: add thumb_path if missing
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'asset' AND table_name = 'asset' AND column_name = 'thumb_path') THEN
     ALTER TABLE asset.asset ADD COLUMN thumb_path TEXT;
   END IF;
 END $$;
+
+-- Migration: rename saison → season
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'asset' AND table_name = 'asset' AND column_name = 'saison') THEN
+    ALTER TABLE asset.asset RENAME COLUMN saison TO season;
+  END IF;
+END $$;
+
+-- Migration: English orientation values
+UPDATE asset.asset SET orientation = 'landscape' WHERE orientation = 'paysage';
+UPDATE asset.asset SET orientation = 'square' WHERE orientation = 'carré';
+
+-- Migration: English season values
+UPDATE asset.asset SET season = 'summer' WHERE season = 'été';
+UPDATE asset.asset SET season = 'autumn' WHERE season = 'automne';
+UPDATE asset.asset SET season = 'spring' WHERE season = 'printemps';
+UPDATE asset.asset SET season = 'winter' WHERE season = 'hiver';
 
 CREATE INDEX IF NOT EXISTS idx_asset_search ON asset.asset USING GIN(search_vec);
 CREATE INDEX IF NOT EXISTS idx_asset_tenant ON asset.asset(tenant_id);

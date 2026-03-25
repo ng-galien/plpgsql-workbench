@@ -6,8 +6,8 @@ AS $function$
 BEGIN
   RETURN jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('expense.nav_dashboard'), 'icon', 'home'),
-    jsonb_build_object('href', '/notes', 'label', pgv.t('expense.nav_notes'), 'icon', 'file-text', 'entity', 'note', 'uri', 'expense://note'),
-    jsonb_build_object('href', '/categories', 'label', pgv.t('expense.nav_categories'), 'icon', 'tag', 'entity', 'categorie', 'uri', 'expense://categorie')
+    jsonb_build_object('href', '/expense_reports', 'label', pgv.t('expense.nav_reports'), 'icon', 'file-text', 'entity', 'expense_report', 'uri', 'expense://expense_report'),
+    jsonb_build_object('href', '/categories', 'label', pgv.t('expense.nav_categories'), 'icon', 'tag', 'entity', 'category', 'uri', 'expense://category')
   );
 END;
 $function$;

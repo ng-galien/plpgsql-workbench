@@ -12,35 +12,30 @@ DECLARE
   v_result jsonb;
   v_actions jsonb;
 BEGIN
-  -- Setup
-  INSERT INTO catalog.categorie (nom) VALUES ('UT HATEOAS Cat') RETURNING id INTO v_id;
-  INSERT INTO catalog.article (designation, reference, categorie_id, prix_vente, tva, unite, actif)
+  INSERT INTO catalog.category (name) VALUES ('UT HATEOAS Cat') RETURNING id INTO v_id;
+  INSERT INTO catalog.article (name, reference, category_id, sale_price, vat_rate, unit, active)
   VALUES ('UT HATEOAS Art', 'UT-HAT-01', v_id, 100.00, 20.00, 'u', true) RETURNING id INTO v_id;
 
-  -- Active article: deactivate + delete
   v_result := catalog.article_read(v_id::text);
   RETURN NEXT ok(v_result IS NOT NULL, 'article_read returns data');
   RETURN NEXT ok(v_result ? 'actions', 'article_read has actions');
   RETURN NEXT ok(v_result->'actions' @> '[{"method":"deactivate"}]'::jsonb, 'active article has deactivate action');
   RETURN NEXT ok(v_result->'actions' @> '[{"method":"delete"}]'::jsonb, 'active article has delete action');
 
-  -- Deactivate
-  UPDATE catalog.article SET actif = false WHERE id = v_id;
+  UPDATE catalog.article SET active = false WHERE id = v_id;
   v_result := catalog.article_read(v_id::text);
   v_actions := v_result->'actions';
   RETURN NEXT ok(v_actions @> '[{"method":"activate"}]'::jsonb, 'inactive article has activate action');
   RETURN NEXT ok(NOT v_actions @> '[{"method":"deactivate"}]'::jsonb, 'inactive article has no deactivate action');
 
-  -- Enriched fields
-  RETURN NEXT ok(v_result ? 'categorie_nom', 'article_read has categorie_nom');
-  RETURN NEXT ok(v_result ? 'unite_label', 'article_read has unite_label');
+  RETURN NEXT ok(v_result ? 'category_name', 'article_read has category_name');
+  RETURN NEXT ok(v_result ? 'unit_label', 'article_read has unit_label');
 
-  -- Cleanup
   DELETE FROM catalog.article WHERE reference = 'UT-HAT-01';
-  DELETE FROM catalog.categorie WHERE nom = 'UT HATEOAS Cat';
+  DELETE FROM catalog.category WHERE name = 'UT HATEOAS Cat';
 END;
 $function$;
-COMMENT ON FUNCTION catalog_ut.test_article_read_hateoas() IS 'Test article_read() HATEOAS actions based on actif state';
+COMMENT ON FUNCTION catalog_ut.test_article_read_hateoas() IS 'Test article_read() HATEOAS actions based on active state';
 
 CREATE OR REPLACE FUNCTION catalog_ut.test_article_view_schema()
  RETURNS SETOF text
@@ -56,7 +51,7 @@ END;
 $function$;
 COMMENT ON FUNCTION catalog_ut.test_article_view_schema() IS 'Test article_view() passes pgv.check_view() JSON Schema validation';
 
-CREATE OR REPLACE FUNCTION catalog_ut.test_categorie_read_hateoas()
+CREATE OR REPLACE FUNCTION catalog_ut.test_category_read_hateoas()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
@@ -65,42 +60,37 @@ DECLARE
   v_art_id int;
   v_result jsonb;
 BEGIN
-  -- Empty category: delete allowed
-  INSERT INTO catalog.categorie (nom) VALUES ('UT Empty Cat') RETURNING id INTO v_cat_id;
-  v_result := catalog.categorie_read(v_cat_id::text);
-  RETURN NEXT ok(v_result IS NOT NULL, 'categorie_read returns data');
-  RETURN NEXT ok(v_result ? 'actions', 'categorie_read has actions');
+  INSERT INTO catalog.category (name) VALUES ('UT Empty Cat') RETURNING id INTO v_cat_id;
+  v_result := catalog.category_read(v_cat_id::text);
+  RETURN NEXT ok(v_result IS NOT NULL, 'category_read returns data');
+  RETURN NEXT ok(v_result ? 'actions', 'category_read has actions');
   RETURN NEXT ok(v_result->'actions' @> '[{"method":"delete"}]'::jsonb, 'empty category has delete action');
 
-  -- Category with article: no delete
-  INSERT INTO catalog.article (designation, categorie_id) VALUES ('UT Cat Art', v_cat_id) RETURNING id INTO v_art_id;
-  v_result := catalog.categorie_read(v_cat_id::text);
+  INSERT INTO catalog.article (name, category_id) VALUES ('UT Cat Art', v_cat_id) RETURNING id INTO v_art_id;
+  v_result := catalog.category_read(v_cat_id::text);
   RETURN NEXT is(jsonb_array_length(v_result->'actions'), 0, 'category with articles has no actions');
 
-  -- Enriched fields
-  RETURN NEXT ok(v_result ? 'nb_articles', 'categorie_read has nb_articles');
-  RETURN NEXT is((v_result->>'nb_articles')::int, 1, 'nb_articles = 1');
+  RETURN NEXT ok(v_result ? 'article_count', 'category_read has article_count');
+  RETURN NEXT is((v_result->>'article_count')::int, 1, 'article_count = 1');
 
-  -- Cleanup
   DELETE FROM catalog.article WHERE id = v_art_id;
-  DELETE FROM catalog.categorie WHERE id = v_cat_id;
+  DELETE FROM catalog.category WHERE id = v_cat_id;
 END;
 $function$;
-COMMENT ON FUNCTION catalog_ut.test_categorie_read_hateoas() IS 'Test categorie_read() HATEOAS actions based on children/articles';
+COMMENT ON FUNCTION catalog_ut.test_category_read_hateoas() IS 'Test category_read() HATEOAS actions';
 
-CREATE OR REPLACE FUNCTION catalog_ut.test_categorie_view_schema()
+CREATE OR REPLACE FUNCTION catalog_ut.test_category_view_schema()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
   v_check jsonb;
 BEGIN
-  v_check := pgv.check_view('catalog', 'categorie');
-  RETURN NEXT ok((v_check->>'valid')::boolean, 'categorie_view passes JSON Schema');
-  RETURN NEXT is(v_check->>'uri', 'catalog://categorie', 'categorie_view URI correct');
+  v_check := pgv.check_view('catalog', 'category');
+  RETURN NEXT ok((v_check->>'valid')::boolean, 'category_view passes JSON Schema');
+  RETURN NEXT is(v_check->>'uri', 'catalog://category', 'category_view URI correct');
 END;
 $function$;
-COMMENT ON FUNCTION catalog_ut.test_categorie_view_schema() IS 'Test categorie_view() passes pgv.check_view() JSON Schema validation';
 
 CREATE OR REPLACE FUNCTION catalog_ut.test_pages_render()
  RETURNS SETOF text
@@ -111,91 +101,78 @@ DECLARE
   v_cat_id int;
   v_art_id int;
 BEGIN
-  -- Setup minimal data
-  INSERT INTO catalog.categorie (nom) VALUES ('UT Render Cat') RETURNING id INTO v_cat_id;
-  INSERT INTO catalog.article (designation, reference, categorie_id, prix_vente, unite, tva)
+  INSERT INTO catalog.category (name) VALUES ('UT Render Cat') RETURNING id INTO v_cat_id;
+  INSERT INTO catalog.article (name, reference, category_id, sale_price, unit, vat_rate)
   VALUES ('UT Render Art', 'UT-REND-01', v_cat_id, 50.00, 'u', 20.00) RETURNING id INTO v_art_id;
 
   PERFORM set_config('pgv.route_prefix', '/catalog', true);
 
-  -- get_index
   v_html := catalog.get_index();
   RETURN NEXT ok(v_html IS NOT NULL, 'get_index renders');
   RETURN NEXT ok(v_html LIKE '%pgv-stat%', 'get_index has stats');
 
-  -- get_articles
   v_html := catalog.get_articles();
   RETURN NEXT ok(v_html IS NOT NULL, 'get_articles renders');
   RETURN NEXT ok(v_html LIKE '%UT-REND-01%', 'get_articles shows test article');
 
-  -- get_articles with search
   v_html := catalog.get_articles(jsonb_build_object('q', 'Render'));
   RETURN NEXT ok(v_html LIKE '%UT-REND-01%', 'get_articles search works');
 
-  -- get_article
   v_html := catalog.get_article(v_art_id);
   RETURN NEXT ok(v_html IS NOT NULL, 'get_article renders');
-  RETURN NEXT ok(v_html LIKE '%UT Render Art%', 'get_article shows designation');
+  RETURN NEXT ok(v_html LIKE '%UT Render Art%', 'get_article shows name');
 
-  -- get_article_form (create)
   v_html := catalog.get_article_form();
   RETURN NEXT ok(v_html IS NOT NULL, 'get_article_form create renders');
-  RETURN NEXT ok(v_html LIKE '%post_article_creer%', 'create form targets post_article_creer');
+  RETURN NEXT ok(v_html LIKE '%post_article_create%', 'create form targets post_article_create');
 
-  -- get_article_form (edit)
   v_html := catalog.get_article_form(jsonb_build_object('p_id', v_art_id::text));
   RETURN NEXT ok(v_html IS NOT NULL, 'get_article_form edit renders');
-  RETURN NEXT ok(v_html LIKE '%post_article_modifier%', 'edit form targets post_article_modifier');
+  RETURN NEXT ok(v_html LIKE '%post_article_update%', 'edit form targets post_article_update');
 
-  -- get_categories
   v_html := catalog.get_categories();
   RETURN NEXT ok(v_html IS NOT NULL, 'get_categories renders');
   RETURN NEXT ok(v_html LIKE '%UT Render Cat%', 'get_categories shows test category');
 
-  -- article_options
   v_html := catalog.article_options();
   RETURN NEXT ok(v_html LIKE '%UT-REND-01%', 'article_options includes test article');
 
-  -- Cleanup
   DELETE FROM catalog.article WHERE reference = 'UT-REND-01';
-  DELETE FROM catalog.categorie WHERE nom = 'UT Render Cat';
+  DELETE FROM catalog.category WHERE name = 'UT Render Cat';
 END;
 $function$;
-COMMENT ON FUNCTION catalog_ut.test_pages_render() IS 'Test que toutes les pages catalog rendent sans erreur';
+COMMENT ON FUNCTION catalog_ut.test_pages_render() IS 'Test all pages render without error — English column names';
 
-CREATE OR REPLACE FUNCTION catalog_ut.test_post_article_creer()
+CREATE OR REPLACE FUNCTION catalog_ut.test_post_article_create()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
   v_result text;
   v_art catalog.article;
-  v_id int;
 BEGIN
-  -- Create
-  v_result := catalog.post_article_creer(jsonb_build_object(
-    'reference', 'UT-ART-01', 'designation', 'Article test UT',
-    'prix_vente', '100.00', 'prix_achat', '60.00', 'tva', '20.00', 'unite', 'u'
+  v_result := catalog.post_article_create(jsonb_build_object(
+    'reference', 'UT-ART-01', 'name', 'Article test UT',
+    'sale_price', '100.00', 'purchase_price', '60.00', 'vat_rate', '20.00', 'unit', 'u'
   ));
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'create returns success toast');
   RETURN NEXT ok(v_result LIKE '%data-redirect%', 'create returns redirect');
 
   SELECT * INTO v_art FROM catalog.article WHERE reference = 'UT-ART-01';
   RETURN NEXT ok(FOUND, 'article created in DB');
-  RETURN NEXT is(v_art.designation, 'Article test UT', 'designation saved');
-  RETURN NEXT is(v_art.prix_vente, 100.00::numeric(12,2), 'prix_vente saved');
-  RETURN NEXT is(v_art.prix_achat, 60.00::numeric(12,2), 'prix_achat saved');
-  RETURN NEXT is(v_art.tva, 20.00::numeric(4,2), 'tva saved');
-  RETURN NEXT is(v_art.unite, 'u', 'unite saved');
-  RETURN NEXT ok(v_art.actif, 'article actif by default');
+  RETURN NEXT is(v_art.name, 'Article test UT', 'name saved');
+  RETURN NEXT is(v_art.sale_price, 100.00::numeric(12,2), 'sale_price saved');
+  RETURN NEXT is(v_art.purchase_price, 60.00::numeric(12,2), 'purchase_price saved');
+  RETURN NEXT is(v_art.vat_rate, 20.00::numeric(4,2), 'vat_rate saved');
+  RETURN NEXT is(v_art.unit, 'u', 'unit saved');
+  RETURN NEXT ok(v_art.active, 'article active by default');
 
-  -- Cleanup
   DELETE FROM catalog.article WHERE reference = 'UT-ART-01';
 END;
 $function$;
-COMMENT ON FUNCTION catalog_ut.test_post_article_creer() IS 'Test création article';
+COMMENT ON FUNCTION catalog_ut.test_post_article_create() IS 'Test article creation via post_article_create';
 
-CREATE OR REPLACE FUNCTION catalog_ut.test_post_article_modifier()
+CREATE OR REPLACE FUNCTION catalog_ut.test_post_article_update()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
@@ -204,70 +181,62 @@ DECLARE
   v_art catalog.article;
   v_id int;
 BEGIN
-  -- Setup
-  INSERT INTO catalog.article (reference, designation, prix_vente, tva, unite)
-  VALUES ('UT-MOD-01', 'A modifier', 50.00, 20.00, 'u') RETURNING id INTO v_id;
+  INSERT INTO catalog.article (reference, name, sale_price, vat_rate, unit)
+  VALUES ('UT-MOD-01', 'To modify', 50.00, 20.00, 'u') RETURNING id INTO v_id;
 
-  -- Full update
-  v_result := catalog.post_article_modifier(jsonb_build_object(
-    'id', v_id, 'designation', 'Modifié complet', 'reference', 'UT-MOD-01',
-    'prix_vente', '120.00', 'prix_achat', '80.00', 'tva', '10.00', 'unite', 'h'
+  v_result := catalog.post_article_update(jsonb_build_object(
+    'id', v_id, 'name', 'Modified complete', 'reference', 'UT-MOD-01',
+    'sale_price', '120.00', 'purchase_price', '80.00', 'vat_rate', '10.00', 'unit', 'h'
   ));
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'full update success');
 
   SELECT * INTO v_art FROM catalog.article WHERE id = v_id;
-  RETURN NEXT is(v_art.designation, 'Modifié complet', 'designation updated');
-  RETURN NEXT is(v_art.prix_vente, 120.00::numeric(12,2), 'prix_vente updated');
-  RETURN NEXT is(v_art.prix_achat, 80.00::numeric(12,2), 'prix_achat updated');
-  RETURN NEXT is(v_art.tva, 10.00::numeric(4,2), 'tva updated');
-  RETURN NEXT is(v_art.unite, 'h', 'unite updated');
+  RETURN NEXT is(v_art.name, 'Modified complete', 'name updated');
+  RETURN NEXT is(v_art.sale_price, 120.00::numeric(12,2), 'sale_price updated');
+  RETURN NEXT is(v_art.purchase_price, 80.00::numeric(12,2), 'purchase_price updated');
+  RETURN NEXT is(v_art.vat_rate, 10.00::numeric(4,2), 'vat_rate updated');
+  RETURN NEXT is(v_art.unit, 'h', 'unit updated');
 
-  -- Toggle actif -> false
-  v_result := catalog.post_article_modifier(jsonb_build_object('id', v_id, 'actif', 'false'));
+  v_result := catalog.post_article_update(jsonb_build_object('id', v_id, 'active', 'false'));
   SELECT * INTO v_art FROM catalog.article WHERE id = v_id;
-  RETURN NEXT ok(NOT v_art.actif, 'article deactivated');
+  RETURN NEXT ok(NOT v_art.active, 'article deactivated');
 
-  -- Toggle actif -> true
-  v_result := catalog.post_article_modifier(jsonb_build_object('id', v_id, 'actif', 'true'));
+  v_result := catalog.post_article_update(jsonb_build_object('id', v_id, 'active', 'true'));
   SELECT * INTO v_art FROM catalog.article WHERE id = v_id;
-  RETURN NEXT ok(v_art.actif, 'article reactivated');
+  RETURN NEXT ok(v_art.active, 'article reactivated');
 
-  -- Cleanup
   DELETE FROM catalog.article WHERE id = v_id;
 END;
 $function$;
-COMMENT ON FUNCTION catalog_ut.test_post_article_modifier() IS 'Test modification article (complète + toggle actif)';
+COMMENT ON FUNCTION catalog_ut.test_post_article_update() IS 'Test article update via post_article_update';
 
-CREATE OR REPLACE FUNCTION catalog_ut.test_post_categorie_creer()
+CREATE OR REPLACE FUNCTION catalog_ut.test_post_category_create()
  RETURNS SETOF text
  LANGUAGE plpgsql
 AS $function$
 DECLARE
   v_result text;
-  v_cat catalog.categorie;
+  v_cat catalog.category;
   v_parent_id int;
 BEGIN
-  -- Create root category
-  v_result := catalog.post_categorie_creer(jsonb_build_object('nom', 'UT Catégorie Root'));
+  v_result := catalog.post_category_create(jsonb_build_object('name', 'UT Category Root'));
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'create root success');
   RETURN NEXT ok(v_result LIKE '%data-redirect%', 'create returns redirect');
 
-  SELECT * INTO v_cat FROM catalog.categorie WHERE nom = 'UT Catégorie Root';
+  SELECT * INTO v_cat FROM catalog.category WHERE name = 'UT Category Root';
   RETURN NEXT ok(FOUND, 'root category created');
   RETURN NEXT ok(v_cat.parent_id IS NULL, 'parent_id is null for root');
   v_parent_id := v_cat.id;
 
-  -- Create child category
-  v_result := catalog.post_categorie_creer(jsonb_build_object('nom', 'UT Sous-catégorie', 'parent_id', v_parent_id::text));
-  SELECT * INTO v_cat FROM catalog.categorie WHERE nom = 'UT Sous-catégorie';
+  v_result := catalog.post_category_create(jsonb_build_object('name', 'UT Sub-category', 'parent_id', v_parent_id::text));
+  SELECT * INTO v_cat FROM catalog.category WHERE name = 'UT Sub-category';
   RETURN NEXT ok(FOUND, 'child category created');
   RETURN NEXT is(v_cat.parent_id, v_parent_id, 'parent_id set correctly');
 
-  -- Cleanup
-  DELETE FROM catalog.categorie WHERE nom LIKE 'UT %';
+  DELETE FROM catalog.category WHERE name LIKE 'UT %';
 END;
 $function$;
-COMMENT ON FUNCTION catalog_ut.test_post_categorie_creer() IS 'Test création catégorie';
+COMMENT ON FUNCTION catalog_ut.test_post_category_create() IS 'Test category creation via post_category_create';
 
 GRANT USAGE ON SCHEMA catalog_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA catalog_ut TO anon;

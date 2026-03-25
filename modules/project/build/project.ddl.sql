@@ -4,110 +4,110 @@ CREATE SCHEMA IF NOT EXISTS project;
 CREATE SCHEMA IF NOT EXISTS project_ut;
 CREATE SCHEMA IF NOT EXISTS project_qa;
 
--- Chantier (projet/chantier artisan)
-CREATE TABLE IF NOT EXISTS project.chantier (
+-- Project
+CREATE TABLE IF NOT EXISTS project.project (
     id              SERIAL PRIMARY KEY,
-    numero          TEXT NOT NULL UNIQUE,
+    code            TEXT NOT NULL UNIQUE,
     client_id       INTEGER NOT NULL REFERENCES crm.client(id),
-    devis_id        INTEGER REFERENCES quote.devis(id),
-    objet           TEXT NOT NULL,
-    adresse         TEXT NOT NULL DEFAULT '',
-    statut          TEXT NOT NULL DEFAULT 'preparation',
-    date_debut      DATE,
-    date_fin_prevue DATE,
-    date_fin_reelle DATE,
+    estimate_id     INTEGER REFERENCES quote.devis(id),
+    subject         TEXT NOT NULL,
+    address         TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'draft',
+    start_date      DATE,
+    due_date        DATE,
+    end_date        DATE,
     notes           TEXT NOT NULL DEFAULT '',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     tenant_id       TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-    CONSTRAINT chk_chantier_statut CHECK (statut IN ('preparation','execution','reception','clos'))
+    CONSTRAINT chk_project_status CHECK (status IN ('draft','active','review','closed'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_chantier_client  ON project.chantier(client_id);
-CREATE INDEX IF NOT EXISTS idx_chantier_statut  ON project.chantier(statut);
-CREATE INDEX IF NOT EXISTS idx_chantier_devis   ON project.chantier(devis_id);
-CREATE INDEX IF NOT EXISTS idx_chantier_tenant  ON project.chantier(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_project_client  ON project.project(client_id);
+CREATE INDEX IF NOT EXISTS idx_project_status  ON project.project(status);
+CREATE INDEX IF NOT EXISTS idx_project_estimate ON project.project(estimate_id);
+CREATE INDEX IF NOT EXISTS idx_project_tenant  ON project.project(tenant_id);
 
--- Jalon (milestone)
-CREATE TABLE IF NOT EXISTS project.jalon (
+-- Milestone
+CREATE TABLE IF NOT EXISTS project.milestone (
     id              SERIAL PRIMARY KEY,
-    chantier_id     INTEGER NOT NULL REFERENCES project.chantier(id) ON DELETE CASCADE,
+    project_id      INTEGER NOT NULL REFERENCES project.project(id) ON DELETE CASCADE,
     sort_order      INTEGER NOT NULL DEFAULT 0,
     label           TEXT NOT NULL,
-    pct_avancement  NUMERIC(5,2) NOT NULL DEFAULT 0,
-    statut          TEXT NOT NULL DEFAULT 'a_faire',
-    date_prevue     DATE,
-    date_reelle     DATE,
+    progress_pct    NUMERIC(5,2) NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'todo',
+    planned_date    DATE,
+    actual_date     DATE,
     notes           TEXT NOT NULL DEFAULT '',
     tenant_id       TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-    CONSTRAINT chk_jalon_statut CHECK (statut IN ('a_faire','en_cours','valide')),
-    CONSTRAINT chk_jalon_pct CHECK (pct_avancement >= 0 AND pct_avancement <= 100)
+    CONSTRAINT chk_milestone_status CHECK (status IN ('todo','in_progress','done')),
+    CONSTRAINT chk_milestone_pct CHECK (progress_pct >= 0 AND progress_pct <= 100)
 );
 
-CREATE INDEX IF NOT EXISTS idx_jalon_chantier ON project.jalon(chantier_id);
-CREATE INDEX IF NOT EXISTS idx_jalon_tenant   ON project.jalon(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_milestone_project ON project.milestone(project_id);
+CREATE INDEX IF NOT EXISTS idx_milestone_tenant   ON project.milestone(tenant_id);
 
--- Pointage (heures)
-CREATE TABLE IF NOT EXISTS project.pointage (
+-- Time entry
+CREATE TABLE IF NOT EXISTS project.time_entry (
     id              SERIAL PRIMARY KEY,
-    chantier_id     INTEGER NOT NULL REFERENCES project.chantier(id) ON DELETE CASCADE,
-    date_pointage   DATE NOT NULL DEFAULT CURRENT_DATE,
-    heures          NUMERIC(5,2) NOT NULL,
+    project_id      INTEGER NOT NULL REFERENCES project.project(id) ON DELETE CASCADE,
+    entry_date      DATE NOT NULL DEFAULT CURRENT_DATE,
+    hours           NUMERIC(5,2) NOT NULL,
     description     TEXT NOT NULL DEFAULT '',
     tenant_id       TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-    CONSTRAINT chk_pointage_heures CHECK (heures > 0)
+    CONSTRAINT chk_time_entry_hours CHECK (hours > 0)
 );
 
-CREATE INDEX IF NOT EXISTS idx_pointage_chantier_date ON project.pointage(chantier_id, date_pointage);
-CREATE INDEX IF NOT EXISTS idx_pointage_tenant        ON project.pointage(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_time_entry_project_date ON project.time_entry(project_id, entry_date);
+CREATE INDEX IF NOT EXISTS idx_time_entry_tenant        ON project.time_entry(tenant_id);
 
--- Affectation (qui travaille sur quel chantier)
-CREATE TABLE IF NOT EXISTS project.affectation (
+-- Assignment
+CREATE TABLE IF NOT EXISTS project.assignment (
     id              SERIAL PRIMARY KEY,
-    chantier_id     INTEGER NOT NULL REFERENCES project.chantier(id) ON DELETE CASCADE,
-    nom_intervenant TEXT NOT NULL,
+    project_id      INTEGER NOT NULL REFERENCES project.project(id) ON DELETE CASCADE,
+    worker_name     TEXT NOT NULL,
     role            TEXT NOT NULL DEFAULT '',
-    heures_prevues  NUMERIC(7,2),
+    planned_hours   NUMERIC(7,2),
     tenant_id       TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true)
 );
 
-CREATE INDEX IF NOT EXISTS idx_affectation_chantier ON project.affectation(chantier_id);
-CREATE INDEX IF NOT EXISTS idx_affectation_tenant   ON project.affectation(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_assignment_project ON project.assignment(project_id);
+CREATE INDEX IF NOT EXISTS idx_assignment_tenant   ON project.assignment(tenant_id);
 
--- Note de chantier
-CREATE TABLE IF NOT EXISTS project.note_chantier (
+-- Project note
+CREATE TABLE IF NOT EXISTS project.project_note (
     id              SERIAL PRIMARY KEY,
-    chantier_id     INTEGER NOT NULL REFERENCES project.chantier(id) ON DELETE CASCADE,
-    contenu         TEXT NOT NULL,
+    project_id      INTEGER NOT NULL REFERENCES project.project(id) ON DELETE CASCADE,
+    content         TEXT NOT NULL,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     tenant_id       TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true)
 );
 
-CREATE INDEX IF NOT EXISTS idx_note_chantier ON project.note_chantier(chantier_id);
-CREATE INDEX IF NOT EXISTS idx_note_tenant   ON project.note_chantier(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_project_note_project ON project.project_note(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_note_tenant   ON project.project_note(tenant_id);
 
 -- RLS
-ALTER TABLE project.chantier      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE project.jalon         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE project.pointage      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE project.affectation   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE project.note_chantier ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project.project      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project.milestone    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project.time_entry   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project.assignment   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project.project_note ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_chantier') THEN
-    CREATE POLICY tenant_chantier ON project.chantier USING (tenant_id = current_setting('app.tenant_id', true));
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_project') THEN
+    CREATE POLICY tenant_project ON project.project USING (tenant_id = current_setting('app.tenant_id', true));
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_jalon') THEN
-    CREATE POLICY tenant_jalon ON project.jalon USING (tenant_id = current_setting('app.tenant_id', true));
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_milestone') THEN
+    CREATE POLICY tenant_milestone ON project.milestone USING (tenant_id = current_setting('app.tenant_id', true));
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_pointage') THEN
-    CREATE POLICY tenant_pointage ON project.pointage USING (tenant_id = current_setting('app.tenant_id', true));
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_time_entry') THEN
+    CREATE POLICY tenant_time_entry ON project.time_entry USING (tenant_id = current_setting('app.tenant_id', true));
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_affectation') THEN
-    CREATE POLICY tenant_affectation ON project.affectation USING (tenant_id = current_setting('app.tenant_id', true));
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_assignment') THEN
+    CREATE POLICY tenant_assignment ON project.assignment USING (tenant_id = current_setting('app.tenant_id', true));
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_note_chantier') THEN
-    CREATE POLICY tenant_note_chantier ON project.note_chantier USING (tenant_id = current_setting('app.tenant_id', true));
+  IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_policy WHERE polname = 'tenant_project_note') THEN
+    CREATE POLICY tenant_project_note ON project.project_note USING (tenant_id = current_setting('app.tenant_id', true));
   END IF;
 END $$;
 

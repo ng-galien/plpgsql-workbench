@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION project.chantier_update(p_row project.chantier)
+CREATE OR REPLACE FUNCTION project.chantier_update(p_row project.project)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER

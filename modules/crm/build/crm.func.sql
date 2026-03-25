@@ -270,8 +270,8 @@ BEGIN
           jsonb_build_object('key', 'interaction_count', 'label', 'crm.col_interactions')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'quote://devis', 'filter', 'client_id={id}', 'label', 'crm.related_quotes'),
-          jsonb_build_object('entity', 'quote://facture', 'filter', 'client_id={id}', 'label', 'crm.related_invoices')
+          jsonb_build_object('entity', 'quote://estimate', 'filter', 'client_id={id}', 'label', 'crm.related_quotes'),
+          jsonb_build_object('entity', 'quote://invoice', 'filter', 'client_id={id}', 'label', 'crm.related_invoices')
         )
       ),
 
@@ -1258,7 +1258,7 @@ BEGIN
   v_stats := '';
 
   BEGIN
-    EXECUTE 'SELECT count(*) FROM quote.devis WHERE client_id = $1' INTO v_n USING p_id;
+    EXECUTE 'SELECT count(*) FROM quote.estimate WHERE client_id = $1' INTO v_n USING p_id;
     IF v_n > 0 THEN v_stats := v_stats || pgv.stat(pgv.t('crm.cross_quotes'), v_n::text); END IF;
   EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
   END;
@@ -1266,9 +1266,9 @@ BEGIN
   BEGIN
     EXECUTE '
       SELECT count(DISTINCT f.id),
-             coalesce(sum(l.quantite * l.prix_unitaire * (1 + l.tva_rate / 100)), 0)
-      FROM quote.facture f
-      LEFT JOIN quote.ligne l ON l.facture_id = f.id
+             coalesce(sum(l.quantity * l.unit_price * (1 + l.tva_rate / 100)), 0)
+      FROM quote.invoice f
+      LEFT JOIN quote.line_item l ON l.invoice_id = f.id
       WHERE f.client_id = $1'
     INTO v_n, v_ca USING p_id;
     IF v_n > 0 THEN
@@ -1279,7 +1279,7 @@ BEGIN
   END;
 
   BEGIN
-    EXECUTE 'SELECT count(*) FROM project.chantier WHERE client_id = $1' INTO v_n USING p_id;
+    EXECUTE 'SELECT count(*) FROM project.project WHERE client_id = $1' INTO v_n USING p_id;
     IF v_n > 0 THEN v_stats := v_stats || pgv.stat(pgv.t('crm.cross_projects'), v_n::text); END IF;
   EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
   END;
@@ -1290,8 +1290,8 @@ BEGIN
 
   BEGIN
     v_rows := '';
-    FOR r IN EXECUTE 'SELECT id, numero, statut FROM quote.devis WHERE client_id = $1 ORDER BY id DESC' USING p_id LOOP
-      v_rows := v_rows || '| ' || pgv.esc(r.numero::text) || ' | ' || pgv.esc(r.statut::text) || ' | [' || pgv.t('crm.cross_see') || '](/' || 'quote/devis?p_id=' || r.id || ') |' || E'\n';
+    FOR r IN EXECUTE 'SELECT id, number, status FROM quote.estimate WHERE client_id = $1 ORDER BY id DESC' USING p_id LOOP
+      v_rows := v_rows || '| ' || pgv.esc(r.number::text) || ' | ' || pgv.esc(r.status::text) || ' | [' || pgv.t('crm.cross_see') || '](/' || 'quote/estimate?p_id=' || r.id || ') |' || E'\n';
     END LOOP;
     IF v_rows <> '' THEN
       v_activity := v_activity || '<h4>' || pgv.t('crm.cross_quotes') || '</h4><md>' || E'\n' || '| ' || pgv.t('crm.col_number') || ' | ' || pgv.t('crm.col_status') || ' | |' || E'\n' || '|--------|--------|-|' || E'\n' || v_rows || '</md>';
@@ -1301,8 +1301,8 @@ BEGIN
 
   BEGIN
     v_rows := '';
-    FOR r IN EXECUTE 'SELECT id, numero, statut FROM project.chantier WHERE client_id = $1 ORDER BY id DESC' USING p_id LOOP
-      v_rows := v_rows || '| ' || pgv.esc(r.numero::text) || ' | ' || pgv.esc(r.statut::text) || ' | [' || pgv.t('crm.cross_see') || '](/' || 'project/chantier?p_id=' || r.id || ') |' || E'\n';
+    FOR r IN EXECUTE 'SELECT id, code, status FROM project.project WHERE client_id = $1 ORDER BY id DESC' USING p_id LOOP
+      v_rows := v_rows || '| ' || pgv.esc(r.code::text) || ' | ' || pgv.esc(r.status::text) || ' | [' || pgv.t('crm.cross_see') || '](/' || 'project/project?p_id=' || r.id || ') |' || E'\n';
     END LOOP;
     IF v_rows <> '' THEN
       v_activity := v_activity || '<h4>' || pgv.t('crm.cross_projects') || '</h4><md>' || E'\n' || '| ' || pgv.t('crm.col_number') || ' | ' || pgv.t('crm.col_status') || ' | |' || E'\n' || '|--------|--------|-|' || E'\n' || v_rows || '</md>';
@@ -1312,8 +1312,8 @@ BEGIN
 
   BEGIN
     v_rows := '';
-    FOR r IN EXECUTE 'SELECT id, numero, statut FROM purchase.commande WHERE fournisseur_id = $1 ORDER BY id DESC' USING p_id LOOP
-      v_rows := v_rows || '| ' || pgv.esc(r.numero::text) || ' | ' || pgv.esc(r.statut::text) || ' | [' || pgv.t('crm.cross_see') || '](/' || 'purchase/commande?p_id=' || r.id || ') |' || E'\n';
+    FOR r IN EXECUTE 'SELECT id, number, status FROM purchase.purchase_order WHERE supplier_id = $1 ORDER BY id DESC' USING p_id LOOP
+      v_rows := v_rows || '| ' || pgv.esc(r.number::text) || ' | ' || pgv.esc(r.status::text) || ' | [' || pgv.t('crm.cross_see') || '](/' || 'purchase/purchase_order?p_id=' || r.id || ') |' || E'\n';
     END LOOP;
     IF v_rows <> '' THEN
       v_activity := v_activity || '<h4>' || pgv.t('crm.cross_purchase_orders') || '</h4><md>' || E'\n' || '| ' || pgv.t('crm.col_number') || ' | ' || pgv.t('crm.col_status') || ' | |' || E'\n' || '|--------|--------|-|' || E'\n' || v_rows || '</md>';
@@ -1343,31 +1343,31 @@ BEGIN
   END LOOP;
 
   BEGIN
-    FOR r IN EXECUTE 'SELECT numero, statut, created_at, id FROM quote.devis WHERE client_id = $1' USING p_id LOOP
+    FOR r IN EXECUTE 'SELECT number, status, created_at, id FROM quote.estimate WHERE client_id = $1' USING p_id LOOP
       v_timeline := v_timeline || jsonb_build_object(
         'dt', r.created_at, 'badge', pgv.t('crm.cross_quotes'), 'variant', 'warning',
-        'title', r.numero::text || E' \u2014 ' || r.statut::text, 'detail', '',
-        'link', '/quote/devis?p_id=' || r.id);
+        'title', r.number::text || E' \u2014 ' || r.status::text, 'detail', '',
+        'link', '/quote/estimate?p_id=' || r.id);
     END LOOP;
   EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
   END;
 
   BEGIN
-    FOR r IN EXECUTE 'SELECT numero, statut, created_at, id FROM quote.facture WHERE client_id = $1' USING p_id LOOP
+    FOR r IN EXECUTE 'SELECT number, status, created_at, id FROM quote.invoice WHERE client_id = $1' USING p_id LOOP
       v_timeline := v_timeline || jsonb_build_object(
         'dt', r.created_at, 'badge', pgv.t('crm.cross_invoices'), 'variant', 'danger',
-        'title', r.numero::text || E' \u2014 ' || r.statut::text, 'detail', '',
-        'link', '/quote/facture?p_id=' || r.id);
+        'title', r.number::text || E' \u2014 ' || r.status::text, 'detail', '',
+        'link', '/quote/invoice?p_id=' || r.id);
     END LOOP;
   EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
   END;
 
   BEGIN
-    FOR r IN EXECUTE 'SELECT numero, statut, created_at, id FROM project.chantier WHERE client_id = $1' USING p_id LOOP
+    FOR r IN EXECUTE 'SELECT code, status, created_at, id FROM project.project WHERE client_id = $1' USING p_id LOOP
       v_timeline := v_timeline || jsonb_build_object(
         'dt', r.created_at, 'badge', pgv.t('crm.cross_projects'), 'variant', 'primary',
-        'title', r.numero::text || E' \u2014 ' || r.statut::text, 'detail', '',
-        'link', '/project/chantier?p_id=' || r.id);
+        'title', r.code::text || E' \u2014 ' || r.status::text, 'detail', '',
+        'link', '/project/project?p_id=' || r.id);
     END LOOP;
   EXCEPTION WHEN undefined_table OR invalid_schema_name THEN NULL;
   END;

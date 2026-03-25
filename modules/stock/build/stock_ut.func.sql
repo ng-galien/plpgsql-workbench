@@ -13,30 +13,26 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
 
-  -- Create
-  INSERT INTO stock.article (reference, designation, categorie, unite, prix_achat, tenant_id)
-  VALUES ('TEST-001', 'Article test', 'bois', 'm3', 100.00, 'test')
+  INSERT INTO stock.article (reference, description, category, unit, purchase_price, tenant_id)
+  VALUES ('TEST-001', 'Article test', 'wood', 'm3', 100.00, 'test')
   RETURNING id INTO v_id;
 
   SELECT * INTO v_art FROM stock.article WHERE id = v_id;
   RETURN NEXT ok(FOUND, 'article created');
   RETURN NEXT is(v_art.reference, 'TEST-001', 'reference matches');
   RETURN NEXT is(v_art.active, true, 'active by default');
-  RETURN NEXT is(v_art.pmp, 0::numeric(12,4), 'pmp starts at 0');
+  RETURN NEXT is(v_art.wap, 0::numeric(12,4), 'pmp starts at 0');
 
-  -- Update — use pg_sleep to ensure different timestamp
   PERFORM pg_sleep(0.01);
-  UPDATE stock.article SET designation = 'Article modifié' WHERE id = v_id;
+  UPDATE stock.article SET description = 'Article modified' WHERE id = v_id;
   SELECT * INTO v_art FROM stock.article WHERE id = v_id;
-  RETURN NEXT is(v_art.designation, 'Article modifié', 'designation updated');
+  RETURN NEXT is(v_art.description, 'Article modified', 'designation updated');
   RETURN NEXT ok(v_art.updated_at > v_art.created_at, 'updated_at changed');
 
-  -- Soft delete
   UPDATE stock.article SET active = false WHERE id = v_id;
   SELECT * INTO v_art FROM stock.article WHERE id = v_id;
   RETURN NEXT is(v_art.active, false, 'soft delete works');
 
-  -- Cleanup
   DELETE FROM stock.article WHERE tenant_id = 'test';
 END;
 $function$;
@@ -50,32 +46,26 @@ DECLARE
   v_result jsonb;
   v_row jsonb;
 BEGIN
-  -- Setup: create test article
-  INSERT INTO stock.article (reference, designation, categorie, unite)
-  VALUES ('TEST-OPT-001', 'Vis inox 5x50', 'quincaillerie', 'u');
+  INSERT INTO stock.article (reference, description, category, unit)
+  VALUES ('TEST-OPT-001', 'Stainless screw 5x50', 'hardware', 'ea');
 
-  -- Test: returns results for matching search
-  v_result := stock.article_options('inox');
+  v_result := stock.article_options('Stainless');
   RETURN NEXT ok(jsonb_array_length(v_result) >= 1, 'search returns at least 1 result');
 
   v_row := v_result->0;
   RETURN NEXT ok(v_row->>'value' IS NOT NULL, 'row has value');
-  RETURN NEXT ok(v_row->>'label' = 'Vis inox 5x50', 'label is designation');
+  RETURN NEXT ok(v_row->>'label' = 'Stainless screw 5x50', 'label is designation');
   RETURN NEXT ok(v_row->>'detail' LIKE '%TEST-OPT-001%', 'detail contains reference');
 
-  -- Test: search by reference
   v_result := stock.article_options('TEST-OPT');
   RETURN NEXT ok(jsonb_array_length(v_result) >= 1, 'search by reference works');
 
-  -- Test: empty search returns all active
   v_result := stock.article_options(NULL);
   RETURN NEXT ok(jsonb_array_length(v_result) >= 1, 'null search returns results');
 
-  -- Test: no match returns empty array
   v_result := stock.article_options('zzz_no_match_zzz');
   RETURN NEXT is(v_result, '[]'::jsonb, 'no match returns empty array');
 
-  -- Cleanup
   DELETE FROM stock.article WHERE reference = 'TEST-OPT-001';
 END;
 $function$;
@@ -215,6 +205,45 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock_ut.test_get_valorisation() IS 'Test get_valorisation page renders with depot and category breakdowns';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_get_valuation()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_supplier_id int;
+  v_wh_id int;
+  v_art_id int;
+  v_result text;
+BEGIN
+  INSERT INTO crm.client (type, name) VALUES ('company', 'UT Valo Supplier')
+  RETURNING id INTO v_supplier_id;
+
+  INSERT INTO stock.warehouse (name, type) VALUES ('UT Valo Storage', 'storage')
+  RETURNING id INTO v_wh_id;
+
+  INSERT INTO stock.article (reference, description, category, unit, purchase_price, wap, supplier_id)
+  VALUES ('UT-VALO-001', 'Pine battens', 'wood', 'm', 2.50, 2.50, v_supplier_id)
+  RETURNING id INTO v_art_id;
+
+  INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, reference)
+  VALUES (v_art_id, v_wh_id, 'entry', 100, 2.50, 'SEED-VALO');
+
+  v_result := stock.get_valuation();
+  RETURN NEXT ok(v_result IS NOT NULL, 'get_valorisation returns content');
+  RETURN NEXT ok(v_result LIKE '%Valeur totale%', 'contains valeur totale stat');
+  RETURN NEXT ok(v_result LIKE '%Par dépôt%', 'contains depot section');
+  RETURN NEXT ok(v_result LIKE '%UT Valo Storage%', 'contains depot name');
+  RETURN NEXT ok(v_result LIKE '%Par catégorie%', 'contains category section');
+  RETURN NEXT ok(v_result LIKE '%wood%', 'contains bois category');
+
+  DELETE FROM stock.movement WHERE article_id = v_art_id;
+  DELETE FROM stock.article WHERE id = v_art_id;
+  DELETE FROM stock.warehouse WHERE id = v_wh_id;
+  DELETE FROM crm.client WHERE id = v_supplier_id;
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_get_valuation() IS 'Test get_valuation page renders with warehouse and category breakdowns';
 
 CREATE OR REPLACE FUNCTION stock_ut.test_mouvement_entree()
  RETURNS SETOF text
@@ -398,6 +427,173 @@ END;
 $function$;
 COMMENT ON FUNCTION stock_ut.test_mouvement_transfert() IS 'Test mouvement transfert: 2 mouvements, vérif stock A et B';
 
+CREATE OR REPLACE FUNCTION stock_ut.test_movement_entry()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_art_id int;
+  v_wh_id int;
+  v_qty numeric;
+  v_wap numeric;
+  v_result text;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
+  INSERT INTO stock.warehouse (name, type, tenant_id) VALUES ('Test warehouse', 'workshop', 'test') RETURNING id INTO v_wh_id;
+  INSERT INTO stock.article (reference, description, category, tenant_id) VALUES ('TEST-E01', 'Entry test', 'wood', 'test') RETURNING id INTO v_art_id;
+
+  v_result := stock.post_movement_save(jsonb_build_object(
+    'type', 'entry', 'article_id', v_art_id, 'warehouse_id', v_wh_id,
+    'quantity', '10', 'unit_price', '50'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'entry success toast');
+
+  SELECT coalesce(sum(quantity), 0) INTO v_qty FROM stock.movement WHERE article_id = v_art_id AND warehouse_id = v_wh_id;
+  RETURN NEXT is(v_qty, 10::numeric, 'stock after entry = 10');
+
+  SELECT wap INTO v_wap FROM stock.article WHERE id = v_art_id;
+  RETURN NEXT is(v_wap, 50.0000::numeric(12,4), 'PMP = 50 after first entry');
+
+  v_result := stock.post_movement_save(jsonb_build_object(
+    'type', 'entry', 'article_id', v_art_id, 'warehouse_id', v_wh_id,
+    'quantity', '10', 'unit_price', '70'
+  ));
+
+  SELECT wap INTO v_wap FROM stock.article WHERE id = v_art_id;
+  RETURN NEXT is(v_wap, 60.0000::numeric(12,4), 'PMP = 60 after weighted avg');
+
+  SELECT coalesce(sum(quantity), 0) INTO v_qty FROM stock.movement WHERE article_id = v_art_id;
+  RETURN NEXT is(v_qty, 20::numeric, 'total stock = 20');
+
+  DELETE FROM stock.movement WHERE tenant_id = 'test';
+  DELETE FROM stock.article WHERE tenant_id = 'test';
+  DELETE FROM stock.warehouse WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_movement_entry() IS 'Test entry movement + stock check + WAP via post_movement_save';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_movement_exit()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_art_id int;
+  v_wh_id int;
+  v_qty numeric;
+  v_result text;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
+  INSERT INTO stock.warehouse (name, type, tenant_id) VALUES ('Test warehouse', 'workshop', 'test') RETURNING id INTO v_wh_id;
+  INSERT INTO stock.article (reference, description, category, wap, tenant_id) VALUES ('TEST-S01', 'Exit test', 'wood', 50.0000, 'test') RETURNING id INTO v_art_id;
+
+  INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, tenant_id)
+  VALUES (v_art_id, v_wh_id, 'entry', 20, 50.00, 'test');
+
+  v_result := stock.post_movement_save(jsonb_build_object(
+    'type', 'exit', 'article_id', v_art_id, 'warehouse_id', v_wh_id, 'quantity', '5'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'sortie success');
+
+  SELECT coalesce(sum(quantity), 0) INTO v_qty FROM stock.movement WHERE article_id = v_art_id AND warehouse_id = v_wh_id;
+  RETURN NEXT is(v_qty, 15::numeric, 'stock after sortie = 15');
+
+  v_result := stock.post_movement_save(jsonb_build_object(
+    'type', 'exit', 'article_id', v_art_id, 'warehouse_id', v_wh_id, 'quantity', '100'
+  ));
+  RETURN NEXT ok(v_result LIKE '%Stock insuffisant%', 'insufficient stock blocked');
+
+  DELETE FROM stock.movement WHERE tenant_id = 'test';
+  DELETE FROM stock.article WHERE tenant_id = 'test';
+  DELETE FROM stock.warehouse WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_movement_exit() IS 'Test exit movement + stock check + insufficient block';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_movement_inventory()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_art_id int;
+  v_wh_id int;
+  v_qty numeric;
+  v_result text;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
+  INSERT INTO stock.warehouse (name, type, tenant_id) VALUES ('Test warehouse', 'workshop', 'test') RETURNING id INTO v_wh_id;
+  INSERT INTO stock.article (reference, description, category, wap, tenant_id) VALUES ('TEST-I01', 'Inventory test', 'wood', 50.0000, 'test') RETURNING id INTO v_art_id;
+
+  INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, tenant_id)
+  VALUES (v_art_id, v_wh_id, 'entry', 10, 50.00, 'test');
+
+  v_result := stock.post_movement_save(jsonb_build_object(
+    'type', 'inventory', 'article_id', v_art_id, 'warehouse_id', v_wh_id, 'quantity', '7'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'inventaire success');
+
+  SELECT coalesce(sum(quantity), 0) INTO v_qty FROM stock.movement WHERE article_id = v_art_id AND warehouse_id = v_wh_id;
+  RETURN NEXT is(v_qty, 7::numeric, 'stock after inventaire = 7');
+
+  v_result := stock.post_movement_save(jsonb_build_object(
+    'type', 'inventory', 'article_id', v_art_id, 'warehouse_id', v_wh_id, 'quantity', '7'
+  ));
+  RETURN NEXT ok(v_result LIKE '%correct%', 'no adjustment when correct');
+
+  DELETE FROM stock.movement WHERE tenant_id = 'test';
+  DELETE FROM stock.article WHERE tenant_id = 'test';
+  DELETE FROM stock.warehouse WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_movement_inventory() IS 'Test inventory: adjustment + no adjustment if correct';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_movement_transfer()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_art_id int;
+  v_wh_a int;
+  v_wh_b int;
+  v_qty_a numeric;
+  v_qty_b numeric;
+  v_result text;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
+  INSERT INTO stock.warehouse (name, type, tenant_id) VALUES ('Warehouse A', 'workshop', 'test') RETURNING id INTO v_wh_a;
+  INSERT INTO stock.warehouse (name, type, tenant_id) VALUES ('Warehouse B', 'vehicle', 'test') RETURNING id INTO v_wh_b;
+  INSERT INTO stock.article (reference, description, category, wap, tenant_id) VALUES ('TEST-T01', 'Transfer test', 'wood', 50.0000, 'test') RETURNING id INTO v_art_id;
+
+  INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, tenant_id)
+  VALUES (v_art_id, v_wh_a, 'entry', 20, 50.00, 'test');
+
+  v_result := stock.post_movement_save(jsonb_build_object(
+    'type', 'transfer', 'article_id', v_art_id, 'warehouse_id', v_wh_a,
+    'destination_warehouse_id', v_wh_b, 'quantity', '8'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'transfert success');
+
+  SELECT coalesce(sum(quantity), 0) INTO v_qty_a FROM stock.movement WHERE article_id = v_art_id AND warehouse_id = v_wh_a;
+  SELECT coalesce(sum(quantity), 0) INTO v_qty_b FROM stock.movement WHERE article_id = v_art_id AND warehouse_id = v_wh_b;
+  RETURN NEXT is(v_qty_a, 12::numeric, 'depot A stock = 12');
+  RETURN NEXT is(v_qty_b, 8::numeric, 'depot B stock = 8');
+
+  v_result := stock.post_movement_save(jsonb_build_object(
+    'type', 'transfer', 'article_id', v_art_id, 'warehouse_id', v_wh_a,
+    'destination_warehouse_id', v_wh_a, 'quantity', '5'
+  ));
+  RETURN NEXT ok(v_result LIKE '%identiques%', 'same depot blocked');
+
+  DELETE FROM stock.movement WHERE tenant_id = 'test';
+  DELETE FROM stock.article WHERE tenant_id = 'test';
+  DELETE FROM stock.warehouse WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_movement_transfer() IS 'Test transfer movement: 2 movements, check stock A and B';
+
 CREATE OR REPLACE FUNCTION stock_ut.test_post_article_delete()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -409,8 +605,8 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
 
-  INSERT INTO stock.article (reference, designation, categorie, tenant_id)
-  VALUES ('TEST-DEL-01', 'À désactiver', 'bois', 'test')
+  INSERT INTO stock.article (reference, description, category, tenant_id)
+  VALUES ('TEST-DEL-01', 'To deactivate', 'wood', 'test')
   RETURNING id INTO v_id;
 
   v_result := stock.post_article_delete(jsonb_build_object('id', v_id));
@@ -420,7 +616,6 @@ BEGIN
   SELECT * INTO v_art FROM stock.article WHERE id = v_id;
   RETURN NEXT is(v_art.active, false, 'article soft-deleted');
 
-  -- Cleanup
   DELETE FROM stock.article WHERE tenant_id = 'test';
 END;
 $function$;
@@ -437,10 +632,9 @@ DECLARE
 BEGIN
   PERFORM set_config('app.tenant_id', 'test', true);
 
-  -- Create
   v_result := stock.post_article_save(jsonb_build_object(
-    'reference', 'TEST-SAVE-01', 'designation', 'Article test save',
-    'categorie', 'bois', 'unite', 'm3', 'prix_achat', '100', 'seuil_mini', '5'
+    'reference', 'TEST-SAVE-01', 'description', 'Article test save',
+    'category', 'wood', 'unit', 'm3', 'purchase_price', '100', 'min_threshold', '5'
   ));
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'create returns success');
   RETURN NEXT ok(v_result LIKE '%data-redirect%', 'create returns redirect');
@@ -448,25 +642,23 @@ BEGIN
   SELECT id INTO v_id FROM stock.article WHERE reference = 'TEST-SAVE-01' AND tenant_id = 'test';
   SELECT * INTO v_art FROM stock.article WHERE id = v_id;
   RETURN NEXT ok(FOUND, 'article created in DB');
-  RETURN NEXT is(v_art.designation, 'Article test save', 'designation saved');
-  RETURN NEXT is(v_art.categorie, 'bois', 'categorie saved');
-  RETURN NEXT is(v_art.unite, 'm3', 'unite saved');
-  RETURN NEXT is(v_art.prix_achat, 100::numeric(12,2), 'prix_achat saved');
-  RETURN NEXT is(v_art.seuil_mini, 5::numeric(10,2), 'seuil_mini saved');
+  RETURN NEXT is(v_art.description, 'Article test save', 'designation saved');
+  RETURN NEXT is(v_art.category, 'wood', 'categorie saved');
+  RETURN NEXT is(v_art.unit, 'm3', 'unite saved');
+  RETURN NEXT is(v_art.purchase_price, 100::numeric(12,2), 'prix_achat saved');
+  RETURN NEXT is(v_art.min_threshold, 5::numeric(10,2), 'seuil_mini saved');
 
-  -- Update
   v_result := stock.post_article_save(jsonb_build_object(
-    'id', v_id, 'reference', 'TEST-SAVE-01', 'designation', 'Article modifié',
-    'categorie', 'quincaillerie', 'unite', 'u', 'prix_achat', '200', 'seuil_mini', '10'
+    'id', v_id, 'reference', 'TEST-SAVE-01', 'description', 'Article modified',
+    'category', 'hardware', 'unit', 'ea', 'purchase_price', '200', 'min_threshold', '10'
   ));
   RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'update returns success');
 
   SELECT * INTO v_art FROM stock.article WHERE id = v_id;
-  RETURN NEXT is(v_art.designation, 'Article modifié', 'designation updated');
-  RETURN NEXT is(v_art.categorie, 'quincaillerie', 'categorie updated');
-  RETURN NEXT is(v_art.prix_achat, 200::numeric(12,2), 'prix_achat updated');
+  RETURN NEXT is(v_art.description, 'Article modified', 'designation updated');
+  RETURN NEXT is(v_art.category, 'hardware', 'categorie updated');
+  RETURN NEXT is(v_art.purchase_price, 200::numeric(12,2), 'prix_achat updated');
 
-  -- Cleanup
   DELETE FROM stock.article WHERE tenant_id = 'test';
 END;
 $function$;
@@ -587,6 +779,192 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION stock_ut.test_post_inventaire_valider() IS 'Test post_inventaire_valider — batch inventory adjustments';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_post_inventory_validate()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_supplier_id int;
+  v_wh_id int;
+  v_art1_id int;
+  v_art2_id int;
+  v_result text;
+  v_stock numeric;
+BEGIN
+  INSERT INTO crm.client (type, name) VALUES ('company', 'UT Inv Supplier')
+  RETURNING id INTO v_supplier_id;
+
+  INSERT INTO stock.warehouse (name, type) VALUES ('UT Inv Warehouse', 'storage')
+  RETURNING id INTO v_wh_id;
+
+  INSERT INTO stock.article (reference, description, category, unit, supplier_id)
+  VALUES ('UT-INV-001', 'Oak plank', 'wood', 'm', v_supplier_id)
+  RETURNING id INTO v_art1_id;
+
+  INSERT INTO stock.article (reference, description, category, unit, supplier_id)
+  VALUES ('UT-INV-002', 'PU glue', 'finish', 'l', v_supplier_id)
+  RETURNING id INTO v_art2_id;
+
+  INSERT INTO stock.movement (article_id, warehouse_id, type, quantity, unit_price, reference)
+  VALUES (v_art1_id, v_wh_id, 'entry', 10, 8.00, 'SEED'),
+         (v_art2_id, v_wh_id, 'entry', 5, 12.00, 'SEED');
+
+  v_result := stock.post_inventory_validate(jsonb_build_object(
+    'p_warehouse_id', v_wh_id,
+    'qty_' || v_art1_id, '7',
+    'qty_' || v_art2_id, '5'
+  ));
+  RETURN NEXT ok(v_result LIKE '%Inventaire validé%', 'inventaire success toast');
+  RETURN NEXT ok(v_result LIKE '%1 ajustement%', '1 adjustment (art2 unchanged)');
+
+  SELECT sum(quantity) INTO v_stock FROM stock.movement WHERE article_id = v_art1_id AND warehouse_id = v_wh_id;
+  RETURN NEXT is(v_stock, 7::numeric, 'art1 stock adjusted to 7');
+
+  SELECT sum(quantity) INTO v_stock FROM stock.movement WHERE article_id = v_art2_id AND warehouse_id = v_wh_id;
+  RETURN NEXT is(v_stock, 5::numeric, 'art2 stock unchanged');
+
+  v_result := stock.post_inventory_validate(jsonb_build_object(
+    'p_warehouse_id', v_wh_id,
+    'qty_' || v_art1_id, '7',
+    'qty_' || v_art2_id, '5'
+  ));
+  RETURN NEXT ok(v_result LIKE '%Stock conforme%', 'no adjustment needed');
+
+  v_result := stock.post_inventory_validate(jsonb_build_object(
+    'p_warehouse_id', v_wh_id,
+    'qty_' || v_art2_id, '8'
+  ));
+  SELECT sum(quantity) INTO v_stock FROM stock.movement WHERE article_id = v_art2_id AND warehouse_id = v_wh_id;
+  RETURN NEXT is(v_stock, 8::numeric, 'art2 stock increased to 8');
+
+  v_result := stock.post_inventory_validate('{"p_warehouse_id": 99999}'::jsonb);
+  RETURN NEXT ok(v_result LIKE '%introuvable%', 'invalid depot blocked');
+
+  DELETE FROM stock.movement WHERE article_id IN (v_art1_id, v_art2_id);
+  DELETE FROM stock.article WHERE id IN (v_art1_id, v_art2_id);
+  DELETE FROM stock.warehouse WHERE id = v_wh_id;
+  DELETE FROM crm.client WHERE id = v_supplier_id;
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_post_inventory_validate() IS 'Test post_inventory_validate — batch inventory adjustments';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_post_warehouse_save()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_result text;
+  v_wh stock.warehouse;
+  v_id int;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'test', true);
+
+  v_result := stock.post_warehouse_save(jsonb_build_object(
+    'name', 'Test warehouse', 'type', 'workshop', 'address', '1 Test St'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'create returns success');
+  RETURN NEXT ok(v_result LIKE '%data-redirect%', 'create returns redirect');
+
+  SELECT id INTO v_id FROM stock.warehouse WHERE name = 'Test warehouse' AND tenant_id = 'test';
+  SELECT * INTO v_wh FROM stock.warehouse WHERE id = v_id;
+  RETURN NEXT ok(FOUND, 'depot created in DB');
+  RETURN NEXT is(v_wh.type, 'workshop', 'type saved');
+  RETURN NEXT is(v_wh.address, '1 Test St', 'adresse saved');
+
+  v_result := stock.post_warehouse_save(jsonb_build_object(
+    'id', v_id, 'name', 'Warehouse modified', 'type', 'job_site', 'address', '2 Mod St'
+  ));
+  RETURN NEXT ok(v_result LIKE '%data-toast="success"%', 'update returns success');
+
+  SELECT * INTO v_wh FROM stock.warehouse WHERE id = v_id;
+  RETURN NEXT is(v_wh.name, 'Warehouse modified', 'nom updated');
+  RETURN NEXT is(v_wh.type, 'job_site', 'type updated');
+
+  DELETE FROM stock.warehouse WHERE tenant_id = 'test';
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_post_warehouse_save() IS 'Test post_warehouse_save: create + update';
+
+CREATE OR REPLACE FUNCTION stock_ut.test_purchase_reception()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_supplier_id int;
+  v_wh_id int;
+  v_art1_id int;
+  v_art2_id int;
+  v_result jsonb;
+  v_stock numeric;
+  v_wap numeric;
+BEGIN
+  INSERT INTO crm.client (type, name) VALUES ('company', 'UT Supplier Reception')
+  RETURNING id INTO v_supplier_id;
+
+  INSERT INTO stock.warehouse (name, type) VALUES ('UT Warehouse Reception', 'storage')
+  RETURNING id INTO v_wh_id;
+
+  INSERT INTO stock.article (reference, description, category, unit, purchase_price, supplier_id)
+  VALUES ('UT-REC-001', 'Chevron 60x80', 'wood', 'm', 3.50, v_supplier_id)
+  RETURNING id INTO v_art1_id;
+
+  INSERT INTO stock.article (reference, description, category, unit, purchase_price, supplier_id)
+  VALUES ('UT-REC-002', 'Vis 6x80', 'hardware', 'ea', 0.05, v_supplier_id)
+  RETURNING id INTO v_art2_id;
+
+  v_result := stock.purchase_reception(jsonb_build_object(
+    'reception_ref', 'REC-UT-001',
+    'warehouse_id', v_wh_id,
+    'lines', jsonb_build_array(
+      jsonb_build_object('article_id', v_art1_id, 'quantity', 20, 'unit_price', 3.80),
+      jsonb_build_object('article_id', v_art2_id, 'quantity', 500, 'unit_price', 0.04)
+    )
+  ));
+  RETURN NEXT ok((v_result->>'ok')::boolean, 'reception returns ok=true');
+  RETURN NEXT is((v_result->>'nb_articles')::int, 2, '2 articles received');
+  RETURN NEXT is((v_result->>'total_quantity')::numeric, 520::numeric, 'total qty = 520');
+
+  SELECT sum(quantity) INTO v_stock FROM stock.movement WHERE article_id = v_art1_id;
+  RETURN NEXT is(v_stock, 20::numeric, 'art1 stock = 20');
+
+  SELECT sum(quantity) INTO v_stock FROM stock.movement WHERE article_id = v_art2_id;
+  RETURN NEXT is(v_stock, 500::numeric, 'art2 stock = 500');
+
+  SELECT wap INTO v_wap FROM stock.article WHERE id = v_art1_id;
+  RETURN NEXT is(v_wap, 3.8000::numeric, 'art1 PMP = 3.80');
+
+  SELECT purchase_price INTO v_wap FROM stock.article WHERE id = v_art1_id;
+  RETURN NEXT is(v_wap, 3.80::numeric, 'art1 prix_achat updated');
+
+  v_result := stock.purchase_reception('{"warehouse_id": 99999, "lines": []}'::jsonb);
+  RETURN NEXT ok(NOT (v_result->>'ok')::boolean, 'invalid depot returns ok=false');
+
+  v_result := stock.purchase_reception(jsonb_build_object('warehouse_id', v_wh_id, 'lines', '[]'::jsonb));
+  RETURN NEXT ok(NOT (v_result->>'ok')::boolean, 'empty lignes returns ok=false');
+
+  v_result := stock.purchase_reception(jsonb_build_object(
+    'warehouse_id', v_wh_id, 'reception_ref', 'REC-UT-002',
+    'lines', jsonb_build_array(
+      jsonb_build_object('article_id', 99999, 'quantity', 10, 'unit_price', 1.00),
+      jsonb_build_object('article_id', v_art1_id, 'quantity', 5, 'unit_price', 4.00)
+    )
+  ));
+  RETURN NEXT is((v_result->>'nb_articles')::int, 1, 'unknown article skipped');
+
+  SELECT sum(quantity) INTO v_stock FROM stock.movement WHERE article_id = v_art1_id;
+  RETURN NEXT is(v_stock, 25::numeric, 'art1 cumulative stock = 25');
+
+  SELECT wap INTO v_wap FROM stock.article WHERE id = v_art1_id;
+  RETURN NEXT is(v_wap, 3.8400::numeric, 'art1 PMP recalculated after 2nd reception');
+
+  DELETE FROM stock.movement WHERE article_id IN (v_art1_id, v_art2_id);
+  DELETE FROM stock.article WHERE id IN (v_art1_id, v_art2_id);
+  DELETE FROM stock.warehouse WHERE id = v_wh_id;
+  DELETE FROM crm.client WHERE id = v_supplier_id;
+END;
+$function$;
+COMMENT ON FUNCTION stock_ut.test_purchase_reception() IS 'Test stock.purchase_reception cross-module integration function';
 
 GRANT USAGE ON SCHEMA stock_ut TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA stock_ut TO anon;

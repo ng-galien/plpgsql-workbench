@@ -19,7 +19,7 @@ END;
 $function$;
 COMMENT ON FUNCTION quote._client_options() IS 'Options HTML des clients actifs pour les selects de formulaire';
 
-CREATE OR REPLACE FUNCTION quote._mentions_html()
+CREATE OR REPLACE FUNCTION quote._legal_notices_html()
  RETURNS text
  LANGUAGE plpgsql
  STABLE
@@ -29,10 +29,10 @@ DECLARE
   r record;
   v_has_any boolean := false;
 BEGIN
-  FOR r IN SELECT label, texte FROM quote.mention WHERE active = true ORDER BY id
+  FOR r IN SELECT label, body FROM quote.legal_notice WHERE active = true ORDER BY id
   LOOP
     v_has_any := true;
-    v_html := v_html || '<dt>' || pgv.esc(r.label) || '</dt><dd>' || pgv.esc(r.texte) || '</dd>';
+    v_html := v_html || '<dt>' || pgv.esc(r.label) || '</dt><dd>' || pgv.esc(r.body) || '</dd>';
   END LOOP;
 
   IF NOT v_has_any THEN
@@ -42,37 +42,36 @@ BEGIN
   RETURN pgv.accordion(VARIADIC ARRAY[pgv.t('quote.title_mentions'), '<dl>' || v_html || '</dl>']);
 END;
 $function$;
-COMMENT ON FUNCTION quote._mentions_html() IS 'Retourne le HTML des mentions légales actives';
+COMMENT ON FUNCTION quote._legal_notices_html() IS 'Render active legal notices as accordion HTML';
 
-CREATE OR REPLACE FUNCTION quote._next_numero(p_prefix text)
+CREATE OR REPLACE FUNCTION quote._next_number(p_prefix text)
  RETURNS text
  LANGUAGE plpgsql
+ SECURITY DEFINER
 AS $function$
 DECLARE
   v_year text := to_char(now(), 'YYYY');
   v_max int;
   v_pattern text;
 BEGIN
-  v_pattern := p_prefix || '-' || v_year || '-';
-
-  IF p_prefix = 'DEV' THEN
-    SELECT coalesce(max(substring(numero FROM length(v_pattern) + 1)::int), 0)
-      INTO v_max
-      FROM quote.devis
-     WHERE numero LIKE v_pattern || '%';
-  ELSIF p_prefix = 'FAC' THEN
-    SELECT coalesce(max(substring(numero FROM length(v_pattern) + 1)::int), 0)
-      INTO v_max
-      FROM quote.facture
-     WHERE numero LIKE v_pattern || '%';
-  ELSE
-    RAISE EXCEPTION 'Préfixe invalide: %', p_prefix;
+  IF p_prefix NOT IN ('EST', 'INV') THEN
+    RAISE EXCEPTION 'Invalid prefix: %', p_prefix;
   END IF;
 
-  RETURN v_pattern || lpad((v_max + 1)::text, 3, '0');
+  v_pattern := p_prefix || '-' || v_year || '-%';
+
+  IF p_prefix = 'EST' THEN
+    SELECT coalesce(max(substring(number FROM '\d+$')::int), 0)
+      INTO v_max FROM quote.estimate WHERE number LIKE v_pattern;
+  ELSE
+    SELECT coalesce(max(substring(number FROM '\d+$')::int), 0)
+      INTO v_max FROM quote.invoice WHERE number LIKE v_pattern;
+  END IF;
+
+  RETURN p_prefix || '-' || v_year || '-' || lpad((v_max + 1)::text, 3, '0');
 END;
 $function$;
-COMMENT ON FUNCTION quote._next_numero(text) IS 'Génère le prochain numéro séquentiel (DEV-YYYY-NNN ou FAC-YYYY-NNN) — MAX+1 safe';
+COMMENT ON FUNCTION quote._next_number(text) IS 'Generate next gapless number for estimates (EST) or invoices (INV)';
 
 CREATE OR REPLACE FUNCTION quote._set_updated_at()
  RETURNS trigger
@@ -83,81 +82,78 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+DROP TRIGGER IF EXISTS trg_devis_updated_at ON quote.estimate;
+CREATE TRIGGER trg_devis_updated_at BEFORE UPDATE ON quote.estimate FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
+DROP TRIGGER IF EXISTS trg_facture_updated_at ON quote.invoice;
+CREATE TRIGGER trg_facture_updated_at BEFORE UPDATE ON quote.invoice FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
 DROP TRIGGER IF EXISTS trg_devis_updated_at ON quote.devis;
 CREATE TRIGGER trg_devis_updated_at BEFORE UPDATE ON quote.devis FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
 DROP TRIGGER IF EXISTS trg_facture_updated_at ON quote.facture;
 CREATE TRIGGER trg_facture_updated_at BEFORE UPDATE ON quote.facture FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
 
-CREATE OR REPLACE FUNCTION quote._statut_badge(p_statut text)
+CREATE OR REPLACE FUNCTION quote._status_badge(p_status text)
  RETURNS text
  LANGUAGE plpgsql
  STABLE
 AS $function$
 BEGIN
-  RETURN pgv.badge(
-    CASE p_statut
-      WHEN 'brouillon' THEN pgv.t('quote.status_brouillon')
-      WHEN 'envoye'    THEN pgv.t('quote.status_envoye')
-      WHEN 'envoyee'   THEN pgv.t('quote.status_envoyee')
-      WHEN 'accepte'   THEN pgv.t('quote.status_accepte')
-      WHEN 'payee'     THEN pgv.t('quote.status_payee')
-      WHEN 'refuse'    THEN pgv.t('quote.status_refuse')
-      WHEN 'relance'   THEN pgv.t('quote.status_relance')
-      ELSE initcap(p_statut)
-    END,
-    CASE p_statut
-      WHEN 'brouillon' THEN 'warning'
-      WHEN 'envoye'    THEN 'info'
-      WHEN 'envoyee'   THEN 'info'
-      WHEN 'accepte'   THEN 'success'
-      WHEN 'payee'     THEN 'success'
-      WHEN 'refuse'    THEN 'danger'
-      WHEN 'relance'   THEN 'danger'
+  RETURN pgv.badge(pgv.t('quote.status_' || p_status),
+    CASE p_status
+      WHEN 'draft' THEN 'warning'
+      WHEN 'sent' THEN 'info'
+      WHEN 'accepted' THEN 'success'
+      WHEN 'declined' THEN 'error'
+      WHEN 'paid' THEN 'success'
+      WHEN 'overdue' THEN 'danger'
+      ELSE 'muted'
     END
   );
 END;
 $function$;
-COMMENT ON FUNCTION quote._statut_badge(text) IS 'Badge coloré pour un statut de devis ou facture';
+COMMENT ON FUNCTION quote._status_badge(text) IS 'Render status badge with i18n label and color variant';
 
-CREATE OR REPLACE FUNCTION quote._total_ht(p_devis_id integer DEFAULT NULL::integer, p_facture_id integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION quote._total_ht(p_estimate_id integer DEFAULT NULL::integer, p_invoice_id integer DEFAULT NULL::integer)
  RETURNS numeric
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 BEGIN
   RETURN COALESCE((
-    SELECT sum(round(quantite * prix_unitaire, 2))
-    FROM quote.ligne
-    WHERE devis_id IS NOT DISTINCT FROM p_devis_id
-      AND facture_id IS NOT DISTINCT FROM p_facture_id
+    SELECT sum(round(quantity * unit_price, 2))
+    FROM quote.line_item
+    WHERE estimate_id IS NOT DISTINCT FROM p_estimate_id
+      AND invoice_id IS NOT DISTINCT FROM p_invoice_id
   ), 0);
 END;
 $function$;
-COMMENT ON FUNCTION quote._total_ht(integer,integer) IS 'Total HT d''un devis ou facture (arrondi par ligne)';
+COMMENT ON FUNCTION quote._total_ht(integer,integer) IS 'Total excl. tax for an estimate or invoice (per-line rounding)';
 
-CREATE OR REPLACE FUNCTION quote._total_tva(p_devis_id integer DEFAULT NULL::integer, p_facture_id integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION quote._total_tva(p_estimate_id integer DEFAULT NULL::integer, p_invoice_id integer DEFAULT NULL::integer)
  RETURNS numeric
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 BEGIN
   RETURN COALESCE((
-    SELECT sum(round(quantite * prix_unitaire * tva_rate / 100, 2))
-    FROM quote.ligne
-    WHERE devis_id IS NOT DISTINCT FROM p_devis_id
-      AND facture_id IS NOT DISTINCT FROM p_facture_id
+    SELECT sum(round(quantity * unit_price * tva_rate / 100, 2))
+    FROM quote.line_item
+    WHERE estimate_id IS NOT DISTINCT FROM p_estimate_id
+      AND invoice_id IS NOT DISTINCT FROM p_invoice_id
   ), 0);
 END;
 $function$;
-COMMENT ON FUNCTION quote._total_tva(integer,integer) IS 'Total TVA d''un devis ou facture (arrondi par ligne)';
+COMMENT ON FUNCTION quote._total_tva(integer,integer) IS 'Total VAT for an estimate or invoice (per-line rounding)';
 
-CREATE OR REPLACE FUNCTION quote._total_ttc(p_devis_id integer DEFAULT NULL::integer, p_facture_id integer DEFAULT NULL::integer)
+CREATE OR REPLACE FUNCTION quote._total_ttc(p_estimate_id integer DEFAULT NULL::integer, p_invoice_id integer DEFAULT NULL::integer)
  RETURNS numeric
  LANGUAGE plpgsql
+ STABLE
 AS $function$
 BEGIN
-  RETURN quote._total_ht(p_devis_id, p_facture_id) + quote._total_tva(p_devis_id, p_facture_id);
+  RETURN quote._total_ht(p_estimate_id, p_invoice_id) + quote._total_tva(p_estimate_id, p_invoice_id);
 END;
 $function$;
-COMMENT ON FUNCTION quote._total_ttc(integer,integer) IS 'Total TTC d''un devis ou facture (HT + TVA)';
+COMMENT ON FUNCTION quote._total_ttc(integer,integer) IS 'Total incl. tax for an estimate or invoice (HT + TVA)';
 
 CREATE OR REPLACE FUNCTION quote.article_search(p_search text DEFAULT ''::text)
  RETURNS jsonb
@@ -234,74 +230,74 @@ END;
 $function$;
 COMMENT ON FUNCTION quote.brand() IS 'Brand label for Quote module';
 
-CREATE OR REPLACE FUNCTION quote.devis_create(p_row quote.devis)
+CREATE OR REPLACE FUNCTION quote.estimate_create(p_row quote.estimate)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 BEGIN
   p_row.tenant_id := current_setting('app.tenant_id', true);
-  p_row.numero := quote._next_numero('DEV');
-  p_row.statut := coalesce(p_row.statut, 'brouillon');
+  p_row.number := quote._next_number('EST');
+  p_row.status := coalesce(p_row.status, 'draft');
   p_row.notes := coalesce(p_row.notes, '');
-  p_row.validite_jours := coalesce(p_row.validite_jours, 30);
+  p_row.validity_days := coalesce(p_row.validity_days, 30);
   p_row.created_at := now();
   p_row.updated_at := now();
 
-  INSERT INTO quote.devis (numero, client_id, objet, statut, notes, validite_jours, tenant_id, created_at, updated_at)
-  VALUES (p_row.numero, p_row.client_id, p_row.objet, p_row.statut, p_row.notes, p_row.validite_jours, p_row.tenant_id, p_row.created_at, p_row.updated_at)
+  INSERT INTO quote.estimate (number, client_id, subject, status, notes, validity_days, tenant_id, created_at, updated_at)
+  VALUES (p_row.number, p_row.client_id, p_row.subject, p_row.status, p_row.notes, p_row.validity_days, p_row.tenant_id, p_row.created_at, p_row.updated_at)
   RETURNING * INTO p_row;
 
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION quote.devis_create(quote.devis) IS 'Create devis — auto-generates numero, sets tenant_id';
+COMMENT ON FUNCTION quote.estimate_create(quote.estimate) IS 'Create estimate — auto-generates number, sets tenant_id';
 
-CREATE OR REPLACE FUNCTION quote.devis_delete(p_id text)
+CREATE OR REPLACE FUNCTION quote.estimate_delete(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_row quote.devis;
+  v_row quote.estimate;
 BEGIN
-  SELECT * INTO v_row FROM quote.devis WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_devis'); END IF;
-  IF v_row.statut <> 'brouillon' THEN RAISE EXCEPTION '%', pgv.t('quote.err_draft_delete_only'); END IF;
+  SELECT * INTO v_row FROM quote.estimate WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_estimate'); END IF;
+  IF v_row.status <> 'draft' THEN RAISE EXCEPTION '%', pgv.t('quote.err_draft_delete_only'); END IF;
 
-  DELETE FROM quote.devis WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
+  DELETE FROM quote.estimate WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
   RETURN to_jsonb(v_row);
 END;
 $function$;
-COMMENT ON FUNCTION quote.devis_delete(text) IS 'Delete devis — brouillon only, returns deleted row';
+COMMENT ON FUNCTION quote.estimate_delete(text) IS 'Delete estimate — draft only, returns deleted row';
 
-CREATE OR REPLACE FUNCTION quote.devis_list(p_filter text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION quote.estimate_list(p_filter text DEFAULT NULL::text)
  RETURNS SETOF jsonb
  LANGUAGE plpgsql
- STABLE
+ STABLE SECURITY DEFINER
 AS $function$
 BEGIN
   IF p_filter IS NULL THEN
     RETURN QUERY
       SELECT to_jsonb(d) || jsonb_build_object('client_name', c.name)
-      FROM quote.devis d
+      FROM quote.estimate d
       JOIN crm.client c ON c.id = d.client_id
       WHERE d.tenant_id = current_setting('app.tenant_id', true)
       ORDER BY d.created_at DESC;
   ELSE
     RETURN QUERY EXECUTE
       'SELECT to_jsonb(d) || jsonb_build_object(''client_name'', c.name)
-       FROM quote.devis d
+       FROM quote.estimate d
        JOIN crm.client c ON c.id = d.client_id
        WHERE d.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
-       || ' AND ' || pgv.rsql_to_where(p_filter, 'quote', 'devis')
+       || ' AND ' || pgv.rsql_to_where(p_filter, 'quote', 'estimate')
        || ' ORDER BY d.created_at DESC';
   END IF;
 END;
 $function$;
-COMMENT ON FUNCTION quote.devis_list(text) IS 'List devis for current tenant with client name resolved — optional RSQL filter';
+COMMENT ON FUNCTION quote.estimate_list(text) IS 'List estimates with client name resolved — optional RSQL filter';
 
-CREATE OR REPLACE FUNCTION quote.devis_read(p_id text)
+CREATE OR REPLACE FUNCTION quote.estimate_read(p_id text)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
@@ -309,71 +305,65 @@ AS $function$
 DECLARE
   v_result jsonb;
   v_actions jsonb;
-  v_statut text;
+  v_status text;
 BEGIN
   SELECT to_jsonb(d) || jsonb_build_object(
     'client_name', c.name,
     'total_ht', quote._total_ht(d.id, NULL),
     'total_tva', quote._total_tva(d.id, NULL),
     'total_ttc', quote._total_ttc(d.id, NULL),
-    'lignes', coalesce((
+    'lines', coalesce((
       SELECT jsonb_agg(to_jsonb(l) ORDER BY l.sort_order, l.id)
-      FROM quote.ligne l WHERE l.devis_id = d.id
+      FROM quote.line_item l WHERE l.estimate_id = d.id
     ), '[]'::jsonb))
   INTO v_result
-  FROM quote.devis d
+  FROM quote.estimate d
   JOIN crm.client c ON c.id = d.client_id
   WHERE d.id = p_id::int AND d.tenant_id = current_setting('app.tenant_id', true);
 
   IF v_result IS NULL THEN RETURN NULL; END IF;
 
-  -- HATEOAS actions based on state
-  v_statut := v_result->>'statut';
+  v_status := v_result->>'status';
   v_actions := '[]'::jsonb;
-
-  CASE v_statut
-    WHEN 'brouillon' THEN
+  CASE v_status
+    WHEN 'draft' THEN
       v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'envoyer', 'uri', 'quote://devis/' || p_id || '/envoyer'),
-        jsonb_build_object('method', 'dupliquer', 'uri', 'quote://devis/' || p_id || '/dupliquer'),
-        jsonb_build_object('method', 'supprimer', 'uri', 'quote://devis/' || p_id)
-      );
-    WHEN 'envoye' THEN
+        jsonb_build_object('method', 'send', 'uri', 'quote://estimate/' || p_id || '/send'),
+        jsonb_build_object('method', 'duplicate', 'uri', 'quote://estimate/' || p_id || '/duplicate'),
+        jsonb_build_object('method', 'delete', 'uri', 'quote://estimate/' || p_id));
+    WHEN 'sent' THEN
       v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'accepter', 'uri', 'quote://devis/' || p_id || '/accepter'),
-        jsonb_build_object('method', 'refuser', 'uri', 'quote://devis/' || p_id || '/refuser'),
-        jsonb_build_object('method', 'dupliquer', 'uri', 'quote://devis/' || p_id || '/dupliquer')
-      );
-    WHEN 'accepte' THEN
+        jsonb_build_object('method', 'accept', 'uri', 'quote://estimate/' || p_id || '/accept'),
+        jsonb_build_object('method', 'decline', 'uri', 'quote://estimate/' || p_id || '/decline'),
+        jsonb_build_object('method', 'duplicate', 'uri', 'quote://estimate/' || p_id || '/duplicate'));
+    WHEN 'accepted' THEN
       v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'facturer', 'uri', 'quote://devis/' || p_id || '/facturer'),
-        jsonb_build_object('method', 'dupliquer', 'uri', 'quote://devis/' || p_id || '/dupliquer')
-      );
-    WHEN 'refuse' THEN
+        jsonb_build_object('method', 'invoice', 'uri', 'quote://estimate/' || p_id || '/invoice'),
+        jsonb_build_object('method', 'duplicate', 'uri', 'quote://estimate/' || p_id || '/duplicate'));
+    WHEN 'declined' THEN
       v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'dupliquer', 'uri', 'quote://devis/' || p_id || '/dupliquer')
-      );
+        jsonb_build_object('method', 'duplicate', 'uri', 'quote://estimate/' || p_id || '/duplicate'));
   END CASE;
 
   RETURN v_result || jsonb_build_object('actions', v_actions);
 END;
 $function$;
-COMMENT ON FUNCTION quote.devis_read(text) IS 'Read devis by id — full detail with client name, totals, lignes, and HATEOAS actions by state';
+COMMENT ON FUNCTION quote.estimate_read(text) IS 'Read estimate by id — full detail with HATEOAS actions by state';
 
-CREATE OR REPLACE FUNCTION quote.devis_update(p_row quote.devis)
+CREATE OR REPLACE FUNCTION quote.estimate_update(p_row quote.estimate)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM quote.devis WHERE id = p_row.id AND statut = 'brouillon' AND tenant_id = current_setting('app.tenant_id', true)) THEN
-    RAISE EXCEPTION '%', pgv.t('quote.err_brouillon_only');
+  IF NOT EXISTS (SELECT 1 FROM quote.estimate WHERE id = p_row.id AND status = 'draft' AND tenant_id = current_setting('app.tenant_id', true)) THEN
+    RAISE EXCEPTION '%', pgv.t('quote.err_draft_only');
   END IF;
 
-  UPDATE quote.devis SET
+  UPDATE quote.estimate SET
     client_id = coalesce(p_row.client_id, client_id),
-    objet = coalesce(nullif(p_row.objet, ''), objet),
-    validite_jours = coalesce(p_row.validite_jours, validite_jours),
+    subject = coalesce(nullif(p_row.subject, ''), subject),
+    validity_days = coalesce(p_row.validity_days, validity_days),
     notes = coalesce(p_row.notes, notes),
     updated_at = now()
   WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
@@ -382,845 +372,63 @@ BEGIN
   RETURN to_jsonb(p_row);
 END;
 $function$;
-COMMENT ON FUNCTION quote.devis_update(quote.devis) IS 'Update devis — brouillon only, partial update via COALESCE';
+COMMENT ON FUNCTION quote.estimate_update(quote.estimate) IS 'Update estimate — draft only, partial update via COALESCE';
 
-CREATE OR REPLACE FUNCTION quote.devis_view()
+CREATE OR REPLACE FUNCTION quote.estimate_view()
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE
 AS $function$
 BEGIN
   RETURN jsonb_build_object(
-    'uri', 'quote://devis',
-    'label', 'quote.entity_devis',
-
+    'uri', 'quote://estimate',
+    'label', 'quote.entity_estimate',
     'template', jsonb_build_object(
       'compact', jsonb_build_object(
-        'fields', jsonb_build_array('numero', 'client_name', 'statut')
+        'fields', jsonb_build_array('number', 'client_name', 'status')
       ),
-
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('numero', 'client_name', 'objet', 'statut', 'created_at'),
+        'fields', jsonb_build_array('number', 'client_name', 'subject', 'status', 'created_at'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'total_ht', 'label', 'quote.stat_total_ht'),
           jsonb_build_object('key', 'total_tva', 'label', 'quote.stat_total_tva'),
           jsonb_build_object('key', 'total_ttc', 'label', 'quote.stat_total_ttc')
         )
       ),
-
       'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('numero', 'client_name', 'objet', 'statut', 'validite_jours', 'notes', 'created_at'),
+        'fields', jsonb_build_array('number', 'client_name', 'subject', 'status', 'validity_days', 'notes', 'created_at'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'total_ht', 'label', 'quote.stat_total_ht'),
           jsonb_build_object('key', 'total_tva', 'label', 'quote.stat_total_tva'),
           jsonb_build_object('key', 'total_ttc', 'label', 'quote.stat_total_ttc')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'quote://facture', 'filter', 'devis_id={id}', 'label', 'quote.related_factures')
+          jsonb_build_object('entity', 'quote://invoice', 'filter', 'estimate_id={id}', 'label', 'quote.related_invoices')
         )
       ),
-
       'form', jsonb_build_object(
         'sections', jsonb_build_array(
           jsonb_build_object('label', 'quote.section_general', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'client_id', 'type', 'combobox', 'label', 'quote.field_client', 'source', 'crm://client', 'display', 'name', 'required', true),
-            jsonb_build_object('key', 'objet', 'type', 'text', 'label', 'quote.field_objet', 'required', true),
-            jsonb_build_object('key', 'validite_jours', 'type', 'number', 'label', 'quote.field_validite_jours'),
+            jsonb_build_object('key', 'subject', 'type', 'text', 'label', 'quote.field_subject', 'required', true),
+            jsonb_build_object('key', 'validity_days', 'type', 'number', 'label', 'quote.field_validity_days'),
             jsonb_build_object('key', 'notes', 'type', 'textarea', 'label', 'quote.field_notes')
           ))
         )
       )
     ),
-
     'actions', jsonb_build_object(
-      'envoyer', jsonb_build_object('label', 'quote.action_envoyer', 'variant', 'primary', 'confirm', 'quote.confirm_envoyer_devis'),
-      'accepter', jsonb_build_object('label', 'quote.action_accepter', 'variant', 'primary', 'confirm', 'quote.confirm_accepter_devis'),
-      'refuser', jsonb_build_object('label', 'quote.action_refuser', 'variant', 'danger', 'confirm', 'quote.confirm_refuser_devis'),
-      'facturer', jsonb_build_object('label', 'quote.action_facturer', 'variant', 'primary', 'confirm', 'quote.confirm_facturer_devis'),
-      'dupliquer', jsonb_build_object('label', 'quote.action_dupliquer', 'confirm', 'quote.confirm_dupliquer_devis'),
-      'supprimer', jsonb_build_object('label', 'quote.action_supprimer', 'variant', 'danger', 'confirm', 'quote.confirm_supprimer_devis')
+      'send', jsonb_build_object('label', 'quote.action_send', 'variant', 'primary', 'confirm', 'quote.confirm_send_estimate'),
+      'accept', jsonb_build_object('label', 'quote.action_accept', 'variant', 'primary', 'confirm', 'quote.confirm_accept_estimate'),
+      'decline', jsonb_build_object('label', 'quote.action_decline', 'variant', 'danger', 'confirm', 'quote.confirm_decline_estimate'),
+      'invoice', jsonb_build_object('label', 'quote.action_invoice', 'variant', 'primary', 'confirm', 'quote.confirm_invoice_estimate'),
+      'duplicate', jsonb_build_object('label', 'quote.action_duplicate', 'confirm', 'quote.confirm_duplicate_estimate'),
+      'delete', jsonb_build_object('label', 'quote.action_delete', 'variant', 'danger', 'confirm', 'quote.confirm_delete_estimate')
     )
   );
 END;
 $function$;
-COMMENT ON FUNCTION quote.devis_view() IS 'View template for devis entity: compact, standard, expanded, form, actions catalog';
-
-CREATE OR REPLACE FUNCTION quote.facture_create(p_row quote.facture)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  p_row.tenant_id := current_setting('app.tenant_id', true);
-  p_row.numero := quote._next_numero('FAC');
-  p_row.statut := coalesce(p_row.statut, 'brouillon');
-  p_row.notes := coalesce(p_row.notes, '');
-  p_row.created_at := now();
-  p_row.updated_at := now();
-
-  INSERT INTO quote.facture (numero, client_id, devis_id, objet, statut, notes, tenant_id, created_at, updated_at)
-  VALUES (p_row.numero, p_row.client_id, p_row.devis_id, p_row.objet, p_row.statut, p_row.notes, p_row.tenant_id, p_row.created_at, p_row.updated_at)
-  RETURNING * INTO p_row;
-
-  RETURN to_jsonb(p_row);
-END;
-$function$;
-COMMENT ON FUNCTION quote.facture_create(quote.facture) IS 'Create facture — auto-generates numero, sets tenant_id';
-
-CREATE OR REPLACE FUNCTION quote.facture_delete(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_row quote.facture;
-BEGIN
-  SELECT * INTO v_row FROM quote.facture WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
-  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_facture'); END IF;
-  IF v_row.statut <> 'brouillon' THEN RAISE EXCEPTION '%', pgv.t('quote.err_draft_delete_only'); END IF;
-
-  DELETE FROM quote.facture WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
-  RETURN to_jsonb(v_row);
-END;
-$function$;
-COMMENT ON FUNCTION quote.facture_delete(text) IS 'Delete facture — brouillon only, returns deleted row';
-
-CREATE OR REPLACE FUNCTION quote.facture_list(p_filter text DEFAULT NULL::text)
- RETURNS SETOF jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-BEGIN
-  IF p_filter IS NULL THEN
-    RETURN QUERY
-      SELECT to_jsonb(f) || jsonb_build_object('client_name', c.name, 'devis_numero', dv.numero)
-      FROM quote.facture f
-      JOIN crm.client c ON c.id = f.client_id
-      LEFT JOIN quote.devis dv ON dv.id = f.devis_id
-      WHERE f.tenant_id = current_setting('app.tenant_id', true)
-      ORDER BY f.created_at DESC;
-  ELSE
-    RETURN QUERY EXECUTE
-      'SELECT to_jsonb(f) || jsonb_build_object(''client_name'', c.name, ''devis_numero'', dv.numero)
-       FROM quote.facture f
-       JOIN crm.client c ON c.id = f.client_id
-       LEFT JOIN quote.devis dv ON dv.id = f.devis_id
-       WHERE f.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
-       || ' AND ' || pgv.rsql_to_where(p_filter, 'quote', 'facture')
-       || ' ORDER BY f.created_at DESC';
-  END IF;
-END;
-$function$;
-COMMENT ON FUNCTION quote.facture_list(text) IS 'List factures for current tenant with client name + devis numero resolved — optional RSQL filter';
-
-CREATE OR REPLACE FUNCTION quote.facture_read(p_id text)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
-AS $function$
-DECLARE
-  v_result jsonb;
-  v_actions jsonb;
-  v_statut text;
-  v_days int;
-BEGIN
-  SELECT to_jsonb(f) || jsonb_build_object(
-    'client_name', c.name,
-    'devis_numero', dv.numero,
-    'total_ht', quote._total_ht(NULL, f.id),
-    'total_tva', quote._total_tva(NULL, f.id),
-    'total_ttc', quote._total_ttc(NULL, f.id),
-    'lignes', coalesce((
-      SELECT jsonb_agg(to_jsonb(l) ORDER BY l.sort_order, l.id)
-      FROM quote.ligne l WHERE l.facture_id = f.id
-    ), '[]'::jsonb))
-  INTO v_result
-  FROM quote.facture f
-  JOIN crm.client c ON c.id = f.client_id
-  LEFT JOIN quote.devis dv ON dv.id = f.devis_id
-  WHERE f.id = p_id::int AND f.tenant_id = current_setting('app.tenant_id', true);
-
-  IF v_result IS NULL THEN RETURN NULL; END IF;
-
-  -- HATEOAS actions based on state
-  v_statut := v_result->>'statut';
-  v_days := extract(day FROM now() - (v_result->>'created_at')::timestamptz)::int;
-  v_actions := '[]'::jsonb;
-
-  CASE v_statut
-    WHEN 'brouillon' THEN
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'envoyer', 'uri', 'quote://facture/' || p_id || '/envoyer'),
-        jsonb_build_object('method', 'supprimer', 'uri', 'quote://facture/' || p_id)
-      );
-    WHEN 'envoyee' THEN
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'payer', 'uri', 'quote://facture/' || p_id || '/payer')
-      );
-      IF v_days > 30 THEN
-        v_actions := v_actions || jsonb_build_array(
-          jsonb_build_object('method', 'relancer', 'uri', 'quote://facture/' || p_id || '/relancer')
-        );
-      END IF;
-    WHEN 'relance' THEN
-      v_actions := jsonb_build_array(
-        jsonb_build_object('method', 'payer', 'uri', 'quote://facture/' || p_id || '/payer')
-      );
-    WHEN 'payee' THEN
-      -- Terminal state: no actions (immutable)
-      v_actions := '[]'::jsonb;
-  END CASE;
-
-  RETURN v_result || jsonb_build_object('actions', v_actions);
-END;
-$function$;
-COMMENT ON FUNCTION quote.facture_read(text) IS 'Read facture by id — full detail with client name, devis ref, totals, lignes, and HATEOAS actions by state';
-
-CREATE OR REPLACE FUNCTION quote.facture_update(p_row quote.facture)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM quote.facture WHERE id = p_row.id AND statut = 'brouillon' AND tenant_id = current_setting('app.tenant_id', true)) THEN
-    RAISE EXCEPTION '%', pgv.t('quote.err_brouillon_only');
-  END IF;
-
-  UPDATE quote.facture SET
-    client_id = coalesce(p_row.client_id, client_id),
-    objet = coalesce(nullif(p_row.objet, ''), objet),
-    notes = coalesce(p_row.notes, notes),
-    updated_at = now()
-  WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
-  RETURNING * INTO p_row;
-
-  RETURN to_jsonb(p_row);
-END;
-$function$;
-COMMENT ON FUNCTION quote.facture_update(quote.facture) IS 'Update facture — brouillon only, partial update via COALESCE';
-
-CREATE OR REPLACE FUNCTION quote.facture_view()
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE
-AS $function$
-BEGIN
-  RETURN jsonb_build_object(
-    'uri', 'quote://facture',
-    'label', 'quote.entity_facture',
-
-    'template', jsonb_build_object(
-      'compact', jsonb_build_object(
-        'fields', jsonb_build_array('numero', 'client_name', 'statut')
-      ),
-
-      'standard', jsonb_build_object(
-        'fields', jsonb_build_array('numero', 'client_name', 'objet', 'statut', 'created_at'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'total_ht', 'label', 'quote.stat_total_ht'),
-          jsonb_build_object('key', 'total_tva', 'label', 'quote.stat_total_tva'),
-          jsonb_build_object('key', 'total_ttc', 'label', 'quote.stat_total_ttc')
-        )
-      ),
-
-      'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('numero', 'client_name', 'objet', 'statut', 'devis_numero', 'paid_at', 'notes', 'created_at'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'total_ht', 'label', 'quote.stat_total_ht'),
-          jsonb_build_object('key', 'total_tva', 'label', 'quote.stat_total_tva'),
-          jsonb_build_object('key', 'total_ttc', 'label', 'quote.stat_total_ttc')
-        ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'quote://devis', 'filter', 'id={devis_id}', 'label', 'quote.related_devis')
-        )
-      ),
-
-      'form', jsonb_build_object(
-        'sections', jsonb_build_array(
-          jsonb_build_object('label', 'quote.section_general', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'client_id', 'type', 'combobox', 'label', 'quote.field_client', 'source', 'crm://client', 'display', 'name', 'required', true),
-            jsonb_build_object('key', 'objet', 'type', 'text', 'label', 'quote.field_objet', 'required', true),
-            jsonb_build_object('key', 'notes', 'type', 'textarea', 'label', 'quote.field_notes')
-          ))
-        )
-      )
-    ),
-
-    'actions', jsonb_build_object(
-      'envoyer', jsonb_build_object('label', 'quote.action_envoyer', 'variant', 'primary', 'confirm', 'quote.confirm_envoyer_facture'),
-      'payer', jsonb_build_object('label', 'quote.action_payer', 'variant', 'primary', 'confirm', 'quote.confirm_payer_facture'),
-      'relancer', jsonb_build_object('label', 'quote.action_relancer', 'variant', 'warning', 'confirm', 'quote.confirm_relancer_facture'),
-      'supprimer', jsonb_build_object('label', 'quote.action_supprimer', 'variant', 'danger', 'confirm', 'quote.confirm_supprimer_facture')
-    )
-  );
-END;
-$function$;
-COMMENT ON FUNCTION quote.facture_view() IS 'View template for facture entity: compact, standard, expanded, form, actions catalog';
-
-CREATE OR REPLACE FUNCTION quote.get_devis(p_id integer DEFAULT NULL::integer)
- RETURNS text
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_rows text[];
-  v_body text;
-  v_ht numeric(12,2);
-  v_tva numeric(12,2);
-  v_ttc numeric(12,2);
-  d record;
-  r record;
-BEGIN
-  -- List mode (no p_id)
-  IF p_id IS NULL THEN
-    v_rows := ARRAY[]::text[];
-    FOR r IN
-      SELECT dv.id, dv.numero, dv.client_id, c.name AS client, dv.objet, dv.statut,
-             quote._total_ttc(dv.id, NULL) AS ttc, dv.created_at
-        FROM quote.devis dv
-        JOIN crm.client c ON c.id = dv.client_id
-       ORDER BY dv.created_at DESC
-    LOOP
-      v_rows := v_rows || ARRAY[
-        format('<a href="%s">%s</a>', pgv.call_ref('get_devis', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-        format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
-        pgv.esc(r.objet),
-        quote._statut_badge(r.statut),
-        to_char(r.ttc, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
-        to_char(r.created_at, 'DD/MM/YYYY')
-      ];
-    END LOOP;
-
-    IF array_length(v_rows, 1) IS NULL THEN
-      v_body := pgv.empty(pgv.t('quote.empty_no_devis'), pgv.t('quote.empty_first_devis'));
-    ELSE
-      v_body := pgv.md_table(ARRAY[pgv.t('quote.col_numero'), pgv.t('quote.col_client'), pgv.t('quote.col_objet'), pgv.t('quote.col_statut'), pgv.t('quote.col_total_ttc'), pgv.t('quote.col_date')], v_rows);
-    END IF;
-
-    v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_devis_form'), pgv.t('quote.btn_nouveau_devis'));
-    RETURN pgv.breadcrumb(VARIADIC ARRAY[pgv.t('quote.title_devis')]) || v_body;
-  END IF;
-
-  -- Detail mode
-  SELECT dv.*, c.name AS client_name
-    INTO d
-    FROM quote.devis dv
-    JOIN crm.client c ON c.id = dv.client_id
-   WHERE dv.id = p_id;
-
-  IF NOT FOUND THEN
-    RETURN pgv.empty(pgv.t('quote.empty_not_found_devis'));
-  END IF;
-
-  v_ht := quote._total_ht(p_id, NULL);
-  v_tva := quote._total_tva(p_id, NULL);
-  v_ttc := v_ht + v_tva;
-
-  v_body := pgv.breadcrumb(VARIADIC ARRAY[
-    pgv.t('quote.title_devis'), pgv.call_ref('get_devis'),
-    d.numero
-  ]);
-
-  v_body := v_body || pgv.dl(VARIADIC ARRAY[
-    pgv.t('quote.field_numero'), d.numero,
-    pgv.t('quote.field_client'), format('<a href="/crm/client?p_id=%s">%s</a>', d.client_id, pgv.esc(d.client_name)),
-    pgv.t('quote.field_objet'), pgv.esc(d.objet),
-    pgv.t('quote.field_statut'), quote._statut_badge(d.statut),
-    pgv.t('quote.field_validite'), d.validite_jours || ' ' || pgv.t('quote.field_jours'),
-    pgv.t('quote.field_date'), to_char(d.created_at, 'DD/MM/YYYY'),
-    pgv.t('quote.field_total_ht'), to_char(v_ht, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
-    pgv.t('quote.field_total_tva'), to_char(v_tva, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
-    pgv.t('quote.field_total_ttc'), to_char(v_ttc, 'FM999 990.00') || ' ' || pgv.t('quote.currency')
-  ]);
-
-  -- Lignes
-  v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT l.id, l.description, l.quantite, l.unite, l.prix_unitaire, l.tva_rate,
-           round(l.quantite * l.prix_unitaire, 2) AS ht,
-           round(l.quantite * l.prix_unitaire * l.tva_rate / 100, 2) AS tva_montant
-      FROM quote.ligne l
-     WHERE l.devis_id = p_id
-     ORDER BY l.sort_order, l.id
-  LOOP
-    v_rows := v_rows || ARRAY[
-      pgv.esc(r.description),
-      r.quantite::text,
-      r.unite,
-      to_char(r.prix_unitaire, 'FM999 990.00'),
-      r.tva_rate::text || ' %',
-      to_char(r.ht, 'FM999 990.00'),
-      CASE WHEN d.statut = 'brouillon'
-        THEN pgv.action('post_ligne_supprimer', pgv.t('quote.btn_suppr_ligne'), jsonb_build_object('id', r.id), pgv.t('quote.confirm_supprimer_ligne'), 'danger')
-        ELSE ''
-      END
-    ];
-  END LOOP;
-
-  IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty(pgv.t('quote.empty_no_ligne'), pgv.t('quote.empty_add_lignes'));
-  ELSE
-    v_body := v_body || pgv.md_table(ARRAY[pgv.t('quote.col_description'), pgv.t('quote.col_quantite'), pgv.t('quote.col_unite'), pgv.t('quote.col_pu_ht'), pgv.t('quote.col_tva'), pgv.t('quote.col_montant_ht'), ''], v_rows);
-  END IF;
-
-  -- Formulaire ajout ligne (brouillon uniquement)
-  IF d.statut = 'brouillon' THEN
-    v_body := v_body || pgv.accordion(VARIADIC ARRAY[
-      pgv.t('quote.title_ajouter_ligne'),
-      pgv.form('post_ligne_ajouter',
-        '<input type="hidden" name="devis_id" value="' || p_id || '">'
-        || pgv.select_search('article_id', pgv.t('quote.field_article'), 'quote.article_search', pgv.t('quote.field_article_placeholder'))
-        || '<label>' || pgv.t('quote.col_description') || ' <input type="text" name="description" placeholder="' || pgv.t('quote.field_description_placeholder') || '"></label>'
-        || '<div class="grid">'
-        || '<label>' || pgv.t('quote.field_quantite') || ' <input type="number" name="quantite" value="1" step="0.01" min="0.01" required></label>'
-        || '<label>' || pgv.t('quote.col_unite') || ' <select name="unite">'
-        || '<option value="u">' || pgv.t('quote.unit_u') || '</option><option value="h">' || pgv.t('quote.unit_h') || '</option>'
-        || '<option value="m">' || pgv.t('quote.unit_m') || '</option><option value="m2">' || pgv.t('quote.unit_m2') || '</option>'
-        || '<option value="m3">' || pgv.t('quote.unit_m3') || '</option><option value="forfait">' || pgv.t('quote.unit_forfait') || '</option>'
-        || '</select></label>'
-        || '</div><div class="grid">'
-        || '<label>' || pgv.t('quote.field_prix_unitaire') || ' <input type="number" name="prix_unitaire" step="0.01" min="0"></label>'
-        || '<label>' || pgv.t('quote.col_tva') || ' <select name="tva_rate">'
-        || '<option value="20.00">20 %</option><option value="10.00">10 %</option>'
-        || '<option value="5.50">5,5 %</option><option value="0.00">0 %</option>'
-        || '</select></label>'
-        || '</div>',
-        pgv.t('quote.btn_ajouter')
-      )
-    ]);
-  END IF;
-
-  -- Actions selon statut
-  v_body := v_body || '<div class="grid">';
-  IF d.statut = 'brouillon' THEN
-    v_body := v_body
-      || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_devis_form', jsonb_build_object('p_id', p_id)), pgv.t('quote.btn_modifier'))
-      || pgv.action('post_devis_envoyer', pgv.t('quote.btn_envoyer'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_envoyer_devis'))
-      || pgv.action('post_devis_supprimer', pgv.t('quote.btn_supprimer'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_supprimer_devis'), 'danger');
-  ELSIF d.statut = 'envoye' THEN
-    v_body := v_body
-      || pgv.action('post_devis_accepter', pgv.t('quote.btn_accepter'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_accepter_devis'))
-      || pgv.action('post_devis_refuser', pgv.t('quote.btn_refuser'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_refuser_devis'), 'danger');
-  ELSIF d.statut = 'accepte' THEN
-    v_body := v_body
-      || pgv.action('post_devis_facturer', pgv.t('quote.btn_creer_facture'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_facturer_devis'));
-  END IF;
-  -- Dupliquer disponible sur tous les statuts
-  v_body := v_body
-    || pgv.action('post_devis_dupliquer', pgv.t('quote.btn_dupliquer'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_dupliquer_devis'));
-  v_body := v_body || '</div>';
-
-  IF d.notes <> '' THEN
-    v_body := v_body || '<h4>' || pgv.t('quote.field_notes') || '</h4><p>' || pgv.esc(d.notes) || '</p>';
-  END IF;
-
-  -- Mentions légales
-  v_body := v_body || quote._mentions_html();
-
-  RETURN v_body;
-END;
-$function$;
-COMMENT ON FUNCTION quote.get_devis(integer) IS 'Liste des devis (sans p_id) ou détail d''un devis (avec p_id)';
-
-CREATE OR REPLACE FUNCTION quote.get_devis_form(p_id integer DEFAULT NULL::integer)
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_body text;
-  v_fields text;
-  d record;
-  v_objet text := '';
-  v_validite int := 30;
-  v_notes text := '';
-BEGIN
-  IF p_id IS NOT NULL THEN
-    SELECT * INTO d FROM quote.devis WHERE id = p_id;
-    IF NOT FOUND THEN RETURN pgv.empty(pgv.t('quote.empty_not_found_devis')); END IF;
-    IF d.statut <> 'brouillon' THEN
-      RETURN pgv.empty(pgv.t('quote.empty_modification_impossible'), pgv.t('quote.empty_brouillons_only'));
-    END IF;
-    v_objet := d.objet;
-    v_validite := d.validite_jours;
-    v_notes := d.notes;
-  END IF;
-
-  v_body := pgv.breadcrumb(VARIADIC ARRAY[
-    pgv.t('quote.title_devis'), pgv.call_ref('get_devis'),
-    CASE WHEN p_id IS NOT NULL THEN pgv.t('quote.title_modifier') ELSE pgv.t('quote.title_nouveau_devis') END
-  ]);
-
-  -- Build form fields
-  v_fields := '';
-  IF p_id IS NOT NULL THEN
-    v_fields := '<input type="hidden" name="id" value="' || p_id || '">';
-  END IF;
-
-  -- Client select (raw HTML, _client_options returns HTML)
-  v_fields := v_fields
-    || '<label>' || pgv.t('quote.field_client') || ' <select name="client_id" required>'
-    || '<option value="">' || pgv.t('quote.field_select_placeholder') || '</option>'
-    || quote._client_options()
-    || '</select></label>';
-
-  IF p_id IS NOT NULL THEN
-    v_fields := replace(v_fields,
-      'value="' || d.client_id || '">',
-      'value="' || d.client_id || '" selected>');
-  END IF;
-
-  v_fields := v_fields
-    || pgv.input('objet', 'text', pgv.t('quote.field_objet'), v_objet, true)
-    || pgv.input('validite_jours', 'number', pgv.t('quote.field_validite_jours'), v_validite::text)
-    || pgv.textarea('notes', pgv.t('quote.field_notes'), v_notes);
-
-  v_body := v_body || pgv.form('post_devis_save', v_fields,
-    CASE WHEN p_id IS NOT NULL THEN pgv.t('quote.btn_mettre_a_jour') ELSE pgv.t('quote.btn_creer_devis') END);
-
-  RETURN v_body;
-END;
-$function$;
-COMMENT ON FUNCTION quote.get_devis_form(integer) IS 'Formulaire création/édition d''un devis';
-
-CREATE OR REPLACE FUNCTION quote.get_facture(p_id integer DEFAULT NULL::integer)
- RETURNS text
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_rows text[];
-  v_body text;
-  v_ht numeric(12,2);
-  v_tva numeric(12,2);
-  v_ttc numeric(12,2);
-  v_days_since int;
-  f record;
-  r record;
-BEGIN
-  -- List mode
-  IF p_id IS NULL THEN
-    v_rows := ARRAY[]::text[];
-    FOR r IN
-      SELECT fa.id, fa.numero, fa.client_id, c.name AS client, fa.objet, fa.statut,
-             quote._total_ttc(NULL, fa.id) AS ttc, fa.created_at
-        FROM quote.facture fa
-        JOIN crm.client c ON c.id = fa.client_id
-       ORDER BY fa.created_at DESC
-    LOOP
-      v_rows := v_rows || ARRAY[
-        format('<a href="%s">%s</a>', pgv.call_ref('get_facture', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-        format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
-        pgv.esc(r.objet),
-        quote._statut_badge(r.statut),
-        to_char(r.ttc, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
-        to_char(r.created_at, 'DD/MM/YYYY')
-      ];
-    END LOOP;
-
-    IF array_length(v_rows, 1) IS NULL THEN
-      v_body := pgv.empty(pgv.t('quote.empty_no_facture'), pgv.t('quote.empty_factures_appear'));
-    ELSE
-      v_body := pgv.md_table(ARRAY[pgv.t('quote.col_numero'), pgv.t('quote.col_client'), pgv.t('quote.col_objet'), pgv.t('quote.col_statut'), pgv.t('quote.col_total_ttc'), pgv.t('quote.col_date')], v_rows);
-    END IF;
-
-    v_body := v_body || format('<p><a href="%s" role="button">%s</a></p>', pgv.call_ref('get_facture_form'), pgv.t('quote.btn_nouvelle_facture'));
-    RETURN pgv.breadcrumb(VARIADIC ARRAY[pgv.t('quote.title_factures')]) || v_body;
-  END IF;
-
-  -- Detail mode
-  SELECT fa.*, c.name AS client_name,
-         dv.numero AS devis_numero, dv.id AS devis_pk
-    INTO f
-    FROM quote.facture fa
-    JOIN crm.client c ON c.id = fa.client_id
-    LEFT JOIN quote.devis dv ON dv.id = fa.devis_id
-   WHERE fa.id = p_id;
-
-  IF NOT FOUND THEN
-    RETURN pgv.empty(pgv.t('quote.empty_not_found_facture'));
-  END IF;
-
-  v_ht := quote._total_ht(NULL, p_id);
-  v_tva := quote._total_tva(NULL, p_id);
-  v_ttc := v_ht + v_tva;
-
-  v_body := pgv.breadcrumb(VARIADIC ARRAY[
-    pgv.t('quote.title_factures'), pgv.call_ref('get_facture'),
-    f.numero
-  ]);
-
-  -- Badge relance si envoyée > 30j
-  v_days_since := extract(day FROM now() - f.created_at)::int;
-
-  v_body := v_body || pgv.dl(VARIADIC ARRAY[
-    pgv.t('quote.field_numero'), f.numero,
-    pgv.t('quote.field_client'), format('<a href="/crm/client?p_id=%s">%s</a>', f.client_id, pgv.esc(f.client_name)),
-    pgv.t('quote.field_objet'), pgv.esc(f.objet),
-    pgv.t('quote.field_statut'), quote._statut_badge(f.statut)
-      || CASE WHEN f.statut = 'envoyee' AND v_days_since > 30
-           THEN ' ' || pgv.badge(pgv.t('quote.status_relance'), 'danger')
-           ELSE ''
-         END,
-    pgv.t('quote.field_devis'), CASE WHEN f.devis_numero IS NOT NULL
-      THEN format('<a href="%s">%s</a>', pgv.call_ref('get_devis', jsonb_build_object('p_id', f.devis_pk)), pgv.esc(f.devis_numero))
-      ELSE pgv.t('quote.field_facture_directe')
-    END,
-    pgv.t('quote.field_date'), to_char(f.created_at, 'DD/MM/YYYY'),
-    pgv.t('quote.field_paid_at'), CASE WHEN f.paid_at IS NOT NULL THEN to_char(f.paid_at, 'DD/MM/YYYY') ELSE '—' END,
-    pgv.t('quote.field_total_ht'), to_char(v_ht, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
-    pgv.t('quote.field_total_tva'), to_char(v_tva, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
-    pgv.t('quote.field_total_ttc'), to_char(v_ttc, 'FM999 990.00') || ' ' || pgv.t('quote.currency')
-  ]);
-
-  -- Lignes
-  v_rows := ARRAY[]::text[];
-  FOR r IN
-    SELECT l.id, l.description, l.quantite, l.unite, l.prix_unitaire, l.tva_rate,
-           round(l.quantite * l.prix_unitaire, 2) AS ht
-      FROM quote.ligne l
-     WHERE l.facture_id = p_id
-     ORDER BY l.sort_order, l.id
-  LOOP
-    v_rows := v_rows || ARRAY[
-      pgv.esc(r.description),
-      r.quantite::text,
-      r.unite,
-      to_char(r.prix_unitaire, 'FM999 990.00'),
-      r.tva_rate::text || ' %',
-      to_char(r.ht, 'FM999 990.00'),
-      CASE WHEN f.statut = 'brouillon'
-        THEN pgv.action('post_ligne_supprimer', pgv.t('quote.btn_suppr_ligne'), jsonb_build_object('id', r.id), pgv.t('quote.confirm_supprimer_ligne'), 'danger')
-        ELSE ''
-      END
-    ];
-  END LOOP;
-
-  IF array_length(v_rows, 1) IS NULL THEN
-    v_body := v_body || pgv.empty(pgv.t('quote.empty_no_ligne'));
-  ELSE
-    v_body := v_body || pgv.md_table(ARRAY[pgv.t('quote.col_description'), pgv.t('quote.col_quantite'), pgv.t('quote.col_unite'), pgv.t('quote.col_pu_ht'), pgv.t('quote.col_tva'), pgv.t('quote.col_montant_ht'), ''], v_rows);
-  END IF;
-
-  -- Formulaire ajout ligne (brouillon uniquement)
-  IF f.statut = 'brouillon' THEN
-    v_body := v_body || pgv.accordion(VARIADIC ARRAY[
-      pgv.t('quote.title_ajouter_ligne'),
-      pgv.form('post_ligne_ajouter',
-        '<input type="hidden" name="facture_id" value="' || p_id || '">'
-        || pgv.select_search('article_id', pgv.t('quote.field_article'), 'quote.article_search', pgv.t('quote.field_article_placeholder'))
-        || '<label>' || pgv.t('quote.col_description') || ' <input type="text" name="description" placeholder="' || pgv.t('quote.field_description_placeholder') || '"></label>'
-        || '<div class="grid">'
-        || '<label>' || pgv.t('quote.field_quantite') || ' <input type="number" name="quantite" value="1" step="0.01" min="0.01" required></label>'
-        || '<label>' || pgv.t('quote.col_unite') || ' <select name="unite">'
-        || '<option value="u">' || pgv.t('quote.unit_u') || '</option><option value="h">' || pgv.t('quote.unit_h') || '</option>'
-        || '<option value="m">' || pgv.t('quote.unit_m') || '</option><option value="m2">' || pgv.t('quote.unit_m2') || '</option>'
-        || '<option value="m3">' || pgv.t('quote.unit_m3') || '</option><option value="forfait">' || pgv.t('quote.unit_forfait') || '</option>'
-        || '</select></label>'
-        || '</div><div class="grid">'
-        || '<label>' || pgv.t('quote.field_prix_unitaire') || ' <input type="number" name="prix_unitaire" step="0.01" min="0"></label>'
-        || '<label>' || pgv.t('quote.col_tva') || ' <select name="tva_rate">'
-        || '<option value="20.00">20 %</option><option value="10.00">10 %</option>'
-        || '<option value="5.50">5,5 %</option><option value="0.00">0 %</option>'
-        || '</select></label>'
-        || '</div>',
-        pgv.t('quote.btn_ajouter')
-      )
-    ]);
-  END IF;
-
-  -- Actions selon statut
-  v_body := v_body || '<div class="grid">';
-  IF f.statut = 'brouillon' THEN
-    v_body := v_body
-      || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_facture_form', jsonb_build_object('p_id', p_id)), pgv.t('quote.btn_modifier'))
-      || pgv.action('post_facture_envoyer', pgv.t('quote.btn_envoyer'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_envoyer_facture'))
-      || pgv.action('post_facture_supprimer', pgv.t('quote.btn_supprimer'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_supprimer_facture'), 'danger');
-  ELSIF f.statut = 'envoyee' THEN
-    v_body := v_body
-      || pgv.action('post_facture_payer', pgv.t('quote.btn_marquer_payee'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_payer_facture'));
-    IF v_days_since > 30 THEN
-      v_body := v_body
-        || pgv.action('post_facture_relancer', pgv.t('quote.btn_relancer'), jsonb_build_object('id', p_id), pgv.t('quote.confirm_relancer_facture'), 'danger');
-    END IF;
-  END IF;
-  v_body := v_body || '</div>';
-
-  IF f.notes <> '' THEN
-    v_body := v_body || '<h4>' || pgv.t('quote.field_notes') || '</h4><p>' || pgv.esc(f.notes) || '</p>';
-  END IF;
-
-  -- Mentions légales
-  v_body := v_body || quote._mentions_html();
-
-  RETURN v_body;
-END;
-$function$;
-COMMENT ON FUNCTION quote.get_facture(integer) IS 'Liste des factures (sans p_id) ou détail d''une facture (avec p_id)';
-
-CREATE OR REPLACE FUNCTION quote.get_facture_form(p_id integer DEFAULT NULL::integer)
- RETURNS text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v_body text;
-  v_fields text;
-  f record;
-  v_objet text := '';
-  v_notes text := '';
-BEGIN
-  IF p_id IS NOT NULL THEN
-    SELECT * INTO f FROM quote.facture WHERE id = p_id;
-    IF NOT FOUND THEN RETURN pgv.empty(pgv.t('quote.empty_not_found_facture')); END IF;
-    IF f.statut <> 'brouillon' THEN
-      RETURN pgv.empty(pgv.t('quote.empty_modification_impossible'), pgv.t('quote.empty_brouillons_only'));
-    END IF;
-    v_objet := f.objet;
-    v_notes := f.notes;
-  END IF;
-
-  v_body := pgv.breadcrumb(VARIADIC ARRAY[
-    pgv.t('quote.title_factures'), pgv.call_ref('get_facture'),
-    CASE WHEN p_id IS NOT NULL THEN pgv.t('quote.title_modifier') ELSE pgv.t('quote.title_nouvelle_facture') END
-  ]);
-
-  -- Build form fields
-  v_fields := '';
-  IF p_id IS NOT NULL THEN
-    v_fields := '<input type="hidden" name="id" value="' || p_id || '">';
-  END IF;
-
-  -- Client select (raw HTML, _client_options returns HTML)
-  v_fields := v_fields
-    || '<label>' || pgv.t('quote.field_client') || ' <select name="client_id" required>'
-    || '<option value="">' || pgv.t('quote.field_select_placeholder') || '</option>'
-    || quote._client_options()
-    || '</select></label>';
-
-  IF p_id IS NOT NULL THEN
-    v_fields := replace(v_fields,
-      'value="' || f.client_id || '">',
-      'value="' || f.client_id || '" selected>');
-  END IF;
-
-  v_fields := v_fields
-    || pgv.input('objet', 'text', pgv.t('quote.field_objet'), v_objet, true)
-    || pgv.textarea('notes', pgv.t('quote.field_notes'), v_notes);
-
-  v_body := v_body || pgv.form('post_facture_save', v_fields,
-    CASE WHEN p_id IS NOT NULL THEN pgv.t('quote.btn_mettre_a_jour') ELSE pgv.t('quote.btn_creer_la_facture') END);
-
-  RETURN v_body;
-END;
-$function$;
-COMMENT ON FUNCTION quote.get_facture_form(integer) IS 'Formulaire création/édition d''une facture directe';
-
-CREATE OR REPLACE FUNCTION quote.get_index()
- RETURNS text
- LANGUAGE plpgsql
- STABLE
-AS $function$
-DECLARE
-  v_devis_en_cours int;
-  v_factures_impayees int;
-  v_ca_mois numeric(12,2);
-  v_taux_acceptation text;
-  v_nb_total int;
-  v_nb_accepte int;
-  v_body text;
-  v_rows_d text[];
-  v_rows_f text[];
-  r record;
-BEGIN
-  -- Stats
-  SELECT count(*)::int INTO v_devis_en_cours
-    FROM quote.devis WHERE statut IN ('brouillon', 'envoye');
-
-  SELECT count(*)::int INTO v_factures_impayees
-    FROM quote.facture WHERE statut = 'envoyee';
-
-  SELECT coalesce(sum(quote._total_ttc(NULL, f.id)), 0) INTO v_ca_mois
-    FROM quote.facture f
-   WHERE f.statut = 'payee'
-     AND f.paid_at >= date_trunc('month', now());
-
-  SELECT count(*)::int, count(*) FILTER (WHERE statut = 'accepte')::int
-    INTO v_nb_total, v_nb_accepte
-    FROM quote.devis WHERE statut IN ('accepte', 'refuse');
-
-  IF v_nb_total > 0 THEN
-    v_taux_acceptation := round(v_nb_accepte * 100.0 / v_nb_total)::text || ' %';
-  ELSE
-    v_taux_acceptation := '—';
-  END IF;
-
-  v_body := pgv.grid(VARIADIC ARRAY[
-    pgv.stat(pgv.t('quote.stat_devis_en_cours'), v_devis_en_cours::text),
-    pgv.stat(pgv.t('quote.stat_factures_impayees'), v_factures_impayees::text),
-    pgv.stat(pgv.t('quote.stat_ca_mois'), to_char(v_ca_mois, 'FM999 990.00') || ' ' || pgv.t('quote.currency')),
-    pgv.stat(pgv.t('quote.stat_taux_acceptation'), v_taux_acceptation)
-  ]);
-
-  -- Tab 1: Devis récents
-  v_rows_d := ARRAY[]::text[];
-  FOR r IN
-    SELECT d.id, d.numero, d.client_id, c.name AS client, d.objet, d.statut,
-           quote._total_ttc(d.id, NULL) AS ttc, d.created_at
-      FROM quote.devis d
-      JOIN crm.client c ON c.id = d.client_id
-     ORDER BY d.created_at DESC LIMIT 10
-  LOOP
-    v_rows_d := v_rows_d || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_devis', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-      format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
-      pgv.esc(r.objet),
-      quote._statut_badge(r.statut),
-      to_char(r.ttc, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
-      to_char(r.created_at, 'DD/MM/YYYY')
-    ];
-  END LOOP;
-
-  -- Tab 2: Factures récentes
-  v_rows_f := ARRAY[]::text[];
-  FOR r IN
-    SELECT f.id, f.numero, f.client_id, c.name AS client, f.objet, f.statut,
-           quote._total_ttc(NULL, f.id) AS ttc, f.created_at
-      FROM quote.facture f
-      JOIN crm.client c ON c.id = f.client_id
-     ORDER BY f.created_at DESC LIMIT 10
-  LOOP
-    v_rows_f := v_rows_f || ARRAY[
-      format('<a href="%s">%s</a>', pgv.call_ref('get_facture', jsonb_build_object('p_id', r.id)), pgv.esc(r.numero)),
-      format('<a href="/crm/client?p_id=%s">%s</a>', r.client_id, pgv.esc(r.client)),
-      pgv.esc(r.objet),
-      quote._statut_badge(r.statut),
-      to_char(r.ttc, 'FM999 990.00') || ' ' || pgv.t('quote.currency'),
-      to_char(r.created_at, 'DD/MM/YYYY')
-    ];
-  END LOOP;
-
-  v_body := v_body || pgv.tabs(VARIADIC ARRAY[
-    pgv.t('quote.tab_devis_recents'),
-    CASE WHEN array_length(v_rows_d, 1) IS NULL
-      THEN pgv.empty(pgv.t('quote.empty_no_devis'), pgv.t('quote.empty_first_devis'))
-      ELSE pgv.md_table(ARRAY[pgv.t('quote.col_numero'), pgv.t('quote.col_client'), pgv.t('quote.col_objet'), pgv.t('quote.col_statut'), pgv.t('quote.col_total_ttc'), pgv.t('quote.col_date')], v_rows_d)
-    END,
-    pgv.t('quote.tab_factures_recentes'),
-    CASE WHEN array_length(v_rows_f, 1) IS NULL
-      THEN pgv.empty(pgv.t('quote.empty_no_facture'))
-      ELSE pgv.md_table(ARRAY[pgv.t('quote.col_numero'), pgv.t('quote.col_client'), pgv.t('quote.col_objet'), pgv.t('quote.col_statut'), pgv.t('quote.col_total_ttc'), pgv.t('quote.col_date')], v_rows_f)
-    END
-  ]);
-
-  v_body := v_body || '<p>'
-    || format('<a href="%s" role="button">%s</a>', pgv.call_ref('get_devis_form'), pgv.t('quote.btn_nouveau_devis'))
-    || ' '
-    || format('<a href="%s" role="button" class="outline">%s</a>', pgv.call_ref('get_facture_form'), pgv.t('quote.btn_nouvelle_facture'))
-    || '</p>';
-
-  RETURN v_body;
-END;
-$function$;
-COMMENT ON FUNCTION quote.get_index() IS 'Dashboard quote : stats KPI + tabs devis/factures récents';
+COMMENT ON FUNCTION quote.estimate_view() IS 'View template for estimate entity: compact, standard, expanded, form, actions catalog';
 
 CREATE OR REPLACE FUNCTION quote.i18n_seed()
  RETURNS void
@@ -1231,54 +439,51 @@ BEGIN
     -- Brand / Navigation
     ('fr', 'quote.brand', 'Facturation'),
     ('fr', 'quote.nav_dashboard', 'Dashboard'),
-    ('fr', 'quote.nav_devis', 'Devis'),
-    ('fr', 'quote.nav_factures', 'Factures'),
+    ('fr', 'quote.nav_estimates', 'Devis'),
+    ('fr', 'quote.nav_invoices', 'Factures'),
 
-    -- Statuses
-    ('fr', 'quote.status_brouillon', 'Brouillon'),
-    ('fr', 'quote.status_envoye', 'Envoyé'),
-    ('fr', 'quote.status_envoyee', 'Envoyée'),
-    ('fr', 'quote.status_accepte', 'Accepté'),
-    ('fr', 'quote.status_payee', 'Payée'),
-    ('fr', 'quote.status_refuse', 'Refusé'),
-    ('fr', 'quote.status_relance', 'Relance'),
+    -- Statuses (English keys matching DB values)
+    ('fr', 'quote.status_draft', 'Brouillon'),
+    ('fr', 'quote.status_sent', 'Envoyé(e)'),
+    ('fr', 'quote.status_accepted', 'Accepté'),
+    ('fr', 'quote.status_declined', 'Refusé'),
+    ('fr', 'quote.status_paid', 'Payée'),
+    ('fr', 'quote.status_overdue', 'Relance'),
 
     -- Column headers
-    ('fr', 'quote.col_numero', 'Numéro'),
+    ('fr', 'quote.col_number', 'Numéro'),
     ('fr', 'quote.col_client', 'Client'),
-    ('fr', 'quote.col_objet', 'Objet'),
-    ('fr', 'quote.col_statut', 'Statut'),
+    ('fr', 'quote.col_subject', 'Objet'),
+    ('fr', 'quote.col_status', 'Statut'),
     ('fr', 'quote.col_total_ttc', 'Total TTC'),
     ('fr', 'quote.col_date', 'Date'),
     ('fr', 'quote.col_description', 'Description'),
-    ('fr', 'quote.col_quantite', 'Qté'),
-    ('fr', 'quote.col_unite', 'Unité'),
-    ('fr', 'quote.col_pu_ht', 'PU HT'),
+    ('fr', 'quote.col_quantity', 'Qté'),
+    ('fr', 'quote.col_unit', 'Unité'),
+    ('fr', 'quote.col_unit_price', 'PU HT'),
     ('fr', 'quote.col_tva', 'TVA'),
-    ('fr', 'quote.col_montant_ht', 'Montant HT'),
+    ('fr', 'quote.col_amount_ht', 'Montant HT'),
 
-    -- Detail field labels
-    ('fr', 'quote.field_numero', 'Numéro'),
+    -- Field labels
+    ('fr', 'quote.field_number', 'Numéro'),
     ('fr', 'quote.field_client', 'Client'),
-    ('fr', 'quote.field_objet', 'Objet'),
-    ('fr', 'quote.field_statut', 'Statut'),
-    ('fr', 'quote.field_validite', 'Validité'),
+    ('fr', 'quote.field_subject', 'Objet'),
+    ('fr', 'quote.field_status', 'Statut'),
+    ('fr', 'quote.field_validity', 'Validité'),
+    ('fr', 'quote.field_validity_days', 'Validité (jours)'),
     ('fr', 'quote.field_date', 'Date'),
     ('fr', 'quote.field_total_ht', 'Total HT'),
     ('fr', 'quote.field_total_tva', 'Total TVA'),
     ('fr', 'quote.field_total_ttc', 'Total TTC'),
-    ('fr', 'quote.field_devis', 'Devis'),
+    ('fr', 'quote.field_estimate', 'Devis'),
     ('fr', 'quote.field_paid_at', 'Payée le'),
     ('fr', 'quote.field_notes', 'Notes'),
-    ('fr', 'quote.field_jours', 'jours'),
-    ('fr', 'quote.field_facture_directe', 'Facture directe'),
-
-    -- Form labels
+    ('fr', 'quote.field_days', 'jours'),
+    ('fr', 'quote.field_direct_invoice', 'Facture directe'),
     ('fr', 'quote.field_select_placeholder', '— Choisir —'),
-    ('fr', 'quote.field_validite_jours', 'Validité (jours)'),
     ('fr', 'quote.field_description_placeholder', 'Renseignée depuis l''article si sélectionné'),
-    ('fr', 'quote.field_quantite', 'Quantité'),
-    ('fr', 'quote.field_prix_unitaire', 'Prix unitaire HT'),
+    ('fr', 'quote.field_quantity', 'Quantité'),
+    ('fr', 'quote.field_unit_price', 'Prix unitaire HT'),
     ('fr', 'quote.field_article', 'Article (catalogue)'),
     ('fr', 'quote.field_article_placeholder', 'Chercher un article...'),
 
@@ -1288,130 +493,320 @@ BEGIN
     ('fr', 'quote.unit_m', 'Mètre'),
     ('fr', 'quote.unit_m2', 'm²'),
     ('fr', 'quote.unit_m3', 'm³'),
-    ('fr', 'quote.unit_forfait', 'Forfait'),
+    ('fr', 'quote.unit_flat', 'Forfait'),
 
-    -- Stats (index page)
-    ('fr', 'quote.stat_devis_en_cours', 'Devis en cours'),
-    ('fr', 'quote.stat_factures_impayees', 'Factures impayées'),
-    ('fr', 'quote.stat_ca_mois', 'CA du mois'),
-    ('fr', 'quote.stat_taux_acceptation', 'Taux acceptation'),
+    -- Stats
+    ('fr', 'quote.stat_estimates_pending', 'Devis en cours'),
+    ('fr', 'quote.stat_invoices_unpaid', 'Factures impayées'),
+    ('fr', 'quote.stat_revenue_month', 'CA du mois'),
+    ('fr', 'quote.stat_acceptance_rate', 'Taux acceptation'),
+    ('fr', 'quote.stat_total_ht', 'Total HT'),
+    ('fr', 'quote.stat_total_tva', 'Total TVA'),
+    ('fr', 'quote.stat_total_ttc', 'Total TTC'),
 
     -- Tab titles
-    ('fr', 'quote.tab_devis_recents', 'Devis récents'),
-    ('fr', 'quote.tab_factures_recentes', 'Factures récentes'),
+    ('fr', 'quote.tab_recent_estimates', 'Devis récents'),
+    ('fr', 'quote.tab_recent_invoices', 'Factures récentes'),
 
     -- Buttons / Actions
-    ('fr', 'quote.btn_nouveau_devis', 'Nouveau devis'),
-    ('fr', 'quote.btn_nouvelle_facture', 'Nouvelle facture'),
-    ('fr', 'quote.btn_modifier', 'Modifier'),
-    ('fr', 'quote.btn_envoyer', 'Envoyer'),
-    ('fr', 'quote.btn_supprimer', 'Supprimer'),
-    ('fr', 'quote.btn_accepter', 'Accepter'),
-    ('fr', 'quote.btn_refuser', 'Refuser'),
-    ('fr', 'quote.btn_creer_facture', 'Créer la facture'),
-    ('fr', 'quote.btn_dupliquer', 'Dupliquer'),
-    ('fr', 'quote.btn_marquer_payee', 'Marquer payée'),
-    ('fr', 'quote.btn_relancer', 'Relancer'),
-    ('fr', 'quote.btn_ajouter', 'Ajouter'),
-    ('fr', 'quote.btn_suppr_ligne', 'Suppr.'),
-    ('fr', 'quote.btn_creer_devis', 'Créer le devis'),
-    ('fr', 'quote.btn_creer_la_facture', 'Créer la facture'),
-    ('fr', 'quote.btn_mettre_a_jour', 'Mettre à jour'),
+    ('fr', 'quote.btn_new_estimate', 'Nouveau devis'),
+    ('fr', 'quote.btn_new_invoice', 'Nouvelle facture'),
+    ('fr', 'quote.btn_edit', 'Modifier'),
+    ('fr', 'quote.btn_add', 'Ajouter'),
+    ('fr', 'quote.btn_delete_line', 'Suppr.'),
+    ('fr', 'quote.btn_create_estimate', 'Créer le devis'),
+    ('fr', 'quote.btn_create_invoice', 'Créer la facture'),
+    ('fr', 'quote.btn_update', 'Mettre à jour'),
 
     -- Page / Section titles
-    ('fr', 'quote.title_devis', 'Devis'),
-    ('fr', 'quote.title_factures', 'Factures'),
-    ('fr', 'quote.title_modifier', 'Modifier'),
-    ('fr', 'quote.title_nouveau_devis', 'Nouveau devis'),
-    ('fr', 'quote.title_nouvelle_facture', 'Nouvelle facture'),
-    ('fr', 'quote.title_ajouter_ligne', 'Ajouter une ligne'),
-    ('fr', 'quote.title_mentions', 'Mentions légales'),
-
-    -- Confirm dialogs
-    ('fr', 'quote.confirm_envoyer_devis', 'Marquer ce devis comme envoyé ?'),
-    ('fr', 'quote.confirm_supprimer_devis', 'Supprimer ce brouillon ?'),
-    ('fr', 'quote.confirm_accepter_devis', 'Marquer ce devis comme accepté ?'),
-    ('fr', 'quote.confirm_refuser_devis', 'Marquer ce devis comme refusé ?'),
-    ('fr', 'quote.confirm_facturer_devis', 'Créer une facture depuis ce devis ?'),
-    ('fr', 'quote.confirm_dupliquer_devis', 'Dupliquer ce devis en brouillon ?'),
-    ('fr', 'quote.confirm_envoyer_facture', 'Marquer cette facture comme envoyée ?'),
-    ('fr', 'quote.confirm_supprimer_facture', 'Supprimer ce brouillon ?'),
-    ('fr', 'quote.confirm_payer_facture', 'Marquer cette facture comme payée ?'),
-    ('fr', 'quote.confirm_relancer_facture', 'Marquer cette facture en relance ?'),
-    ('fr', 'quote.confirm_supprimer_ligne', 'Supprimer cette ligne ?'),
-
-    -- Empty states
-    ('fr', 'quote.empty_no_devis', 'Aucun devis'),
-    ('fr', 'quote.empty_first_devis', 'Créez votre premier devis pour commencer.'),
-    ('fr', 'quote.empty_no_facture', 'Aucune facture'),
-    ('fr', 'quote.empty_factures_appear', 'Les factures apparaîtront ici.'),
-    ('fr', 'quote.empty_no_ligne', 'Aucune ligne'),
-    ('fr', 'quote.empty_add_lignes', 'Ajoutez des lignes à ce devis.'),
-    ('fr', 'quote.empty_not_found_devis', 'Devis introuvable'),
-    ('fr', 'quote.empty_not_found_facture', 'Facture introuvable'),
-    ('fr', 'quote.empty_modification_impossible', 'Modification impossible'),
-    ('fr', 'quote.empty_brouillons_only', 'Seuls les brouillons sont modifiables.'),
-
-    -- Error messages
-    ('fr', 'quote.err_brouillon_only', 'Seuls les brouillons sont modifiables'),
-    ('fr', 'quote.err_draft_delete_only', 'Seuls les brouillons peuvent être supprimés'),
-    ('fr', 'quote.err_not_found_devis', 'Devis introuvable'),
-    ('fr', 'quote.err_not_found_facture', 'Facture introuvable'),
-    ('fr', 'quote.err_not_found_ligne', 'Ligne introuvable'),
-    ('fr', 'quote.err_accepted_only', 'Seuls les devis acceptés peuvent être facturés'),
-    ('fr', 'quote.err_draft_lines_only', 'Lignes modifiables uniquement sur un brouillon'),
-    ('fr', 'quote.err_parent_required', 'devis_id ou facture_id requis'),
-    ('fr', 'quote.err_default_description', 'Ligne sans description'),
-
-    -- Toast messages
-    ('fr', 'quote.toast_devis_saved', 'Devis enregistré'),
-    ('fr', 'quote.toast_facture_saved', 'Facture enregistrée'),
-    ('fr', 'quote.toast_devis_sent', 'Devis envoyé'),
-    ('fr', 'quote.toast_devis_accepted', 'Devis accepté'),
-    ('fr', 'quote.toast_devis_refused', 'Devis refusé'),
-    ('fr', 'quote.toast_devis_deleted', 'Devis supprimé'),
-    ('fr', 'quote.toast_devis_duplicated', 'Devis dupliqué'),
-    ('fr', 'quote.toast_facture_created', 'Facture créée'),
-    ('fr', 'quote.toast_facture_sent', 'Facture envoyée'),
-    ('fr', 'quote.toast_facture_paid', 'Facture marquée comme payée'),
-    ('fr', 'quote.toast_facture_deleted', 'Facture supprimée'),
-    ('fr', 'quote.toast_facture_relance', 'Relance enregistrée pour la facture'),
-    ('fr', 'quote.toast_ligne_added', 'Ligne ajoutée'),
-    ('fr', 'quote.toast_ligne_deleted', 'Ligne supprimée'),
-
-    -- Currency suffix
-    ('fr', 'quote.currency', 'EUR'),
+    ('fr', 'quote.title_estimates', 'Devis'),
+    ('fr', 'quote.title_invoices', 'Factures'),
+    ('fr', 'quote.title_edit', 'Modifier'),
+    ('fr', 'quote.title_new_estimate', 'Nouveau devis'),
+    ('fr', 'quote.title_new_invoice', 'Nouvelle facture'),
+    ('fr', 'quote.title_add_line', 'Ajouter une ligne'),
+    ('fr', 'quote.title_legal_notices', 'Mentions légales'),
 
     -- Entity labels (_view contract)
-    ('fr', 'quote.entity_devis', 'Devis'),
-    ('fr', 'quote.entity_facture', 'Facture'),
+    ('fr', 'quote.entity_estimate', 'Devis'),
+    ('fr', 'quote.entity_invoice', 'Facture'),
 
     -- Section labels (form)
     ('fr', 'quote.section_general', 'Informations générales'),
 
     -- Action labels (_view actions catalog)
-    ('fr', 'quote.action_envoyer', 'Envoyer'),
-    ('fr', 'quote.action_accepter', 'Accepter'),
-    ('fr', 'quote.action_refuser', 'Refuser'),
-    ('fr', 'quote.action_facturer', 'Créer la facture'),
-    ('fr', 'quote.action_dupliquer', 'Dupliquer'),
-    ('fr', 'quote.action_supprimer', 'Supprimer'),
-    ('fr', 'quote.action_payer', 'Marquer payée'),
-    ('fr', 'quote.action_relancer', 'Relancer'),
+    ('fr', 'quote.action_send', 'Envoyer'),
+    ('fr', 'quote.action_accept', 'Accepter'),
+    ('fr', 'quote.action_decline', 'Refuser'),
+    ('fr', 'quote.action_invoice', 'Créer la facture'),
+    ('fr', 'quote.action_duplicate', 'Dupliquer'),
+    ('fr', 'quote.action_delete', 'Supprimer'),
+    ('fr', 'quote.action_pay', 'Marquer payée'),
+    ('fr', 'quote.action_remind', 'Relancer'),
 
-    -- Stat labels (_view stats)
-    ('fr', 'quote.stat_total_ht', 'Total HT'),
-    ('fr', 'quote.stat_total_tva', 'Total TVA'),
-    ('fr', 'quote.stat_total_ttc', 'Total TTC'),
+    -- Confirm dialogs
+    ('fr', 'quote.confirm_send_estimate', 'Marquer ce devis comme envoyé ?'),
+    ('fr', 'quote.confirm_delete_estimate', 'Supprimer ce brouillon ?'),
+    ('fr', 'quote.confirm_accept_estimate', 'Marquer ce devis comme accepté ?'),
+    ('fr', 'quote.confirm_decline_estimate', 'Marquer ce devis comme refusé ?'),
+    ('fr', 'quote.confirm_invoice_estimate', 'Créer une facture depuis ce devis ?'),
+    ('fr', 'quote.confirm_duplicate_estimate', 'Dupliquer ce devis en brouillon ?'),
+    ('fr', 'quote.confirm_send_invoice', 'Marquer cette facture comme envoyée ?'),
+    ('fr', 'quote.confirm_delete_invoice', 'Supprimer ce brouillon ?'),
+    ('fr', 'quote.confirm_pay_invoice', 'Marquer cette facture comme payée ?'),
+    ('fr', 'quote.confirm_remind_invoice', 'Relancer cette facture ?'),
+    ('fr', 'quote.confirm_delete_line', 'Supprimer cette ligne ?'),
+
+    -- Empty states
+    ('fr', 'quote.empty_no_estimates', 'Aucun devis'),
+    ('fr', 'quote.empty_first_estimate', 'Créez votre premier devis pour commencer.'),
+    ('fr', 'quote.empty_no_invoices', 'Aucune facture'),
+    ('fr', 'quote.empty_invoices_appear', 'Les factures apparaîtront ici.'),
+    ('fr', 'quote.empty_no_lines', 'Aucune ligne'),
+    ('fr', 'quote.empty_add_lines', 'Ajoutez des lignes à ce devis.'),
+    ('fr', 'quote.empty_not_found_estimate', 'Devis introuvable'),
+    ('fr', 'quote.empty_not_found_invoice', 'Facture introuvable'),
+    ('fr', 'quote.empty_edit_impossible', 'Modification impossible'),
+    ('fr', 'quote.empty_drafts_only', 'Seuls les brouillons sont modifiables.'),
+
+    -- Error messages
+    ('fr', 'quote.err_draft_only', 'Seuls les brouillons sont modifiables'),
+    ('fr', 'quote.err_draft_delete_only', 'Seuls les brouillons peuvent être supprimés'),
+    ('fr', 'quote.err_not_found_estimate', 'Devis introuvable'),
+    ('fr', 'quote.err_not_found_invoice', 'Facture introuvable'),
+    ('fr', 'quote.err_not_found_line', 'Ligne introuvable'),
+    ('fr', 'quote.err_accepted_only', 'Seuls les devis acceptés peuvent être facturés'),
+    ('fr', 'quote.err_draft_lines_only', 'Lignes modifiables uniquement sur un brouillon'),
+    ('fr', 'quote.err_parent_required', 'estimate_id ou invoice_id requis'),
+    ('fr', 'quote.err_default_description', 'Ligne sans description'),
+
+    -- Toast messages
+    ('fr', 'quote.toast_estimate_saved', 'Devis enregistré'),
+    ('fr', 'quote.toast_invoice_saved', 'Facture enregistrée'),
+    ('fr', 'quote.toast_estimate_sent', 'Devis envoyé'),
+    ('fr', 'quote.toast_estimate_accepted', 'Devis accepté'),
+    ('fr', 'quote.toast_estimate_declined', 'Devis refusé'),
+    ('fr', 'quote.toast_estimate_deleted', 'Devis supprimé'),
+    ('fr', 'quote.toast_estimate_duplicated', 'Devis dupliqué'),
+    ('fr', 'quote.toast_invoice_created', 'Facture créée'),
+    ('fr', 'quote.toast_invoice_sent', 'Facture envoyée'),
+    ('fr', 'quote.toast_invoice_paid', 'Facture marquée comme payée'),
+    ('fr', 'quote.toast_invoice_deleted', 'Facture supprimée'),
+    ('fr', 'quote.toast_invoice_reminded', 'Relance enregistrée pour la facture'),
+    ('fr', 'quote.toast_line_added', 'Ligne ajoutée'),
+    ('fr', 'quote.toast_line_deleted', 'Ligne supprimée'),
 
     -- Related entity labels
-    ('fr', 'quote.related_factures', 'Factures liées'),
-    ('fr', 'quote.related_devis', 'Devis source')
+    ('fr', 'quote.related_invoices', 'Factures liées'),
+    ('fr', 'quote.related_estimate', 'Devis source'),
+
+    -- Currency
+    ('fr', 'quote.currency', 'EUR')
 
   ON CONFLICT DO NOTHING;
 END;
 $function$;
-COMMENT ON FUNCTION quote.i18n_seed() IS 'Seed French translations for Quote module into pgv.i18n';
+COMMENT ON FUNCTION quote.i18n_seed() IS 'Seed French translations for Quote module (English keys)';
+
+CREATE OR REPLACE FUNCTION quote.invoice_create(p_row quote.invoice)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  p_row.tenant_id := current_setting('app.tenant_id', true);
+  p_row.number := quote._next_number('INV');
+  p_row.status := coalesce(p_row.status, 'draft');
+  p_row.notes := coalesce(p_row.notes, '');
+  p_row.created_at := now();
+  p_row.updated_at := now();
+
+  INSERT INTO quote.invoice (number, client_id, estimate_id, subject, status, notes, tenant_id, created_at, updated_at)
+  VALUES (p_row.number, p_row.client_id, p_row.estimate_id, p_row.subject, p_row.status, p_row.notes, p_row.tenant_id, p_row.created_at, p_row.updated_at)
+  RETURNING * INTO p_row;
+
+  RETURN to_jsonb(p_row);
+END;
+$function$;
+COMMENT ON FUNCTION quote.invoice_create(quote.invoice) IS 'Create invoice — auto-generates number, sets tenant_id';
+
+CREATE OR REPLACE FUNCTION quote.invoice_delete(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_row quote.invoice;
+BEGIN
+  SELECT * INTO v_row FROM quote.invoice WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_invoice'); END IF;
+  IF v_row.status <> 'draft' THEN RAISE EXCEPTION '%', pgv.t('quote.err_draft_delete_only'); END IF;
+
+  DELETE FROM quote.invoice WHERE id = p_id::int AND tenant_id = current_setting('app.tenant_id', true);
+  RETURN to_jsonb(v_row);
+END;
+$function$;
+COMMENT ON FUNCTION quote.invoice_delete(text) IS 'Delete invoice — draft only, returns deleted row';
+
+CREATE OR REPLACE FUNCTION quote.invoice_list(p_filter text DEFAULT NULL::text)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+BEGIN
+  IF p_filter IS NULL THEN
+    RETURN QUERY
+      SELECT to_jsonb(f) || jsonb_build_object('client_name', c.name, 'estimate_number', dv.number)
+      FROM quote.invoice f
+      JOIN crm.client c ON c.id = f.client_id
+      LEFT JOIN quote.estimate dv ON dv.id = f.estimate_id
+      WHERE f.tenant_id = current_setting('app.tenant_id', true)
+      ORDER BY f.created_at DESC;
+  ELSE
+    RETURN QUERY EXECUTE
+      'SELECT to_jsonb(f) || jsonb_build_object(''client_name'', c.name, ''estimate_number'', dv.number)
+       FROM quote.invoice f
+       JOIN crm.client c ON c.id = f.client_id
+       LEFT JOIN quote.estimate dv ON dv.id = f.estimate_id
+       WHERE f.tenant_id = ' || quote_literal(current_setting('app.tenant_id', true))
+       || ' AND ' || pgv.rsql_to_where(p_filter, 'quote', 'invoice')
+       || ' ORDER BY f.created_at DESC';
+  END IF;
+END;
+$function$;
+COMMENT ON FUNCTION quote.invoice_list(text) IS 'List invoices with client name + estimate number resolved — optional RSQL filter';
+
+CREATE OR REPLACE FUNCTION quote.invoice_read(p_id text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+AS $function$
+DECLARE
+  v_result jsonb;
+  v_actions jsonb;
+  v_status text;
+  v_days int;
+BEGIN
+  SELECT to_jsonb(f) || jsonb_build_object(
+    'client_name', c.name,
+    'estimate_number', dv.number,
+    'total_ht', quote._total_ht(NULL, f.id),
+    'total_tva', quote._total_tva(NULL, f.id),
+    'total_ttc', quote._total_ttc(NULL, f.id),
+    'lines', coalesce((
+      SELECT jsonb_agg(to_jsonb(l) ORDER BY l.sort_order, l.id)
+      FROM quote.line_item l WHERE l.invoice_id = f.id
+    ), '[]'::jsonb))
+  INTO v_result
+  FROM quote.invoice f
+  JOIN crm.client c ON c.id = f.client_id
+  LEFT JOIN quote.estimate dv ON dv.id = f.estimate_id
+  WHERE f.id = p_id::int AND f.tenant_id = current_setting('app.tenant_id', true);
+
+  IF v_result IS NULL THEN RETURN NULL; END IF;
+
+  v_status := v_result->>'status';
+  v_days := extract(day FROM now() - (v_result->>'created_at')::timestamptz)::int;
+  v_actions := '[]'::jsonb;
+  CASE v_status
+    WHEN 'draft' THEN
+      v_actions := jsonb_build_array(
+        jsonb_build_object('method', 'send', 'uri', 'quote://invoice/' || p_id || '/send'),
+        jsonb_build_object('method', 'delete', 'uri', 'quote://invoice/' || p_id));
+    WHEN 'sent' THEN
+      v_actions := jsonb_build_array(
+        jsonb_build_object('method', 'pay', 'uri', 'quote://invoice/' || p_id || '/pay'));
+      IF v_days > 30 THEN
+        v_actions := v_actions || jsonb_build_array(
+          jsonb_build_object('method', 'remind', 'uri', 'quote://invoice/' || p_id || '/remind'));
+      END IF;
+    WHEN 'overdue' THEN
+      v_actions := jsonb_build_array(
+        jsonb_build_object('method', 'pay', 'uri', 'quote://invoice/' || p_id || '/pay'));
+    WHEN 'paid' THEN
+      v_actions := '[]'::jsonb;
+  END CASE;
+
+  RETURN v_result || jsonb_build_object('actions', v_actions);
+END;
+$function$;
+COMMENT ON FUNCTION quote.invoice_read(text) IS 'Read invoice by id — full detail with HATEOAS actions by state';
+
+CREATE OR REPLACE FUNCTION quote.invoice_update(p_row quote.invoice)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM quote.invoice WHERE id = p_row.id AND status = 'draft' AND tenant_id = current_setting('app.tenant_id', true)) THEN
+    RAISE EXCEPTION '%', pgv.t('quote.err_draft_only');
+  END IF;
+
+  UPDATE quote.invoice SET
+    client_id = coalesce(p_row.client_id, client_id),
+    subject = coalesce(nullif(p_row.subject, ''), subject),
+    notes = coalesce(p_row.notes, notes),
+    updated_at = now()
+  WHERE id = p_row.id AND tenant_id = current_setting('app.tenant_id', true)
+  RETURNING * INTO p_row;
+
+  RETURN to_jsonb(p_row);
+END;
+$function$;
+COMMENT ON FUNCTION quote.invoice_update(quote.invoice) IS 'Update invoice — draft only, partial update via COALESCE';
+
+CREATE OR REPLACE FUNCTION quote.invoice_view()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+BEGIN
+  RETURN jsonb_build_object(
+    'uri', 'quote://invoice',
+    'label', 'quote.entity_invoice',
+    'template', jsonb_build_object(
+      'compact', jsonb_build_object(
+        'fields', jsonb_build_array('number', 'client_name', 'status')
+      ),
+      'standard', jsonb_build_object(
+        'fields', jsonb_build_array('number', 'client_name', 'subject', 'status', 'created_at'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'total_ht', 'label', 'quote.stat_total_ht'),
+          jsonb_build_object('key', 'total_tva', 'label', 'quote.stat_total_tva'),
+          jsonb_build_object('key', 'total_ttc', 'label', 'quote.stat_total_ttc')
+        )
+      ),
+      'expanded', jsonb_build_object(
+        'fields', jsonb_build_array('number', 'client_name', 'subject', 'status', 'estimate_number', 'paid_at', 'notes', 'created_at'),
+        'stats', jsonb_build_array(
+          jsonb_build_object('key', 'total_ht', 'label', 'quote.stat_total_ht'),
+          jsonb_build_object('key', 'total_tva', 'label', 'quote.stat_total_tva'),
+          jsonb_build_object('key', 'total_ttc', 'label', 'quote.stat_total_ttc')
+        ),
+        'related', jsonb_build_array(
+          jsonb_build_object('entity', 'quote://estimate', 'filter', 'id={estimate_id}', 'label', 'quote.related_estimate')
+        )
+      ),
+      'form', jsonb_build_object(
+        'sections', jsonb_build_array(
+          jsonb_build_object('label', 'quote.section_general', 'fields', jsonb_build_array(
+            jsonb_build_object('key', 'client_id', 'type', 'combobox', 'label', 'quote.field_client', 'source', 'crm://client', 'display', 'name', 'required', true),
+            jsonb_build_object('key', 'subject', 'type', 'text', 'label', 'quote.field_subject', 'required', true),
+            jsonb_build_object('key', 'notes', 'type', 'textarea', 'label', 'quote.field_notes')
+          ))
+        )
+      )
+    ),
+    'actions', jsonb_build_object(
+      'send', jsonb_build_object('label', 'quote.action_send', 'variant', 'primary', 'confirm', 'quote.confirm_send_invoice'),
+      'pay', jsonb_build_object('label', 'quote.action_pay', 'variant', 'primary', 'confirm', 'quote.confirm_pay_invoice'),
+      'remind', jsonb_build_object('label', 'quote.action_remind', 'variant', 'warning', 'confirm', 'quote.confirm_remind_invoice'),
+      'delete', jsonb_build_object('label', 'quote.action_delete', 'variant', 'danger', 'confirm', 'quote.confirm_delete_invoice')
+    )
+  );
+END;
+$function$;
+COMMENT ON FUNCTION quote.invoice_view() IS 'View template for invoice entity: compact, standard, expanded, form, actions catalog';
 
 CREATE OR REPLACE FUNCTION quote.nav_items()
  RETURNS jsonb
@@ -1421,35 +816,77 @@ AS $function$
 BEGIN
   RETURN jsonb_build_array(
     jsonb_build_object('href', '/', 'label', pgv.t('quote.nav_dashboard'), 'icon', 'home'),
-    jsonb_build_object('href', '/devis', 'label', pgv.t('quote.nav_devis'), 'icon', 'file-text', 'entity', 'devis'),
-    jsonb_build_object('href', '/facture', 'label', pgv.t('quote.nav_factures'), 'icon', 'receipt', 'entity', 'facture')
+    jsonb_build_object('href', '/estimate', 'label', pgv.t('quote.nav_estimates'), 'icon', 'file-text', 'entity', 'estimate'),
+    jsonb_build_object('href', '/invoice', 'label', pgv.t('quote.nav_invoices'), 'icon', 'receipt', 'entity', 'invoice')
   );
 END;
 $function$;
 COMMENT ON FUNCTION quote.nav_items() IS 'Navigation items for Quote module';
 
-CREATE OR REPLACE FUNCTION quote.post_devis_accepter(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_estimate_accept(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_data->>'id')::int;
-  v_statut text;
+  v_status text;
 BEGIN
-  SELECT statut INTO v_statut FROM quote.devis WHERE id = v_id;
-  IF v_statut IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_devis'); END IF;
-  IF v_statut <> 'envoye' THEN RAISE EXCEPTION 'Transition invalide: % -> accepte', v_statut; END IF;
+  SELECT status INTO v_status FROM quote.estimate WHERE id = v_id;
+  IF v_status IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_estimate'); END IF;
+  IF v_status <> 'sent' THEN RAISE EXCEPTION 'Invalid transition: % -> accepted', v_status; END IF;
 
-  UPDATE quote.devis SET statut = 'accepte' WHERE id = v_id;
+  UPDATE quote.estimate SET status = 'accepted' WHERE id = v_id;
 
-  RETURN pgv.toast(pgv.t('quote.toast_devis_accepted'))
-    || pgv.redirect(pgv.call_ref('get_devis', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('quote.toast_estimate_accepted'))
+    || pgv.redirect(pgv.call_ref('get_estimate', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_devis_accepter(jsonb) IS 'Marquer un devis envoyé comme accepté';
+COMMENT ON FUNCTION quote.post_estimate_accept(jsonb) IS 'Mark a sent estimate as accepted';
 
-CREATE OR REPLACE FUNCTION quote.post_devis_dupliquer(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_estimate_decline(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_id int := (p_data->>'id')::int;
+  v_status text;
+BEGIN
+  SELECT status INTO v_status FROM quote.estimate WHERE id = v_id;
+  IF v_status IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_estimate'); END IF;
+  IF v_status <> 'sent' THEN RAISE EXCEPTION 'Invalid transition: % -> declined', v_status; END IF;
+
+  UPDATE quote.estimate SET status = 'declined' WHERE id = v_id;
+
+  RETURN pgv.toast(pgv.t('quote.toast_estimate_declined'))
+    || pgv.redirect(pgv.call_ref('get_estimate', jsonb_build_object('p_id', v_id)));
+END;
+$function$;
+COMMENT ON FUNCTION quote.post_estimate_decline(jsonb) IS 'Mark a sent estimate as declined';
+
+CREATE OR REPLACE FUNCTION quote.post_estimate_delete(p_data jsonb)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_id int := (p_data->>'id')::int;
+  v_status text;
+BEGIN
+  SELECT status INTO v_status FROM quote.estimate WHERE id = v_id;
+  IF v_status IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_estimate'); END IF;
+  IF v_status <> 'draft' THEN RAISE EXCEPTION '%', pgv.t('quote.err_draft_delete_only'); END IF;
+
+  DELETE FROM quote.estimate WHERE id = v_id;
+
+  RETURN pgv.toast(pgv.t('quote.toast_estimate_deleted'))
+    || pgv.redirect(pgv.call_ref('get_estimate'));
+END;
+$function$;
+COMMENT ON FUNCTION quote.post_estimate_delete(jsonb) IS 'Delete a draft estimate';
+
+CREATE OR REPLACE FUNCTION quote.post_estimate_duplicate(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -1457,337 +894,291 @@ AS $function$
 DECLARE
   v_src_id int := (p_data->>'id')::int;
   v_new_id int;
-  v_numero text;
+  v_number text;
   d record;
 BEGIN
-  SELECT * INTO d FROM quote.devis WHERE id = v_src_id;
-  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_devis'); END IF;
+  SELECT * INTO d FROM quote.estimate WHERE id = v_src_id;
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_estimate'); END IF;
 
-  v_numero := quote._next_numero('DEV');
+  v_number := quote._next_number('EST');
 
-  INSERT INTO quote.devis (numero, client_id, objet, validite_jours, notes)
-  VALUES (v_numero, d.client_id, d.objet, d.validite_jours, d.notes)
+  INSERT INTO quote.estimate (number, client_id, subject, validity_days, notes)
+  VALUES (v_number, d.client_id, d.subject, d.validity_days, d.notes)
   RETURNING id INTO v_new_id;
 
-  INSERT INTO quote.ligne (devis_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate)
-  SELECT v_new_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate
-    FROM quote.ligne WHERE devis_id = v_src_id
+  INSERT INTO quote.line_item (estimate_id, sort_order, description, quantity, unit, unit_price, tva_rate)
+  SELECT v_new_id, sort_order, description, quantity, unit, unit_price, tva_rate
+    FROM quote.line_item WHERE estimate_id = v_src_id
    ORDER BY sort_order, id;
 
-  RETURN pgv.toast(pgv.t('quote.toast_devis_duplicated') || ' : ' || v_numero)
-    || pgv.redirect(pgv.call_ref('get_devis', jsonb_build_object('p_id', v_new_id)));
+  RETURN pgv.toast(pgv.t('quote.toast_estimate_duplicated') || ' : ' || v_number)
+    || pgv.redirect(pgv.call_ref('get_estimate', jsonb_build_object('p_id', v_new_id)));
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_devis_dupliquer(jsonb) IS 'Dupliquer un devis existant (header + lignes) en brouillon avec nouveau numéro';
+COMMENT ON FUNCTION quote.post_estimate_duplicate(jsonb) IS 'Duplicate an estimate (header + lines) as new draft';
 
-CREATE OR REPLACE FUNCTION quote.post_devis_envoyer(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_estimate_invoice(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_id int := (p_data->>'id')::int;
-  v_statut text;
-BEGIN
-  SELECT statut INTO v_statut FROM quote.devis WHERE id = v_id;
-  IF v_statut IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_devis'); END IF;
-  IF v_statut <> 'brouillon' THEN RAISE EXCEPTION 'Transition invalide: % -> envoye', v_statut; END IF;
-
-  UPDATE quote.devis SET statut = 'envoye' WHERE id = v_id;
-
-  RETURN pgv.toast(pgv.t('quote.toast_devis_sent'))
-    || pgv.redirect(pgv.call_ref('get_devis', jsonb_build_object('p_id', v_id)));
-END;
-$function$;
-COMMENT ON FUNCTION quote.post_devis_envoyer(jsonb) IS 'Marquer un devis brouillon comme envoyé';
-
-CREATE OR REPLACE FUNCTION quote.post_devis_facturer(p_data jsonb)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_devis_id int := (p_data->>'id')::int;
-  v_facture_id int;
-  v_numero text;
+  v_estimate_id int := (p_data->>'id')::int;
+  v_invoice_id int;
+  v_number text;
   d record;
 BEGIN
-  SELECT * INTO d FROM quote.devis WHERE id = v_devis_id;
-  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_devis'); END IF;
-  IF d.statut <> 'accepte' THEN RAISE EXCEPTION '%', pgv.t('quote.err_accepted_only'); END IF;
+  SELECT * INTO d FROM quote.estimate WHERE id = v_estimate_id;
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_estimate'); END IF;
+  IF d.status <> 'accepted' THEN RAISE EXCEPTION '%', pgv.t('quote.err_accepted_only'); END IF;
 
-  v_numero := quote._next_numero('FAC');
+  v_number := quote._next_number('INV');
 
-  INSERT INTO quote.facture (numero, client_id, devis_id, objet, notes)
-  VALUES (v_numero, d.client_id, v_devis_id, d.objet, d.notes)
-  RETURNING id INTO v_facture_id;
+  INSERT INTO quote.invoice (number, client_id, estimate_id, subject, notes)
+  VALUES (v_number, d.client_id, v_estimate_id, d.subject, d.notes)
+  RETURNING id INTO v_invoice_id;
 
-  INSERT INTO quote.ligne (facture_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate)
-  SELECT v_facture_id, sort_order, description, quantite, unite, prix_unitaire, tva_rate
-    FROM quote.ligne WHERE devis_id = v_devis_id
+  INSERT INTO quote.line_item (invoice_id, sort_order, description, quantity, unit, unit_price, tva_rate)
+  SELECT v_invoice_id, sort_order, description, quantity, unit, unit_price, tva_rate
+    FROM quote.line_item WHERE estimate_id = v_estimate_id
    ORDER BY sort_order, id;
 
-  RETURN pgv.toast(pgv.t('quote.toast_facture_created') || ' ' || v_numero)
-    || pgv.redirect(pgv.call_ref('get_facture', jsonb_build_object('p_id', v_facture_id)));
+  RETURN pgv.toast(pgv.t('quote.toast_invoice_created') || ' ' || v_number)
+    || pgv.redirect(pgv.call_ref('get_invoice', jsonb_build_object('p_id', v_invoice_id)));
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_devis_facturer(jsonb) IS 'Créer une facture depuis un devis accepté (copie header + lignes)';
+COMMENT ON FUNCTION quote.post_estimate_invoice(jsonb) IS 'Create an invoice from an accepted estimate (copies header + lines)';
 
-CREATE OR REPLACE FUNCTION quote.post_devis_refuser(p_data jsonb)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_id int := (p_data->>'id')::int;
-  v_statut text;
-BEGIN
-  SELECT statut INTO v_statut FROM quote.devis WHERE id = v_id;
-  IF v_statut IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_devis'); END IF;
-  IF v_statut <> 'envoye' THEN RAISE EXCEPTION 'Transition invalide: % -> refuse', v_statut; END IF;
-
-  UPDATE quote.devis SET statut = 'refuse' WHERE id = v_id;
-
-  RETURN pgv.toast(pgv.t('quote.toast_devis_refused'))
-    || pgv.redirect(pgv.call_ref('get_devis', jsonb_build_object('p_id', v_id)));
-END;
-$function$;
-COMMENT ON FUNCTION quote.post_devis_refuser(jsonb) IS 'Marquer un devis envoyé comme refusé';
-
-CREATE OR REPLACE FUNCTION quote.post_devis_save(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_estimate_save(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int;
-  v_numero text;
+  v_number text;
 BEGIN
   IF p_data->>'id' IS NOT NULL THEN
     v_id := (p_data->>'id')::int;
-    IF NOT EXISTS (SELECT 1 FROM quote.devis WHERE id = v_id AND statut = 'brouillon') THEN
-      RAISE EXCEPTION '%', pgv.t('quote.err_brouillon_only');
+    IF NOT EXISTS (SELECT 1 FROM quote.estimate WHERE id = v_id AND status = 'draft') THEN
+      RAISE EXCEPTION '%', pgv.t('quote.err_draft_only');
     END IF;
-    UPDATE quote.devis SET
+    UPDATE quote.estimate SET
       client_id = (p_data->>'client_id')::int,
-      objet = p_data->>'objet',
-      validite_jours = coalesce((p_data->>'validite_jours')::int, 30),
+      subject = p_data->>'subject',
+      validity_days = coalesce((p_data->>'validity_days')::int, 30),
       notes = coalesce(p_data->>'notes', '')
     WHERE id = v_id;
   ELSE
-    v_numero := quote._next_numero('DEV');
-    INSERT INTO quote.devis (numero, client_id, objet, validite_jours, notes)
+    v_number := quote._next_number('EST');
+    INSERT INTO quote.estimate (number, client_id, subject, validity_days, notes)
     VALUES (
-      v_numero,
+      v_number,
       (p_data->>'client_id')::int,
-      p_data->>'objet',
-      coalesce((p_data->>'validite_jours')::int, 30),
+      p_data->>'subject',
+      coalesce((p_data->>'validity_days')::int, 30),
       coalesce(p_data->>'notes', '')
     ) RETURNING id INTO v_id;
   END IF;
 
-  RETURN pgv.toast(pgv.t('quote.toast_devis_saved'))
-    || pgv.redirect(pgv.call_ref('get_devis', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('quote.toast_estimate_saved'))
+    || pgv.redirect(pgv.call_ref('get_estimate', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_devis_save(jsonb) IS 'Créer ou mettre à jour un devis (brouillon uniquement)';
+COMMENT ON FUNCTION quote.post_estimate_save(jsonb) IS 'Create or update an estimate (draft only)';
 
-CREATE OR REPLACE FUNCTION quote.post_devis_supprimer(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_estimate_send(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_data->>'id')::int;
-  v_statut text;
+  v_status text;
 BEGIN
-  SELECT statut INTO v_statut FROM quote.devis WHERE id = v_id;
-  IF v_statut IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_devis'); END IF;
-  IF v_statut <> 'brouillon' THEN RAISE EXCEPTION '%', pgv.t('quote.err_draft_delete_only'); END IF;
+  SELECT status INTO v_status FROM quote.estimate WHERE id = v_id;
+  IF v_status IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_estimate'); END IF;
+  IF v_status <> 'draft' THEN RAISE EXCEPTION 'Invalid transition: % -> sent', v_status; END IF;
 
-  DELETE FROM quote.devis WHERE id = v_id;
+  UPDATE quote.estimate SET status = 'sent' WHERE id = v_id;
 
-  RETURN pgv.toast(pgv.t('quote.toast_devis_deleted'))
-    || pgv.redirect(pgv.call_ref('get_devis'));
+  RETURN pgv.toast(pgv.t('quote.toast_estimate_sent'))
+    || pgv.redirect(pgv.call_ref('get_estimate', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_devis_supprimer(jsonb) IS 'Supprimer un devis brouillon';
+COMMENT ON FUNCTION quote.post_estimate_send(jsonb) IS 'Mark a draft estimate as sent';
 
-CREATE OR REPLACE FUNCTION quote.post_facture_envoyer(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_invoice_delete(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_data->>'id')::int;
-  v_statut text;
+  v_status text;
 BEGIN
-  SELECT statut INTO v_statut FROM quote.facture WHERE id = v_id;
-  IF v_statut IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_facture'); END IF;
-  IF v_statut <> 'brouillon' THEN RAISE EXCEPTION 'Transition invalide: % -> envoyee', v_statut; END IF;
+  SELECT status INTO v_status FROM quote.invoice WHERE id = v_id;
+  IF v_status IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_invoice'); END IF;
+  IF v_status <> 'draft' THEN RAISE EXCEPTION '%', pgv.t('quote.err_draft_delete_only'); END IF;
 
-  UPDATE quote.facture SET statut = 'envoyee' WHERE id = v_id;
+  DELETE FROM quote.invoice WHERE id = v_id;
 
-  RETURN pgv.toast(pgv.t('quote.toast_facture_sent'))
-    || pgv.redirect(pgv.call_ref('get_facture', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('quote.toast_invoice_deleted'))
+    || pgv.redirect(pgv.call_ref('get_invoice'));
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_facture_envoyer(jsonb) IS 'Marquer une facture brouillon comme envoyée';
+COMMENT ON FUNCTION quote.post_invoice_delete(jsonb) IS 'Delete a draft invoice';
 
-CREATE OR REPLACE FUNCTION quote.post_facture_payer(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_invoice_pay(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_data->>'id')::int;
-  v_statut text;
+  v_status text;
 BEGIN
-  SELECT statut INTO v_statut FROM quote.facture WHERE id = v_id;
-  IF v_statut IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_facture'); END IF;
-  IF v_statut <> 'envoyee' THEN RAISE EXCEPTION 'Transition invalide: % -> payee', v_statut; END IF;
+  SELECT status INTO v_status FROM quote.invoice WHERE id = v_id;
+  IF v_status IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_invoice'); END IF;
+  IF v_status NOT IN ('sent', 'overdue') THEN RAISE EXCEPTION 'Invalid transition: % -> paid', v_status; END IF;
 
-  UPDATE quote.facture SET statut = 'payee', paid_at = now() WHERE id = v_id;
+  UPDATE quote.invoice SET status = 'paid', paid_at = now() WHERE id = v_id;
 
-  RETURN pgv.toast(pgv.t('quote.toast_facture_paid'))
-    || pgv.redirect(pgv.call_ref('get_facture', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('quote.toast_invoice_paid'))
+    || pgv.redirect(pgv.call_ref('get_invoice', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_facture_payer(jsonb) IS 'Marquer une facture envoyée comme payée';
+COMMENT ON FUNCTION quote.post_invoice_pay(jsonb) IS 'Mark a sent or overdue invoice as paid';
 
-CREATE OR REPLACE FUNCTION quote.post_facture_relancer(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_invoice_remind(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_data->>'p_id')::int;
-  v_statut text;
+  v_status text;
   v_days int;
 BEGIN
-  SELECT statut, extract(day FROM now() - created_at)::int
-    INTO v_statut, v_days
-    FROM quote.facture WHERE id = v_id;
+  SELECT status, extract(day FROM now() - created_at)::int
+    INTO v_status, v_days
+    FROM quote.invoice WHERE id = v_id;
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION '%', pgv.t('quote.err_not_found_facture');
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_invoice'); END IF;
+  IF v_status <> 'sent' THEN
+    RAISE EXCEPTION 'Only sent invoices can be reminded (current status: %)', v_status;
   END IF;
-
-  IF v_statut <> 'envoyee' THEN
-    RAISE EXCEPTION 'Seule une facture envoyee peut etre relancee (statut actuel: %)', v_statut;
-  END IF;
-
   IF v_days <= 30 THEN
-    RAISE EXCEPTION 'Relance possible uniquement apres 30 jours (actuellement: % jours)', v_days;
+    RAISE EXCEPTION 'Reminder only after 30 days (currently: % days)', v_days;
   END IF;
 
-  UPDATE quote.facture
-     SET statut = 'relance',
-         notes = notes || E'\n[Relance ' || to_char(now(), 'DD/MM/YYYY') || ']'
+  UPDATE quote.invoice
+     SET status = 'overdue',
+         notes = notes || E'\n[Reminder ' || to_char(now(), 'DD/MM/YYYY') || ']'
    WHERE id = v_id;
 
-  RETURN pgv.toast(pgv.t('quote.toast_facture_relance'))
-      || pgv.redirect('/quote/facture?p_id=' || v_id);
+  RETURN pgv.toast(pgv.t('quote.toast_invoice_reminded'))
+      || pgv.redirect('/quote/invoice?p_id=' || v_id);
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_facture_relancer(jsonb) IS 'Mark an overdue invoice as relancee (payment reminder sent)';
+COMMENT ON FUNCTION quote.post_invoice_remind(jsonb) IS 'Mark an overdue invoice as reminded (>30 days)';
 
-CREATE OR REPLACE FUNCTION quote.post_facture_save(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_invoice_save(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int;
-  v_numero text;
+  v_number text;
 BEGIN
   IF p_data->>'id' IS NOT NULL THEN
     v_id := (p_data->>'id')::int;
-    IF NOT EXISTS (SELECT 1 FROM quote.facture WHERE id = v_id AND statut = 'brouillon') THEN
-      RAISE EXCEPTION '%', pgv.t('quote.err_brouillon_only');
+    IF NOT EXISTS (SELECT 1 FROM quote.invoice WHERE id = v_id AND status = 'draft') THEN
+      RAISE EXCEPTION '%', pgv.t('quote.err_draft_only');
     END IF;
-    UPDATE quote.facture SET
+    UPDATE quote.invoice SET
       client_id = (p_data->>'client_id')::int,
-      objet = p_data->>'objet',
+      subject = p_data->>'subject',
       notes = coalesce(p_data->>'notes', '')
     WHERE id = v_id;
   ELSE
-    v_numero := quote._next_numero('FAC');
-    INSERT INTO quote.facture (numero, client_id, objet, notes)
+    v_number := quote._next_number('INV');
+    INSERT INTO quote.invoice (number, client_id, subject, notes)
     VALUES (
-      v_numero,
+      v_number,
       (p_data->>'client_id')::int,
-      p_data->>'objet',
+      p_data->>'subject',
       coalesce(p_data->>'notes', '')
     ) RETURNING id INTO v_id;
   END IF;
 
-  RETURN pgv.toast(pgv.t('quote.toast_facture_saved'))
-    || pgv.redirect(pgv.call_ref('get_facture', jsonb_build_object('p_id', v_id)));
+  RETURN pgv.toast(pgv.t('quote.toast_invoice_saved'))
+    || pgv.redirect(pgv.call_ref('get_invoice', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_facture_save(jsonb) IS 'Créer ou mettre à jour une facture (brouillon uniquement)';
+COMMENT ON FUNCTION quote.post_invoice_save(jsonb) IS 'Create or update an invoice (draft only)';
 
-CREATE OR REPLACE FUNCTION quote.post_facture_supprimer(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_invoice_send(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_id int := (p_data->>'id')::int;
-  v_statut text;
+  v_status text;
 BEGIN
-  SELECT statut INTO v_statut FROM quote.facture WHERE id = v_id;
-  IF v_statut IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_facture'); END IF;
-  IF v_statut <> 'brouillon' THEN RAISE EXCEPTION '%', pgv.t('quote.err_draft_delete_only'); END IF;
+  SELECT status INTO v_status FROM quote.invoice WHERE id = v_id;
+  IF v_status IS NULL THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_invoice'); END IF;
+  IF v_status <> 'draft' THEN RAISE EXCEPTION 'Invalid transition: % -> sent', v_status; END IF;
 
-  DELETE FROM quote.facture WHERE id = v_id;
+  UPDATE quote.invoice SET status = 'sent' WHERE id = v_id;
 
-  RETURN pgv.toast(pgv.t('quote.toast_facture_deleted'))
-    || pgv.redirect(pgv.call_ref('get_facture'));
+  RETURN pgv.toast(pgv.t('quote.toast_invoice_sent'))
+    || pgv.redirect(pgv.call_ref('get_invoice', jsonb_build_object('p_id', v_id)));
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_facture_supprimer(jsonb) IS 'Supprimer une facture brouillon';
+COMMENT ON FUNCTION quote.post_invoice_send(jsonb) IS 'Mark a draft invoice as sent';
 
-CREATE OR REPLACE FUNCTION quote.post_ligne_ajouter(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_line_item_add(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_devis_id int;
-  v_facture_id int;
+  v_estimate_id int;
+  v_invoice_id int;
   v_redirect text;
   v_article_id int;
   v_description text;
-  v_prix_unitaire numeric;
+  v_unit_price numeric;
   v_tva_rate numeric;
-  v_unite text;
+  v_unit text;
   v_art record;
 BEGIN
-  v_devis_id := (p_data->>'devis_id')::int;
-  v_facture_id := (p_data->>'facture_id')::int;
+  v_estimate_id := (p_data->>'estimate_id')::int;
+  v_invoice_id := (p_data->>'invoice_id')::int;
   v_article_id := (p_data->>'article_id')::int;
 
   -- Initialize v_art to avoid "record not assigned" on field access
-  SELECT NULL::text AS designation, NULL::numeric AS prix_achat, NULL::text AS unite, NULL::numeric AS tva INTO v_art;
+  SELECT NULL::text AS label, NULL::numeric AS price, NULL::text AS art_unit, NULL::numeric AS vat INTO v_art;
 
-  -- Vérifier que le parent est brouillon
-  IF v_devis_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM quote.devis WHERE id = v_devis_id AND statut = 'brouillon') THEN
+  -- Verify parent is draft
+  IF v_estimate_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM quote.estimate WHERE id = v_estimate_id AND status = 'draft') THEN
       RAISE EXCEPTION '%', pgv.t('quote.err_draft_lines_only');
     END IF;
-    v_redirect := pgv.call_ref('get_devis', jsonb_build_object('p_id', v_devis_id));
-  ELSIF v_facture_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM quote.facture WHERE id = v_facture_id AND statut = 'brouillon') THEN
+    v_redirect := pgv.call_ref('get_estimate', jsonb_build_object('p_id', v_estimate_id));
+  ELSIF v_invoice_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM quote.invoice WHERE id = v_invoice_id AND status = 'draft') THEN
       RAISE EXCEPTION '%', pgv.t('quote.err_draft_lines_only');
     END IF;
-    v_redirect := pgv.call_ref('get_facture', jsonb_build_object('p_id', v_facture_id));
+    v_redirect := pgv.call_ref('get_invoice', jsonb_build_object('p_id', v_invoice_id));
   ELSE
     RAISE EXCEPTION '%', pgv.t('quote.err_parent_required');
   END IF;
 
-  -- Lookup article si sélectionné (catalog > stock)
+  -- Lookup article if selected (catalog > stock)
   IF v_article_id IS NOT NULL THEN
     IF EXISTS (
       SELECT 1 FROM pg_namespace n
@@ -1795,17 +1186,17 @@ BEGIN
      WHERE n.nspname = 'catalog'
     ) THEN
       EXECUTE
-        'SELECT designation, prix_vente AS prix_achat, unite, tva
-         FROM catalog.article WHERE id = $1 AND actif'
+        'SELECT name AS label, sale_price AS price, unit AS art_unit, vat_rate AS vat
+         FROM catalog.article WHERE id = $1 AND active'
       INTO v_art USING v_article_id;
     END IF;
-    IF v_art.designation IS NULL AND EXISTS (
+    IF v_art.label IS NULL AND EXISTS (
       SELECT 1 FROM pg_namespace n
       JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = 'article'
      WHERE n.nspname = 'stock'
     ) THEN
       EXECUTE
-        'SELECT designation, prix_achat, unite, NULL::numeric AS tva
+        'SELECT description AS label, purchase_price AS price, unit AS art_unit, NULL::numeric AS vat
          FROM stock.article WHERE id = $1 AND active = true'
       INTO v_art USING v_article_id;
     END IF;
@@ -1814,71 +1205,71 @@ BEGIN
   -- Resolve values: form > article > defaults
   v_description := coalesce(
     nullif(trim(p_data->>'description'), ''),
-    CASE WHEN v_article_id IS NOT NULL THEN v_art.designation END,
+    CASE WHEN v_article_id IS NOT NULL THEN v_art.label END,
     pgv.t('quote.err_default_description')
   );
-  v_prix_unitaire := coalesce(
-    nullif((p_data->>'prix_unitaire')::numeric, 0),
-    CASE WHEN v_article_id IS NOT NULL THEN v_art.prix_achat END,
+  v_unit_price := coalesce(
+    nullif((p_data->>'unit_price')::numeric, 0),
+    CASE WHEN v_article_id IS NOT NULL THEN v_art.price END,
     0
   );
-  v_unite := coalesce(
-    nullif(p_data->>'unite', ''),
-    CASE WHEN v_article_id IS NOT NULL THEN v_art.unite END,
+  v_unit := coalesce(
+    nullif(p_data->>'unit', ''),
+    CASE WHEN v_article_id IS NOT NULL THEN v_art.art_unit END,
     'u'
   );
-  v_tva_rate := coalesce((p_data->>'tva_rate')::numeric, CASE WHEN v_article_id IS NOT NULL THEN v_art.tva END, 20.00);
+  v_tva_rate := coalesce((p_data->>'tva_rate')::numeric, CASE WHEN v_article_id IS NOT NULL THEN v_art.vat END, 20.00);
 
-  INSERT INTO quote.ligne (devis_id, facture_id, description, quantite, unite, prix_unitaire, tva_rate)
+  INSERT INTO quote.line_item (estimate_id, invoice_id, description, quantity, unit, unit_price, tva_rate)
   VALUES (
-    v_devis_id,
-    v_facture_id,
+    v_estimate_id,
+    v_invoice_id,
     v_description,
-    coalesce((p_data->>'quantite')::numeric, 1),
-    v_unite,
-    v_prix_unitaire,
+    coalesce((p_data->>'quantity')::numeric, 1),
+    v_unit,
+    v_unit_price,
     v_tva_rate
   );
 
-  RETURN pgv.toast(pgv.t('quote.toast_ligne_added'))
+  RETURN pgv.toast(pgv.t('quote.toast_line_added'))
     || pgv.redirect(v_redirect);
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_ligne_ajouter(jsonb) IS 'Ajouter une ligne à un devis ou facture brouillon';
+COMMENT ON FUNCTION quote.post_line_item_add(jsonb) IS 'Add a line item to a draft estimate or invoice';
 
-CREATE OR REPLACE FUNCTION quote.post_ligne_supprimer(p_data jsonb)
+CREATE OR REPLACE FUNCTION quote.post_line_item_delete(p_data jsonb)
  RETURNS text
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
-  v_ligne_id int := (p_data->>'id')::int;
+  v_line_id int := (p_data->>'id')::int;
   v_redirect text;
   r record;
 BEGIN
-  SELECT l.devis_id, l.facture_id INTO r
-    FROM quote.ligne l WHERE l.id = v_ligne_id;
-  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_ligne'); END IF;
+  SELECT l.estimate_id, l.invoice_id INTO r
+    FROM quote.line_item l WHERE l.id = v_line_id;
+  IF NOT FOUND THEN RAISE EXCEPTION '%', pgv.t('quote.err_not_found_line'); END IF;
 
-  IF r.devis_id IS NOT NULL THEN
-    IF NOT EXISTS (SELECT 1 FROM quote.devis WHERE id = r.devis_id AND statut = 'brouillon') THEN
+  IF r.estimate_id IS NOT NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM quote.estimate WHERE id = r.estimate_id AND status = 'draft') THEN
       RAISE EXCEPTION '%', pgv.t('quote.err_draft_lines_only');
     END IF;
-    v_redirect := pgv.call_ref('get_devis', jsonb_build_object('p_id', r.devis_id));
+    v_redirect := pgv.call_ref('get_estimate', jsonb_build_object('p_id', r.estimate_id));
   ELSE
-    IF NOT EXISTS (SELECT 1 FROM quote.facture WHERE id = r.facture_id AND statut = 'brouillon') THEN
+    IF NOT EXISTS (SELECT 1 FROM quote.invoice WHERE id = r.invoice_id AND status = 'draft') THEN
       RAISE EXCEPTION '%', pgv.t('quote.err_draft_lines_only');
     END IF;
-    v_redirect := pgv.call_ref('get_facture', jsonb_build_object('p_id', r.facture_id));
+    v_redirect := pgv.call_ref('get_invoice', jsonb_build_object('p_id', r.invoice_id));
   END IF;
 
-  DELETE FROM quote.ligne WHERE id = v_ligne_id;
+  DELETE FROM quote.line_item WHERE id = v_line_id;
 
-  RETURN pgv.toast(pgv.t('quote.toast_ligne_deleted'))
+  RETURN pgv.toast(pgv.t('quote.toast_line_deleted'))
     || pgv.redirect(v_redirect);
 END;
 $function$;
-COMMENT ON FUNCTION quote.post_ligne_supprimer(jsonb) IS 'Supprimer une ligne (parent brouillon uniquement)';
+COMMENT ON FUNCTION quote.post_line_item_delete(jsonb) IS 'Delete a line item (draft parent only)';
 
 GRANT USAGE ON SCHEMA quote TO anon;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA quote TO anon;

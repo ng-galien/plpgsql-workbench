@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION stock.depot_create(p_row stock.depot)
+CREATE OR REPLACE FUNCTION stock.depot_create(p_row stock.warehouse)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER

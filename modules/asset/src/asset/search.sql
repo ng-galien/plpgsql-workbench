@@ -19,7 +19,7 @@ BEGIN
   FROM (
     SELECT a.id, a.filename, a.path, a.mime_type, a.status,
            a.title, a.description, a.tags, a.width, a.height,
-           a.orientation, a.saison, a.credit, a.usage_hint, a.colors,
+           a.orientation, a.season, a.credit, a.usage_hint, a.colors,
            a.created_at, a.classified_at
     FROM asset.asset a
     WHERE (v_status IS NULL OR a.status = v_status)

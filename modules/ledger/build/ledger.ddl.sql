@@ -25,24 +25,24 @@ CREATE TABLE ledger.journal_entry (
     description TEXT NOT NULL,
     posted      BOOLEAN NOT NULL DEFAULT false,
     posted_at   TIMESTAMPTZ,
-    facture_id  INTEGER,
+    invoice_id  INTEGER,
     expense_note_id INTEGER,
     tenant_id   TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Exercice comptable (clôture)
-CREATE TABLE ledger.exercice (
+-- Fiscal year (close)
+CREATE TABLE ledger.fiscal_year (
     id          SERIAL PRIMARY KEY,
     year        INTEGER NOT NULL,
     closed      BOOLEAN NOT NULL DEFAULT false,
     closed_at   TIMESTAMPTZ,
     result      NUMERIC(12,2),
     tenant_id   TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
-    CONSTRAINT exercice_tenant_year_key UNIQUE (tenant_id, year)
+    CONSTRAINT fiscal_year_tenant_year_key UNIQUE (tenant_id, year)
 );
-ALTER TABLE ledger.exercice ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON ledger.exercice
+ALTER TABLE ledger.fiscal_year ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON ledger.fiscal_year
     USING (tenant_id = current_setting('app.tenant_id', true));
 
 -- Lignes d'écriture — partie double : SUM(debit) = SUM(credit) par écriture
@@ -63,7 +63,7 @@ CREATE INDEX idx_account_tenant ON ledger.account(tenant_id);
 CREATE INDEX idx_entry_date ON ledger.journal_entry(entry_date);
 CREATE INDEX idx_entry_posted ON ledger.journal_entry(posted);
 CREATE INDEX idx_entry_tenant ON ledger.journal_entry(tenant_id);
-CREATE UNIQUE INDEX idx_entry_facture ON ledger.journal_entry(facture_id) WHERE facture_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_entry_invoice ON ledger.journal_entry(invoice_id) WHERE invoice_id IS NOT NULL;
 CREATE UNIQUE INDEX idx_entry_expense_note ON ledger.journal_entry(expense_note_id) WHERE expense_note_id IS NOT NULL;
 CREATE INDEX idx_entry_line_entry ON ledger.entry_line(journal_entry_id);
 CREATE INDEX idx_entry_line_account ON ledger.entry_line(account_id);

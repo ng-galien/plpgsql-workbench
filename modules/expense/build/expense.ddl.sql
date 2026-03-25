@@ -4,47 +4,47 @@ CREATE SCHEMA IF NOT EXISTS expense;
 CREATE SCHEMA IF NOT EXISTS expense_ut;
 CREATE SCHEMA IF NOT EXISTS expense_qa;
 
--- Catégories de frais
-CREATE TABLE IF NOT EXISTS expense.categorie (
+-- Expense categories
+CREATE TABLE IF NOT EXISTS expense.category (
   id serial PRIMARY KEY,
-  nom text NOT NULL,
-  code_comptable text,        -- lien vers ledger.compte si disponible
+  name text NOT NULL,
+  accounting_code text,
   created_at timestamptz DEFAULT now()
 );
 
--- Notes de frais (regroupement)
-CREATE TABLE IF NOT EXISTS expense.note (
+-- Expense reports (grouping)
+CREATE TABLE IF NOT EXISTS expense.expense_report (
   id serial PRIMARY KEY,
-  reference text UNIQUE,       -- NDF-2026-001
-  auteur text NOT NULL,        -- nom du salarié/artisan
-  date_debut date NOT NULL,
-  date_fin date NOT NULL,
-  statut text NOT NULL DEFAULT 'brouillon' CHECK (statut IN ('brouillon', 'soumise', 'validee', 'remboursee', 'rejetee')),
-  commentaire text,
+  reference text UNIQUE,
+  author text NOT NULL,
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'submitted', 'validated', 'reimbursed', 'rejected')),
+  comment text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
 
--- Lignes de frais
-CREATE TABLE IF NOT EXISTS expense.ligne (
+-- Expense lines
+CREATE TABLE IF NOT EXISTS expense.line (
   id serial PRIMARY KEY,
-  note_id integer NOT NULL REFERENCES expense.note(id) ON DELETE CASCADE,
-  date_depense date NOT NULL,
-  categorie_id integer REFERENCES expense.categorie(id),
+  note_id integer NOT NULL REFERENCES expense.expense_report(id) ON DELETE CASCADE,
+  expense_date date NOT NULL,
+  category_id integer REFERENCES expense.category(id),
   description text NOT NULL,
-  montant_ht numeric(12,2) NOT NULL,
-  tva numeric(12,2) DEFAULT 0,
-  montant_ttc numeric(12,2) GENERATED ALWAYS AS (montant_ht + tva) STORED,
-  justificatif text,           -- référence document/photo
-  km numeric(8,1),             -- si déplacement
+  amount_excl_tax numeric(12,2) NOT NULL,
+  vat numeric(12,2) DEFAULT 0,
+  amount_incl_tax numeric(12,2) GENERATED ALWAYS AS (amount_excl_tax + vat) STORED,
+  receipt text,
+  km numeric(8,1),
   created_at timestamptz DEFAULT now()
 );
 
--- Index
-CREATE INDEX IF NOT EXISTS idx_note_statut ON expense.note(statut);
-CREATE INDEX IF NOT EXISTS idx_note_auteur ON expense.note(auteur);
-CREATE INDEX IF NOT EXISTS idx_ligne_note ON expense.ligne(note_id);
-CREATE INDEX IF NOT EXISTS idx_ligne_date ON expense.ligne(date_depense);
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_report_status ON expense.expense_report(status);
+CREATE INDEX IF NOT EXISTS idx_report_author ON expense.expense_report(author);
+CREATE INDEX IF NOT EXISTS idx_line_note ON expense.line(note_id);
+CREATE INDEX IF NOT EXISTS idx_line_date ON expense.line(expense_date);
 
 -- Grants: SELECT only (writes via SECURITY DEFINER functions)
 GRANT USAGE ON SCHEMA expense TO anon;
