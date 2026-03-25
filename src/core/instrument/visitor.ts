@@ -20,7 +20,6 @@ export interface CoveragePoint {
   searchAfter?: number; // for inject_else/inject_after_loop: search for END IF/LOOP after this line
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: libpg-query PL/pgSQL AST nodes have no public type definitions
 type Stmt = any;
 
 /**

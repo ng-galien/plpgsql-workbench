@@ -3137,7 +3137,7 @@ AS $function$
             "required": ["fields"],
             "additionalProperties": false,
             "properties": {
-              "fields": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+              "fields": { "type": "array", "minItems": 1, "items": { "oneOf": [{ "type": "string" }, { "type": "object", "required": ["key"], "properties": { "key": { "type": "string" }, "type": { "type": "string", "enum": ["text","date","datetime","currency","number","status","email","tel"] }, "label": { "type": "string", "pattern": "^[a-z_]+\\." } } }] } }
             }
           },
 
@@ -3146,7 +3146,7 @@ AS $function$
             "required": ["fields"],
             "additionalProperties": false,
             "properties": {
-              "fields": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "fields": { "type": "array", "minItems": 1, "items": { "oneOf": [{ "type": "string" }, { "type": "object", "required": ["key"], "properties": { "key": { "type": "string" }, "type": { "type": "string", "enum": ["text","date","datetime","currency","number","status","email","tel"] }, "label": { "type": "string", "pattern": "^[a-z_]+\\." } } }] } },
               "stats": {
                 "type": "array",
                 "items": {
@@ -3179,7 +3179,7 @@ AS $function$
             "required": ["fields"],
             "additionalProperties": false,
             "properties": {
-              "fields": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "fields": { "type": "array", "minItems": 1, "items": { "oneOf": [{ "type": "string" }, { "type": "object", "required": ["key"], "properties": { "key": { "type": "string" }, "type": { "type": "string", "enum": ["text","date","datetime","currency","number","status","email","tel"] }, "label": { "type": "string", "pattern": "^[a-z_]+\\." } } }] } },
               "stats": {
                 "type": "array",
                 "items": {

@@ -1,9 +1,9 @@
+import type { LucideIcon } from "lucide-react";
+import { icons } from "lucide-react";
 import { useMemo } from "react";
-import { useStore } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import type { Module } from "@/lib/store";
-import { icons } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { useStore } from "@/lib/store";
 
 function Icon({ name, className }: { name?: string; className?: string }) {
   if (!name) return <span className={className}>·</span>;
@@ -28,13 +28,11 @@ export function Sidebar() {
       if (!grouped.has(group)) grouped.set(group, []);
       grouped.get(group)!.push(m);
     }
-    return Array.from(grouped.entries()).sort(
-      ([a], [b]) => {
-        const ai = groupOrder.indexOf(a);
-        const bi = groupOrder.indexOf(b);
-        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      }
-    );
+    return Array.from(grouped.entries()).sort(([a], [b]) => {
+      const ai = groupOrder.indexOf(a);
+      const bi = groupOrder.indexOf(b);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
   }, [modules]);
 
   return (

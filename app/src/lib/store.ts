@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { pgv } from "./supabase";
 import { get as apiGet } from "./api";
+import { pgv } from "./supabase";
 
 // --- Types ---
 
@@ -29,42 +29,45 @@ export interface Toast {
   href?: string;
 }
 
+export type ViewField = string | { key: string; type?: string; label?: string };
+
+export interface FormField {
+  key: string;
+  type: string;
+  label: string;
+  required?: boolean;
+  options?: unknown;
+  source?: string;
+  display?: string;
+  filter?: string;
+}
+
+export interface FormSection {
+  label: string;
+  fields: FormField[];
+}
+
 export interface ViewTemplate {
   uri?: string;
   label?: string;
   icon?: string;
   template?: {
-    compact?: { fields: string[] };
+    compact?: { fields: ViewField[] };
     standard?: {
-      fields: string[];
+      fields: ViewField[];
       stats?: { key: string; label: string; variant?: string }[];
       related?: { entity: string; label: string; filter: string }[];
     };
     expanded?: {
-      fields: string[];
+      fields: ViewField[];
       stats?: { key: string; label: string; variant?: string }[];
       related?: { entity: string; label: string; filter: string }[];
     };
     form?: {
-      sections: Array<{
-        label: string;
-        fields: Array<{
-          key: string;
-          type: string;
-          label: string;
-          required?: boolean;
-          options?: unknown;
-          source?: string;
-          display?: string;
-          filter?: string;
-        }>;
-      }>;
+      sections: FormSection[];
     };
   };
-  actions?: Record<
-    string,
-    { label: string; icon?: string; variant?: string; confirm?: string }
-  >;
+  actions?: Record<string, { label: string; icon?: string; variant?: string; confirm?: string }>;
 }
 
 export interface PinnedCard {
@@ -81,7 +84,6 @@ export interface PinnedCard {
 export interface OverlayState {
   open: boolean;
   entityUri: string | null;
-  mode: "list" | "create";
 }
 
 // --- Store ---
@@ -105,7 +107,7 @@ interface AppState {
   updatePinData: (id: string, data: Record<string, unknown>) => void;
 
   overlay: OverlayState;
-  openOverlay: (entityUri: string, mode?: "list" | "create") => void;
+  openOverlay: (entityUri: string) => void;
   closeOverlay: () => void;
 }
 
@@ -124,10 +126,13 @@ export const useStore = create<AppState>((set, get) => ({
     if (toastTimer) clearTimeout(toastTimer);
     set({ toast });
     if (!toast.href) {
-      toastTimer = setTimeout(() => {
-        set({ toast: null });
-        toastTimer = null;
-      }, toast.level === "error" ? 8000 : 3000);
+      toastTimer = setTimeout(
+        () => {
+          set({ toast: null });
+          toastTimer = null;
+        },
+        toast.level === "error" ? 8000 : 3000,
+      );
     }
   },
   clearToast: () => {
@@ -156,29 +161,27 @@ export const useStore = create<AppState>((set, get) => ({
     // Use cached view template if available
     const cachedView = get().viewCache[card.entityUri];
 
-    apiGet(card.uri).then((res) => {
-      if (!res) return;
-      const fullData = res.data as Record<string, unknown> | null;
-      const view = (res.view as ViewTemplate | null) ?? cachedView ?? null;
+    apiGet(card.uri)
+      .then((res) => {
+        if (!res) return;
+        const fullData = res.data as Record<string, unknown> | null;
+        const view = (res.view as ViewTemplate | null) ?? cachedView ?? null;
 
-      if (view && card.entityUri && !cachedView) {
-        set((s) => ({
-          viewCache: { ...s.viewCache, [card.entityUri]: view },
-        }));
-      }
+        if (view && card.entityUri && !cachedView) {
+          set((s) => ({
+            viewCache: { ...s.viewCache, [card.entityUri]: view },
+          }));
+        }
 
-      if (fullData) {
-        const actions = res.actions as unknown[] | undefined;
-        const enriched = actions?.length
-          ? { ...fullData, actions }
-          : fullData;
-        set((s) => ({
-          pins: s.pins.map((p) =>
-            p.id === id ? { ...p, data: enriched, view } : p
-          ),
-        }));
-      }
-    }).catch(() => {});
+        if (fullData) {
+          const actions = res.actions as unknown[] | undefined;
+          const enriched = actions?.length ? { ...fullData, actions } : fullData;
+          set((s) => ({
+            pins: s.pins.map((p) => (p.id === id ? { ...p, data: enriched, view } : p)),
+          }));
+        }
+      })
+      .catch(() => {});
   },
 
   unpin: (id) => set((s) => ({ pins: s.pins.filter((p) => p.id !== id) })),
@@ -198,11 +201,9 @@ export const useStore = create<AppState>((set, get) => ({
       pins: s.pins.map((p) => (p.id === id ? { ...p, data } : p)),
     })),
 
-  overlay: { open: false, entityUri: null, mode: "list" },
+  overlay: { open: false, entityUri: null },
 
-  openOverlay: (entityUri, mode = "list") =>
-    set({ overlay: { open: true, entityUri, mode } }),
+  openOverlay: (entityUri) => set({ overlay: { open: true, entityUri } }),
 
-  closeOverlay: () =>
-    set({ overlay: { open: false, entityUri: null, mode: "list" } }),
+  closeOverlay: () => set({ overlay: { open: false, entityUri: null } }),
 }));

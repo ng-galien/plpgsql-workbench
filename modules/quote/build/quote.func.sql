@@ -86,10 +86,6 @@ DROP TRIGGER IF EXISTS trg_devis_updated_at ON quote.estimate;
 CREATE TRIGGER trg_devis_updated_at BEFORE UPDATE ON quote.estimate FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
 DROP TRIGGER IF EXISTS trg_facture_updated_at ON quote.invoice;
 CREATE TRIGGER trg_facture_updated_at BEFORE UPDATE ON quote.invoice FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
-DROP TRIGGER IF EXISTS trg_devis_updated_at ON quote.devis;
-CREATE TRIGGER trg_devis_updated_at BEFORE UPDATE ON quote.devis FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
-DROP TRIGGER IF EXISTS trg_facture_updated_at ON quote.facture;
-CREATE TRIGGER trg_facture_updated_at BEFORE UPDATE ON quote.facture FOR EACH ROW EXECUTE FUNCTION quote._set_updated_at();
 
 CREATE OR REPLACE FUNCTION quote._status_badge(p_status text)
  RETURNS text
@@ -388,7 +384,7 @@ BEGIN
         'fields', jsonb_build_array('number', 'client_name', 'status')
       ),
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('number', 'client_name', 'subject', 'status', 'created_at'),
+        'fields', jsonb_build_array('number', 'client_name', 'subject', 'status'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'total_ht', 'label', 'quote.stat_total_ht'),
           jsonb_build_object('key', 'total_tva', 'label', 'quote.stat_total_tva'),
@@ -599,6 +595,11 @@ BEGIN
     -- Related entity labels
     ('fr', 'quote.related_invoices', 'Factures liées'),
     ('fr', 'quote.related_estimate', 'Devis source'),
+
+    -- Field labels for _view() fields
+    ('fr', 'quote.field_client_name', 'Client'),
+    ('fr', 'quote.field_created_at', 'Date de création'),
+    ('fr', 'quote.field_estimate_number', 'N° devis'),
 
     -- Currency
     ('fr', 'quote.currency', 'EUR')

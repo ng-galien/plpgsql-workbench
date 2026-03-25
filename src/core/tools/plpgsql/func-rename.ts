@@ -20,7 +20,9 @@ export function createFuncRenameTool({ withClient }: { withClient: WithClient })
 
       const match = uri.match(/^plpgsql:\/\/(\w+)\/function\/(\w+)$/);
       if (!match) {
-        return text(`problem: invalid URI: ${uri}\nwhere: pg_func_rename\nfix_hint: use plpgsql://schema/function/old_name`);
+        return text(
+          `problem: invalid URI: ${uri}\nwhere: pg_func_rename\nfix_hint: use plpgsql://schema/function/old_name`,
+        );
       }
 
       const [, schema, oldName] = match;
@@ -40,9 +42,7 @@ export function createFuncRenameTool({ withClient }: { withClient: WithClient })
         );
 
         if (rows.length === 0) {
-          return text(
-            `problem: function ${schema}.${oldName} not found\nwhere: pg_func_rename`,
-          );
+          return text(`problem: function ${schema}.${oldName} not found\nwhere: pg_func_rename`);
         }
 
         const results: string[] = [];
@@ -70,10 +70,7 @@ export function createFuncRenameTool({ withClient }: { withClient: WithClient })
               [row.oid],
             );
             if (commentRows[0]?.desc) {
-              const newIdent = row.ident.replace(
-                new RegExp(`${schema}\\.${oldName}\\(`),
-                `${schema}.${newName}(`,
-              );
+              const newIdent = row.ident.replace(new RegExp(`${schema}\\.${oldName}\\(`), `${schema}.${newName}(`);
               const escaped = commentRows[0].desc.replace(/'/g, "''");
               await client.query(`COMMENT ON FUNCTION ${newIdent} IS '${escaped}'`);
             }

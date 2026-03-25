@@ -55,7 +55,7 @@ export function createFuncEditTool({
         let patched = ddl;
         for (let i = 0; i < edits.length; i++) {
           const { old: oldStr, new: newStr } = edits[i];
-          let count = patched.split(oldStr).length - 1;
+          const count = patched.split(oldStr).length - 1;
 
           if (count === 0) {
             // Whitespace-tolerant fallback: normalize spaces/tabs/newlines
@@ -66,9 +66,7 @@ export function createFuncEditTool({
 
             if (normCount === 1) {
               // Find the actual substring in the original using a flexible regex
-              const escaped = oldStr
-                .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-                .replace(/\s+/g, "\\s+");
+              const escaped = oldStr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
               const flexRegex = new RegExp(escaped);
               const match = patched.match(flexRegex);
               if (match) {

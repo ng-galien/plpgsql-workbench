@@ -1,10 +1,10 @@
+import { ArrowLeft, Pin } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useStore } from "@/lib/store";
+import { crud, get } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { get, crud } from "@/lib/api";
-import { getDisplayName, parseEntityUri } from "@/lib/utils";
-import type { ViewTemplate } from "@/lib/store";
-import { Pin, ArrowLeft } from "lucide-react";
+import type { FormField, FormSection, ViewTemplate } from "@/lib/store";
+import { useStore } from "@/lib/store";
+import { fieldKey, getCompactDisplayName, parseEntityUri } from "@/lib/utils";
 
 export function Overlay() {
   const overlay = useStore((s) => s.overlay);
@@ -16,11 +16,11 @@ export function Overlay() {
 
   return (
     <>
+      <div className="absolute inset-0 bg-black/5 z-10" onClick={closeOverlay} />
       <div
-        className="absolute inset-0 bg-black/5 z-10"
-        onClick={closeOverlay}
-      />
-      <div className="absolute left-0 top-0 h-full w-96 bg-card shadow-xl border-r z-20 flex flex-col animate-in slide-in-from-left duration-200" data-debug={`overlay[${overlay.entityUri}]`}>
+        className="absolute left-0 top-0 h-full w-96 bg-card shadow-xl border-r z-20 flex flex-col animate-in slide-in-from-left duration-200"
+        data-debug={`overlay[${overlay.entityUri}]`}
+      >
         <OverlayContent
           entityUri={overlay.entityUri}
           onPin={(uri, data, view) => {
@@ -138,21 +138,17 @@ function OverlayList({
   const pinnedSet = useMemo(() => new Set(pinnedUris.map((p) => p.uri)), [pinnedUris]);
   const [search, setSearch] = useState("");
 
-  const compactFields = view?.template?.compact?.fields;
+  const compactFields = useMemo(() => view?.template?.compact?.fields?.map(fieldKey), [view]);
 
   const filtered = search
-    ? rows.filter((r) =>
-        getDisplayName(r, "").toLowerCase().includes(search.toLowerCase())
-      )
+    ? rows.filter((r) => getCompactDisplayName(r, compactFields, "").toLowerCase().includes(search.toLowerCase()))
     : rows;
 
   return (
     <>
       <div className="px-4 pt-4 pb-3 border-b flex flex-col gap-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-base">
-            {t(`${schema}.entity_${entity}`)}
-          </h2>
+          <h2 className="font-semibold text-base">{t(`${schema}.entity_${entity}`)}</h2>
           <div className="flex items-center gap-2">
             <button
               onClick={onCreate}
@@ -160,10 +156,7 @@ function OverlayList({
             >
               + {t("app.new")}
             </button>
-            <button
-              onClick={onClose}
-              className="text-muted-foreground hover:text-foreground text-lg leading-none"
-            >
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-lg leading-none">
               ×
             </button>
           </div>
@@ -190,9 +183,13 @@ function OverlayList({
           filtered.map((row) => {
             const id = String(row.slug ?? row.id ?? "");
             const itemUri = `${entityUri}/${id}`;
-            const name = getDisplayName(row);
+            const name = getCompactDisplayName(row, compactFields);
             const subtitle = compactFields
-              ? compactFields.filter((f) => f !== "name" && row[f] != null).map((f) => String(row[f])).join(" · ")
+              ? compactFields
+                  .slice(1)
+                  .filter((f) => row[f] != null)
+                  .map((f) => String(row[f]))
+                  .join(" · ")
               : [row.type, row.city, row.status, row.category].filter(Boolean).join(" · ");
             const isPinned = pinnedSet.has(itemUri);
 
@@ -207,24 +204,26 @@ function OverlayList({
                   if (!isPinned) onPin(itemUri, row, view);
                 }}
               >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
-                  isPinned ? "bg-primary/20 text-primary" : "bg-primary/10 text-primary"
-                }`}>
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${
+                    isPinned ? "bg-primary/20 text-primary" : "bg-primary/10 text-primary"
+                  }`}
+                >
                   {name.slice(0, 2).toUpperCase()}
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{name}</div>
-                  {subtitle && (
-                    <div className="text-xs text-muted-foreground truncate">{subtitle}</div>
-                  )}
+                  {subtitle && <div className="text-xs text-muted-foreground truncate">{subtitle}</div>}
                 </div>
 
-                <Pin className={`w-3.5 h-3.5 ${
-                  isPinned
-                    ? "text-primary opacity-100 fill-primary"
-                    : "text-muted-foreground opacity-0 group-hover:opacity-100"
-                } transition-opacity`} />
+                <Pin
+                  className={`w-3.5 h-3.5 ${
+                    isPinned
+                      ? "text-primary opacity-100 fill-primary"
+                      : "text-muted-foreground opacity-0 group-hover:opacity-100"
+                  } transition-opacity`}
+                />
               </div>
             );
           })
@@ -232,21 +231,6 @@ function OverlayList({
       </div>
     </>
   );
-}
-
-// --- Form types ---
-
-interface FormSection {
-  label: string;
-  fields: FormField[];
-}
-
-interface FormField {
-  key: string;
-  type: string;
-  label: string;
-  required?: boolean;
-  options?: Array<{ value: string; label: string }> | string[];
 }
 
 // --- Create mode ---
@@ -328,14 +312,9 @@ function OverlayForm({
       </div>
 
       {/* Footer */}
-      {error && (
-        <div className="px-4 py-2 text-xs text-destructive">{error}</div>
-      )}
+      {error && <div className="px-4 py-2 text-xs text-destructive">{error}</div>}
       <div className="px-4 py-3 border-t flex justify-end gap-2">
-        <button
-          onClick={onBack}
-          className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
-        >
+        <button onClick={onBack} className="px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
           {t("app.cancel")}
         </button>
         <button
@@ -351,6 +330,110 @@ function OverlayForm({
 }
 
 // --- Field input renderer ---
+
+function ComboboxField({
+  field,
+  value,
+  onChange,
+  label,
+  inputClass,
+}: {
+  field: FormField;
+  value: unknown;
+  onChange: (v: unknown) => void;
+  label: string;
+  inputClass: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const displayKey = field.display ?? "name";
+  const selectedLabel = rows.find((r) => String(r.id) === String(value))?.[displayKey];
+
+  useEffect(() => {
+    if (!field.source) return;
+    setLoading(true);
+    get(field.source)
+      .then((res) => setRows(res?.data ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [field.source]);
+
+  const filtered = search
+    ? rows.filter((r) => {
+        const name = String(r[displayKey] ?? "");
+        return name.toLowerCase().includes(search.toLowerCase());
+      })
+    : rows;
+
+  return (
+    <label className="flex flex-col gap-1 relative">
+      <span className="text-xs text-muted-foreground">
+        {label}
+        {field.required && <span className="text-destructive ml-0.5">*</span>}
+      </span>
+      <div className="relative">
+        <input
+          type="text"
+          value={open ? search : selectedLabel ? String(selectedLabel) : ""}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            if (!open) setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder={selectedLabel ? String(selectedLabel) : "Rechercher..."}
+          className={inputClass}
+        />
+        {!!value && !open && (
+          <button
+            type="button"
+            onClick={() => {
+              onChange(null);
+              setSearch("");
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
+          >
+            ×
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-card border rounded-md shadow-lg z-30 max-h-48 overflow-auto">
+          {loading ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">Loading...</div>
+          ) : filtered.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">No results.</div>
+          ) : (
+            filtered.map((row) => {
+              const id = String(row.id ?? "");
+              const name = String(row[displayKey] ?? id);
+              const isSelected = String(value) === id;
+              return (
+                <div
+                  key={id}
+                  className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
+                    isSelected ? "bg-primary/10 text-primary" : "hover:bg-accent"
+                  }`}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onChange(id !== "" && !Number.isNaN(Number(id)) ? Number(id) : id);
+                    setSearch("");
+                    setOpen(false);
+                  }}
+                >
+                  {name}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </label>
+  );
+}
 
 function FormFieldInput({
   field,
@@ -368,17 +451,15 @@ function FormFieldInput({
 
   switch (field.type) {
     case "select": {
-      const options = field.options ?? [];
+      const raw = field.options;
+      const options: Array<{ value: string; label: string } | string> = Array.isArray(raw) ? raw : [];
       return (
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">
-            {label}{field.required && <span className="text-destructive ml-0.5">*</span>}
+            {label}
+            {field.required && <span className="text-destructive ml-0.5">*</span>}
           </span>
-          <select
-            value={String(value ?? "")}
-            onChange={(e) => onChange(e.target.value)}
-            className={inputClass}
-          >
+          <select value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} className={inputClass}>
             <option value="">—</option>
             {options.map((opt) => {
               const optValue = typeof opt === "string" ? opt : opt.value;
@@ -398,7 +479,8 @@ function FormFieldInput({
       return (
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">
-            {label}{field.required && <span className="text-destructive ml-0.5">*</span>}
+            {label}
+            {field.required && <span className="text-destructive ml-0.5">*</span>}
           </span>
           <textarea
             value={String(value ?? "")}
@@ -409,15 +491,13 @@ function FormFieldInput({
         </label>
       );
 
+    case "combobox":
+      return <ComboboxField field={field} value={value} onChange={onChange} label={label} inputClass={inputClass} />;
+
     case "checkbox":
       return (
         <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={!!value}
-            onChange={(e) => onChange(e.target.checked)}
-            className="rounded"
-          />
+          <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} className="rounded" />
           <span className="text-xs text-muted-foreground">{label}</span>
         </label>
       );
@@ -426,10 +506,19 @@ function FormFieldInput({
       return (
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">
-            {label}{field.required && <span className="text-destructive ml-0.5">*</span>}
+            {label}
+            {field.required && <span className="text-destructive ml-0.5">*</span>}
           </span>
           <input
-            type={field.type === "email" ? "email" : field.type === "tel" ? "tel" : field.type === "number" ? "number" : "text"}
+            type={
+              field.type === "email"
+                ? "email"
+                : field.type === "tel"
+                  ? "tel"
+                  : field.type === "number"
+                    ? "number"
+                    : "text"
+            }
             value={String(value ?? "")}
             onChange={(e) => onChange(field.type === "number" ? Number(e.target.value) : e.target.value)}
             className={inputClass}

@@ -1,6 +1,6 @@
-import { supabase } from "./supabase";
-import { useStore } from "./store";
 import type { ToastLevel } from "./store";
+import { useStore } from "./store";
+import { supabase } from "./supabase";
 
 const validLevels = new Set<ToastLevel>(["success", "error", "warning", "info"]);
 

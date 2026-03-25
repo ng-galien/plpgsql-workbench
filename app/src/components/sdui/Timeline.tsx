@@ -1,5 +1,4 @@
 import { useT } from "@/lib/i18n";
-import { Badge } from "@/components/ui/badge";
 
 interface TimelineEvent {
   date: string;

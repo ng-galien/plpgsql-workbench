@@ -8,29 +8,15 @@ function getFormatter(currency: string): Intl.NumberFormat {
         style: "currency",
         currency,
         minimumFractionDigits: 2,
-      })
+      }),
     );
   }
   return formatters.get(currency)!;
 }
 
-export function Currency({
-  amount,
-  currency = "EUR",
-}: {
-  amount: number;
-  currency?: string;
-}) {
+export function Currency({ amount, currency = "EUR" }: { amount: number; currency?: string }) {
   const formatted = getFormatter(currency).format(amount);
   const isNegative = amount < 0;
 
-  return (
-    <span
-      className={`tabular-nums text-right ${
-        isNegative ? "text-destructive" : ""
-      }`}
-    >
-      {formatted}
-    </span>
-  );
+  return <span className={`tabular-nums text-right ${isNegative ? "text-destructive" : ""}`}>{formatted}</span>;
 }

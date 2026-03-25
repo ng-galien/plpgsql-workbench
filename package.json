@@ -18,6 +18,8 @@
     "dev:demo": "WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/002-demo/workbench.json nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'",
     "dev:docman": "WORKBENCH_MODE=dev WORKBENCH_CONFIG=apps/003-docman/workbench.json nodemon --watch src --ext ts --exec 'node --import tsx src/index.ts'",
     "sync-tools": "PLPGSQL_CONNECTION=postgresql://postgres:postgres@localhost:54322/postgres node --import tsx src/sync-tools.ts",
+    "lint": "biome check .",
+    "lint:fix": "biome check --fix .",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-*/spawn-helper 2>/dev/null || true"
   },
   "dependencies": {

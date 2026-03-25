@@ -134,7 +134,10 @@ export async function runTests(client: DbClient, testSchema: string, pattern?: s
 
     // Warn about 0 compiled tests when source files likely exist
     if (compiledTests.size === 0 && report.total === 0) {
-      report.results.push({ ok: false, description: `⚠ no test functions found in ${testSchema} — functions may have failed to compile. Check pg_get plpgsql://${testSchema} for errors.` });
+      report.results.push({
+        ok: false,
+        description: `⚠ no test functions found in ${testSchema} — functions may have failed to compile. Check pg_get plpgsql://${testSchema} for errors.`,
+      });
       report.failed = 1;
       report.total = 1;
     }

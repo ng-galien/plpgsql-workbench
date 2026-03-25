@@ -168,6 +168,11 @@ BEGIN
     ('fr', 'quote.related_invoices', 'Factures liées'),
     ('fr', 'quote.related_estimate', 'Devis source'),
 
+    -- Field labels for _view() fields
+    ('fr', 'quote.field_client_name', 'Client'),
+    ('fr', 'quote.field_created_at', 'Date de création'),
+    ('fr', 'quote.field_estimate_number', 'N° devis'),
+
     -- Currency
     ('fr', 'quote.currency', 'EUR')
 

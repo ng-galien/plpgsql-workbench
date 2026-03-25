@@ -90,7 +90,9 @@ async function dumpFunctions(client: DbClient, outDir: string, schema?: string, 
           removed.push(`${schema}/${file}`);
         }
       }
-    } catch { /* dir may not exist */ }
+    } catch {
+      /* dir may not exist */
+    }
   }
 
   const parts: string[] = [];

@@ -1,12 +1,12 @@
 import { useEffect } from "react";
-import { useStore } from "@/lib/store";
-import { useI18n } from "@/lib/i18n";
-import { Sidebar } from "@/components/Sidebar";
+import { Annotate } from "@/components/Annotate";
 import { Canvas } from "@/components/Canvas";
 import { Overlay } from "@/components/Overlay";
+import { Sidebar } from "@/components/Sidebar";
 import { Toast } from "@/components/Toast";
-import { Annotate } from "@/components/Annotate";
+import { useI18n } from "@/lib/i18n";
 import { initRealtime } from "@/lib/realtime";
+import { useStore } from "@/lib/store";
 
 export function App() {
   const loadModules = useStore((s) => s.loadModules);
@@ -17,7 +17,7 @@ export function App() {
     loadI18n();
     const cleanup = initRealtime();
     return cleanup;
-  }, []);
+  }, [loadI18n, loadModules]);
 
   return (
     <div className="h-screen flex overflow-hidden">

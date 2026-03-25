@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["src/**/*.ts", "cloudflare/pages/src/**/*.ts"]
+    "includes": ["src/**/*.ts", "app/src/**/*.ts", "app/src/**/*.tsx", "cloudflare/pages/src/**/*.ts"]
   },
   "formatter": {
     "enabled": true,
@@ -17,7 +17,20 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "a11y": {
+        "useButtonType": "off",
+        "noAutofocus": "off",
+        "noStaticElementInteractions": "off",
+        "useKeyWithClickEvents": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noArrayIndexKey": "warn"
+      }
     }
   },
   "javascript": {

@@ -9,10 +9,7 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createClient } from "@supabase/supabase-js";
 
 // --- Config ---
@@ -45,7 +42,7 @@ Two types of events:
 
 To reply to the browser (toast, navigate), use the broadcast tool.
 To reply to an agent, use pg_msg via your MCP tools.`,
-  }
+  },
 );
 
 // --- Reply tool: broadcast to browser via Supabase Realtime ---
@@ -53,8 +50,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "broadcast",
-      description:
-        "Send a notification to the browser (toast with optional link, or navigation command)",
+      description: "Send a notification to the browser (toast with optional link, or navigation command)",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -122,7 +118,7 @@ supabase
           },
         },
       });
-    }
+    },
   )
   .subscribe((status) => {
     console.error(`[workbench-msg] module=${MODULE} agent_message: ${status}`);

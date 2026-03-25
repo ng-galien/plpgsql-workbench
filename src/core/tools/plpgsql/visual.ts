@@ -182,7 +182,11 @@ export function createVisualTool({ withClient }: { withClient: WithClient }): To
           // Test POST actions on current page
           async function testPosts(currentPath: string) {
             // Reveal hidden forms inside <details>
-            await page.$$eval("details", (els: any[]) => { for (const d of els) d.open = true; }).catch(() => {});
+            await page
+              .$$eval("details", (els: any[]) => {
+                for (const d of els) d.open = true;
+              })
+              .catch(() => {});
             await page.waitForTimeout(200);
 
             // --- Forms with data-rpc ---
@@ -242,7 +246,11 @@ export function createVisualTool({ withClient }: { withClient: WithClient }): To
                 // Re-navigate for next test
                 await page.goto(baseUrl + currentPath, { waitUntil: "networkidle", timeout: 10000 });
                 await waitSPA();
-                await page.$$eval("details", (els: any[]) => { for (const d of els) d.open = true; }).catch(() => {});
+                await page
+                  .$$eval("details", (els: any[]) => {
+                    for (const d of els) d.open = true;
+                  })
+                  .catch(() => {});
                 await page.waitForTimeout(200);
               } catch (err: any) {
                 warns++;

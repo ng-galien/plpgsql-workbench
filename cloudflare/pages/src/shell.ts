@@ -168,15 +168,19 @@ export function createShellComponent(): Record<string, unknown> {
 
       // AI activity channel — broadcast from MCP to browser
       const aiChannel = supabase().channel("ai-activity");
-      aiChannel.on("broadcast", { event: "activity" }, (msg: { payload: { msg?: string; detail?: string; href?: string; action?: string; level?: string } }) => {
-        const p = msg.payload || {};
-        console.log("[pgv] AI broadcast:", p);
-        if (p.action === "navigate" && p.href) {
-          self.go(p.href);
-        } else {
-          self.showToast(p.msg || "AI", p.level || "info", p.detail || "", p.href || "", !!p.href);
-        }
-      });
+      aiChannel.on(
+        "broadcast",
+        { event: "activity" },
+        (msg: { payload: { msg?: string; detail?: string; href?: string; action?: string; level?: string } }) => {
+          const p = msg.payload || {};
+          console.log("[pgv] AI broadcast:", p);
+          if (p.action === "navigate" && p.href) {
+            self.go(p.href);
+          } else {
+            self.showToast(p.msg || "AI", p.level || "info", p.detail || "", p.href || "", !!p.href);
+          }
+        },
+      );
       aiChannel.subscribe();
 
       // Error tracking (circular buffer, max 20) — store refs for cleanup
@@ -368,7 +372,14 @@ export function createShellComponent(): Record<string, unknown> {
 
     /* -- Toast -- */
 
-    showToast: function (this: ShellComponent, msg: string, level?: string, detail?: string, href?: string, sticky?: boolean) {
+    showToast: function (
+      this: ShellComponent,
+      msg: string,
+      level?: string,
+      detail?: string,
+      href?: string,
+      sticky?: boolean,
+    ) {
       clearTimeout(this._tt);
       this.toast = { show: true, msg: msg, level: level || "success", detail: detail || "", href: href || "" };
 
@@ -395,7 +406,7 @@ export function createShellComponent(): Record<string, unknown> {
       // Listen to all tables individually would require knowing them.
       // For now, listen to the whole schema — Realtime filters by publication.
       console.log("[pgv] pgListen", schema, "* (all tables in publication)");
-      const self = this;
+
       const unsub = pgListen(schema, "*", (payload) => {
         console.log("[pgv] Realtime event:", payload.eventType, payload.table, payload.new);
         if (payload.eventType !== "INSERT") return;
@@ -404,7 +415,7 @@ export function createShellComponent(): Record<string, unknown> {
         const id = row.id as string | undefined;
         const name = (row.name || row.title || row.label || table) as string;
         const href = id ? `/${schema}/${table}?p_id=${id}` : `/${schema}/`;
-        self.showToast(name, "info", `${t("realtime.created")} · ${table}`, href);
+        this.showToast(name, "info", `${t("realtime.created")} · ${table}`, href);
       });
       this._unsubRealtime.push(unsub);
     },
@@ -423,11 +434,9 @@ export function createShellComponent(): Record<string, unknown> {
       });
     },
 
-
     searchClose: function (this: ShellComponent) {
       this.search.open = false;
     },
-
 
     searchExec: function (this: ShellComponent) {
       var q = this.search.query.trim();
@@ -456,14 +465,12 @@ export function createShellComponent(): Record<string, unknown> {
         });
     },
 
-
     searchNav: function (this: ShellComponent, dir: number) {
       var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll(".pgv-search-item") : [];
       if (!items.length) return;
       this.search.idx = Math.max(0, Math.min(items.length - 1, this.search.idx + dir));
       this._searchHighlight();
     },
-
 
     searchSelect: function (this: ShellComponent) {
       var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll(".pgv-search-item") : [];
@@ -478,7 +485,6 @@ export function createShellComponent(): Record<string, unknown> {
         href = `/${this._currentSchema}${href}`;
       this.go(href);
     },
-
 
     _searchHighlight: function (this: ShellComponent) {
       var items = this.$refs.searchResults ? this.$refs.searchResults.querySelectorAll(".pgv-search-item") : [];
@@ -496,7 +502,6 @@ export function createShellComponent(): Record<string, unknown> {
       this._browse(src);
     },
 
-
     _browse: function (this: ShellComponent, pathOrUrl: string) {
       var url =
         pathOrUrl.indexOf("/") === 0 && pathOrUrl.indexOf("/api") !== 0
@@ -512,7 +517,6 @@ export function createShellComponent(): Record<string, unknown> {
           this.$refs.dlgBody.innerHTML = `<p>${t("dialog.load_error")}</p>`;
         });
     },
-
 
     dlgSelect: function (this: ShellComponent) {
       var pathEl = this.$refs.dlgBody.querySelector(".folder-path");
@@ -556,7 +560,6 @@ export function createShellComponent(): Record<string, unknown> {
     openFormDialog: function (this: ShellComponent, id: string, src: string) {
       return openFormDialog(id, src);
     },
-
 
     submitFormDialog: function (this: ShellComponent, form: HTMLFormElement, data: Record<string, unknown>) {
       return submitFormDialog(form, data);

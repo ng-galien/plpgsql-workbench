@@ -9,7 +9,7 @@
  * - Persist: Also INSERT into workbench.agent_message (history)
  */
 
-import { createClient, type SupabaseClient, type RealtimeChannel } from "@supabase/supabase-js";
+import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import type { WithClient } from "./container.js";
 
 export interface BroadcastPayload {
@@ -44,11 +44,7 @@ export interface BroadcastPayload {
 
 export type BroadcastFn = (payload: BroadcastPayload) => Promise<void>;
 
-export function createBroadcastService({
-  withClient,
-}: {
-  withClient: WithClient;
-}): BroadcastFn {
+export function createBroadcastService({ withClient }: { withClient: WithClient }): BroadcastFn {
   let client: SupabaseClient | null = null;
   let channel: RealtimeChannel | null = null;
 

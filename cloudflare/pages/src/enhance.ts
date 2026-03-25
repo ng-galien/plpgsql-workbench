@@ -10,9 +10,7 @@ import { getConfig } from "./config.js";
 import { t } from "./i18n.js";
 import { loadIllustrator } from "./plugins/illustrator.js";
 
-// biome-ignore lint/suspicious/noExplicitAny: marked.js loaded via CDN, no ambient types
 declare const marked: any;
-// biome-ignore lint/suspicious/noExplicitAny: Alpine.js loaded via CDN, no ambient types
 declare const Alpine: any;
 
 // ── Plugin system (pgv.mount / pgv.unmount) ──────────────────────

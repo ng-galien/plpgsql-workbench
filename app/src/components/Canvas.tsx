@@ -1,12 +1,18 @@
-import { useStore } from "@/lib/store";
-import { useT } from "@/lib/i18n";
-import { getDisplayName } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { Pin, X } from "lucide-react";
 import { Currency } from "@/components/sdui/Currency";
-import { Workflow } from "@/components/sdui/Workflow";
-import { Timeline } from "@/components/sdui/Timeline";
+import { Badge } from "@/components/ui/badge";
+import { useT } from "@/lib/i18n";
 import type { PinnedCard, ViewTemplate } from "@/lib/store";
-import { X, Pin } from "lucide-react";
+import { useStore } from "@/lib/store";
+import {
+  fieldKey,
+  fieldLabel,
+  fieldType,
+  formatDate,
+  formatDatetime,
+  getCompactDisplayName,
+  resolveFieldLabel,
+} from "@/lib/utils";
 
 const actionVariantStyles: Record<string, string> = {
   danger: "border-destructive/30 text-destructive hover:bg-destructive/10",
@@ -48,7 +54,8 @@ function PinCard({ pin, onClose }: { pin: PinnedCard; onClose: () => void }) {
 
   const view = pin.view;
   const tpl = view?.template?.standard;
-  const name = getDisplayName(data);
+  const compactKeys = view?.template?.compact?.fields?.map(fieldKey);
+  const name = getCompactDisplayName(data, compactKeys);
 
   return (
     <div
@@ -63,28 +70,12 @@ function PinCard({ pin, onClose }: { pin: PinnedCard; onClose: () => void }) {
       </div>
 
       <div className="px-4 py-3 text-sm flex flex-col gap-2">
-        {tpl ? (
-          <TemplateBody data={data} tpl={tpl} view={view} t={t} />
-        ) : (
-          <FallbackBody data={data} />
-        )}
+        {tpl ? <TemplateBody data={data} tpl={tpl} view={view} t={t} /> : <FallbackBody data={data} />}
       </div>
 
       <CardActions data={data} view={view} t={t} />
     </div>
   );
-}
-
-function buildFieldLabels(view: ViewTemplate | null): Record<string, string> {
-  const labels: Record<string, string> = {};
-  const sections = view?.template?.form?.sections;
-  if (!sections) return labels;
-  for (const section of sections as Array<{ fields: Array<{ key: string; label: string }> }>) {
-    for (const field of section.fields) {
-      if (field.key && field.label) labels[field.key] = field.label;
-    }
-  }
-  return labels;
 }
 
 function TemplateBody({
@@ -98,28 +89,34 @@ function TemplateBody({
   view: ViewTemplate | null;
   t: (key: string) => string;
 }) {
-  const fieldLabels = buildFieldLabels(view);
-
   return (
     <>
       <div className="flex flex-col gap-1">
-        {tpl.fields
-          .filter((key) => data[key] != null && data[key] !== "")
-          .map((key) => (
-            <div key={key} className="flex justify-between gap-2">
-              <span className="text-muted-foreground text-xs">{fieldLabels[key] ? t(fieldLabels[key]) : key}</span>
+        {tpl.fields.map((f) => {
+          const k = fieldKey(f);
+          const val = data[k];
+          if (val == null || val === "") return null;
+          const ft = fieldType(f);
+          const fl = fieldLabel(f);
+          const label = fl ? t(fl) : resolveFieldLabel(k, view?.uri, view?.template?.form?.sections, t);
+          return (
+            <div key={k} className="flex justify-between gap-2">
+              <span className="text-muted-foreground text-xs">{label}</span>
               <span className="text-xs text-right truncate max-w-[60%]">
-                <FieldValue value={data[key]} />
+                <FieldValue value={val} type={ft} />
               </span>
             </div>
-          ))}
+          );
+        })}
       </div>
 
       {tpl.stats && tpl.stats.length > 0 && (
         <div className="flex gap-3 pt-2 border-t mt-1">
           {tpl.stats.map((stat) => (
             <div key={stat.key} className="flex flex-col gap-0.5">
-              <span className={`text-base font-bold ${stat.variant === "warning" ? "text-amber-600" : "text-foreground"}`}>
+              <span
+                className={`text-base font-bold ${stat.variant === "warning" ? "text-amber-600" : "text-foreground"}`}
+              >
                 {data[stat.key] != null ? String(data[stat.key]) : "—"}
               </span>
               <span className="text-[10px] text-muted-foreground">{t(stat.label)}</span>
@@ -131,7 +128,11 @@ function TemplateBody({
       {tpl.related && tpl.related.length > 0 && (
         <div className="flex gap-1.5 flex-wrap pt-2 border-t mt-1">
           {tpl.related.map((rel) => (
-            <Badge key={rel.entity} variant="outline" className="text-[10px] font-normal cursor-pointer hover:bg-accent">
+            <Badge
+              key={rel.entity}
+              variant="outline"
+              className="text-[10px] font-normal cursor-pointer hover:bg-accent"
+            >
               {t(rel.label)}
             </Badge>
           ))}
@@ -151,18 +152,29 @@ function FallbackBody({ data }: { data: Record<string, unknown> }) {
         .map(([key, val]) => (
           <div key={key} className="flex justify-between gap-2">
             <span className="text-muted-foreground text-xs">{key}</span>
-            <span className="text-xs text-right truncate max-w-[60%]">
-              {val == null ? "—" : String(val)}
-            </span>
+            <span className="text-xs text-right truncate max-w-[60%]">{val == null ? "—" : String(val)}</span>
           </div>
         ))}
     </>
   );
 }
 
-function FieldValue({ value }: { value: unknown }) {
-  if (value === true) return <Badge variant="default" className="text-[10px]">Yes</Badge>;
-  if (value === false) return <Badge variant="secondary" className="text-[10px]">No</Badge>;
+function FieldValue({ value, type }: { value: unknown; type?: string }) {
+  if (value === true)
+    return (
+      <Badge variant="default" className="text-[10px]">
+        Yes
+      </Badge>
+    );
+  if (value === false)
+    return (
+      <Badge variant="secondary" className="text-[10px]">
+        No
+      </Badge>
+    );
+  if (type === "date" && typeof value === "string") return <>{formatDate(value)}</>;
+  if (type === "datetime" && typeof value === "string") return <>{formatDatetime(value)}</>;
+  if (type === "currency" && typeof value === "number") return <Currency amount={value} />;
   if (typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value)) {
     return (
       <span className="inline-flex items-center gap-1">
@@ -193,16 +205,13 @@ function CardActions({
 
   return (
     <div className="px-4 py-2 border-t flex gap-2 flex-wrap">
-      {hateoas.map((action, i) => {
+      {hateoas.map((action) => {
         const meta = catalog[action.method];
         const label = meta?.label ? t(meta.label) : action.method;
         const styles = actionVariantStyles[meta?.variant ?? ""] ?? "hover:bg-accent";
 
         return (
-          <button
-            key={i}
-            className={`px-2.5 py-1 text-xs border rounded-md transition-colors ${styles}`}
-          >
+          <button key={action.method} className={`px-2.5 py-1 text-xs border rounded-md transition-colors ${styles}`}>
             {label}
           </button>
         );

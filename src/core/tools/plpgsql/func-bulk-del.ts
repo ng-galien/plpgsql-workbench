@@ -31,9 +31,7 @@ export function createFuncBulkDelTool({ withClient }: { withClient: WithClient }
         );
 
         if (rows.length === 0) {
-          return text(
-            `completeness: full\n\nno functions matching ${schema}.${pattern}`,
-          );
+          return text(`completeness: full\n\nno functions matching ${schema}.${pattern}`);
         }
 
         if (dryRun) {
@@ -57,9 +55,7 @@ export function createFuncBulkDelTool({ withClient }: { withClient: WithClient }
           await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
         } catch (e: any) {
           await client.query("ROLLBACK").catch(() => {});
-          return text(
-            `✗ bulk delete failed after ${dropped} drops\nproblem: ${e.message}\nwhere: pg_func_bulk_del`,
-          );
+          return text(`✗ bulk delete failed after ${dropped} drops\nproblem: ${e.message}\nwhere: pg_func_bulk_del`);
         }
 
         return text(

@@ -11,26 +11,14 @@ export function createAlterTool({ withClient }: { withClient: WithClient }): Too
         "Can target a single function or all functions in a schema matching a pattern.\n" +
         "Example: schema=crm pattern=% security_definer=true → all crm functions become SECURITY DEFINER.",
       schema: z.object({
-        uri: z
-          .string()
-          .optional()
-          .describe("Single function URI. Ex: plpgsql://crm/function/client_create"),
-        schema: z
-          .string()
-          .optional()
-          .describe("Schema for bulk operations. Combined with pattern."),
+        uri: z.string().optional().describe("Single function URI. Ex: plpgsql://crm/function/client_create"),
+        schema: z.string().optional().describe("Schema for bulk operations. Combined with pattern."),
         pattern: z
           .string()
           .optional()
           .describe("Function name pattern (LIKE) for bulk. Ex: %_create or %_delete. Default: % (all)"),
-        security_definer: z
-          .boolean()
-          .optional()
-          .describe("Set SECURITY DEFINER (true) or SECURITY INVOKER (false)"),
-        owner: z
-          .string()
-          .optional()
-          .describe("New owner role. Ex: postgres"),
+        security_definer: z.boolean().optional().describe("Set SECURITY DEFINER (true) or SECURITY INVOKER (false)"),
+        owner: z.string().optional().describe("New owner role. Ex: postgres"),
       }),
     },
     handler: async (args, _extra) => {
@@ -116,7 +104,9 @@ export function createAlterTool({ withClient }: { withClient: WithClient }): Too
         // Re-grant after alter
         try {
           await client.query(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${targetSchema} TO anon`);
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
 
         return text(

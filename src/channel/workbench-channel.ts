@@ -12,10 +12,7 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import pg from "pg";
 
 // --- Config ---
@@ -46,7 +43,7 @@ Two types of events:
 
 To reply to the browser (toast, navigate), use the broadcast tool.
 To reply to an agent, use pg_msg via your MCP tools.`,
-  }
+  },
 );
 
 // --- Reply tool: broadcast to browser ---
@@ -54,8 +51,7 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "broadcast",
-      description:
-        "Send a notification to the browser (toast with optional link, or navigation command)",
+      description: "Send a notification to the browser (toast with optional link, or navigation command)",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -85,9 +81,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     // Use Supabase broadcast via PG notify (the MCP server picks it up)
     const client = new pg.Client(PG_CONNECTION);
     await client.connect();
-    await client.query("SELECT pg_notify('workbench_broadcast', $1)", [
-      JSON.stringify(payload),
-    ]);
+    await client.query("SELECT pg_notify('workbench_broadcast', $1)", [JSON.stringify(payload)]);
     await client.end();
     return { content: [{ type: "text", text: `broadcast: ${payload.msg}` }] };
   }

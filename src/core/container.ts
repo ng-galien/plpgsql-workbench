@@ -23,7 +23,6 @@ export type ToolExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 export interface ToolMetadata {
   name: string;
   description: string;
-  // biome-ignore lint/suspicious/noExplicitAny: Zod schema shape varies per tool
   schema: z.ZodObject<any>;
 }
 
@@ -122,9 +121,7 @@ function isToolHandler(val: unknown): val is ToolHandler {
     val !== null &&
     "metadata" in val &&
     "handler" in val &&
-    // biome-ignore lint/suspicious/noExplicitAny: narrowing unknown to check structural shape
     typeof (val as any).metadata?.name === "string" &&
-    // biome-ignore lint/suspicious/noExplicitAny: narrowing unknown to check structural shape
     typeof (val as any).handler === "function"
   );
 }

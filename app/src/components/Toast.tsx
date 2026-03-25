@@ -16,21 +16,14 @@ export function Toast() {
   const style = levelStyles[toast.level] ?? levelStyles.info;
 
   return (
-    <div
-      className={`fixed bottom-6 right-6 border-l-4 px-4 py-3 rounded-md shadow-lg max-w-sm z-50 ${style}`}
-    >
+    <div className={`fixed bottom-6 right-6 border-l-4 px-4 py-3 rounded-md shadow-lg max-w-sm z-50 ${style}`}>
       <div className="flex justify-between items-start gap-2">
         <span className="text-sm font-medium">{toast.msg}</span>
-        <button
-          onClick={clearToast}
-          className="text-current opacity-50 hover:opacity-100"
-        >
+        <button onClick={clearToast} className="text-current opacity-50 hover:opacity-100">
           ×
         </button>
       </div>
-      {toast.detail && (
-        <p className="text-xs opacity-70 mt-1">{toast.detail}</p>
-      )}
+      {toast.detail && <p className="text-xs opacity-70 mt-1">{toast.detail}</p>}
     </div>
   );
 }

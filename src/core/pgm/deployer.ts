@@ -251,7 +251,9 @@ async function postDeploy(client: pg.Client, modulesDir: string, plan: InstallPl
           if (rows.length > 0) {
             await client.query(`SELECT ${schema}.i18n_seed()`);
           }
-        } catch { /* skip */ }
+        } catch {
+          /* skip */
+        }
 
         // QA seed
         const qaSchema = manifest.schemas.qa;
@@ -264,7 +266,9 @@ async function postDeploy(client: pg.Client, modulesDir: string, plan: InstallPl
             if (rows.length > 0) {
               await client.query(`SELECT ${qaSchema}.seed()`);
             }
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
       }
       console.log("  seeds: ok");

@@ -1,16 +1,8 @@
 import { useEffect, useState } from "react";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { get } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Currency } from "./Currency";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 interface ColDef {
   key: string;

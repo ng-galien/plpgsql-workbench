@@ -13,15 +13,16 @@ import { createBroadcastService } from "../broadcast.js";
 import type { DbClient } from "../connection.js";
 import type { ToolPack, WithClient } from "../container.js";
 import { buildModuleRegistry } from "../pgm/registry.js";
+import { createAlterTool } from "../tools/plpgsql/alter.js";
+import { createBroadcastTool } from "../tools/plpgsql/broadcast.js";
 import { createCoverageTool } from "../tools/plpgsql/coverage.js";
 import { createDocTool } from "../tools/plpgsql/doc.js";
 import { createExplainTool } from "../tools/plpgsql/explain.js";
-import { createAlterTool } from "../tools/plpgsql/alter.js";
 import { createFuncBulkDelTool } from "../tools/plpgsql/func-bulk-del.js";
 import { createFuncDelTool } from "../tools/plpgsql/func-del.js";
 import { createFuncEditTool } from "../tools/plpgsql/func-edit.js";
-import { createFuncRenameTool } from "../tools/plpgsql/func-rename.js";
 import { createFuncLoadTool } from "../tools/plpgsql/func-load.js";
+import { createFuncRenameTool } from "../tools/plpgsql/func-rename.js";
 import { createFuncSaveTool } from "../tools/plpgsql/func-save.js";
 import { createFuncSetTool, createSetFunction } from "../tools/plpgsql/func-set.js";
 // Shared services
@@ -35,7 +36,6 @@ import { createQueryTool } from "../tools/plpgsql/query.js";
 import { createSchemaTool } from "../tools/plpgsql/schema.js";
 import { createSearchTool } from "../tools/plpgsql/search.js";
 import { createTestTool, formatTestReport, runTests } from "../tools/plpgsql/test.js";
-import { createBroadcastTool } from "../tools/plpgsql/broadcast.js";
 import { createVisualTool } from "../tools/plpgsql/visual.js";
 
 export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record<string, unknown>) => {

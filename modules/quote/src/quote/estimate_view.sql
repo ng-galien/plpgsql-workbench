@@ -12,7 +12,7 @@ BEGIN
         'fields', jsonb_build_array('number', 'client_name', 'status')
       ),
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('number', 'client_name', 'subject', 'status', 'created_at'),
+        'fields', jsonb_build_array('number', 'client_name', 'subject', 'status'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'total_ht', 'label', 'quote.stat_total_ht'),
           jsonb_build_object('key', 'total_tva', 'label', 'quote.stat_total_tva'),

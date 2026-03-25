@@ -1,12 +1,6 @@
 import { useT } from "@/lib/i18n";
 
-export function Workflow({
-  states,
-  current,
-}: {
-  states: string[];
-  current: string;
-}) {
+export function Workflow({ states, current }: { states: string[]; current: string }) {
   const t = useT();
   const currentIdx = states.indexOf(current);
 
@@ -33,13 +27,7 @@ export function Workflow({
             </div>
             {/* Arrow */}
             {i < states.length - 1 && (
-              <div
-                className={`text-[8px] shrink-0 ${
-                  isDone ? "text-primary" : "text-muted-foreground/40"
-                }`}
-              >
-                ›
-              </div>
+              <div className={`text-[8px] shrink-0 ${isDone ? "text-primary" : "text-muted-foreground/40"}`}>›</div>
             )}
           </div>
         );

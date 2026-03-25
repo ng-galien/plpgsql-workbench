@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 interface AnnotationTarget {
@@ -52,7 +52,7 @@ export function Annotate() {
         setMessage("");
       }
     },
-    [active]
+    [active],
   );
 
   useEffect(() => {
@@ -71,16 +71,19 @@ export function Annotate() {
   const send = async () => {
     if (!target || !message.trim()) return;
     setSending(true);
-    const { error } = await supabase.schema("workbench").from("issue_report").insert({
-      issue_type: "bug",
-      module: "lead",
-      description: message.trim(),
-      context: {
-        element_id: target.debug,
-        page: window.location.pathname,
-        source: "browser_annotation",
-      },
-    });
+    const { error } = await supabase
+      .schema("workbench")
+      .from("issue_report")
+      .insert({
+        issue_type: "bug",
+        module: "lead",
+        description: message.trim(),
+        context: {
+          element_id: target.debug,
+          page: window.location.pathname,
+          source: "browser_annotation",
+        },
+      });
     setSending(false);
     if (!error) {
       setSent(true);
@@ -102,10 +105,7 @@ export function Annotate() {
         <div className="fixed top-2 right-2 z-50 px-3 py-1.5 bg-destructive text-white text-xs rounded-md shadow-lg flex items-center gap-2">
           <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
           Report mode — click an element
-          <button
-            onClick={() => setActive(false)}
-            className="ml-2 opacity-70 hover:opacity-100"
-          >
+          <button onClick={() => setActive(false)} className="ml-2 opacity-70 hover:opacity-100">
             ×
           </button>
         </div>
@@ -131,9 +131,7 @@ export function Annotate() {
               left: Math.min(target.rect.left, window.innerWidth - 300),
             }}
           >
-            <div className="text-xs text-muted-foreground font-mono truncate">
-              {target.debug}
-            </div>
+            <div className="text-xs text-muted-foreground font-mono truncate">{target.debug}</div>
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -152,10 +150,7 @@ export function Annotate() {
               }}
             />
             <div className="flex justify-between items-center">
-              <button
-                onClick={() => setTarget(null)}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
+              <button onClick={() => setTarget(null)} className="text-xs text-muted-foreground hover:text-foreground">
                 Cancel
               </button>
               <button
