@@ -55,10 +55,30 @@ export function createFuncEditTool({
         let patched = ddl;
         for (let i = 0; i < edits.length; i++) {
           const { old: oldStr, new: newStr } = edits[i];
-          const count = patched.split(oldStr).length - 1;
+          let count = patched.split(oldStr).length - 1;
+
           if (count === 0) {
+            // Whitespace-tolerant fallback: normalize spaces/tabs/newlines
+            const normalize = (s: string) => s.replace(/\s+/g, " ").trim();
+            const normPatched = normalize(patched);
+            const normOld = normalize(oldStr);
+            const normCount = normPatched.split(normOld).length - 1;
+
+            if (normCount === 1) {
+              // Find the actual substring in the original using a flexible regex
+              const escaped = oldStr
+                .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+                .replace(/\s+/g, "\\s+");
+              const flexRegex = new RegExp(escaped);
+              const match = patched.match(flexRegex);
+              if (match) {
+                patched = patched.replace(flexRegex, newStr);
+                continue;
+              }
+            }
+
             return text(
-              `✗ edit ${i + 1} failed\nproblem: old string not found\nwhere: ${parsed.schema}.${parsed.name}`,
+              `✗ edit ${i + 1} failed\nproblem: old string not found (also tried whitespace-tolerant match)\nwhere: ${parsed.schema}.${parsed.name}`,
             );
           }
           if (count > 1) {

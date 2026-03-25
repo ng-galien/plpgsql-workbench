@@ -109,6 +109,16 @@ export async function runTests(client: DbClient, testSchema: string, pattern?: s
   }
   await client.query(`SET LOCAL search_path TO ${qi(testSchema)}, ${qi(sourceSchema)}${extraSchemas}, public`);
   try {
+    // Check for test functions that exist in src/ but failed to compile (invisible to pgTAP)
+    const { rows: srcFiles } = await client.query<{ proname: string }>(
+      `SELECT p.proname FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = $1 AND p.proname ~ $2
+       ORDER BY p.proname`,
+      [testSchema, filter],
+    );
+    const compiledTests = new Set(srcFiles.map((r) => r.proname));
+
     const { rows } = await client.query<{ runtests: string }>(
       `SELECT * FROM runtests(${ql(testSchema)}::name, ${ql(filter)}::text)`,
     );
@@ -117,8 +127,19 @@ export async function runTests(client: DbClient, testSchema: string, pattern?: s
     } else {
       await client.query("ROLLBACK");
     }
-    if (rows.length === 0) return { passed: 0, failed: 0, total: 0, results: [] };
-    return parseTap(rows);
+    if (rows.length === 0 && compiledTests.size === 0) {
+      return { passed: 0, failed: 0, total: 0, results: [] };
+    }
+    const report = rows.length > 0 ? parseTap(rows) : { passed: 0, failed: 0, total: 0, results: [] as TapResult[] };
+
+    // Warn about 0 compiled tests when source files likely exist
+    if (compiledTests.size === 0 && report.total === 0) {
+      report.results.push({ ok: false, description: `⚠ no test functions found in ${testSchema} — functions may have failed to compile. Check pg_get plpgsql://${testSchema} for errors.` });
+      report.failed = 1;
+      report.total = 1;
+    }
+
+    return report;
   } catch (err: unknown) {
     if (inTransaction) {
       await client.query("ROLLBACK TO SAVEPOINT test_run").catch(() => {});

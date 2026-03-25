@@ -45,6 +45,21 @@ export interface ViewTemplate {
       stats?: { key: string; label: string; variant?: string }[];
       related?: { entity: string; label: string; filter: string }[];
     };
+    form?: {
+      sections: Array<{
+        label: string;
+        fields: Array<{
+          key: string;
+          type: string;
+          label: string;
+          required?: boolean;
+          options?: unknown;
+          source?: string;
+          display?: string;
+          filter?: string;
+        }>;
+      }>;
+    };
   };
   actions?: Record<
     string,

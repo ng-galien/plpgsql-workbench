@@ -93,6 +93,18 @@ dev-init: dev-up dev-sync ## First start: load all build/*.sql into dev DB
 			PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -f "$$sql" -q 2>&1 | grep -v "^$$" || true; \
 		done; \
 	done
+	@echo "Running i18n seeds..."
+	@for mod in modules/*/; do \
+		schema=$$(python3 -c "import json; print(json.load(open('$${mod}module.json')).get('schemas',{}).get('public',''))" 2>/dev/null); \
+		if [ -n "$$schema" ]; then \
+			has_i18n=$$(PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -tAc \
+				"SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = '$$schema' AND p.proname = 'i18n_seed'" 2>/dev/null); \
+			if [ "$$has_i18n" = "1" ]; then \
+				PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -c "SELECT $$schema.i18n_seed()" -q 2>&1 | grep -v "^$$" || true; \
+				echo "  i18n $$schema"; \
+			fi; \
+		fi; \
+	done
 	@echo "Granting QA schema permissions..."
 	@for mod in modules/*/; do \
 		schema=$$(python3 -c "import json; print(json.load(open('$${mod}module.json')).get('schemas',{}).get('qa',''))" 2>/dev/null); \
@@ -115,6 +127,20 @@ dev-init: dev-up dev-sync ## First start: load all build/*.sql into dev DB
 		fi; \
 	done
 	@echo "All modules loaded into dev DB"
+
+i18n-sync: ## Re-run all i18n_seed() functions (refresh translations)
+	@for mod in modules/*/; do \
+		schema=$$(python3 -c "import json; print(json.load(open('$${mod}module.json')).get('schemas',{}).get('public',''))" 2>/dev/null); \
+		if [ -n "$$schema" ]; then \
+			has_i18n=$$(PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -tAc \
+				"SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = '$$schema' AND p.proname = 'i18n_seed'" 2>/dev/null); \
+			if [ "$$has_i18n" = "1" ]; then \
+				PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -c "SELECT $$schema.i18n_seed()" -q 2>&1 | grep -v "^$$" || true; \
+				echo "  i18n $$schema"; \
+			fi; \
+		fi; \
+	done
+	@echo "i18n sync complete"
 
 # --- App management (make app-up APP=name) ---
 

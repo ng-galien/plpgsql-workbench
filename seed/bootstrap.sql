@@ -38,9 +38,13 @@ INSERT INTO workbench.tenant_module (tenant_id, module, active, sort_order) VALU
   ('dev', 'hr', true, 80)
 ON CONFLICT DO NOTHING;
 
--- Supabase Realtime — enable CDC for agent messaging
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS workbench.agent_message;
-ALTER TABLE workbench.agent_message REPLICA IDENTITY FULL;
+-- Supabase Realtime — enable CDC for agent messaging (skip on dev stack without Supabase)
+DO $$ BEGIN
+  ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS workbench.agent_message;
+  ALTER TABLE workbench.agent_message REPLICA IDENTITY FULL;
+EXCEPTION WHEN undefined_object THEN
+  RAISE NOTICE 'supabase_realtime publication not found — skipping (dev stack without Supabase)';
+END $$;
 
 -- Grants for browser issue reporting (anon role via PostgREST)
 GRANT INSERT ON workbench.issue_report TO anon;

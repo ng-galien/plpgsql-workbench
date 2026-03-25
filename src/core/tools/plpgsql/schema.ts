@@ -50,7 +50,15 @@ async function applyMigrations(client: DbClient, dir: string, force: boolean): P
     return `problem: directory not found: ${resolved}\nwhere: pg_schema\nfix_hint: check the path argument`;
   }
 
-  const sqlFiles = entries.filter((f) => f.endsWith(".sql")).sort();
+  const sqlFiles = entries.filter((f) => f.endsWith(".sql")).sort((a, b) => {
+    // Sort by numeric prefix if present (001-xxx.sql before 002-xxx.sql), else alphabetical
+    const na = parseInt(a, 10);
+    const nb = parseInt(b, 10);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    if (!isNaN(na)) return -1;
+    if (!isNaN(nb)) return 1;
+    return a.localeCompare(b);
+  });
   if (sqlFiles.length === 0) {
     return `no .sql files in ${resolved}`;
   }

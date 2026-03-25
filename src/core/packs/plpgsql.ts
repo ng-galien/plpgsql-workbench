@@ -16,8 +16,11 @@ import { buildModuleRegistry } from "../pgm/registry.js";
 import { createCoverageTool } from "../tools/plpgsql/coverage.js";
 import { createDocTool } from "../tools/plpgsql/doc.js";
 import { createExplainTool } from "../tools/plpgsql/explain.js";
+import { createAlterTool } from "../tools/plpgsql/alter.js";
+import { createFuncBulkDelTool } from "../tools/plpgsql/func-bulk-del.js";
 import { createFuncDelTool } from "../tools/plpgsql/func-del.js";
 import { createFuncEditTool } from "../tools/plpgsql/func-edit.js";
+import { createFuncRenameTool } from "../tools/plpgsql/func-rename.js";
 import { createFuncLoadTool } from "../tools/plpgsql/func-load.js";
 import { createFuncSaveTool } from "../tools/plpgsql/func-save.js";
 import { createFuncSetTool, createSetFunction } from "../tools/plpgsql/func-set.js";
@@ -104,6 +107,9 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
     docTool: asFunction(createDocTool).singleton(),
     packTool: asFunction(createPackTool).singleton(),
     funcDelTool: asFunction(createFuncDelTool).singleton(),
+    funcRenameTool: asFunction(createFuncRenameTool).singleton(),
+    funcBulkDelTool: asFunction(createFuncBulkDelTool).singleton(),
+    alterTool: asFunction(createAlterTool).singleton(),
     msgTool: asFunction(createMsgTool).singleton(),
     msgInboxTool: asFunction(createMsgInboxTool).singleton(),
     previewTool: asFunction(createPreviewTool).singleton(),
