@@ -1,4 +1,5 @@
-# Dev stack — PostgreSQL 17 + PostgREST + nginx (port 5433/3000/8080)
+# Dev stack — PostgreSQL 17 + PostgREST (port 5433/3000)
+# Frontend: React app on localhost:5173 (npm run dev in app/)
 # Usage: make dev-up / make dev-down / make dev-clean
 services:
   postgres:
@@ -31,14 +32,4 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-
-  frontend:
-    image: nginx:alpine
-    ports:
-      - "8080:80"
-    volumes:
-      - ./dev/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./dev/frontend:/usr/share/nginx/html:ro
-    depends_on:
-      - postgrest
 

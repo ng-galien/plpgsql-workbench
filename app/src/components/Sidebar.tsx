@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useT } from "@/lib/i18n";
 import type { Module } from "@/lib/store";
 import { useStore } from "@/lib/store";
+import { Settings } from "lucide-react";
 
 function Icon({ name, className }: { name?: string; className?: string }) {
   if (!name) return <span className={className}>·</span>;
@@ -18,6 +19,8 @@ const groupOrder = ["main", "commercial", "operations", "finance", "team", "admi
 export function Sidebar() {
   const modules = useStore((s) => s.modules);
   const loading = useStore((s) => s.loading);
+  const view = useStore((s) => s.view);
+  const setView = useStore((s) => s.setView);
   const openOverlay = useStore((s) => s.openOverlay);
   const t = useT();
 
@@ -70,7 +73,18 @@ export function Sidebar() {
         )}
       </nav>
 
-      <div className="px-3 py-3 border-t">
+      <div className="px-3 py-3 border-t flex flex-col gap-2">
+        <button
+          onClick={() => setView(view === "admin" ? "workspace" : "admin")}
+          className={`w-full text-left px-2 py-1.5 rounded-md text-sm flex items-center gap-2 transition-colors ${
+            view === "admin"
+              ? "bg-primary/10 text-primary font-medium"
+              : "text-muted-foreground hover:text-foreground hover:bg-accent"
+          }`}
+        >
+          <Settings className="w-4 h-4" />
+          <span>Admin</span>
+        </button>
         <div className="px-2 py-1.5 bg-muted rounded-md flex items-center gap-2">
           <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-blue-500 flex items-center justify-center text-[10px] text-white font-bold shrink-0">
             AB

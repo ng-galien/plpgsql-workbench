@@ -88,7 +88,12 @@ export interface OverlayState {
 
 // --- Store ---
 
+type View = "workspace" | "admin";
+
 interface AppState {
+  view: View;
+  setView: (v: View) => void;
+
   modules: Module[];
   loading: boolean;
   loadModules: () => Promise<void>;
@@ -114,6 +119,9 @@ interface AppState {
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useStore = create<AppState>((set, get) => ({
+  view: "workspace" as View,
+  setView: (v) => set({ view: v }),
+
   modules: [],
   loading: true,
   loadModules: async () => {

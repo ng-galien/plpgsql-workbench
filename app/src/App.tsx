@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Admin } from "@/components/admin/Admin";
 import { Annotate } from "@/components/Annotate";
 import { Canvas } from "@/components/Canvas";
 import { Overlay } from "@/components/Overlay";
@@ -9,6 +10,7 @@ import { initRealtime } from "@/lib/realtime";
 import { useStore } from "@/lib/store";
 
 export function App() {
+  const view = useStore((s) => s.view);
   const loadModules = useStore((s) => s.loadModules);
   const loadI18n = useI18n((s) => s.load);
 
@@ -23,8 +25,12 @@ export function App() {
     <div className="h-screen flex overflow-hidden">
       <Sidebar />
       <main className="flex-1 relative">
-        <Canvas />
-        <Overlay />
+        {view === "admin" ? <Admin /> : (
+          <>
+            <Canvas />
+            <Overlay />
+          </>
+        )}
       </main>
       <Toast />
       <Annotate />

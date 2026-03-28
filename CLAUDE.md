@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 PL/pgSQL Workbench is a development platform built as an MCP (Model Context Protocol) server. It provides tools for navigating, editing, testing, and analyzing PL/pgSQL code in PostgreSQL. It runs as an HTTP server (default port 3100) exposing MCP tools at `/mcp`.
 
-The workbench is the foundation for building all applications with PostgreSQL as sole runtime (see `docs/PGAPP.md`). Each application is a set of PostgreSQL schemas + MCP tools, packaged via toolboxes for commercial distribution.
+The workbench is the foundation for building all applications with PostgreSQL as sole runtime. Each application is a set of PostgreSQL schemas + MCP tools, packaged via toolboxes for commercial distribution. Frontend: React canvas workspace (`app/`) with SDUI pattern (server-driven UI).
 
 ## Role: Lead / Orchestrator
 
@@ -59,11 +59,11 @@ No test framework is configured in this repo — testing happens via pgTAP insid
 Shared dev environment for module development. Custom image `pg-workbench` based on `postgres:17` (native ARM64/Apple Silicon) with PostGIS + SFCGAL from Debian packages, `plpgsql_check` + `pgtap` built from source.
 
 ```bash
-make dev-up              # Start stack (postgres:5433, postgrest:3000, nginx:8080)
+make dev-up              # Start stack (postgres:5433, postgrest:3000)
 make dev-down            # Stop (data persists in data/pgdata/)
 make dev-clean           # Stop containers (data preserved — delete manually if needed)
 make dev-init            # Start + deploy all modules into dev DB
-make dev-sync            # Copy module frontend assets into dev/frontend/
+cd app && npm run dev    # React frontend (port 5173)
 ```
 
 **Local persistence:** Data is stored in `./data/pgdata/` (bind mount, not Docker volume). Never auto-deleted — safety first. Delete manually with `rm -rf data/pgdata/` only after `docker compose down`.
@@ -71,6 +71,8 @@ make dev-sync            # Copy module frontend assets into dev/frontend/
 **Dynamic PostgREST schemas:** `make dev-up` generates `.env` with `PGRST_DB_SCHEMAS` extracted from `modules/*/module.json` schemas.
 
 **Connection:** `postgresql://postgres:postgres@localhost:5433/postgres`
+
+**Frontend:** React app in `app/` (Vite + Tailwind + Zustand + Supabase client). Admin console with messages, issues, and team terminal views via xterm.js.
 
 **Auto-initialized on first start** (via `seed/` at repo root):
 - Extensions: `plpgsql_check`, `pgtap`, `postgis`, `postgis_sfcgal`
@@ -185,7 +187,7 @@ Auto-resolution examples:
 
 | Module | Schemas | Purpose |
 |--------|---------|---------|
-| pgv | `pgv`, `pgv_ut`, `pgv_qa` | Framework: SSR router, UI primitives, Alpine shell |
+| pgv | `pgv`, `pgv_ut`, `pgv_qa` | Framework: route_crud, _view() contract, i18n, UI primitives |
 | workbench | `workbench` | Platform infra: tenants, messaging, hooks, sessions, issues, UI dashboard |
 | cad | `cad`, `cad_ut`, `cad_qa` | CAD 3D wood structures (PostGIS/SFCGAL, Three.js) |
 | crm | `crm`, `crm_ut`, `crm_qa` | CRM: contacts, entreprises |
@@ -254,54 +256,38 @@ Tool outputs use LMNAV (LM-Navigable), a compact text format optimized for LLM c
 - **Error triplet** — `problem/where/fix_hint` structure
 - **`->` not `→`** — ASCII arrow is 1 token, Unicode is 3
 
-## pgView Pattern
+## SDUI Pattern (Server-Driven UI)
 
-Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, canonical source in `modules/pgv/`):
+React canvas workspace driven by PL/pgSQL data contracts (see `src/core/docs/sdui.md`):
 
-- **Router**: `pgv.route(schema, path, method, params)` — generic, pg_proc introspection, zero config
-- **Convention**: `get_*()` = pages (GET), `post_*()` = actions (POST) — no CASE router to maintain
-- **Dispatch**: introspects function signature (0 args, jsonb, scalar cast, composite `jsonb_populate_record`)
-- **GET response**: wrapped in `pgv.page()` layout (nav + title + body)
-- **POST response**: raw HTML returned (toast/redirect templates, no layout)
-- **Alpine.js** shell (~150 lines) handles routing, events, toast, dialogs
-- **PicoCSS** classless styling, **marked.js** for Markdown tables in `<md>` blocks
-- `pgv.*` schema = reusable UI primitives styled via `pgview.css`
-- **pgv.href()** for **external links only** (https, mailto, tel) — RAISE on internal paths. Use `pgv.call_ref('function_name', params)` for internal navigation (verifies function exists in pg_proc)
-- **Query params** for dynamic pages: `/drawing?id=42` not `/drawing/42`
+- **Router**: `pgv.route_crud(verb, uri, data)` — CRUD dispatcher, returns JSON (data + view template + HATEOAS actions)
+- **Convention**: `{entity}_view()` declares template (compact/standard/expanded/form) + actions catalog
+- **Convention**: `{entity}_read(id)` returns entity data + available actions (HATEOAS)
+- **Convention**: `{entity}_list()` returns entity list for overlay browse
+- **React shell**: `app/` — Vite + Tailwind + Zustand + Supabase client
+- **Canvas workspace**: pin entities as cards, template-driven rendering from `_view()`
+- **Overlay**: sidebar browse/create panel, combobox for FK fields
+- **Admin console**: messages, issues, team terminals (xterm.js)
+- **i18n**: `pgv.i18n_bundle(lang)` returns all translations, React `useT()` hook resolves keys
 
-### pgView Conventions (ENFORCED)
+### _view() Contract
 
-**1. data-\* contract** — PL/pgSQL generates pure HTML + `data-*` attributes. Shell interprets them.
+Each entity declares `{entity}_view() RETURNS jsonb` with:
+- `uri`: entity URI (`schema://entity`)
+- `label`: i18n key for entity name
+- `template.compact`: fields for list items (ViewField[])
+- `template.standard`: fields + stats + related for canvas cards
+- `template.expanded`: all fields for detail view
+- `template.form`: sections with typed fields for create/edit forms
+- `actions`: catalog of available actions with labels, variants, confirm messages
 
-| Pattern | Who generates | Shell action |
-|---------|--------------|--------------|
-| `<a href="/path">` | PL/pgSQL | `go(path)` navigation |
-| `<form data-rpc="fn">` | PL/pgSQL | `post(fn, formData)` |
-| `<button data-rpc="fn" data-params='{}' data-confirm="msg">` | `pgv.action()` | `post(fn, params)` |
-| `<template data-toast="success\|error">msg</template>` | action return | Toast notification |
-| `<template data-redirect="/path"></template>` | action return | `go(path)` redirect |
-| `<button data-dialog="name" data-src="url" data-target="id">` | PL/pgSQL | Open dialog |
-| `<button data-toggle-theme>` | `pgv.nav()` | Flip light/dark theme |
-
-**2. CSS classes, NEVER inline styles** — pgv primitives output `class="pgv-*"`, all styling lives in `pgview.css` with `--pgv-*` CSS custom properties. Light/dark themes via `[data-theme]` selectors. NEVER generate `style="..."` in pgv functions.
-
-**3. Tables via Markdown** — Use `<md>` blocks for tables, NOT raw `<table>` HTML. The shell converts via marked.js and adds sort + pagination automatically.
-- `<md>` = table with sortable columns
-- `<md data-page="10">` = table with pagination (10 rows/page)
-- HTML inline (badges, etc.) works inside markdown cells
-
-**4. pgv primitives are platform** — `pgv.*` functions live in `modules/pgv/build/pgv.func.sql` (canonical source, exported via `pg_pack`). They are shared infrastructure, not app code. Each app gets pgv files via `pgm install`.
-
-**5. `pgv.diagnose()` cross-module awareness** — Section 5 detects target schema from the first path segment (`/crm/client` -> `crm.get_client()`, not `project.get_crm_client()`). Uses `EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = v_ns)` to verify target schema exists before cross-module resolution.
-
-**6. Alpine.js `$el` is context-dependent (GOTCHA)** — In `Alpine.data()` components, `$el` refers to the element where the current directive is evaluated, NOT the component root (`x-data` element). Inside `@click` handlers on nested elements, `$el` points to the clicked element. **Always capture the root in `init()`**: `this._rootEl = this.$el;` then use `this._rootEl` for DOM queries (`querySelector`, etc.). Similarly, use `$nextTick()` before accessing DOM that depends on reactive state changes (e.g., after setting `s.open = true`, the `x-show` container needs a tick to render before `querySelector` can find its children).
+ViewField = `string` (just key) or `{key, type?, label?}` (typed: date, currency, status, etc.)
 
 ### pgView Files
 
 | File | Role |
 |------|------|
-| `modules/pgv/frontend/index.html` | Alpine.js shell (routing, events, toast, dialog, table enhance) |
-| `modules/pgv/frontend/pgview.css` | CSS tokens + component styles + light/dark themes |
+| `app/src/` | React frontend (canvas, overlay, admin, SDUI primitives) |
 | `modules/pgv/build/pgv.func.sql` | pgv + pgv_ut schemas (pg_pack output) |
 | `modules/pgv/src/pgv/*.sql` | Individual function sources (pg_func_save output) |
 
@@ -332,7 +318,7 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 - **Tool naming** — `{domain}_{action}`: `pg_*` (PostgreSQL), `fs_*` (filesystem/docstore), `gmail_*` (Google)
 - **Zero inline SQL in app tools** — App tools (doc_*, etc.) MUST NOT contain raw SQL. Business logic lives in PL/pgSQL functions deployed in the app schema (e.g. `docman.import()`, `docman.classify()`). App MCP tools are thin orchestrators: they read config from DB, call platform primitives (fs_*, gmail_*), and call app PL/pgSQL functions via `withClient`. SQL in TypeScript = bug.
 - **Zero process.env for app config** — Only infra bootstrap uses env vars (PLPGSQL_CONNECTION, MCP_PORT, LOG_LEVEL, WORKBENCH_MODE). All app config lives in `workbench.config(app, key, value)` and is read from DB at request time. No defaults, no fallbacks.
-- **PostgREST `"text/html"` routing** — `pgv.route()` returns domain `"text/html"` which PostgREST negotiates. Individual `post_*()` functions return plain `text`. The Alpine.js shell MUST route POST actions through `pgv.route()` (via `/rpc/route`), NOT directly to `/rpc/<fn>`, otherwise PostgREST returns 406 PGRST107 (unsupported media type).
+- **PostgREST CRUD routing** — `pgv.route_crud(verb, uri, data)` handles all CRUD operations. React calls via Supabase client `pgv.rpc("route_crud", ...)`. Returns JSON with data, view template, and HATEOAS actions.
 - **PostgREST grants** — Each `build/{schema}.ddl.sql` MUST include `GRANT USAGE ON SCHEMA {schema} TO anon`, `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO anon`, `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO anon` — otherwise 500 in frontend via PostgREST
 
 ## Documentation Map
@@ -340,11 +326,10 @@ Server-Side Rendering in PL/pgSQL (see `docs/PGAPP.md`, `docs/FRONTEND.md`, cano
 | File | Content |
 |------|---------|
 | `docs/LMNAV.md` | Output format specification with examples for every tool |
-| `docs/PGAPP.md` | Platform architecture: pgv.route(), pgView SSR, get\_/post\_ convention, schema=module, pgv primitives |
-| `docs/FRONTEND.md` | **UI/UX stack reference**: Alpine.js shell, data-\* contract, pgv.route() dispatch, tables (sort+pagination), CSS, PostgREST config |
+| `docs/PGM.md` | PostgreSQL Module Manager: module.json spec, pgm CLI, install/deploy workflow |
+| `src/core/docs/sdui.md` | SDUI contract: _view() template, route_crud, entity types, form fields |
 | `docs/BUSINESS.md` | Business plan for SaaS artisan ERP + toolbox packaging model |
 | `docs/AI-INTEGRATION.md` | 3-level AI integration: MCP (done), chat widget, autonomous agent |
-| `docs/PGM.md` | PostgreSQL Module Manager: module.json spec, pgm CLI, install/deploy workflow |
 | `docs/PRIMITIVE.md` | Original spec for MCP tool primitives (some aspirational) |
 | `src/docs/testing.md` | pgTAP testing guide (loaded into workbench DB as built-in doc) |
 | `src/docs/coverage.md` | Coverage tool guide (loaded into workbench DB as built-in doc) |
