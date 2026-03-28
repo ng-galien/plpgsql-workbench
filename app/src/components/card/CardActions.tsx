@@ -21,9 +21,6 @@ export function CardActions({
   view: ViewTemplate | null;
   t: (key: string) => string;
 }) {
-  const hateoas = data.actions as Array<{ method: string; uri: string }> | undefined;
-  if (!hateoas || hateoas.length === 0) return null;
-
   const catalog = view?.actions ?? {};
   const showToast = useStore((s) => s.showToast);
   const unpin = useStore((s) => s.unpin);
@@ -31,12 +28,15 @@ export function CardActions({
   const [pending, setPending] = useState<{ method: string; uri: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const hateoas = Array.isArray(data.actions) ? data.actions as Array<{ method: string; uri: string }> : undefined;
+  if (!hateoas || hateoas.length === 0) return null;
+
   const pendingMeta = pending ? catalog[pending.method] : null;
 
   async function exec(action: { method: string; uri: string }) {
     setLoading(true);
     try {
-      await crud("post", action.uri);
+      await crud(action.method, action.uri);
       if (action.method === "delete") {
         unpin(pin.id);
       } else {

@@ -61,12 +61,13 @@ export function CardBody({
   );
 }
 
+const HIDDEN_FIELDS = new Set(["id", "tenant_id", "created_at", "updated_at", "actions"]);
+
 export function FallbackBody({ data }: { data: Record<string, unknown> }) {
-  const hidden = new Set(["id", "tenant_id", "created_at", "updated_at", "actions"]);
   return (
     <>
       {Object.entries(data)
-        .filter(([k]) => !hidden.has(k))
+        .filter(([k]) => !HIDDEN_FIELDS.has(k))
         .slice(0, 8)
         .map(([key, val]) => (
           <div key={key} className="flex justify-between gap-2">

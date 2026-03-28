@@ -262,11 +262,12 @@ export const useStore = create<AppState>((set, get) => ({
       pins: s.pins.map((p) => {
         if (p.uri !== uri) return p;
         const messages = p.messages
-          .map((m) => ({
-            ...m,
-            actions: m.actions?.filter((a) => a.id !== actionId),
-          }))
-          .filter((m) => (m.actions && m.actions.length > 0) || !m.actions);
+          .map((m) => {
+            if (!m.actions?.some((a) => a.id === actionId)) return m;
+            const filtered = m.actions.filter((a) => a.id !== actionId);
+            return filtered.length === 0 ? null : { ...m, actions: filtered };
+          })
+          .filter((m): m is CardMessage => m !== null);
         return { ...p, messages };
       }),
     })),
