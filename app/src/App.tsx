@@ -1,10 +1,10 @@
 import { useEffect } from "react";
-import { Annotate } from "@/components/Annotate";
-import { Admin } from "@/components/admin/Admin";
-import { Canvas } from "@/components/Canvas";
-import { Overlay } from "@/components/Overlay";
-import { Sidebar } from "@/components/Sidebar";
-import { Toast } from "@/components/Toast";
+import { Annotate } from "@/components/blocks/Annotate";
+import { Admin } from "@/components/blocks/admin/Admin";
+import { Canvas } from "@/components/blocks/Canvas";
+import { Overlay } from "@/components/blocks/Overlay";
+import { Sidebar } from "@/components/blocks/Sidebar";
+import { Toast } from "@/components/blocks/Toast";
 import { useI18n } from "@/lib/i18n";
 import { initRealtime } from "@/lib/realtime";
 import { useStore } from "@/lib/store";

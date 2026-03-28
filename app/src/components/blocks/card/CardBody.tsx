@@ -1,4 +1,4 @@
-import { Currency } from "@/components/sdui/Currency";
+import { Currency } from "@/components/primitives/Currency";
 import { Badge } from "@/components/ui/badge";
 import type { ViewTemplate } from "@/lib/store";
 import { fieldKey, fieldLabel, fieldType, formatDate, formatDatetime, resolveFieldLabel } from "@/lib/utils";
