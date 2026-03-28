@@ -65,8 +65,8 @@ export function LineItems({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row, i) => (
-            <TableRow key={i}>
+          {rows.map((row) => (
+            <TableRow key={String(row.id ?? row.key ?? JSON.stringify(row))}>
               {columns.map((col) => (
                 <TableCell
                   key={col.key}

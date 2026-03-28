@@ -292,8 +292,8 @@ function OverlayForm({
 
       {/* Form */}
       <div className="flex-1 overflow-auto p-4 flex flex-col gap-5">
-        {form.sections.map((section, si) => (
-          <div key={si} className="flex flex-col gap-3">
+        {form.sections.map((section) => (
+          <div key={section.label} className="flex flex-col gap-3">
             <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">
               {t(section.label)}
             </span>

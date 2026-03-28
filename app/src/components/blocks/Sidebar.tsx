@@ -108,11 +108,11 @@ function ModuleNav({
     <>
       {m.items
         .filter((item) => item.entity)
-        .map((item, i) => {
+        .map((item) => {
           const uri = item.uri || `${m.schema}://${item.entity}`;
           return (
             <button
-              key={i}
+              key={uri}
               onClick={() => onOpen(uri)}
               data-debug={`sidebar.item[${uri}]`}
               className="w-full text-left px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors flex items-center gap-2"

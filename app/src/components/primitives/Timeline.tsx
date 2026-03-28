@@ -28,6 +28,7 @@ export function Timeline({ events }: { events: TimelineEvent[] }) {
         const isLast = i === events.length - 1;
 
         return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: display-only list, never reordered
           <div key={i} className="flex gap-2.5 min-h-[24px]">
             {/* Dot + line */}
             <div className="flex flex-col items-center w-3 shrink-0">

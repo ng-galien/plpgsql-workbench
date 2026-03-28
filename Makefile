@@ -276,7 +276,7 @@ agent-attach: ## Attach to agent tmux session (M=name). Ex: make agent-attach M=
 build: ## Compile TypeScript (tsc → dist/)
 	npm run build
 
-check: check-server check-app check-lint ## Full quality gate
+check: check-server check-app check-lint check-css ## Full quality gate
 	@echo "✓ All checks passed"
 
 check-server: ## Type-check MCP server (src/)
@@ -290,6 +290,10 @@ check-app: ## Type-check React app (app/src/)
 check-lint: ## Biome lint (TS)
 	@echo "  biome lint ..."
 	@npx biome check .
+
+check-css: ## Stylelint (CSS)
+	@echo "  stylelint ..."
+	@npx stylelint "app/src/**/*.css"
 
 # --- Help ---
 
