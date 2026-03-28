@@ -1,10 +1,9 @@
 import type { LucideIcon } from "lucide-react";
-import { icons } from "lucide-react";
+import { icons, Settings } from "lucide-react";
 import { useMemo } from "react";
 import { useT } from "@/lib/i18n";
 import type { Module } from "@/lib/store";
 import { useStore } from "@/lib/store";
-import { Settings } from "lucide-react";
 
 function Icon({ name, className }: { name?: string; className?: string }) {
   if (!name) return <span className={className}>·</span>;

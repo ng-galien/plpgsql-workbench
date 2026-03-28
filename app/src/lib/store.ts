@@ -252,9 +252,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   pushMessage: (uri, message) =>
     set((s) => ({
-      pins: s.pins.map((p) =>
-        p.uri === uri ? { ...p, messages: [...p.messages, message].slice(-50) } : p,
-      ),
+      pins: s.pins.map((p) => (p.uri === uri ? { ...p, messages: [...p.messages, message].slice(-50) } : p)),
     })),
 
   removeAction: (uri, actionId) =>

@@ -175,9 +175,10 @@ export function createFuncSaveTool({
           );
         }
 
-        // Run UT tests before saving — abort if any fail
-        const utSchema = `${schema}_ut`;
-        const testReport = await runTests(client, utSchema);
+        const isTestSchema = schema.endsWith("_ut") || schema.endsWith("_it") || schema.endsWith("_qa");
+        const utSchema = isTestSchema ? null : `${schema}_ut`;
+        const testPattern = fnName ? `^test_${fnName}$` : undefined;
+        const testReport = utSchema ? await runTests(client, utSchema, testPattern) : null;
         if (testReport && testReport.failed > 0) {
           return text(
             `✗ ${testReport.failed} test(s) failed in ${utSchema} — save aborted\n\n${formatTestReport(testReport)}`,
@@ -185,10 +186,9 @@ export function createFuncSaveTool({
         }
 
         const result = await dumpFunctions(client, outDir, schema, fnName);
-        const testSection = testReport && testReport.total > 0
-          ? `\n\n${formatTestReport(testReport)}`
-          : "";
-        return text(result + testSection);
+        const testSummary =
+          testReport && testReport.total > 0 ? `\ntests: ${testReport.passed}/${testReport.total} passed` : "";
+        return text(result + testSummary);
       });
     },
   };

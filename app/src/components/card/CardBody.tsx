@@ -39,7 +39,9 @@ export function CardBody({
         <div className="flex gap-3 pt-2 border-t mt-1">
           {tpl.stats.map((stat) => (
             <div key={stat.key} className="flex flex-col gap-0.5">
-              <span className={`text-base font-bold ${stat.variant === "warning" ? "text-amber-600" : "text-foreground"}`}>
+              <span
+                className={`text-base font-bold ${stat.variant === "warning" ? "text-amber-600" : "text-foreground"}`}
+              >
                 {data[stat.key] != null ? String(data[stat.key]) : "—"}
               </span>
               <span className="text-[10px] text-muted-foreground">{t(stat.label)}</span>
@@ -51,7 +53,11 @@ export function CardBody({
       {tpl.related && tpl.related.length > 0 && (
         <div className="flex gap-1.5 flex-wrap pt-2 border-t mt-1">
           {tpl.related.map((rel) => (
-            <Badge key={rel.entity} variant="outline" className="text-[10px] font-normal cursor-pointer hover:bg-accent">
+            <Badge
+              key={rel.entity}
+              variant="outline"
+              className="text-[10px] font-normal cursor-pointer hover:bg-accent"
+            >
               {t(rel.label)}
             </Badge>
           ))}
@@ -80,8 +86,18 @@ export function FallbackBody({ data }: { data: Record<string, unknown> }) {
 }
 
 function FieldValue({ value, type }: { value: unknown; type?: string }) {
-  if (value === true) return <Badge variant="default" className="text-[10px]">Yes</Badge>;
-  if (value === false) return <Badge variant="secondary" className="text-[10px]">No</Badge>;
+  if (value === true)
+    return (
+      <Badge variant="default" className="text-[10px]">
+        Yes
+      </Badge>
+    );
+  if (value === false)
+    return (
+      <Badge variant="secondary" className="text-[10px]">
+        No
+      </Badge>
+    );
   if (type === "date" && typeof value === "string") return <>{formatDate(value)}</>;
   if (type === "datetime" && typeof value === "string") return <>{formatDatetime(value)}</>;
   if (type === "currency" && typeof value === "number") return <Currency amount={value} />;

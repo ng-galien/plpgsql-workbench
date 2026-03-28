@@ -1,7 +1,7 @@
+import { FitAddon } from "@xterm/addon-fit";
+import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 
 interface AgentMessage {
@@ -67,25 +67,26 @@ function MessagesPanel() {
   const [filter, setFilter] = useState<string>("all");
 
   useEffect(() => {
-    loadMessages();
+    async function load() {
+      const { data } = await supabase
+        .schema("workbench")
+        .from("agent_message")
+        .select("id, from_module, to_module, msg_type, subject, status, priority, created_at, resolution")
+        .order("id", { ascending: false })
+        .limit(50);
+      if (data) setMessages(data);
+    }
+    load();
     const channel = supabase
       .channel("admin-messages")
       .on("postgres_changes", { event: "*", schema: "workbench", table: "agent_message" }, () => {
-        loadMessages();
+        load();
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
-
-  async function loadMessages() {
-    const { data } = await supabase
-      .schema("workbench")
-      .from("agent_message")
-      .select("id, from_module, to_module, msg_type, subject, status, priority, created_at, resolution")
-      .order("id", { ascending: false })
-      .limit(50);
-    if (data) setMessages(data);
-  }
 
   const filtered = filter === "all" ? messages : messages.filter((m) => m.status === filter);
 
@@ -145,25 +146,26 @@ function IssuesPanel() {
   const [issues, setIssues] = useState<IssueReport[]>([]);
 
   useEffect(() => {
-    loadIssues();
+    async function load() {
+      const { data } = await supabase
+        .schema("workbench")
+        .from("issue_report")
+        .select("id, issue_type, module, description, status, created_at")
+        .order("id", { ascending: false })
+        .limit(50);
+      if (data) setIssues(data);
+    }
+    load();
     const channel = supabase
       .channel("admin-issues")
       .on("postgres_changes", { event: "*", schema: "workbench", table: "issue_report" }, () => {
-        loadIssues();
+        load();
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
-
-  async function loadIssues() {
-    const { data } = await supabase
-      .schema("workbench")
-      .from("issue_report")
-      .select("id, issue_type, module, description, status, created_at")
-      .order("id", { ascending: false })
-      .limit(50);
-    if (data) setIssues(data);
-  }
 
   return (
     <section className="bg-card border rounded-lg overflow-hidden">
@@ -215,20 +217,19 @@ function TeamPanel() {
   const [active, setActive] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSessions();
-    const interval = setInterval(loadSessions, 10_000);
+    async function load() {
+      try {
+        const res = await fetch(`${MCP_URL}/api/tmux`);
+        if (res.ok) {
+          const data = await res.json();
+          setSessions(data);
+        }
+      } catch {}
+    }
+    load();
+    const interval = setInterval(load, 10_000);
     return () => clearInterval(interval);
   }, []);
-
-  async function loadSessions() {
-    try {
-      const res = await fetch(`${MCP_URL}/api/tmux`);
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data);
-      }
-    } catch {}
-  }
 
   return (
     <section className="bg-card border rounded-lg overflow-hidden">

@@ -28,7 +28,7 @@ export function CardActions({
   const [pending, setPending] = useState<{ method: string; uri: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const hateoas = Array.isArray(data.actions) ? data.actions as Array<{ method: string; uri: string }> : undefined;
+  const hateoas = Array.isArray(data.actions) ? (data.actions as Array<{ method: string; uri: string }>) : undefined;
   if (!hateoas || hateoas.length === 0) return null;
 
   const pendingMeta = pending ? catalog[pending.method] : null;

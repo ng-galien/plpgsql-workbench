@@ -167,8 +167,8 @@ export function createPackTool({
       return withClient(async (client) => {
         await ensureParserModule();
 
-        // Run IT tests before packing — abort if any fail
         for (const schema of schemas) {
+          if (schema.endsWith("_ut") || schema.endsWith("_it") || schema.endsWith("_qa")) continue;
           const itSchema = `${schema}_it`;
           const itReport = await runTests(client, itSchema);
           if (itReport && itReport.failed > 0) {

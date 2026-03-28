@@ -44,6 +44,7 @@
     "@types/express": "^5.0.6",
     "@types/pg": "^8.18.0",
     "@types/ws": "^8.18.1",
+    "lefthook": "^2.1.4",
     "nodemon": "^3.1.14",
     "playwright": "^1.58.2",
     "stylelint": "^17.4.0",

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { Admin } from "@/components/admin/Admin";
 import { Annotate } from "@/components/Annotate";
+import { Admin } from "@/components/admin/Admin";
 import { Canvas } from "@/components/Canvas";
 import { Overlay } from "@/components/Overlay";
 import { Sidebar } from "@/components/Sidebar";
@@ -26,7 +26,9 @@ export function App() {
     <div className="h-screen flex overflow-hidden">
       <Sidebar />
       <main className="flex-1 relative">
-        {view === "admin" ? <Admin /> : (
+        {view === "admin" ? (
+          <Admin />
+        ) : (
           <>
             <Canvas />
             <Overlay />

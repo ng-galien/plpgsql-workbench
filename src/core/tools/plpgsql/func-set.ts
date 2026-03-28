@@ -280,7 +280,9 @@ export function createFuncSetTool({
         skip_tests: z
           .boolean()
           .optional()
-          .describe("Skip auto-test after deploy (use during contract migrations where tests and code must change together)"),
+          .describe(
+            "Skip auto-test after deploy (use during contract migrations where tests and code must change together)",
+          ),
         context_token: z
           .string()
           .optional()

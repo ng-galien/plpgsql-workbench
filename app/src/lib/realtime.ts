@@ -65,10 +65,14 @@ function handleAction(payload: UIAction) {
 
     case "toast":
       if (payload.message) {
-        const level: ToastLevel = validLevels.has(payload.level as ToastLevel)
-          ? (payload.level as ToastLevel)
-          : "info";
-        store.showToast({ msg: payload.message, level, detail: payload.detail, href: payload.href, timeout: payload.timeout });
+        const level: ToastLevel = validLevels.has(payload.level as ToastLevel) ? (payload.level as ToastLevel) : "info";
+        store.showToast({
+          msg: payload.message,
+          level,
+          detail: payload.detail,
+          href: payload.href,
+          timeout: payload.timeout,
+        });
       }
       break;
 
@@ -100,7 +104,12 @@ function handleAction(payload: UIAction) {
     case "update": {
       if (!payload.uri) break;
       const targetPin = store.pins.find((p) => p.uri === payload.uri);
-      log("realtime", "update", { uri: payload.uri, pinFound: !!targetPin, hasData: !!payload.data, pins: store.pins.map((p) => p.uri) });
+      log("realtime", "update", {
+        uri: payload.uri,
+        pinFound: !!targetPin,
+        hasData: !!payload.data,
+        pins: store.pins.map((p) => p.uri),
+      });
       if (targetPin && payload.data) {
         store.updatePinData(targetPin.id, payload.data);
       }
