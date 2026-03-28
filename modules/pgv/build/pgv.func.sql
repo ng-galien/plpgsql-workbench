@@ -1243,6 +1243,9 @@ DECLARE
   v_actions jsonb := '[]';
   v_verb text := lower(p_verb);
   v_is_jsonb boolean;
+  v_existing jsonb;
+  v_merged jsonb;
+  v_id_key text;
 BEGIN
   v_parsed := pgv._parse_uri(p_uri);
   v_schema := v_parsed->>'schema';
@@ -1323,21 +1326,20 @@ BEGIN
       SELECT t.typname = 'jsonb' INTO v_is_jsonb
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_type t ON t.oid = p.prorettype
       WHERE n.nspname = v_schema AND p.proname = v_fn;
-      IF EXISTS (
+      -- Merge patch onto existing row (load current, overlay p_data)
+      v_id_key := CASE WHEN EXISTS (
         SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = v_schema AND c.relname = v_entity AND a.attname = 'slug' AND a.attnum > 0 AND NOT a.attisdropped
-      ) THEN
-        IF v_is_jsonb THEN
-          EXECUTE format('SELECT %I.%I(jsonb_populate_record(NULL::%I.%I, $1))', v_schema, v_fn, v_schema, v_entity) USING p_data || jsonb_build_object('slug', v_id) INTO v_result;
-        ELSE
-          EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(jsonb_populate_record(NULL::%I.%I, $1)) r', v_schema, v_fn, v_schema, v_entity) USING p_data || jsonb_build_object('slug', v_id) INTO v_result;
-        END IF;
+      ) THEN 'slug' ELSE 'id' END;
+      EXECUTE format('SELECT to_jsonb(t) FROM %I.%I t WHERE %I::text = $1 LIMIT 1', v_schema, v_entity, v_id_key) USING v_id INTO v_existing;
+      IF v_existing IS NULL THEN
+        RETURN jsonb_build_object('error', 'not_found', 'message', format('%s.%s %s=%s not found', v_schema, v_entity, v_id_key, v_id));
+      END IF;
+      v_merged := v_existing || p_data;
+      IF v_is_jsonb THEN
+        EXECUTE format('SELECT %I.%I(jsonb_populate_record(NULL::%I.%I, $1))', v_schema, v_fn, v_schema, v_entity) USING v_merged INTO v_result;
       ELSE
-        IF v_is_jsonb THEN
-          EXECUTE format('SELECT %I.%I(jsonb_populate_record(NULL::%I.%I, $1))', v_schema, v_fn, v_schema, v_entity) USING p_data || jsonb_build_object('id', v_id) INTO v_result;
-        ELSE
-          EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(jsonb_populate_record(NULL::%I.%I, $1)) r', v_schema, v_fn, v_schema, v_entity) USING p_data || jsonb_build_object('id', v_id) INTO v_result;
-        END IF;
+        EXECUTE format('SELECT to_jsonb(r) FROM %I.%I(jsonb_populate_record(NULL::%I.%I, $1)) r', v_schema, v_fn, v_schema, v_entity) USING v_merged INTO v_result;
       END IF;
 
     WHEN 'delete' THEN

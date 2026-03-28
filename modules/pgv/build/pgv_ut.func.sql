@@ -999,6 +999,19 @@ BEGIN
   v := pgv.route_crud('get', 'docs://charter/my-slug-name');
   RETURN NEXT ok(v ? 'data', 'slug: read passes segment to _read');
   RETURN NEXT is(v->>'uri', 'docs://charter/my-slug-name', 'slug: uri preserved with slug');
+
+  -- Patch: merge onto existing row (only patched fields change)
+  v := pgv.route_crud('patch', 'crm://client/1', '{"phone": "09 99 99 99 99"}'::jsonb);
+  RETURN NEXT is(v->'data'->>'phone', '09 99 99 99 99', 'patch: field updated');
+  RETURN NEXT is(v->'data'->>'name', 'Jean Dupont', 'patch: unpatched field preserved');
+  RETURN NEXT ok((v->'data'->>'type') IS NOT NULL, 'patch: NOT NULL fields preserved');
+
+  -- Patch: not found
+  v := pgv.route_crud('patch', 'crm://client/999999', '{"phone": "00"}'::jsonb);
+  RETURN NEXT is(v->>'error', 'not_found', 'patch: nonexistent row returns not_found');
+
+  -- Restore test data
+  UPDATE crm.client SET phone = '06 12 34 56 78' WHERE id = 1;
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_route_crud() IS 'Tests pgv.route_crud() — CRUD router dispatch, HATEOAS with api.expose=mcp, errors';
