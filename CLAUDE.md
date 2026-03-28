@@ -256,40 +256,82 @@ Tool outputs use LMNAV (LM-Navigable), a compact text format optimized for LLM c
 - **Error triplet** — `problem/where/fix_hint` structure
 - **`->` not `→`** — ASCII arrow is 1 token, Unicode is 3
 
-## SDUI Pattern (Server-Driven UI)
+## SDUI — Server-Driven UI
 
-React canvas workspace driven by PL/pgSQL data contracts (see `src/core/docs/sdui.md`):
+Two separate concerns, joined only on the client:
 
-- **Router**: `pgv.route_crud(verb, uri, data)` — CRUD dispatcher, returns JSON (data + view template + HATEOAS actions)
-- **Convention**: `{entity}_view()` declares template (compact/standard/expanded/form) + actions catalog
-- **Convention**: `{entity}_read(id)` returns entity data + available actions (HATEOAS)
-- **Convention**: `{entity}_list()` returns entity list for overlay browse
-- **React shell**: `app/` — Vite + Tailwind + Zustand + Supabase client
-- **Canvas workspace**: pin entities as cards, template-driven rendering from `_view()`
-- **Overlay**: sidebar browse/create panel, combobox for FK fields
-- **Admin console**: messages, issues, team terminals (xterm.js)
-- **i18n**: `pgv.i18n_bundle(lang)` returns all translations, React `useT()` hook resolves keys
+### 1. Schema (static) — how to render
 
-### _view() Contract
+Each entity declares `{entity}_view() RETURNS jsonb`. Called **once** at app startup, **cached** client-side. Never bundled with data.
 
-Each entity declares `{entity}_view() RETURNS jsonb` with:
-- `uri`: entity URI (`schema://entity`)
-- `label`: i18n key for entity name
-- `template.compact`: fields for list items (ViewField[])
-- `template.standard`: fields + stats + related for canvas cards
-- `template.expanded`: all fields for detail view
-- `template.form`: sections with typed fields for create/edit forms
-- `actions`: catalog of available actions with labels, variants, confirm messages
+```
+{
+  "uri": "crm://client",
+  "label": "crm.entity_client",
+  "template": {
+    "compact":   { "fields": [...] },           -- overlay list items
+    "standard":  { "fields": [...], "stats": [...], "related": [...] },  -- canvas cards
+    "expanded":  { "fields": [...], "stats": [...], "related": [...] },  -- detail view
+    "form":      { "sections": [{ "label": "...", "fields": [...] }] }   -- create/edit
+  },
+  "actions": {                                  -- catalog of possible actions
+    "archive": { "label": "crm.action_archive", "variant": "warning", "confirm": "crm.confirm_archive" },
+    "delete":  { "label": "crm.action_delete",  "variant": "danger",  "confirm": "crm.confirm_delete" }
+  }
+}
+```
 
-ViewField = `string` (just key) or `{key, type?, label?}` (typed: date, currency, status, etc.)
+ViewField = `string` (key only) or `{ "key": "...", "type": "date|currency|status", "label": "i18n.key" }`.
 
-### pgView Files
+### 2. Data (dynamic) — what to render
 
-| File | Role |
+`pgv.route_crud(verb, uri, data)` dispatches CRUD operations. Returns **only** `{data, uri, actions}` — no schema.
+
+| Verb | URI | Dispatches to | Returns |
+|------|-----|--------------|---------|
+| `get` | `crm://client` | `client_list()` | `{data: [...], uri}` |
+| `get` | `crm://client/1` | `client_read(1)` | `{data: {...}, uri, actions: [...]}` |
+| `set` | `crm://client` | `client_create(data)` | `{data: {...}, uri}` |
+| `patch` | `crm://client/1` | `client_update(data)` | `{data: {...}, uri}` |
+| `delete` | `crm://client/1` | `client_delete(1)` | `{data: {...}, uri}` |
+| `post` | `crm://client/1/archive` | `client_archive(1)` | `{data: {...}, uri}` |
+
+HATEOAS: `_read()` returns available actions based on entity state (e.g. active client → archive/delete). These are **runtime** actions, not the static catalog from `_view()`.
+
+### 3. Client joins schema + data
+
+```
+startup:  _view() → viewCache (one call per entity type, cached forever)
+browse:   route_crud('get', uri) → data only → render with cached view
+pin:      route_crud('get', uri/id) → data + HATEOAS actions → render card
+action:   route_crud('post', uri/id/method) → refresh data
+create:   route_crud('set', uri, formData) → new row
+```
+
+The client (React) is the **only** place where schema and data meet. The server never bundles them.
+
+### CRUD Function Convention (per entity)
+
+| Function | Purpose | Returns |
+|----------|---------|---------|
+| `{entity}_view()` | UI schema (static) | jsonb |
+| `{entity}_list(filter?)` | Browse list | SETOF jsonb |
+| `{entity}_read(id)` | Single entity + HATEOAS actions | jsonb |
+| `{entity}_create(record)` | Create | jsonb (new row) |
+| `{entity}_update(record)` | Update | jsonb (updated row) |
+| `{entity}_delete(id)` | Delete | jsonb |
+| `{entity}_{action}(id)` | Domain action (archive, send, etc.) | jsonb |
+
+### i18n
+
+`pgv.i18n_bundle(lang)` returns all translations as `{key: value}`. React `useT()` hook resolves keys. Field labels follow convention `{schema}.field_{key}`.
+
+### Files
+
+| Path | Role |
 |------|------|
-| `app/src/` | React frontend (canvas, overlay, admin, SDUI primitives) |
-| `modules/pgv/build/pgv.func.sql` | pgv + pgv_ut schemas (pg_pack output) |
-| `modules/pgv/src/pgv/*.sql` | Individual function sources (pg_func_save output) |
+| `app/src/` | React frontend (canvas, overlay, admin) |
+| `modules/pgv/src/pgv/` | Framework functions (route_crud, i18n, schema_*, ui_*) |
 
 ## SQL
 
@@ -318,7 +360,7 @@ ViewField = `string` (just key) or `{key, type?, label?}` (typed: date, currency
 - **Tool naming** — `{domain}_{action}`: `pg_*` (PostgreSQL), `fs_*` (filesystem/docstore), `gmail_*` (Google)
 - **Zero inline SQL in app tools** — App tools (doc_*, etc.) MUST NOT contain raw SQL. Business logic lives in PL/pgSQL functions deployed in the app schema (e.g. `docman.import()`, `docman.classify()`). App MCP tools are thin orchestrators: they read config from DB, call platform primitives (fs_*, gmail_*), and call app PL/pgSQL functions via `withClient`. SQL in TypeScript = bug.
 - **Zero process.env for app config** — Only infra bootstrap uses env vars (PLPGSQL_CONNECTION, MCP_PORT, LOG_LEVEL, WORKBENCH_MODE). All app config lives in `workbench.config(app, key, value)` and is read from DB at request time. No defaults, no fallbacks.
-- **PostgREST CRUD routing** — `pgv.route_crud(verb, uri, data)` handles all CRUD operations. React calls via Supabase client `pgv.rpc("route_crud", ...)`. Returns JSON with data, view template, and HATEOAS actions.
+- **PostgREST CRUD routing** — `pgv.route_crud(verb, uri, data)` dispatches CRUD operations. Returns `{data, uri, actions}` only — never includes view schema. React calls via `pgv.rpc("route_crud", ...)`.
 - **PostgREST grants** — Each `build/{schema}.ddl.sql` MUST include `GRANT USAGE ON SCHEMA {schema} TO anon`, `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO anon`, `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO anon` — otherwise 500 in frontend via PostgREST
 
 ## Documentation Map

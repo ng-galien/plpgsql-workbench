@@ -1,34 +1,73 @@
-# pgv — pgView SSR Framework
+# pgv -- SDUI Framework
 
-PostgreSQL SSR framework. Alpine.js shell + PicoCSS + PostgREST + UI primitives `pgv.*`.
+PostgreSQL SDUI framework. `route_crud()` dispatcher, `_view()` contract, i18n, UI primitives `pgv.ui_*`.
 
 **Dependencies:** none (foundation module)
+**Schemas:** `pgv`, `pgv_ut` (tests), `pgv_qa` (demo app)
 
-**Schemas:** `pgv`, `pgv_ut` (tests + `assert_page()`), `pgv_qa` (demo app)
+**Special role:** SDUI reference for all modules (contract validation via `check_view()`)
 
-**Special role:** UI/UX reference for all modules (review via `diagnose()`)
+## SDUI -- Server-Driven UI
 
-## pgView Framework
+Two separate concerns, joined only on the client:
 
-This module IS the pgView framework — it provides the primitives used by all other modules.
+### 1. Schema (static) -- how to render
 
-### PL/pgSQL Conventions
+Each entity declares `{entity}_view() RETURNS jsonb`. Called **once** at app startup, **cached** client-side. Never bundled with data.
 
-- `get_*()` → GET pages, `post_*()` → POST actions. Naming = automatic routing via `pgv.route()`
-- `nav_items() -> jsonb` → module menu. Returns `jsonb` (NEVER TABLE)
-- `brand() -> text` → display name in nav
-- `get_index()` → module home page (mandatory)
-- Parameters via query string: `/drawing?p_id=42` → `get_drawing(p_id int)`
-- POST returns raw HTML (`<template data-toast>` or `<template data-redirect>`) — never wrapped in `page()`
-- Tables via `<md>` blocks (markdown), NEVER raw `<table>` HTML. `<md data-page="20">` for pagination
-- CSS classes `pgv-*`, NEVER inline `style="..."`
-- UI primitives: `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`
+```json
+{
+  "uri": "schema://entity",
+  "icon": "icon",
+  "label": "module.entity_label",
+  "template": {
+    "compact":   { "fields": ["name", "city"] },
+    "standard":  { "fields": [...], "stats": [...], "related": [...] },
+    "expanded":  { "fields": [...all...], "stats": [...], "related": [...] },
+    "form":      { "sections": [{ "label": "i18n.key", "fields": [...] }] }
+  },
+  "actions": {
+    "send":   { "label": "module.action_send", "icon": "->", "variant": "primary" },
+    "delete": { "label": "module.action_delete", "icon": "x", "variant": "danger", "confirm": "module.confirm_delete" }
+  }
+}
+```
 
-## SDUI — Server-Driven UI
+Key rules:
+- **ALL labels are i18n keys** -- `pgv.t()` server-side. NEVER hardcoded text.
+- **compact/standard/expanded** = card density levels for canvas workspace
+- **form** = create + update (React decides verb based on context)
+- **actions** = catalog of all possible actions. HATEOAS in `_read()` says which are active.
+- **{field} interpolation** in `related[].filter` and `combobox.filter`
+- **Stats computed by _read()** -- template only declares display keys
+- Form field types: text, number, textarea, checkbox, date, select, combobox (with source URI)
 
-Primitives jsonb for the React shell (MCP CRUD). Functions `pgv.ui_*()` return jsonb components rendered client-side.
+### 2. Data (dynamic) -- what to render
 
-### Primitives UI (pgv.ui_*)
+`pgv.route_crud(verb, uri, data)` dispatches CRUD operations. Returns **only** `{data, uri, actions}` -- no schema.
+
+| Verb | URI | Dispatches to | Returns |
+|------|-----|--------------|---------|
+| `get` | `crm://client` | `client_list()` | `{data: [...], uri}` |
+| `get` | `crm://client/1` | `client_read(1)` | `{data: {...}, uri, actions: [...]}` |
+| `set` | `crm://client` | `client_create(data)` | `{data: {...}, uri}` |
+| `patch` | `crm://client/1` | `client_update(data)` | `{data: {...}, uri}` |
+| `delete` | `crm://client/1` | `client_delete(1)` | `{data: {...}, uri}` |
+| `post` | `crm://client/1/archive` | `client_archive(1)` | `{data: {...}, uri}` |
+
+### 3. Client joins schema + data
+
+```
+startup:  _view() -> viewCache (one call per entity type, cached forever)
+browse:   route_crud('get', uri) -> data only -> render with cached view
+pin:      route_crud('get', uri/id) -> data + HATEOAS actions -> render card
+action:   route_crud('post', uri/id/method) -> refresh data
+create:   route_crud('set', uri, formData) -> new row
+```
+
+The client (React) is the **only** place where schema and data meet. The server never bundles them.
+
+### UI Primitives (pgv.ui_*)
 
 | Function | Returns | Usage |
 |----------|---------|-------|
@@ -44,110 +83,75 @@ Primitives jsonb for the React shell (MCP CRUD). Functions `pgv.ui_*()` return j
 | `pgv.ui_detail(source, fields)` | Detail view | Detail view connected to a datasource |
 | `pgv.ui_action(label, verb, uri, variant?, confirm?)` | Action button | Triggers a route_crud verb |
 | `pgv.ui_datasource(uri, page_size?, searchable?, default_sort?)` | Datasource | Data source for table/detail |
+| `pgv.ui_card(entity_uri, level, header, body?, related?, actions?)` | Card | 3 levels: compact/standard/expanded |
+| `pgv.ui_card_header(icon, title, VARIADIC badges)` | Card header | Reusable header |
+| `pgv.ui_stat(value, label, variant?)` | Stat | Stat for card body |
+| `pgv.ui_form_for(schema, entity, verb?)` | Auto-form | Introspects PG types -> SDUI form |
 
-### Convention _view() — Entity View Contract
+### Contract Validation
 
-Each module entity exposes `{entity}_view() RETURNS jsonb` — a **template** (not data) declaring how to render at every density level.
+- `pgv.view_schema()` -- JSON Schema for the `_view()` contract
+- `pgv.check_view(schema, entity)` -- Validate that `{entity}_view()` output conforms to the contract
 
-```json
-{
-  "uri": "schema://entity",
-  "icon": "◎",
-  "label": "module.entity_label",
-  "template": {
-    "compact":  { "fields": ["name", "city"] },
-    "standard": { "fields": [...], "stats": [...], "related": [...] },
-    "expanded": { "fields": [...all...], "stats": [...], "related": [...] },
-    "form":     { "sections": [{ "label": "i18n.key", "fields": [...] }] }
-  },
-  "actions": {
-    "send":   { "label": "module.action_send", "icon": "→", "variant": "primary" },
-    "delete": { "label": "module.action_delete", "icon": "×", "variant": "danger", "confirm": "module.confirm_delete" }
-  }
-}
-```
+### i18n
 
-Key rules:
-- **ALL labels are i18n keys** — `pgv.t()` server-side. NEVER hardcoded text.
-- **compact/standard/expanded** = card density levels for canvas workspace
-- **form** = create + update (React decides verb based on context)
-- **actions** = catalog of all possible actions. HATEOAS in `_read()` says which are active.
-- **{field} interpolation** in `related[].filter` and `combobox.filter`
-- **Stats computed by _read()** — template only declares display keys
-- Form field types: text, number, textarea, checkbox, date, select, combobox (with source URI)
-- `_view()` replaces `_ui()` (deprecated). `route_crud` auto-detects `_view()` in pg_proc.
-
-### Cards (pgv.ui_card)
-
-- `pgv.ui_card(entity_uri, level, header, body?, related?, actions?)` — 3 levels: compact/standard/expanded
-- `pgv.ui_card_header(icon, title, VARIADIC badges)` — reusable header
-- `pgv.ui_stat(value, label, variant?)` — stat for card body
-
-### Auto-generated forms
-
-- `pgv.ui_form_for(schema, entity, verb?)` — introspects PG types → SDUI form (FK→select, COMMENT→label)
+- `pgv.i18n_bundle(lang)` -- returns all translations as `{key: value}`
+- `pgv.t(key)` -- resolve a single translation key server-side
+- React `useT()` hook resolves keys client-side
+- Field labels follow convention `{schema}.field_{key}`
 
 ### Reference
 
 - Full SDUI doc: `pg_doc topic:sdui`
 - Examples: `docs.document_view()`, `docs.charter_view()`
 
-### Dev Workflow (STRICT)
+## Language Rules (STRICT)
 
-1. **DDL** → Write to `build/{schema}.ddl.sql` → `pg_schema` to apply
-2. **Functions** → `pg_func_set` to create/modify + `pg_test` to validate
-3. **Export** → `pg_pack` (→ `build/{schema}.func.sql`) + `pg_func_save` (→ `src/`)
-4. `pg_query` → SELECT/DML only, NEVER DDL or CREATE FUNCTION
-5. NEVER write functions in SQL files — the workbench IS the dev tool
-6. NEVER edit `build/*.func.sql` — generated by `pg_pack`
+- **Code** -- ALL code in English: function names, parameter names, variable names, column names, JSON keys, comments. No exceptions.
+- **Labels** -- ALL user-facing text via `pgv.t('pgv.key')`. Never hardcode French (or any language) strings in functions. Labels live in `i18n_seed()` only.
+- **CLAUDE.md** -- English only.
+- **Commits** -- English only.
 
-### Module Structure
+## Dev Workflow (STRICT)
 
-- `module.json` → manifest (schemas, dependencies, extensions, sql, grants)
-- `build/` → deployment artifacts (DDL + packed functions)
-- `src/` → individual versioned sources (pg_func_save)
-- `_ut` schemas → pgTAP tests (`test_*()`)
-- `_qa` schemas → seed data only (`seed()`, `clean()`), NO pages
+1. **DDL** -> Write to `build/{schema}.ddl.sql` -> `pg_schema` to apply
+2. **Functions** -> `pg_func_set` to create/modify + `pg_test` to validate
+3. **Export** -> `pg_pack` (-> `build/{schema}.func.sql`) + `pg_func_save` (-> `src/`)
+4. `pg_query` -> SELECT/DML only, NEVER DDL or CREATE FUNCTION
+5. NEVER write functions in SQL files -- the workbench IS the dev tool
+6. NEVER edit `build/*.func.sql` -- generated by `pg_pack`
 
-### DDL Content — STRICT
+## Module Structure
+
+- `module.json` -> manifest (schemas, dependencies, extensions, sql, grants)
+- `build/` -> deployment artifacts (DDL + packed functions)
+- `src/` -> individual versioned sources (pg_func_save)
+- `_ut` schemas -> pgTAP tests (`test_*()`)
+- `_qa` schemas -> seed data only (`seed()`, `clean()`), NO routing
+
+## DDL Content -- STRICT
 
 DDL (`build/{schema}.ddl.sql`) contains **structure only**:
 
 **MUST contain:** CREATE SCHEMA, CREATE TABLE, CREATE INDEX, constraints, RLS policies
 
 **MUST NOT contain:**
-- `CREATE FUNCTION` → pg_func_set then pg_pack
-- `CREATE TRIGGER` → pg_pack attaches triggers to functions
-- `GRANT` → pg_pack adds them in .func.sql
-- `INSERT INTO` (seed data) → `build/{schema}.seed.sql` or `{schema}_qa.seed()`
+- `CREATE FUNCTION` -> pg_func_set then pg_pack
+- `CREATE TRIGGER` -> pg_pack attaches triggers to functions
+- `GRANT` -> pg_pack adds them in .func.sql
+- `INSERT INTO` (seed data) -> `build/{schema}.seed.sql` or `{schema}_qa.seed()`
 
-### Inter-module Communication
+## Inter-module Communication
 
-- `pg_msg_inbox module:pgv` → read incoming messages
-- `pg_msg` → send a message to another module
-- **feature_request / bug_report → ALWAYS via issue_report**: never send feature_request or bug_report directly to another module. Create an issue: `INSERT INTO workbench.issue_report(issue_type, module, description) VALUES ('enhancement|bug', '<target_module>', '<description>')`. The lead will be notified and decide dispatch.
-- Each module is autonomous — never modify another module's functions
-
-## i18n
-
-The framework uses `pgv.t(key)` for internationalization. Each module must:
-1. Create `pgv.i18n_seed()` — INSERT INTO pgv.i18n(lang, key, value) with FR translations
-2. Namespaced keys: `pgv.nav_xxx`, `pgv.title_xxx`, `pgv.btn_xxx`, etc.
-3. Use `pgv.t('pgv.xxx')` in nav_items(), brand(), and all get_*/post_* functions
-4. `ON CONFLICT DO NOTHING` in the seed
+- `pg_msg_inbox module:pgv` -> read incoming messages
+- `pg_msg` -> send a message to another module
+- **feature_request / bug_report -> ALWAYS via issue_report**: never send feature_request or bug_report directly to another module. Create an issue: `INSERT INTO workbench.issue_report(issue_type, module, description) VALUES ('enhancement|bug', '<target_module>', '<description>')`. The lead will be notified and decide dispatch.
+- Each module is autonomous -- never modify another module's functions
 
 ## QA Seed Data
 
-The `pgv_qa` schema is the **design system showcase** — it contains demo pages for all pgv primitives:
-- `get_atoms()` — badges, stats, cards, dl, money, alerts, progress, workflow, avatar, tabs, accordion, breadcrumb, timeline, tree
-- `get_tables()` — simple markdown tables, paginated, md_table()
-- `get_forms()` — data-rpc forms, select_search, inputs, action buttons
-- `get_dialogs()` — confirmations, modals, toasts
-- `get_svg()` — svg_canvas with zoom/pan toolbar
-- `get_errors()` — error handling 404, RAISE, bad cast
-- `get_diagnostics()` — runs pgv.diagnose() on all QA pages
-- `seed()` / `clean()` — demo data for QA tables
-- These pages are accessible via workbench (Primitives tab) which wraps pgv_qa functions
+The `pgv_qa` schema is the **design system showcase** -- it contains demo data for pgv primitives:
+- `seed()` / `clean()` -- demo data for QA
 
 ## Agent Workflow
 
@@ -159,19 +163,13 @@ The `pgv_qa` schema is the **design system showcase** — it contains demo pages
 
 ## Built-in Documentation
 
-The workbench includes documentation accessible via `pg_doc`:
-- `pg_doc topic:testing` — pgTAP guide: test_*() conventions, assertions, patterns
-- `pg_doc topic:data-convention` — data_*() convention: cursor pagination, FTS, pgv.table()
-- `pg_doc topic:coverage` — Code coverage guide
+- `pg_doc topic:testing` -- pgTAP guide: test_*() conventions, assertions, patterns
+- `pg_doc topic:coverage` -- Code coverage guide
+- `pg_doc topic:sdui` -- SDUI contract: _view() template, route_crud, entity types, form fields
 
 ## Gotchas
 
 - **tenant_id**: always `PERFORM set_config('app.tenant_id', 'test', true)` at the start of each test
 - **pg_test**: discovers `test_*()` functions in the `_ut` schema
-- **You are the pgv agent, NOT the lead.** Never use `ws_health` to find your tasks — it shows ALL workspace tasks. Use only `pg_msg_inbox module:pgv` to read YOUR messages. Only process messages addressed to `pgv`.
-- `call_ref()` only works within the `route()` context (needs `pgv.route_prefix`)
-- `route()` auto-prefixes nav hrefs with `/{schema}` — do not duplicate in `nav_items()`
-- PicoCSS high specificity — match their pattern for `.pgv-*`
-- PostgREST content negotiation — use domain `"text/html"` for pages
-- Inline styles forbidden — `data-*` + JS in `_enhance()` for dynamic behavior
-- POST returns raw HTML (toast/redirect), never wrapped in `page()`
+- **You are the pgv agent, NOT the lead.** Never use `ws_health` to find your tasks -- it shows ALL workspace tasks. Use only `pg_msg_inbox module:pgv` to read YOUR messages. Only process messages addressed to `pgv`.
+- PostgREST content negotiation -- use domain `"text/html"` for pages

@@ -13,7 +13,6 @@ DECLARE
   v_fn text;
   v_fn_fallback text;
   v_result jsonb;
-  v_ui jsonb;
   v_actions jsonb := '[]';
   v_verb text := lower(p_verb);
   v_is_jsonb boolean;
@@ -169,20 +168,10 @@ BEGIN
     v_result := v_result - 'actions';
   END IF;
 
-  -- SDUI: check for entity_view() function
-  v_fn := v_entity || '_view';
-  IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
-    EXECUTE format('SELECT %I.%I()', v_schema, v_fn) INTO v_ui;
-    IF v_ui IS NOT NULL AND NOT jsonb_matches_schema(pgv.view_schema(), v_ui) THEN
-      RETURN jsonb_build_object('error', 'invalid_view', 'message', format('%s.%s() failed JSON Schema validation', v_schema, v_fn), 'result', v_ui);
-    END IF;
-  END IF;
-
   RETURN jsonb_build_object(
     'data', coalesce(v_result, 'null'::jsonb),
     'uri', p_uri,
     'actions', v_actions
-  )
-  || CASE WHEN v_ui IS NOT NULL THEN jsonb_build_object('view', v_ui) ELSE '{}'::jsonb END;
+  );
 END;
 $function$;

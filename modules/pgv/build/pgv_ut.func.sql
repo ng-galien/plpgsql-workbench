@@ -943,6 +943,66 @@ END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_route() IS 'Unit tests for pgv.route: page rendering, nav prefixing, rpc targets, typed dispatch';
 
+CREATE OR REPLACE FUNCTION pgv_ut.test_route_crud()
+ RETURNS SETOF text
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v jsonb;
+BEGIN
+  PERFORM set_config('app.tenant_id', 'dev', true);
+
+  -- get :// → catalog
+  v := pgv.route_crud('get', '://');
+  RETURN NEXT ok(jsonb_typeof(v->'data') = 'array', 'catalog: returns array');
+  RETURN NEXT is(v->>'uri', '://', 'catalog: uri preserved');
+
+  -- get schema:// → discover
+  v := pgv.route_crud('get', 'docs://');
+  RETURN NEXT ok(jsonb_typeof(v->'data') = 'array', 'discover: returns array');
+
+  -- get schema://entity#schema → schema_table
+  v := pgv.route_crud('get', 'docs://charter#schema');
+  RETURN NEXT is(v->'data'->>'table', 'charter', 'schema: returns table detail');
+
+  -- get schema://entity → list
+  v := pgv.route_crud('get', 'docs://charter');
+  RETURN NEXT ok(v ? 'data', 'list: has data key');
+  RETURN NEXT is(v->>'uri', 'docs://charter', 'list: uri preserved');
+
+  -- get schema://entity/{id} → read (fallback to _load)
+  v := pgv.route_crud('get', 'docs://charter/nonexistent_id');
+  RETURN NEXT ok(v ? 'data', 'read: has data key');
+
+  -- HATEOAS: actions extracted from _read() response (module is responsible)
+  v := pgv.route_crud('get', 'docs://charter/test');
+  RETURN NEXT ok(jsonb_typeof(v->'actions') = 'array', 'hateoas: actions is array');
+  RETURN NEXT ok(v ? 'actions', 'hateoas: actions key always present');
+
+  -- Error: nonexistent schema
+  v := pgv.route_crud('get', 'nonexistent://test');
+  RETURN NEXT is(v->>'error', 'not_found', 'error: bad schema');
+
+  -- Error: nonexistent entity
+  v := pgv.route_crud('get', 'docs://fakentity');
+  RETURN NEXT is(v->>'error', 'not_found', 'error: bad entity');
+
+  -- Error: bad verb
+  v := pgv.route_crud('badverb', 'docs://charter');
+  RETURN NEXT is(v->>'error', 'bad_request', 'error: bad verb');
+
+  -- Error: POST without method
+  v := pgv.route_crud('post', 'docs://charter/test');
+  RETURN NEXT is(v->>'error', 'bad_request', 'error: post without method');
+
+  -- Slug-based read
+  v := pgv.route_crud('get', 'docs://charter/my-slug-name');
+  RETURN NEXT ok(v ? 'data', 'slug: read passes segment to _read');
+  RETURN NEXT is(v->>'uri', 'docs://charter/my-slug-name', 'slug: uri preserved with slug');
+END;
+$function$;
+COMMENT ON FUNCTION pgv_ut.test_route_crud() IS 'Tests pgv.route_crud() — CRUD router dispatch, HATEOAS with api.expose=mcp, errors';
+
 CREATE OR REPLACE FUNCTION pgv_ut.test_rsql()
  RETURNS SETOF text
  LANGUAGE plpgsql
@@ -1853,66 +1913,6 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv_ut.test_ui_tier1() IS 'Tests Tier 1 SDUI primitives: ui_timeline, ui_currency, ui_workflow, ui_line_items';
-
-CREATE OR REPLACE FUNCTION pgv_ut.test_route_crud()
- RETURNS SETOF text
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  v jsonb;
-BEGIN
-  PERFORM set_config('app.tenant_id', 'dev', true);
-
-  -- get :// → catalog
-  v := pgv.route_crud('get', '://');
-  RETURN NEXT ok(jsonb_typeof(v->'data') = 'array', 'catalog: returns array');
-  RETURN NEXT is(v->>'uri', '://', 'catalog: uri preserved');
-
-  -- get schema:// → discover
-  v := pgv.route_crud('get', 'docs://');
-  RETURN NEXT ok(jsonb_typeof(v->'data') = 'array', 'discover: returns array');
-
-  -- get schema://entity#schema → schema_table
-  v := pgv.route_crud('get', 'docs://charter#schema');
-  RETURN NEXT is(v->'data'->>'table', 'charter', 'schema: returns table detail');
-
-  -- get schema://entity → list
-  v := pgv.route_crud('get', 'docs://charter');
-  RETURN NEXT ok(v ? 'data', 'list: has data key');
-  RETURN NEXT is(v->>'uri', 'docs://charter', 'list: uri preserved');
-
-  -- get schema://entity/{id} → read (fallback to _load)
-  v := pgv.route_crud('get', 'docs://charter/nonexistent_id');
-  RETURN NEXT ok(v ? 'data', 'read: has data key');
-
-  -- HATEOAS: actions extracted from _read() response (module is responsible)
-  v := pgv.route_crud('get', 'docs://charter/test');
-  RETURN NEXT ok(jsonb_typeof(v->'actions') = 'array', 'hateoas: actions is array');
-  RETURN NEXT ok(v ? 'actions', 'hateoas: actions key always present');
-
-  -- Error: nonexistent schema
-  v := pgv.route_crud('get', 'nonexistent://test');
-  RETURN NEXT is(v->>'error', 'not_found', 'error: bad schema');
-
-  -- Error: nonexistent entity
-  v := pgv.route_crud('get', 'docs://fakentity');
-  RETURN NEXT is(v->>'error', 'not_found', 'error: bad entity');
-
-  -- Error: bad verb
-  v := pgv.route_crud('badverb', 'docs://charter');
-  RETURN NEXT is(v->>'error', 'bad_request', 'error: bad verb');
-
-  -- Error: POST without method
-  v := pgv.route_crud('post', 'docs://charter/test');
-  RETURN NEXT is(v->>'error', 'bad_request', 'error: post without method');
-
-  -- Slug-based read
-  v := pgv.route_crud('get', 'docs://charter/my-slug-name');
-  RETURN NEXT ok(v ? 'data', 'slug: read passes segment to _read');
-  RETURN NEXT is(v->>'uri', 'docs://charter/my-slug-name', 'slug: uri preserved with slug');
-END;
-$function$;
-COMMENT ON FUNCTION pgv_ut.test_route_crud() IS 'Tests pgv.route_crud() — CRUD router dispatch, HATEOAS with api.expose=mcp, errors';
 
 CREATE OR REPLACE FUNCTION pgv_ut.test_view_schema()
  RETURNS SETOF text

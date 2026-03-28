@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { get as apiGet } from "./api";
-import { pgv } from "./supabase";
+import { pgv, supabase } from "./supabase";
 
 // --- Types ---
 
@@ -97,6 +97,8 @@ interface AppState {
   modules: Module[];
   loading: boolean;
   loadModules: () => Promise<void>;
+  loadViews: () => Promise<void>;
+  getView: (entityUri: string) => ViewTemplate | null;
 
   toast: Toast | null;
   showToast: (toast: Toast) => void;
@@ -128,6 +130,31 @@ export const useStore = create<AppState>((set, get) => ({
     const { data } = await pgv.rpc("app_nav");
     set({ modules: data ?? [], loading: false });
   },
+  loadViews: async () => {
+    const modules = get().modules;
+    const entities: { schema: string; entity: string; uri: string }[] = [];
+    for (const m of modules) {
+      for (const item of m.items ?? []) {
+        if (item.entity) {
+          entities.push({ schema: m.schema, entity: item.entity, uri: item.uri || `${m.schema}://${item.entity}` });
+        }
+      }
+    }
+    const results = await Promise.allSettled(
+      entities.map(async (e) => {
+        const { data } = await supabase.schema(e.schema).rpc(`${e.entity}_view`);
+        return { uri: e.uri, view: data as ViewTemplate };
+      }),
+    );
+    const cache: Record<string, ViewTemplate> = {};
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value.view) {
+        cache[r.value.uri] = r.value.view;
+      }
+    }
+    set({ viewCache: cache });
+  },
+  getView: (entityUri) => get().viewCache[entityUri] ?? null,
 
   toast: null,
   showToast: (toast) => {
@@ -166,21 +193,12 @@ export const useStore = create<AppState>((set, get) => ({
       pins: [...s.pins, { ...card, id, position }],
     }));
 
-    // Use cached view template if available
-    const cachedView = get().viewCache[card.entityUri];
+    const view = get().viewCache[card.entityUri] ?? null;
 
     apiGet(card.uri)
       .then((res) => {
         if (!res) return;
         const fullData = res.data as Record<string, unknown> | null;
-        const view = (res.view as ViewTemplate | null) ?? cachedView ?? null;
-
-        if (view && card.entityUri && !cachedView) {
-          set((s) => ({
-            viewCache: { ...s.viewCache, [card.entityUri]: view },
-          }));
-        }
-
         if (fullData) {
           const actions = res.actions as unknown[] | undefined;
           const enriched = actions?.length ? { ...fullData, actions } : fullData;

@@ -54,9 +54,9 @@ function OverlayContent({
 }) {
   const [mode, setMode] = useState<"list" | "create">("list");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [view, setView] = useState<ViewTemplate | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const view = useStore((s) => s.getView(entityUri));
 
   useEffect(() => {
     setLoading(true);
@@ -64,7 +64,6 @@ function OverlayContent({
     get(entityUri)
       .then((res) => {
         setRows(res?.data ?? []);
-        if (res?.view) setView(res.view as ViewTemplate);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));

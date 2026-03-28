@@ -12,14 +12,15 @@ import { useStore } from "@/lib/store";
 export function App() {
   const view = useStore((s) => s.view);
   const loadModules = useStore((s) => s.loadModules);
+  const loadViews = useStore((s) => s.loadViews);
   const loadI18n = useI18n((s) => s.load);
 
   useEffect(() => {
-    loadModules();
+    loadModules().then(() => loadViews());
     loadI18n();
     const cleanup = initRealtime();
     return cleanup;
-  }, [loadI18n, loadModules]);
+  }, [loadI18n, loadModules, loadViews]);
 
   return (
     <div className="h-screen flex overflow-hidden">

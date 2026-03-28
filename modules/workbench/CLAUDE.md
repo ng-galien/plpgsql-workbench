@@ -1,18 +1,28 @@
-# workbench — Platform Infrastructure & Control Tower
+# workbench -- Platform Infrastructure & Control Tower
 
-Platform foundation schema. Shared tables (tenants, messaging, hooks, sessions, issues) + PO dashboard UI.
+Platform foundation schema. Shared tables (tenants, messaging, hooks, sessions, issues) + ops dashboard.
 
 **Depends on:** `pgv`
+**Schemas:** `workbench`
 
-**Schemas:** `workbench` (public)
+## SDUI Convention
 
-## Language Rules (STRICT)
+Each entity exposes these functions consumed by `route_crud(verb, uri)`:
 
-- **Code** — ALL code in English: function names, parameter names, variable names, column names, JSON keys, comments. No exceptions.
-- **Labels** — ALL user-facing text via `pgv.t('module.key')`. Never hardcode French (or any language) strings in functions. Labels live in `i18n_seed()` only.
-- **CLAUDE.md** — English only.
-- **Commits** — English only.
-- **Examples**: `client_list` not `liste_clients`, `pgv.t('crm.action_send')` not `'Envoyer'`, `status = 'draft'` not `'brouillon'`
+| Function | Purpose | Returns |
+|----------|---------|---------|
+| `{entity}_view()` | UI schema (static, cached by client) | jsonb |
+| `{entity}_list(filter?)` | Browse list | SETOF jsonb |
+| `{entity}_read(id)` | Single entity + HATEOAS actions | jsonb |
+| `{entity}_create(record)` | Create | jsonb |
+| `{entity}_update(record)` | Update | jsonb |
+| `{entity}_delete(id)` | Delete | jsonb |
+
+**CRITICAL separation:** `_view()` is schema (how to render). `_list()/_read()` is data (what to render). They are NEVER bundled together. The client caches `_view()` once and fetches data separately.
+
+HATEOAS: `_read()` returns available actions based on entity state. The `_view()` actions catalog declares labels/variants/confirm -- it is the static catalog. The `_read()` actions array is the runtime list of what is currently available.
+
+Entities: `issue_report`, `agent_message`
 
 ## Responsibilities
 
@@ -31,73 +41,50 @@ Platform foundation schema. Shared tables (tenants, messaging, hooks, sessions, 
 
 ### Infrastructure functions (no UI)
 
-- `inbox_check()` / `inbox_new()` / `inbox_pending()` — Internal messaging API
-- `ack_resolved()` — Auto-acknowledge resolved messages
-- `api_hooks()` / `api_messages()` / `api_sessions()` — Ops API endpoints
-- `log_hook()` — Audit hook calls
-- `on_issue_report_insert()` — Issue notification trigger
-- `postgrest_pre_request()` — PostgREST pre-request hook
-- `session_create()` / `session_end()` — Agent session lifecycle
+- `inbox_check()` / `inbox_new()` / `inbox_pending()` -- Internal messaging API
+- `ack_resolved()` -- Auto-acknowledge resolved messages
+- `api_hooks()` / `api_messages()` / `api_sessions()` -- Ops API endpoints
+- `log_hook()` -- Audit hook calls
+- `on_issue_report_insert()` -- Issue notification trigger
+- `postgrest_pre_request()` -- PostgREST pre-request hook
+- `session_create()` / `session_end()` -- Agent session lifecycle
 
 ### CRUD functions
 
-- `issue_report_list/read/create/update/delete` — Full CRUD for issues
-- `agent_message_list/read/create/update/delete` — Full CRUD for messages
+- `issue_report_list/read/create/update/delete` -- Full CRUD for issues
+- `agent_message_list/read/create/update/delete` -- Full CRUD for messages
 
-### SDUI functions
+## Language Rules (STRICT)
 
-- `issue_report_ui(p_slug)` — List + detail UI for issues
-- `agent_message_ui(p_slug)` — List + detail UI for messages
+- **Code** -- ALL code in English: function names, parameter names, variable names, column names, JSON keys, comments. No exceptions.
+- **Labels** -- ALL user-facing text via `pgv.t('module.key')`. Never hardcode French (or any language) strings in functions. Labels live in `i18n_seed()` only.
+- **CLAUDE.md** -- English only.
+- **Commits** -- English only.
+- **Examples**: `client_list` not `liste_clients`, `pgv.t('crm.action_send')` not `'Envoyer'`, `status = 'draft'` not `'brouillon'`
 
-### UI pages (pgView)
-
-- `get_index()` — Dashboard: message/issue stats, recent messages, open issues
-- `get_messages()` / `get_message(p_id)` — Inter-module message list and detail
-- `get_issues()` / `get_issue(p_id)` — Issue list and detail with cross-links
-- `get_tools()` — MCP tools catalog by pack (tree view)
-- `get_tool(p_name)` — Tool detail (description + parameters)
-- `get_primitives()` — UI catalog wrapping pgv_qa pages (components, tables, forms, etc.)
-- `nav_items()` / `brand()` / `i18n_seed()` — Navigation, branding, and i18n
-
-## pgView Framework
-
-This module is an **independent module** of the pgView framework. Dependencies are declared in `module.json`.
-
-### PL/pgSQL Conventions
-
-- `get_*()` -> GET pages, `post_*()` -> POST actions. Naming = automatic routing via `pgv.route()`
-- `nav_items() -> jsonb` -> module menu. Returns `jsonb` (NEVER TABLE)
-- `brand() -> text` -> displayed name in nav
-- `get_index()` -> module home page (required)
-- Parameters via query string: `/message?p_id=42` -> `get_message(p_id integer)`
-- POST returns raw HTML (templates `<template data-toast>` or `<template data-redirect>`) — never wrapped in `page()`
-- Tables via `<md>` blocks (markdown), NEVER `<table>` HTML. `<md data-page="20">` for pagination
-- CSS classes `pgv-*`, NEVER inline `style="..."`
-- UI primitives: `pgv.stat()`, `pgv.badge()`, `pgv.card()`, `pgv.grid()`, `pgv.empty()`, `pgv.md_table()`, `pgv.action()`, `pgv.tree()`, `pgv.md_esc()`
-
-### Dev Workflow (STRICT)
+## Dev Workflow (STRICT)
 
 1. **DDL** -> Write to `build/workbench.ddl.sql` -> `pg_schema` to apply
 2. **Functions** -> `pg_func_set` to create/modify + `pg_test` to validate
 3. **Export** -> `pg_pack schemas:workbench` (-> `build/workbench.func.sql`) + `pg_func_save target:plpgsql://workbench` (-> `src/`)
 4. `pg_query` -> SELECT/DML only, NEVER DDL or CREATE FUNCTION
-5. NEVER write functions in SQL files — the workbench IS the dev tool
-6. NEVER edit `build/*.func.sql` — generated by `pg_pack`
+5. NEVER write functions in SQL files -- the workbench IS the dev tool
+6. NEVER edit `build/*.func.sql` -- generated by `pg_pack`
 
-### Module structure
+## Module structure
 
 - `module.json` -> manifest (schemas, dependencies, extensions, sql, grants)
 - `build/` -> deployment artifacts (DDL + packed functions)
 - `src/` -> individually versioned sources (pg_func_save)
 
-### DDL Content — STRICT
+## DDL Content -- STRICT
 
 The DDL (`build/{schema}.ddl.sql`) contains **structure only**:
 
 **MUST contain:** CREATE SCHEMA, CREATE TABLE, CREATE INDEX, constraints, RLS policies
 
 **MUST NOT contain:**
-- `CREATE FUNCTION` → pg_func_set then pg_pack
-- `CREATE TRIGGER` → pg_pack attaches triggers to functions
-- `GRANT` → pg_pack adds them in .func.sql
-- `INSERT INTO` (seed data) → `build/{schema}.seed.sql` or `{schema}_qa.seed()`
+- `CREATE FUNCTION` -> pg_func_set then pg_pack
+- `CREATE TRIGGER` -> pg_pack attaches triggers to functions
+- `GRANT` -> pg_pack adds them in .func.sql
+- `INSERT INTO` (seed data) -> `build/{schema}.seed.sql` or `{schema}_qa.seed()`
