@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Pin, X } from "lucide-react";
+import { Pin, X, MessageCircle } from "lucide-react";
 import { crud } from "@/lib/api";
+import { log } from "@/lib/log";
 import { Currency } from "@/components/sdui/Currency";
 import { Badge } from "@/components/ui/badge";
 import { useT } from "@/lib/i18n";
-import type { PinnedCard, ViewTemplate } from "@/lib/store";
+import type { CardMessage, PinnedCard, ViewTemplate } from "@/lib/store";
 import { useStore } from "@/lib/store";
 import {
   fieldKey,
@@ -75,7 +76,49 @@ function PinCard({ pin, onClose }: { pin: PinnedCard; onClose: () => void }) {
         {tpl ? <TemplateBody data={data} tpl={tpl} view={view} t={t} /> : <FallbackBody data={data} />}
       </div>
 
+      {pin.messages.length > 0 && <CardMessages messages={pin.messages} pin={pin} t={t} />}
+
       <CardActions pin={pin} data={data} view={view} t={t} />
+    </div>
+  );
+}
+
+function CardMessages({ messages, pin, t }: { messages: CardMessage[]; pin: PinnedCard; t: (k: string) => string }) {
+  const showToast = useStore((s) => s.showToast);
+
+  async function execAction(action: { label: string; verb: string; uri: string; data?: Record<string, unknown> }) {
+    try {
+      log("card", "exec action", action);
+      await crud(action.verb, action.uri, action.data);
+      showToast({ msg: action.label, level: "success" });
+    } catch (err: unknown) {
+      showToast({ msg: err instanceof Error ? err.message : "Error", level: "error" });
+    }
+  }
+
+  return (
+    <div className="border-t">
+      {messages.map((m, i) => (
+        <div key={i} className="px-4 py-2 flex flex-col gap-1.5 border-b last:border-b-0 bg-muted/30">
+          <div className="flex items-start gap-2">
+            <MessageCircle className="w-3 h-3 mt-0.5 text-primary shrink-0" />
+            <p className="text-xs text-foreground">{m.msg}</p>
+          </div>
+          {m.actions && m.actions.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap pl-5">
+              {m.actions.map((a, j) => (
+                <button
+                  key={j}
+                  onClick={() => execAction(a)}
+                  className="px-2 py-0.5 text-[11px] bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -218,22 +261,19 @@ function CardActions({
     setLoading(true);
     try {
       await crud("post", action.uri);
-      const meta = catalog[action.method];
       if (action.method === "delete") {
         unpin(pin.id);
       } else {
         const res = await crud("get", pin.uri);
-        if (res?.data) {
-          const row = Array.isArray(res.data) ? res.data[0] : res.data;
-          if (row) {
-            if (res.actions) row.actions = res.actions;
-            updatePinData(pin.id, row);
-          }
+        const row = Array.isArray(res?.data) ? res.data[0] : res?.data;
+        if (row) {
+          if (res.actions) row.actions = res.actions;
+          updatePinData(pin.id, row);
         }
       }
-      showToast({ level: "success", message: t(catalog[action.method]?.label ?? action.method) });
-    } catch (err: any) {
-      showToast({ level: "error", message: err?.message ?? "Error" });
+      showToast({ level: "success", msg: t(catalog[action.method]?.label ?? action.method) });
+    } catch (err: unknown) {
+      showToast({ msg: err instanceof Error ? err.message : "Error", level: "error" });
     } finally {
       setLoading(false);
       setPending(null);

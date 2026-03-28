@@ -27,6 +27,7 @@ export interface Toast {
   level: ToastLevel;
   detail?: string;
   href?: string;
+  timeout?: number;
 }
 
 export type ViewField = string | { key: string; type?: string; label?: string };
@@ -70,6 +71,13 @@ export interface ViewTemplate {
   actions?: Record<string, { label: string; icon?: string; variant?: string; confirm?: string }>;
 }
 
+export interface CardMessage {
+  from: string;
+  msg: string;
+  actions?: Array<{ label: string; verb: string; uri: string; data?: Record<string, unknown> }>;
+  at: number;
+}
+
 export interface PinnedCard {
   id: string;
   uri: string;
@@ -79,6 +87,7 @@ export interface PinnedCard {
   view: ViewTemplate | null;
   level: "compact" | "standard" | "expanded";
   position: { x: number; y: number };
+  messages: CardMessage[];
 }
 
 export interface OverlayState {
@@ -107,11 +116,12 @@ interface AppState {
   viewCache: Record<string, ViewTemplate>;
   pins: PinnedCard[];
   _pinCounter: number;
-  pin: (card: Omit<PinnedCard, "id" | "position">) => void;
+  pin: (card: Omit<PinnedCard, "id" | "position" | "messages">) => string;
   unpin: (id: string) => void;
   movePin: (id: string, position: { x: number; y: number }) => void;
   setPinLevel: (id: string, level: PinnedCard["level"]) => void;
   updatePinData: (id: string, data: Record<string, unknown>) => void;
+  pushMessage: (uri: string, message: CardMessage) => void;
 
   overlay: OverlayState;
   openOverlay: (entityUri: string) => void;
@@ -166,7 +176,7 @@ export const useStore = create<AppState>((set, get) => ({
           set({ toast: null });
           toastTimer = null;
         },
-        toast.level === "error" ? 8000 : 3000,
+        toast.timeout ?? (toast.level === "error" ? 8000 : 3000),
       );
     }
   },
@@ -181,33 +191,36 @@ export const useStore = create<AppState>((set, get) => ({
   pins: [],
 
   pin: (card) => {
-    if (get().pins.some((p) => p.uri === card.uri)) return;
+    if (get().pins.some((p) => p.uri === card.uri)) return card.uri;
 
     const counter = get()._pinCounter + 1;
     const id = `pin-${counter}`;
     const offset = get().pins.length;
     const position = { x: 20 + offset * 30, y: 20 + offset * 20 };
+    const view = card.view ?? get().viewCache[card.entityUri] ?? null;
 
     set((s) => ({
       _pinCounter: counter,
-      pins: [...s.pins, { ...card, id, position }],
+      pins: [...s.pins, { ...card, id, position, view, messages: [] }],
     }));
 
-    const view = get().viewCache[card.entityUri] ?? null;
+    if (!card.data) {
+      apiGet(card.uri)
+        .then((res) => {
+          if (!res) return;
+          const fullData = res.data as Record<string, unknown> | null;
+          if (fullData) {
+            const actions = res.actions as unknown[] | undefined;
+            const enriched = actions?.length ? { ...fullData, actions } : fullData;
+            set((s) => ({
+              pins: s.pins.map((p) => (p.id === id ? { ...p, data: enriched } : p)),
+            }));
+          }
+        })
+        .catch(() => {});
+    }
 
-    apiGet(card.uri)
-      .then((res) => {
-        if (!res) return;
-        const fullData = res.data as Record<string, unknown> | null;
-        if (fullData) {
-          const actions = res.actions as unknown[] | undefined;
-          const enriched = actions?.length ? { ...fullData, actions } : fullData;
-          set((s) => ({
-            pins: s.pins.map((p) => (p.id === id ? { ...p, data: enriched, view } : p)),
-          }));
-        }
-      })
-      .catch(() => {});
+    return card.uri;
   },
 
   unpin: (id) => set((s) => ({ pins: s.pins.filter((p) => p.id !== id) })),
@@ -225,6 +238,13 @@ export const useStore = create<AppState>((set, get) => ({
   updatePinData: (id, data) =>
     set((s) => ({
       pins: s.pins.map((p) => (p.id === id ? { ...p, data } : p)),
+    })),
+
+  pushMessage: (uri, message) =>
+    set((s) => ({
+      pins: s.pins.map((p) =>
+        p.uri === uri ? { ...p, messages: [...p.messages, message].slice(-50) } : p,
+      ),
     })),
 
   overlay: { open: false, entityUri: null },
