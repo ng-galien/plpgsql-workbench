@@ -16,3 +16,4 @@ cloudflare/pages/illustrator/app.css
 docker/agent/claude-home/
 docker/agent/.credentials.json
 docker/agent/homes/
+.DS_Store
