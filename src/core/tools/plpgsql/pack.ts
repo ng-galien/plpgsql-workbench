@@ -5,6 +5,7 @@ import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
 import { ensureParserModule, extractFuncDeps } from "./deps.js";
+import { formatTestReport, runTests } from "./test.js";
 
 interface FuncRow {
   schema: string;
@@ -165,6 +166,17 @@ export function createPackTool({
 
       return withClient(async (client) => {
         await ensureParserModule();
+
+        // Run IT tests before packing — abort if any fail
+        for (const schema of schemas) {
+          const itSchema = `${schema}_it`;
+          const itReport = await runTests(client, itSchema);
+          if (itReport && itReport.failed > 0) {
+            return text(
+              `✗ ${itReport.failed} integration test(s) failed in ${itSchema} — pack aborted\n\n${formatTestReport(itReport)}`,
+            );
+          }
+        }
 
         const allFns = await querySchemaFunctions(client, schemas);
 

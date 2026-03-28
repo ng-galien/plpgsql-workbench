@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { text } from "../../helpers.js";
+import { formatTestReport, runTests } from "./test.js";
 
 interface FunctionEntry {
   oid: string;
@@ -174,8 +175,20 @@ export function createFuncSaveTool({
           );
         }
 
+        // Run UT tests before saving — abort if any fail
+        const utSchema = `${schema}_ut`;
+        const testReport = await runTests(client, utSchema);
+        if (testReport && testReport.failed > 0) {
+          return text(
+            `✗ ${testReport.failed} test(s) failed in ${utSchema} — save aborted\n\n${formatTestReport(testReport)}`,
+          );
+        }
+
         const result = await dumpFunctions(client, outDir, schema, fnName);
-        return text(result);
+        const testSection = testReport && testReport.total > 0
+          ? `\n\n${formatTestReport(testReport)}`
+          : "";
+        return text(result + testSection);
       });
     },
   };
