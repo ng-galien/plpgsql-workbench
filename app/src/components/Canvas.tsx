@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Pin, X } from "lucide-react";
+import { crud } from "@/lib/api";
 import { Currency } from "@/components/sdui/Currency";
 import { Badge } from "@/components/ui/badge";
 import { useT } from "@/lib/i18n";
@@ -73,7 +75,7 @@ function PinCard({ pin, onClose }: { pin: PinnedCard; onClose: () => void }) {
         {tpl ? <TemplateBody data={data} tpl={tpl} view={view} t={t} /> : <FallbackBody data={data} />}
       </div>
 
-      <CardActions data={data} view={view} t={t} />
+      <CardActions pin={pin} data={data} view={view} t={t} />
     </div>
   );
 }
@@ -190,10 +192,12 @@ function FieldValue({ value, type }: { value: unknown; type?: string }) {
 }
 
 function CardActions({
+  pin,
   data,
   view,
   t,
 }: {
+  pin: PinnedCard;
   data: Record<string, unknown>;
   view: ViewTemplate | null;
   t: (key: string) => string;
@@ -202,6 +206,76 @@ function CardActions({
   if (!hateoas || hateoas.length === 0) return null;
 
   const catalog = view?.actions ?? {};
+  const showToast = useStore((s) => s.showToast);
+  const unpin = useStore((s) => s.unpin);
+  const updatePinData = useStore((s) => s.updatePinData);
+  const [pending, setPending] = useState<{ method: string; uri: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const pendingMeta = pending ? catalog[pending.method] : null;
+
+  async function exec(action: { method: string; uri: string }) {
+    setLoading(true);
+    try {
+      await crud("post", action.uri);
+      const meta = catalog[action.method];
+      if (action.method === "delete") {
+        unpin(pin.id);
+      } else {
+        const res = await crud("get", pin.uri);
+        if (res?.data) {
+          const row = Array.isArray(res.data) ? res.data[0] : res.data;
+          if (row) {
+            if (res.actions) row.actions = res.actions;
+            updatePinData(pin.id, row);
+          }
+        }
+      }
+      showToast({ level: "success", message: t(catalog[action.method]?.label ?? action.method) });
+    } catch (err: any) {
+      showToast({ level: "error", message: err?.message ?? "Error" });
+    } finally {
+      setLoading(false);
+      setPending(null);
+    }
+  }
+
+  function handleClick(action: { method: string; uri: string }) {
+    const meta = catalog[action.method];
+    if (meta?.confirm) {
+      setPending(action);
+    } else {
+      exec(action);
+    }
+  }
+
+  if (pending) {
+    return (
+      <div className="px-4 py-3 border-t bg-muted/50">
+        <p className="text-xs text-muted-foreground mb-2">{t(pendingMeta!.confirm!)}</p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => exec(pending)}
+            disabled={loading}
+            className={`px-3 py-1 text-xs rounded-md transition-colors ${
+              pendingMeta?.variant === "danger"
+                ? "bg-destructive text-destructive-foreground"
+                : "bg-primary text-primary-foreground"
+            }`}
+          >
+            {loading ? "..." : t(pendingMeta!.label)}
+          </button>
+          <button
+            onClick={() => setPending(null)}
+            disabled={loading}
+            className="px-3 py-1 text-xs border rounded-md hover:bg-accent"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 py-2 border-t flex gap-2 flex-wrap">
@@ -211,7 +285,11 @@ function CardActions({
         const styles = actionVariantStyles[meta?.variant ?? ""] ?? "hover:bg-accent";
 
         return (
-          <button key={action.method} className={`px-2.5 py-1 text-xs border rounded-md transition-colors ${styles}`}>
+          <button
+            key={action.method}
+            onClick={() => handleClick(action)}
+            className={`px-2.5 py-1 text-xs border rounded-md transition-colors ${styles}`}
+          >
             {label}
           </button>
         );

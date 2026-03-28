@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["src/**/*.ts", "app/src/**/*.ts", "app/src/**/*.tsx", "cloudflare/pages/src/**/*.ts"]
+    "includes": ["src/**/*.ts", "app/src/**/*.ts", "app/src/**/*.tsx"]
   },
   "formatter": {
     "enabled": true,

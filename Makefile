@@ -276,49 +276,20 @@ agent-attach: ## Attach to agent tmux session (M=name). Ex: make agent-attach M=
 build: ## Compile TypeScript (tsc → dist/)
 	npm run build
 
-ESBUILD_SHELL = npx esbuild cloudflare/pages/src/pgview.ts \
-	--bundle --outfile=cloudflare/pages/pgview.js \
-	--format=iife --global-name=pgv \
-	--target=es2022,chrome90,firefox90,safari15 \
-	--external:alpine --external:marked --external:panzoom --external:d3
-
-build-shell: ## Bundle pgView shell kernel (esbuild → cloudflare/pages/pgview.js)
-	@$(ESBUILD_SHELL) --minify
-	@echo "  pgview.js → cloudflare/pages/"
-
-watch-shell: ## Live reload pgView shell (esbuild watch)
-	$(ESBUILD_SHELL) --watch --sourcemap
-
-ESBUILD_ILL = npx esbuild modules/document/frontend/illustrator/app.ts \
-	--bundle --format=esm --external:d3 --loader:.css=css \
-	--target=es2022,chrome90,firefox90,safari15
-
-build-illustrator: ## Bundle illustrator client (esbuild → dist/ + cloudflare/pages/)
-	@$(ESBUILD_ILL) --outfile=modules/document/frontend/illustrator/dist/app.js --minify
-	@cp modules/document/frontend/illustrator/dist/app.js modules/document/frontend/illustrator/dist/app.css cloudflare/pages/illustrator/
-	@echo "  app.js + app.css → dist/ + cloudflare/pages/illustrator/"
-
-watch-illustrator: ## Live reload illustrator client (esbuild watch → cloudflare/pages + dist/)
-	$(ESBUILD_ILL) --outdir=cloudflare/pages/illustrator --watch --sourcemap
-
-check: check-server check-shell check-lint check-css build-shell build-illustrator ## Full quality gate
+check: check-server check-app check-lint ## Full quality gate
 	@echo "✓ All checks passed"
 
 check-server: ## Type-check MCP server (src/)
 	@echo "  tsc server ..."
 	@npx tsc --noEmit
 
-check-shell: ## Type-check pgView shell (strict + unused)
-	@echo "  tsc shell ..."
-	@npx tsc --noEmit -p cloudflare/pages/tsconfig.json
+check-app: ## Type-check React app (app/src/)
+	@echo "  tsc app ..."
+	@cd app && npx tsc --noEmit
 
 check-lint: ## Biome lint (TS)
 	@echo "  biome lint ..."
-	@npx biome lint
-
-check-css: ## Stylelint (CSS)
-	@echo "  stylelint ..."
-	@npx stylelint "cloudflare/pages/src/css/*.css"
+	@npx biome check .
 
 # --- Help ---
 
