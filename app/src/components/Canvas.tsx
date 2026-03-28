@@ -17,6 +17,15 @@ import {
   resolveFieldLabel,
 } from "@/lib/utils";
 
+async function reloadPin(pin: PinnedCard, updatePinData: (id: string, data: Record<string, unknown>) => void) {
+  const res = await crud("get", pin.uri);
+  const row = Array.isArray(res?.data) ? res.data[0] : res?.data;
+  if (row) {
+    if (res.actions) row.actions = res.actions;
+    updatePinData(pin.id, row);
+  }
+}
+
 const actionVariantStyles: Record<string, string> = {
   danger: "border-destructive/30 text-destructive hover:bg-destructive/10",
   warning: "border-amber-300 text-amber-700 hover:bg-amber-50",
@@ -85,11 +94,13 @@ function PinCard({ pin, onClose }: { pin: PinnedCard; onClose: () => void }) {
 
 function CardMessages({ messages, pin, t }: { messages: CardMessage[]; pin: PinnedCard; t: (k: string) => string }) {
   const showToast = useStore((s) => s.showToast);
+  const updatePinData = useStore((s) => s.updatePinData);
 
   async function execAction(action: { label: string; verb: string; uri: string; data?: Record<string, unknown> }) {
     try {
       log("card", "exec action", action);
       await crud(action.verb, action.uri, action.data);
+      await reloadPin(pin, updatePinData);
       showToast({ msg: action.label, level: "success" });
     } catch (err: unknown) {
       showToast({ msg: err instanceof Error ? err.message : "Error", level: "error" });
@@ -264,12 +275,7 @@ function CardActions({
       if (action.method === "delete") {
         unpin(pin.id);
       } else {
-        const res = await crud("get", pin.uri);
-        const row = Array.isArray(res?.data) ? res.data[0] : res?.data;
-        if (row) {
-          if (res.actions) row.actions = res.actions;
-          updatePinData(pin.id, row);
-        }
+        await reloadPin(pin, updatePinData);
       }
       showToast({ level: "success", msg: t(catalog[action.method]?.label ?? action.method) });
     } catch (err: unknown) {

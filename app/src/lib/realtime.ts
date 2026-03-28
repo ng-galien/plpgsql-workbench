@@ -94,6 +94,16 @@ function handleAction(payload: UIAction) {
       break;
     }
 
+    case "update": {
+      if (!payload.uri) break;
+      const targetPin = store.pins.find((p) => p.uri === payload.uri);
+      log("realtime", "update", { uri: payload.uri, pinFound: !!targetPin, hasData: !!payload.data, pins: store.pins.map((p) => p.uri) });
+      if (targetPin && payload.data) {
+        store.updatePinData(targetPin.id, payload.data);
+      }
+      break;
+    }
+
     case "refresh":
       if (payload.uri) refreshPin(payload.uri);
       break;
