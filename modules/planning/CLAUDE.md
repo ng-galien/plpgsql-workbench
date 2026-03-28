@@ -7,7 +7,7 @@ Shared agenda, scheduling, team assignment per day.
 
 ## SDUI Convention
 
-Each entity exposes these functions consumed by `route_crud(verb, uri)`:
+Each entity exposes these functions consumed by `api(verb, uri)`:
 
 | Function | Purpose | Returns |
 |----------|---------|---------|

@@ -1,4 +1,4 @@
-CREATE OR REPLACE FUNCTION pgv.route_crud(p_verb text, p_uri text, p_data jsonb DEFAULT NULL::jsonb)
+CREATE OR REPLACE FUNCTION pgv.api(p_verb text, p_uri text, p_data jsonb DEFAULT NULL::jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
 AS $function$

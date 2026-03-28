@@ -1225,7 +1225,7 @@ AS $function$
 $function$;
 COMMENT ON FUNCTION pgv.schema_table(text,text) IS 'Returns detailed table structure: columns, CHECK constraints, FK, indexes, RLS policies.';
 
-CREATE OR REPLACE FUNCTION pgv.route_crud(p_verb text, p_uri text, p_data jsonb DEFAULT NULL::jsonb)
+CREATE OR REPLACE FUNCTION pgv.api(p_verb text, p_uri text, p_data jsonb DEFAULT NULL::jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
 AS $function$
@@ -1427,7 +1427,7 @@ EXCEPTION WHEN OTHERS THEN
   END;
 END;
 $function$;
-COMMENT ON FUNCTION pgv.route_crud(text,text,jsonb) IS 'CRUD router: dispatch get/set/patch/delete/post via URI. Returns {data, uri, actions, view?}. Handles jsonb and record return types.';
+COMMENT ON FUNCTION pgv.api(text,text,jsonb) IS 'CRUD router: dispatch get/set/patch/delete/post via URI. Returns {data, uri, actions, view?}. Handles jsonb and record return types.';
 
 CREATE OR REPLACE FUNCTION pgv.slugify(VARIADIC p_parts text[])
  RETURNS text

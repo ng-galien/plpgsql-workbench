@@ -187,7 +187,7 @@ Auto-resolution examples:
 
 | Module | Schemas | Purpose |
 |--------|---------|---------|
-| pgv | `pgv`, `pgv_ut`, `pgv_qa` | Framework: route_crud, _view() contract, i18n, UI primitives |
+| pgv | `pgv`, `pgv_ut`, `pgv_qa` | Framework: api, _view() contract, i18n, UI primitives |
 | workbench | `workbench` | Platform infra: tenants, messaging, hooks, sessions, issues, UI dashboard |
 | cad | `cad`, `cad_ut`, `cad_qa` | CAD 3D wood structures (PostGIS/SFCGAL, Three.js) |
 | crm | `crm`, `crm_ut`, `crm_qa` | CRM: contacts, entreprises |
@@ -285,7 +285,7 @@ ViewField = `string` (key only) or `{ "key": "...", "type": "date|currency|statu
 
 ### 2. Data (dynamic) — what to render
 
-`pgv.route_crud(verb, uri, data)` dispatches CRUD operations. Returns **only** `{data, uri, actions}` — no schema.
+`pgv.api(verb, uri, data)` dispatches CRUD operations. Returns **only** `{data, uri, actions}` — no schema.
 
 | Verb | URI | Dispatches to | Returns |
 |------|-----|--------------|---------|
@@ -302,10 +302,10 @@ HATEOAS: `_read()` returns available actions based on entity state (e.g. active 
 
 ```
 startup:  _view() → viewCache (one call per entity type, cached forever)
-browse:   route_crud('get', uri) → data only → render with cached view
-pin:      route_crud('get', uri/id) → data + HATEOAS actions → render card
-action:   route_crud('post', uri/id/method) → refresh data
-create:   route_crud('set', uri, formData) → new row
+browse:   api('get', uri) → data only → render with cached view
+pin:      api('get', uri/id) → data + HATEOAS actions → render card
+action:   api('post', uri/id/method) → refresh data
+create:   api('set', uri, formData) → new row
 ```
 
 The client (React) is the **only** place where schema and data meet. The server never bundles them.
@@ -331,7 +331,7 @@ The client (React) is the **only** place where schema and data meet. The server 
 | Path | Role |
 |------|------|
 | `app/src/` | React frontend (canvas, overlay, admin) |
-| `modules/pgv/src/pgv/` | Framework functions (route_crud, i18n, schema_*, ui_*) |
+| `modules/pgv/src/pgv/` | Framework functions (api, i18n, schema_*, ui_*) |
 
 ## SQL
 
@@ -360,7 +360,7 @@ The client (React) is the **only** place where schema and data meet. The server 
 - **Tool naming** — `{domain}_{action}`: `pg_*` (PostgreSQL), `fs_*` (filesystem/docstore), `gmail_*` (Google)
 - **Zero inline SQL in app tools** — App tools (doc_*, etc.) MUST NOT contain raw SQL. Business logic lives in PL/pgSQL functions deployed in the app schema (e.g. `docman.import()`, `docman.classify()`). App MCP tools are thin orchestrators: they read config from DB, call platform primitives (fs_*, gmail_*), and call app PL/pgSQL functions via `withClient`. SQL in TypeScript = bug.
 - **Zero process.env for app config** — Only infra bootstrap uses env vars (PLPGSQL_CONNECTION, MCP_PORT, LOG_LEVEL, WORKBENCH_MODE). All app config lives in `workbench.config(app, key, value)` and is read from DB at request time. No defaults, no fallbacks.
-- **PostgREST CRUD routing** — `pgv.route_crud(verb, uri, data)` dispatches CRUD operations. Returns `{data, uri, actions}` only — never includes view schema. React calls via `pgv.rpc("route_crud", ...)`.
+- **PostgREST CRUD routing** — `pgv.api(verb, uri, data)` dispatches CRUD operations. Returns `{data, uri, actions}` only — never includes view schema. React calls via `pgv.rpc("api", ...)`.
 - **PostgREST grants** — Each `build/{schema}.ddl.sql` MUST include `GRANT USAGE ON SCHEMA {schema} TO anon`, `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO anon`, `GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO anon` — otherwise 500 in frontend via PostgREST
 
 ## Documentation Map
@@ -369,7 +369,7 @@ The client (React) is the **only** place where schema and data meet. The server 
 |------|---------|
 | `docs/LMNAV.md` | Output format specification with examples for every tool |
 | `docs/PGM.md` | PostgreSQL Module Manager: module.json spec, pgm CLI, install/deploy workflow |
-| `src/core/docs/sdui.md` | SDUI contract: _view() template, route_crud, entity types, form fields |
+| `src/core/docs/sdui.md` | SDUI contract: _view() template, api, entity types, form fields |
 | `docs/BUSINESS.md` | Business plan for SaaS artisan ERP + toolbox packaging model |
 | `docs/AI-INTEGRATION.md` | 3-level AI integration: MCP (done), chat widget, autonomous agent |
 | `docs/PRIMITIVE.md` | Original spec for MCP tool primitives (some aspirational) |

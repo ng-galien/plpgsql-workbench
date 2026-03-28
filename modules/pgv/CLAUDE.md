@@ -1,6 +1,6 @@
 # pgv -- SDUI Framework
 
-PostgreSQL SDUI framework. `route_crud()` dispatcher, `_view()` contract, i18n, UI primitives `pgv.ui_*`.
+PostgreSQL SDUI framework. `api()` dispatcher, `_view()` contract, i18n, UI primitives `pgv.ui_*`.
 
 **Dependencies:** none (foundation module)
 **Schemas:** `pgv`, `pgv_ut` (tests), `pgv_qa` (demo app)
@@ -44,7 +44,7 @@ Key rules:
 
 ### 2. Data (dynamic) -- what to render
 
-`pgv.route_crud(verb, uri, data)` dispatches CRUD operations. Returns **only** `{data, uri, actions}` -- no schema.
+`pgv.api(verb, uri, data)` dispatches CRUD operations. Returns **only** `{data, uri, actions}` -- no schema.
 
 | Verb | URI | Dispatches to | Returns |
 |------|-----|--------------|---------|
@@ -59,10 +59,10 @@ Key rules:
 
 ```
 startup:  _view() -> viewCache (one call per entity type, cached forever)
-browse:   route_crud('get', uri) -> data only -> render with cached view
-pin:      route_crud('get', uri/id) -> data + HATEOAS actions -> render card
-action:   route_crud('post', uri/id/method) -> refresh data
-create:   route_crud('set', uri, formData) -> new row
+browse:   api('get', uri) -> data only -> render with cached view
+pin:      api('get', uri/id) -> data + HATEOAS actions -> render card
+action:   api('post', uri/id/method) -> refresh data
+create:   api('set', uri, formData) -> new row
 ```
 
 The client (React) is the **only** place where schema and data meet. The server never bundles them.
@@ -81,7 +81,7 @@ The client (React) is the **only** place where schema and data meet. The server 
 | `pgv.ui_table(source, columns)` | Connected table | Table bound to a datasource |
 | `pgv.ui_col(key, label, cell?)` | Column definition | Table column (cell = renderer) |
 | `pgv.ui_detail(source, fields)` | Detail view | Detail view connected to a datasource |
-| `pgv.ui_action(label, verb, uri, variant?, confirm?)` | Action button | Triggers a route_crud verb |
+| `pgv.ui_action(label, verb, uri, variant?, confirm?)` | Action button | Triggers a api verb |
 | `pgv.ui_datasource(uri, page_size?, searchable?, default_sort?)` | Datasource | Data source for table/detail |
 | `pgv.ui_card(entity_uri, level, header, body?, related?, actions?)` | Card | 3 levels: compact/standard/expanded |
 | `pgv.ui_card_header(icon, title, VARIADIC badges)` | Card header | Reusable header |
@@ -165,7 +165,7 @@ The `pgv_qa` schema is the **design system showcase** -- it contains demo data f
 
 - `pg_doc topic:testing` -- pgTAP guide: test_*() conventions, assertions, patterns
 - `pg_doc topic:coverage` -- Code coverage guide
-- `pg_doc topic:sdui` -- SDUI contract: _view() template, route_crud, entity types, form fields
+- `pg_doc topic:sdui` -- SDUI contract: _view() template, api, entity types, form fields
 
 ## Gotchas
 

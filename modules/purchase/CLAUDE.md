@@ -7,7 +7,7 @@ Supplier purchase orders, goods reception, supplier invoice reconciliation.
 
 ## SDUI Convention
 
-Each entity exposes these functions consumed by `route_crud(verb, uri)`:
+Each entity exposes these functions consumed by `api(verb, uri)`:
 
 | Function | Purpose | Returns |
 |----------|---------|---------|

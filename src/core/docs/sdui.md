@@ -5,12 +5,12 @@ topic: sdui
 
 ## Overview
 
-The React shell consumes `route_crud(verb, uri)` for data and `{entity}_view()` for presentation templates. PG composes the structure (fields, layout, actions), React renders. Zero business logic on the client.
+The React shell consumes `api(verb, uri)` for data and `{entity}_view()` for presentation templates. PG composes the structure (fields, layout, actions), React renders. Zero business logic on the client.
 
 ## Architecture
 
 Two separate concerns:
-- **Data** — `_list()`, `_read()`, `_create()`, `_update()`, `_delete()` via route_crud
+- **Data** — `_list()`, `_read()`, `_create()`, `_update()`, `_delete()` via api
 - **Presentation** — `_view()` returns the template (how to display, not what to display)
 
 The React shell combines both: fetches the template once, fetches data as needed, renders cards at the appropriate density level.
@@ -96,7 +96,7 @@ For FK fields, use combobox with a source URI:
       "source": "crm://client", "display": "name",
       "filter": "active=true;supplier_id={supplier_id}" }
 
-- `source` — route_crud URI to fetch options
+- `source` — api URI to fetch options
 - `display` — field name to show as label
 - `filter` — RSQL filter, supports {field} interpolation from other form fields (re-fetches on change)
 
@@ -135,7 +135,7 @@ Related entities reference other entities by URI with dynamic filters:
       { "entity": "quote://devis", "label": "crm.rel_quotes", "filter": "client_id={id}" }
     ]
 
-The {id} is interpolated from the current entity data. React fetches via route_crud with the resolved filter.
+The {id} is interpolated from the current entity data. React fetches via api with the resolved filter.
 
 ## Language Rules
 

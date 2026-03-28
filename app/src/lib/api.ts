@@ -15,7 +15,7 @@ export class ProblemError extends Error {
 }
 
 export async function crud(verb: string, uri: string, data?: Record<string, unknown>) {
-  const { data: result, error } = await pgv.rpc("route_crud", {
+  const { data: result, error } = await pgv.rpc("api", {
     p_verb: verb,
     p_uri: uri,
     p_data: data ?? null,

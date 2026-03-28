@@ -7,7 +7,7 @@ Projects, milestones, progress tracking, situation billing.
 
 ## SDUI Convention
 
-Each entity exposes these functions consumed by `route_crud(verb, uri)`:
+Each entity exposes these functions consumed by `api(verb, uri)`:
 
 | Function | Purpose | Returns |
 |----------|---------|---------|

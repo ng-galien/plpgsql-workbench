@@ -47,7 +47,7 @@ These are the most fragile cross-module paths identified by the team:
 
 For each e2e scenario:
 1. Seed data: call relevant `_qa.seed()` functions
-2. Execute the flow: create entities, trigger transitions via `route_crud`
+2. Execute the flow: create entities, trigger transitions via `api`
 3. Assert results: verify state changes, cross-module side effects
 4. Clean up: call `_qa.clean()` in reverse dependency order
 
