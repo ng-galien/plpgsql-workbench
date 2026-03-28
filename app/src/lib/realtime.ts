@@ -5,6 +5,7 @@ import { useStore } from "./store";
 import { supabase } from "./supabase";
 
 interface UIAction {
+  id?: string;
   action: string;
   uri?: string;
   entity_uri?: string;
@@ -82,10 +83,12 @@ function handleAction(payload: UIAction) {
     case "message": {
       if (!payload.uri || !payload.message) break;
       const entityUri = payload.entity_uri ?? payload.uri.replace(/\/[^/]+$/, "");
+      const rawActions = Array.isArray(payload.data?.actions) ? payload.data.actions : [];
       const msg: CardMessage = {
+        id: payload.id ?? crypto.randomUUID(),
         from: typeof payload.data?.from === "string" ? payload.data.from : "agent",
         msg: payload.message,
-        actions: Array.isArray(payload.data?.actions) ? payload.data.actions as CardMessage["actions"] : undefined,
+        actions: rawActions.map((a: any) => ({ ...a, id: a.id ?? crypto.randomUUID() })),
         at: Date.now(),
       };
       ensurePin(payload.uri, entityUri).then(() => {

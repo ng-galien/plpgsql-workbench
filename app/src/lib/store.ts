@@ -71,10 +71,19 @@ export interface ViewTemplate {
   actions?: Record<string, { label: string; icon?: string; variant?: string; confirm?: string }>;
 }
 
+export interface CardAction {
+  id: string;
+  label: string;
+  verb: string;
+  uri: string;
+  data?: Record<string, unknown>;
+}
+
 export interface CardMessage {
+  id: string;
   from: string;
   msg: string;
-  actions?: Array<{ label: string; verb: string; uri: string; data?: Record<string, unknown> }>;
+  actions?: CardAction[];
   at: number;
 }
 
@@ -122,6 +131,7 @@ interface AppState {
   setPinLevel: (id: string, level: PinnedCard["level"]) => void;
   updatePinData: (id: string, data: Record<string, unknown>) => void;
   pushMessage: (uri: string, message: CardMessage) => void;
+  removeAction: (uri: string, actionId: string) => void;
 
   overlay: OverlayState;
   openOverlay: (entityUri: string) => void;
@@ -245,6 +255,20 @@ export const useStore = create<AppState>((set, get) => ({
       pins: s.pins.map((p) =>
         p.uri === uri ? { ...p, messages: [...p.messages, message].slice(-50) } : p,
       ),
+    })),
+
+  removeAction: (uri, actionId) =>
+    set((s) => ({
+      pins: s.pins.map((p) => {
+        if (p.uri !== uri) return p;
+        const messages = p.messages
+          .map((m) => ({
+            ...m,
+            actions: m.actions?.filter((a) => a.id !== actionId),
+          }))
+          .filter((m) => (m.actions && m.actions.length > 0) || !m.actions);
+        return { ...p, messages };
+      }),
     })),
 
   overlay: { open: false, entityUri: null },

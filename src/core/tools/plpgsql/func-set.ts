@@ -17,6 +17,7 @@ export type SetFunctionFn = (
   content: string,
   description?: string,
   contextToken?: string,
+  skipTests?: boolean,
 ) => Promise<ToolResult>;
 
 type RunTestsFn = (client: DbClient, testSchema: string, pattern?: string) => Promise<TestReport | null>;
@@ -34,7 +35,7 @@ export function createSetFunction({
   runTests: RunTestsFn;
   formatTestReport: FormatTestReportFn;
 }): SetFunctionFn {
-  return async (client, schema, name, content, description?, contextToken?) => {
+  return async (client, schema, name, content, description?, contextToken?, skipTests?) => {
     // Validate context token (proves agent has read the function)
     const tokenCheck = await validateContextToken(client, schema, name, contextToken);
     if (!tokenCheck.valid) {
@@ -164,16 +165,20 @@ export function createSetFunction({
 
     // Auto-run unit tests inside the transaction (before commit)
     let testSection = "";
-    const utSchema = `${schema}_ut`;
-    const testReport = await runTests(client, utSchema, `^test_${name}$`);
-    if (testReport && testReport.total > 0) {
-      if (testReport.failed > 0) {
-        await client.query("ROLLBACK");
-        return text(
-          `completeness: full\n\n${validation}\n---\n${formatTestReport(testReport)}\n\ndeploy rolled back (fix failing tests and retry)`,
-        );
+    if (!skipTests) {
+      const utSchema = `${schema}_ut`;
+      const testReport = await runTests(client, utSchema, `^test_${name}$`);
+      if (testReport && testReport.total > 0) {
+        if (testReport.failed > 0) {
+          await client.query("ROLLBACK");
+          return text(
+            `completeness: full\n\n${validation}\n---\n${formatTestReport(testReport)}\n\ndeploy rolled back (fix failing tests and retry)`,
+          );
+        }
+        testSection = `\n---\n${formatTestReport(testReport)}`;
       }
-      testSection = `\n---\n${formatTestReport(testReport)}`;
+    } else {
+      testSection = "\n---\n⚠ tests skipped (skip_tests flag)";
     }
 
     await client.query("COMMIT");
@@ -272,6 +277,10 @@ export function createFuncSetTool({
           .string()
           .optional()
           .describe("Function doc (COMMENT ON FUNCTION). Short description of what the function does."),
+        skip_tests: z
+          .boolean()
+          .optional()
+          .describe("Skip auto-test after deploy (use during contract migrations where tests and code must change together)"),
         context_token: z
           .string()
           .optional()
@@ -285,6 +294,7 @@ export function createFuncSetTool({
       const content = args.content as string;
       const description = args.description as string | undefined;
       const contextToken = args.context_token as string | undefined;
+      const skipTests = args.skip_tests as boolean | undefined;
       const parsed = PlUri.parse(uri);
       if (!parsed || !parsed.kind || !parsed.name) {
         return text(`problem: invalid URI: ${uri}\nwhere: pg_func_set\nfix_hint: use plpgsql://schema/kind/name`);
@@ -292,7 +302,7 @@ export function createFuncSetTool({
 
       return withClient(async (client) => {
         if (parsed.kind === "function") {
-          return await setFunction(client, parsed.schema, parsed.name!, content, description, contextToken);
+          return await setFunction(client, parsed.schema, parsed.name!, content, description, contextToken, skipTests);
         } else {
           return await setDdl(client, parsed, content);
         }

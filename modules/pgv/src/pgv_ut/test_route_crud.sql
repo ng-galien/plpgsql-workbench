@@ -34,21 +34,23 @@ BEGIN
   RETURN NEXT ok(jsonb_typeof(v->'actions') = 'array', 'hateoas: actions is array');
   RETURN NEXT ok(v ? 'actions', 'hateoas: actions key always present');
 
-  -- Error: nonexistent schema
+  -- Error: nonexistent schema (RFC 7807 Problem Details)
   v := pgv.route_crud('get', 'nonexistent://test');
-  RETURN NEXT is(v->>'error', 'not_found', 'error: bad schema');
+  RETURN NEXT is((v->>'status')::int, 404, 'error: bad schema returns 404');
+  RETURN NEXT is(v->>'type', 'about:blank', 'error: bad schema has type');
+  RETURN NEXT ok(v ? 'detail', 'error: bad schema has detail');
 
   -- Error: nonexistent entity
   v := pgv.route_crud('get', 'docs://fakentity');
-  RETURN NEXT is(v->>'error', 'not_found', 'error: bad entity');
+  RETURN NEXT is((v->>'status')::int, 404, 'error: bad entity returns 404');
 
   -- Error: bad verb
   v := pgv.route_crud('badverb', 'docs://charter');
-  RETURN NEXT is(v->>'error', 'bad_request', 'error: bad verb');
+  RETURN NEXT is((v->>'status')::int, 400, 'error: bad verb returns 400');
 
   -- Error: POST without method
   v := pgv.route_crud('post', 'docs://charter/test');
-  RETURN NEXT is(v->>'error', 'bad_request', 'error: post without method');
+  RETURN NEXT is((v->>'status')::int, 400, 'error: post without method returns 400');
 
   -- Slug-based read
   v := pgv.route_crud('get', 'docs://charter/my-slug-name');
@@ -61,9 +63,10 @@ BEGIN
   RETURN NEXT is(v->'data'->>'name', 'Jean Dupont', 'patch: unpatched field preserved');
   RETURN NEXT ok((v->'data'->>'type') IS NOT NULL, 'patch: NOT NULL fields preserved');
 
-  -- Patch: not found
+  -- Patch: not found (RFC 7807)
   v := pgv.route_crud('patch', 'crm://client/999999', '{"phone": "00"}'::jsonb);
-  RETURN NEXT is(v->>'error', 'not_found', 'patch: nonexistent row returns not_found');
+  RETURN NEXT is((v->>'status')::int, 404, 'patch: nonexistent row returns 404');
+  RETURN NEXT is(v->>'instance', 'crm://client/999999', 'patch: instance is the URI');
 
   -- Restore test data
   UPDATE crm.client SET phone = '06 12 34 56 78' WHERE id = 1;

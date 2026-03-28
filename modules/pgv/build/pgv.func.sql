@@ -1261,7 +1261,7 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = v_schema) THEN
-    RETURN jsonb_build_object('error', 'not_found', 'message', format('schema "%s" does not exist', v_schema));
+    PERFORM pgv.throw_not_found(format('schema "%s" does not exist', v_schema));
   END IF;
 
   IF v_entity IS NULL THEN
@@ -1281,7 +1281,7 @@ BEGIN
           v_fn := v_fn_fallback;
         END IF;
         IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
-          RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s_read() does not exist', v_schema, v_entity));
+          PERFORM pgv.throw_not_found(format('function %s.%s_read() does not exist', v_schema, v_entity));
         END IF;
         -- Check if function returns jsonb directly
         SELECT t.typname = 'jsonb' INTO v_is_jsonb
@@ -1295,7 +1295,7 @@ BEGIN
       ELSE
         v_fn := v_entity || '_list';
         IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
-          RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
+          PERFORM pgv.throw_not_found(format('function %s.%s() does not exist', v_schema, v_fn));
         END IF;
         IF v_filter IS NOT NULL THEN
           EXECUTE format('SELECT coalesce(jsonb_agg(t), ''[]''::jsonb) FROM %I.%I(%L) t', v_schema, v_fn, v_filter) INTO v_result;
@@ -1307,7 +1307,7 @@ BEGIN
     WHEN 'set' THEN
       v_fn := v_entity || '_create';
       IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
-        RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
+        PERFORM pgv.throw_not_found(format('function %s.%s() does not exist', v_schema, v_fn));
       END IF;
       SELECT t.typname = 'jsonb' INTO v_is_jsonb
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_type t ON t.oid = p.prorettype
@@ -1321,7 +1321,7 @@ BEGIN
     WHEN 'patch' THEN
       v_fn := v_entity || '_update';
       IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
-        RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
+        PERFORM pgv.throw_not_found(format('function %s.%s() does not exist', v_schema, v_fn));
       END IF;
       SELECT t.typname = 'jsonb' INTO v_is_jsonb
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_type t ON t.oid = p.prorettype
@@ -1333,7 +1333,7 @@ BEGIN
       ) THEN 'slug' ELSE 'id' END;
       EXECUTE format('SELECT to_jsonb(t) FROM %I.%I t WHERE %I::text = $1 LIMIT 1', v_schema, v_entity, v_id_key) USING v_id INTO v_existing;
       IF v_existing IS NULL THEN
-        RETURN jsonb_build_object('error', 'not_found', 'message', format('%s.%s %s=%s not found', v_schema, v_entity, v_id_key, v_id));
+        PERFORM pgv.throw_not_found(format('%s.%s %s=%s not found', v_schema, v_entity, v_id_key, v_id));
       END IF;
       v_merged := v_existing || p_data;
       IF v_is_jsonb THEN
@@ -1345,7 +1345,7 @@ BEGIN
     WHEN 'delete' THEN
       v_fn := v_entity || '_delete';
       IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
-        RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
+        PERFORM pgv.throw_not_found(format('function %s.%s() does not exist', v_schema, v_fn));
       END IF;
       SELECT t.typname = 'jsonb' INTO v_is_jsonb
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_type t ON t.oid = p.prorettype
@@ -1358,11 +1358,11 @@ BEGIN
 
     WHEN 'post' THEN
       IF v_method IS NULL THEN
-        RETURN jsonb_build_object('error', 'bad_request', 'message', 'POST requires a method in the URI');
+        PERFORM pgv.throw_invalid('POST requires a method in the URI');
       END IF;
       v_fn := v_entity || '_' || v_method;
       IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = v_schema AND p.proname = v_fn) THEN
-        RETURN jsonb_build_object('error', 'not_found', 'message', format('function %s.%s() does not exist', v_schema, v_fn));
+        PERFORM pgv.throw_not_found(format('function %s.%s() does not exist', v_schema, v_fn));
       END IF;
       SELECT t.typname = 'jsonb' INTO v_is_jsonb
       FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_type t ON t.oid = p.prorettype
@@ -1388,7 +1388,7 @@ BEGIN
       END IF;
 
     ELSE
-      RETURN jsonb_build_object('error', 'bad_request', 'message', format('unsupported verb "%s"', p_verb));
+      PERFORM pgv.throw_invalid(format('unsupported verb "%s"', p_verb));
   END CASE;
 
   -- HATEOAS: extract actions from _read() response (module is responsible)
@@ -1402,6 +1402,29 @@ BEGIN
     'uri', p_uri,
     'actions', v_actions
   );
+EXCEPTION WHEN OTHERS THEN
+  DECLARE
+    v_errcode text := SQLSTATE;
+    v_msg text;
+    v_detail text;
+    v_status int;
+  BEGIN
+    GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT, v_detail = PG_EXCEPTION_DETAIL;
+    v_status := CASE
+      WHEN v_errcode = 'P0400' THEN 400
+      WHEN v_errcode = 'P0404' THEN 404
+      WHEN v_errcode = 'P0403' THEN 403
+      WHEN v_errcode = 'P0409' THEN 409
+      ELSE 500
+    END;
+    RETURN jsonb_build_object(
+      'type', 'about:blank',
+      'title', v_msg,
+      'status', v_status,
+      'detail', coalesce(v_detail, v_msg),
+      'instance', p_uri
+    );
+  END;
 END;
 $function$;
 COMMENT ON FUNCTION pgv.route_crud(text,text,jsonb) IS 'CRUD router: dispatch get/set/patch/delete/post via URI. Returns {data, uri, actions, view?}. Handles jsonb and record return types.';
@@ -1502,6 +1525,24 @@ BEGIN
 END;
 $function$;
 COMMENT ON FUNCTION pgv.post_issue_report(jsonb) IS 'Receive an issue report (bug/enhancement/question) from the shell UI and store it in workbench.issue_report';
+
+CREATE OR REPLACE FUNCTION pgv.throw_invalid(p_detail text DEFAULT 'Bad request'::text)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION USING ERRCODE = 'P0400', MESSAGE = 'Bad Request', DETAIL = p_detail;
+END; $function$;
+COMMENT ON FUNCTION pgv.throw_invalid(text) IS 'Throw a 400 Bad Request error for route_crud exception handling';
+
+CREATE OR REPLACE FUNCTION pgv.throw_not_found(p_detail text DEFAULT 'Not found'::text)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  RAISE EXCEPTION USING ERRCODE = 'P0404', MESSAGE = 'Not Found', DETAIL = p_detail;
+END; $function$;
+COMMENT ON FUNCTION pgv.throw_not_found(text) IS 'Throw a 404 Not Found error for route_crud exception handling';
 
 CREATE OR REPLACE FUNCTION pgv.ui_action(p_label text, p_verb text, p_uri text, p_variant text DEFAULT NULL::text, p_confirm text DEFAULT NULL::text)
  RETURNS jsonb
