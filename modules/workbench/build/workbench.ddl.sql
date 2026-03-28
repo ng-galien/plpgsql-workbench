@@ -126,6 +126,25 @@ CREATE TABLE IF NOT EXISTS workbench.agent_session (
 CREATE INDEX IF NOT EXISTS idx_agent_session_module
   ON workbench.agent_session (module, started_at DESC);
 
+-- ── Canvas (shared UI state between user and AI agent) ──
+
+CREATE TABLE IF NOT EXISTS workbench.canvas (
+  id            SERIAL PRIMARY KEY,
+  tenant_id     TEXT NOT NULL DEFAULT current_setting('app.tenant_id', true),
+  user_id       TEXT NOT NULL DEFAULT 'default',
+  resource_uri  TEXT NOT NULL,                -- e.g. workspace://root, crm://client/1
+  parent_uri    TEXT DEFAULT 'workspace://root', -- tree: root > pinned cards
+  state         JSONB NOT NULL DEFAULT '{}',  -- position, level, collapsed, etc.
+  context       JSONB NOT NULL DEFAULT '{}',  -- conversational context for this resource
+  pinned_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_canvas_resource
+  ON workbench.canvas (tenant_id, user_id, resource_uri);
+CREATE INDEX IF NOT EXISTS idx_canvas_parent
+  ON workbench.canvas (tenant_id, user_id, parent_uri);
+
 -- ── RLS ──
 
 ALTER TABLE workbench.tenant ENABLE ROW LEVEL SECURITY;
