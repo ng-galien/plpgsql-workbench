@@ -2,14 +2,17 @@ import { generate } from "./codegen.js";
 import { expandEntities } from "./entity-expander.js";
 import { tokenize } from "./lexer.js";
 import { parse } from "./parser.js";
+import { expandTests } from "./test-expander.js";
 
 export interface CompileResult {
   sql: string;
   ddlSql?: string;
+  testSql?: string;
   errors: CompileError[];
   warnings: CompileWarning[];
   functionCount: number;
   entityCount?: number;
+  testCount?: number;
 }
 
 export interface CompileError {
@@ -57,6 +60,16 @@ export function compile(source: string): CompileResult {
     return { sql: "", errors, warnings: [], functionCount: 0 };
   }
 
+  // Expand tests into pgTAP functions
+  const testResult = expandTests(mod.tests);
+  for (const err of testResult.errors) {
+    errors.push({ line: err.loc.line, col: err.loc.col, message: err.message, phase: "codegen" });
+  }
+
+  if (errors.length > 0) {
+    return { sql: "", errors, warnings: [], functionCount: 0 };
+  }
+
   // Merge expanded functions with hand-written ones
   const allFunctions = [...mod.functions, ...expandResult.functions];
 
@@ -76,19 +89,33 @@ export function compile(source: string): CompileResult {
     }
   }
 
+  // Generate test function SQL separately
+  const testSqlParts: string[] = [];
+  for (const fn of testResult.functions) {
+    try {
+      testSqlParts.push(generate(fn, aliases));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push({ line: fn.loc.line, col: fn.loc.col, message: msg, phase: "codegen" });
+    }
+  }
+
   if (errors.length > 0) {
     return { sql: "", errors, warnings: [], functionCount: 0 };
   }
 
   const ddlSql = expandResult.ddlFragments.length > 0 ? expandResult.ddlFragments.join("\n\n") : undefined;
+  const testSql = testSqlParts.length > 0 ? testSqlParts.join("\n\n") : undefined;
 
   return {
     sql: sqlParts.join("\n\n"),
     ddlSql,
+    testSql,
     errors: [],
     warnings: [],
     functionCount: allFunctions.length,
     entityCount: mod.entities.length,
+    testCount: testResult.functions.length,
     // Attach individual blocks for validation without re-splitting
     _blocks: sqlParts,
   } as CompileResult & { _blocks: string[] };

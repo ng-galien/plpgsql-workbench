@@ -10,6 +10,8 @@
     "plx": "dist/core/plx/cli.js"
   },
   "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "tsc",
     "watch": "tsc --watch",
     "start": "node dist/index.js",
@@ -42,6 +44,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.7",
+    "@testcontainers/postgresql": "^11.13.0",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.18.0",
     "@types/ws": "^8.18.1",
@@ -50,7 +53,9 @@
     "playwright": "^1.58.2",
     "stylelint": "^17.4.0",
     "stylelint-config-standard": "^40.0.0",
+    "testcontainers": "^11.13.0",
     "tsx": "^4.21.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.2"
   }
 }

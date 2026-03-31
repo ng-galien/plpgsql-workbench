@@ -22,12 +22,17 @@ program
 
     for (const w of result.warnings) console.error(`  WARN   ${w.functionName}: ${w.message}`);
 
+    const allSql = [result.sql, result.testSql].filter(Boolean).join("\n\n");
+    const testInfo = result.testCount ? `, ${result.testCount} tests` : "";
+
     if (opts.stdout) {
-      process.stdout.write(`${result.sql}\n`);
+      process.stdout.write(`${allSql}\n`);
     } else {
       const outPath = opts.output ?? file.replace(/\.plx$/, ".sql");
-      await fs.writeFile(outPath, `${result.sql}\n`, "utf-8");
-      console.log(`  BUILD  ${path.basename(file)} -> ${path.basename(outPath)} (${result.functionCount} functions)`);
+      await fs.writeFile(outPath, `${allSql}\n`, "utf-8");
+      console.log(
+        `  BUILD  ${path.basename(file)} -> ${path.basename(outPath)} (${result.functionCount} functions${testInfo})`,
+      );
     }
   });
 
@@ -43,7 +48,8 @@ program
     for (const w of result.warnings) console.error(`  WARN   ${w.functionName}: ${w.message}`);
 
     const status = result.warnings.length > 0 ? "with warnings" : "no errors";
-    console.log(`  OK     ${path.basename(file)} (${result.functionCount} functions, ${status})`);
+    const testInfo = result.testCount ? `, ${result.testCount} tests` : "";
+    console.log(`  OK     ${path.basename(file)} (${result.functionCount} functions${testInfo}, ${status})`);
   });
 
 program.parse();

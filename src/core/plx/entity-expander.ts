@@ -619,7 +619,7 @@ function actionObj(entity: PlxEntity, name: string): Expression {
         kind: "binary",
         op: "||",
         left: strLit(`${entity.uri}/`),
-        right: ident("id"),
+        right: ident("p_id"),
         loc: LOC,
       },
       right: strLit(`/${name}`),

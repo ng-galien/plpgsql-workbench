@@ -1,6 +1,7 @@
 import type {
   AppendStatement,
   ArrayLiteral,
+  AssertStatement,
   AssignStatement,
   BinaryExpr,
   CallExpr,
@@ -32,6 +33,7 @@ const WITH_FROM_RE = /^(.*\bselect\s+.+?\s+)(from\s+)/is;
 const RETURNING_RE = /\breturning\b/i;
 const RETURNING_APPEND_RE = /\b(returning\s+.+)$/i;
 const INFER_COUNT_RE = /^select\s+count\s*\(/i;
+const INFER_JSONB_RE = /^select\s+(?:to_jsonb|jsonb_build_object|jsonb_build_array|jsonb_agg)\s*\(/i;
 const INFER_INT_RE = /^select\s+\d+/i;
 const INFER_BOOL_RE = /^select\s+(?:true|false)/i;
 const INFER_TEXT_RE = /^select\s+'/i;
@@ -137,9 +139,12 @@ class CodegenContext {
     const plName = `v_${name}`;
 
     if (value.kind === "sql_block") {
-      const sql = value.sql.toLowerCase().trim();
+      // Unwrap parenthesized subquery for inference: (SELECT ...) → SELECT ...
+      let sql = value.sql.toLowerCase().trim();
+      if (sql.startsWith("(") && sql.endsWith(")")) sql = sql.slice(1, -1).trim();
       if (value.inferredTable) return { plName, type: value.inferredTable, isRow: true };
       if (INFER_COUNT_RE.test(sql)) return { plName, type: "bigint", isRow: false };
+      if (INFER_JSONB_RE.test(sql)) return { plName, type: "jsonb", isRow: false };
       if (INFER_INT_RE.test(sql)) return { plName, type: "integer", isRow: false };
       if (INFER_BOOL_RE.test(sql)) return { plName, type: "boolean", isRow: false };
       if (INFER_TEXT_RE.test(sql)) return { plName, type: "text", isRow: false };
@@ -200,6 +205,25 @@ class CodegenContext {
       case "sql_statement":
         this.emitSqlStatement(stmt);
         break;
+      case "assert":
+        this.emitAssert(stmt);
+        break;
+    }
+  }
+
+  private emitAssert(stmt: AssertStatement): void {
+    const msg = stmt.message ?? `assert line ${stmt.loc.line}`;
+    const escaped = sqlEscape(msg);
+    if (stmt.expression.kind === "binary" && stmt.expression.op === "=") {
+      const left = this.emitExpr(stmt.expression.left);
+      const right = this.emitExpr(stmt.expression.right);
+      this.line(`RETURN NEXT is(${left}, ${right}, '${escaped}');`);
+    } else if (stmt.expression.kind === "binary" && stmt.expression.op === "!=") {
+      const left = this.emitExpr(stmt.expression.left);
+      const right = this.emitExpr(stmt.expression.right);
+      this.line(`RETURN NEXT isnt(${left}, ${right}, '${escaped}');`);
+    } else {
+      this.line(`RETURN NEXT ok(${this.emitExpr(stmt.expression)}, '${escaped}');`);
     }
   }
 
@@ -229,9 +253,20 @@ class CodegenContext {
     let sqlText = sql.sql;
     const lowerSql = sqlText.toLowerCase().trim();
 
-    // Parenthesized subquery: := (SELECT ...) → direct assignment, no INTO
-    if (lowerSql.startsWith("(")) {
-      this.line(`${plName} := ${sqlText};`);
+    // Parenthesized subquery: (SELECT ...) → unwrap and use SELECT INTO
+    if (lowerSql.startsWith("(") && lowerSql.endsWith(")")) {
+      const inner = sqlText.slice(1, -1).trim();
+      const innerLower = inner.toLowerCase();
+      const innerFromMatch = inner.match(SELECT_FROM_RE);
+      if (innerFromMatch) {
+        const rewritten = `${innerFromMatch[1]}INTO ${plName} ${innerFromMatch[2]}${inner.slice(innerFromMatch[0].length)}`;
+        this.line(`${rewritten};`);
+      } else if (SELECT_NO_FROM_RE.test(innerLower) && !innerLower.includes(" from ")) {
+        this.line(`${inner.replace(SELECT_NO_FROM_RE, `$&INTO ${plName} `)};`);
+      } else {
+        // Fallback: direct assignment for non-SELECT subqueries
+        this.line(`${plName} := ${sqlText};`);
+      }
       this.emitNotFoundGuard(sql.elseRaise);
       return;
     }
@@ -305,9 +340,13 @@ class CodegenContext {
   }
 
   private emitReturn(stmt: ReturnStatement): void {
-    // Bare return
+    // Bare return — use RETURN for void/setof, RETURN NULL for scalar return types
     if (stmt.value.kind === "literal" && stmt.value.type === "null") {
-      this.line("RETURN;");
+      if (this.fn.returnType === "void" || this.fn.setof) {
+        this.line("RETURN;");
+      } else {
+        this.line("RETURN NULL;");
+      }
       return;
     }
 

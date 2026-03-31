@@ -18,6 +18,7 @@ export interface PlxModule {
   traits: PlxTrait[];
   entities: PlxEntity[];
   functions: PlxFunction[];
+  tests: PlxTest[];
 }
 
 // ---------- Traits ----------
@@ -169,6 +170,13 @@ export interface PlxFunction {
   loc: Loc;
 }
 
+export interface PlxTest {
+  kind: "test";
+  name: string; // "category crud lifecycle"
+  body: Statement[];
+  loc: Loc;
+}
+
 export interface Param {
   name: string;
   type: string;
@@ -186,7 +194,15 @@ export type Statement =
   | RaiseStatement
   | MatchStatement
   | SqlStatement
-  | AppendStatement;
+  | AppendStatement
+  | AssertStatement;
+
+export interface AssertStatement {
+  kind: "assert";
+  expression: Expression;
+  message?: string;
+  loc: Loc;
+}
 
 export interface AssignStatement {
   kind: "assign";
