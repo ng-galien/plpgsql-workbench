@@ -90,9 +90,18 @@ Scaffold un nouveau module dans `modules/`.
 pgm module new billing
 # Creating module billing...
 #   module.json
-#   sql/functions.sql
+#   build/billing.ddl.sql
+#   build/billing.func.sql
 #   .mcp.json                    ← MCP → dev server (port 3100)
 #   .claude/settings.local.json  ← permissions dev (pg_func_set, pg_pack, pg_test...)
+
+pgm module new quote --plx
+# Creating module quote...
+#   module.json
+#   build/quote.ddl.sql
+#   build/quote.func.sql
+#   build/quote_ut.func.sql
+#   src/quote.plx
 ```
 
 Le module généré :
@@ -100,6 +109,8 @@ Le module généré :
 - `.mcp.json` pointe vers le serveur dev (port 3100, dev DB sur 5433)
 - `.claude/settings.local.json` inclut les tools de développement (pas de docker, pas de deploy)
 - Option `--schema <name>` pour un nom de schema différent du nom du module
+- Option `--plx` pour un module PLX-first avec `plx.entry` et artefacts SQL générés
+- Limite actuelle : `--plx` suppose `module name == public schema`
 
 ### pgm module info
 
@@ -429,7 +440,8 @@ Le shell `index.html` le charge avant Alpine.js :
 ```bash
 pgm module new billing           # scaffold dans modules/billing/
 pgm module new billing -s bill   # schema "bill" au lieu de "billing"
-# → module.json, sql/functions.sql, .mcp.json (dev), .claude/settings.local.json (dev)
+pgm module new quote --plx       # scaffold PLX-first avec src/quote.plx
+# → module.json, build/*.sql, .mcp.json (dev), .claude/settings.local.json (dev)
 ```
 
 Puis itérer avec le MCP workbench (connecté à la dev DB, port 5433) :
@@ -442,6 +454,15 @@ pg_test ...              # valider
 # Exporter (auto-résolu via module registry) :
 pg_pack schemas: "billing,billing_ut"   # → modules/billing/sql/functions.sql
 pg_func_save target: "plpgsql://billing" # → modules/billing/sql/billing/*.sql
+```
+
+Pour un module `--plx`, le flux devient :
+
+```bash
+$EDITOR modules/quote/src/quote.plx
+pgm module build quote            # → regenere build/quote.func.sql + build/quote_ut.func.sql
+pgm app install
+pgm app deploy --apply
 ```
 
 ### Créer une app

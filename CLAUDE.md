@@ -23,7 +23,7 @@ Les agents modules lisent leurs instructions via `pg_msg_inbox module:<name>`. I
 
 - **Assign**: `pg_msg` with `msg_type: task`, `priority: high|normal`, `from: lead`, `to: <module>`
 - **Monitor**: `ws_health` (tasks, coherence, git status) — run periodically
-- **Ping**: `tmux send-keys -t <module> "go" Enter` if agent is waiting for confirmation
+- **Ping**: `make team-ping` (all) or `make member-ping M=<name>` — accepts `MSG="custom message"`, defaults to "go"
 - **No idle agents**: every agent should have an active task — feature-dev or review/polish when backlog is empty
 - **Commit in waves**: batch multiple module changes into single commits, not micro-commits
 
@@ -50,9 +50,18 @@ npm run build            # tsc -> dist/
 
 # Scaffold a new module
 pgm module new mymod
+
+# PLX transpiler
+plx build modules/expense/expense.plx    # Compile .plx to PL/pgSQL
+plx check modules/expense/expense.plx    # Syntax check only
 ```
 
-No test framework is configured in this repo — testing happens via pgTAP inside PostgreSQL.
+## Testing
+
+- **PL/pgSQL tests** — pgTAP inside PostgreSQL, run via `pg_test` MCP tool
+- **TypeScript tests** — `npm test` (vitest), `npm run test:watch` for watch mode
+- **PLX E2E** — `src/core/plx/__tests__/entity-e2e.test.ts` uses testcontainers (needs Docker)
+- **PLX fixtures** — `for f in fixtures/plx/*.plx; do plx check --no-validate "$f"; done`
 
 ### Dev Stack
 
@@ -179,6 +188,38 @@ Modules: `catalog.ts`, `schema.ts`, `function.ts`, `table.ts`, `trigger.ts`, `ty
 
 Auto-resolution examples:
 - `pg_pack schemas: "cad,cad_ut"` -> `modules/cad/build/cad.func.sql`
+
+### PLX — Language Transpiler (`src/core/plx/`)
+
+PLX compiles `.plx` files to PL/pgSQL. Zero runtime dependency — pure static transpilation.
+
+| File | Role |
+|------|------|
+| `ast.ts` | AST node types (PlxModule, PlxFunction, PlxEntity, PlxTrait, Statement, Expression) |
+| `lexer.ts` | Indentation-aware tokenizer, SQL passthrough, `::` / `->>` / `||` operators |
+| `parser.ts` | Recursive descent parser (fn, if, for, match, case, return query/execute) |
+| `codegen.ts` | AST -> PL/pgSQL (DECLARE inference, SELECT INTO, JSON literals, CASE expr) |
+| `compiler.ts` | Pipeline orchestrator (lex -> parse -> codegen), optional PG WASM validation |
+| `cli.ts` | `plx build <file>` / `plx check <file>` |
+| `entity-expander.ts` | Expand entity blocks into PlxFunction[] + DDL (CRUD, states, traits, strategies) |
+| `parse-context.ts` | Core parsing engine: token nav, expressions, statements, utilities |
+| `entity-parser.ts` | Entity-specific parsing (standalone functions taking ParseContext) |
+| `test-expander.ts` | Expand `PlxTest[]` into pgTAP `PlxFunction[]` (RETURNS SETOF text) |
+| `semantic.ts` | Type inference, import checks, SQL safety warnings, structured diagnostics |
+| `util.ts` | Shared `sqlEscape()` |
+
+```bash
+plx build file.plx              # Compile to .sql
+plx build file.plx --stdout     # Print to stdout
+plx check file.plx              # Check only, no output
+plx check file.plx --validate   # Also validate via @libpg-query/parser WASM (needs 8GB heap)
+```
+
+**Key PLX syntax**: `fn schema.name(params) -> type [stable, definer]:`, `:=` assignment, `{k: v}` -> jsonb, `[]` -> jsonb, `"#{expr}"` interpolation, `case...when...end` inline, `return query`/`return execute` for SETOF, `import func as alias`, `entity schema.name uses trait:` (generates DDL + 6 CRUD + state transitions), `trait name:` (shared behaviors).
+
+**Test syntax**: `test "name":` blocks with `assert` statements. Compiles to pgTAP (`RETURNS SETOF text`, `RETURN NEXT ok()/is()/isnt()`). Test functions go in `{schema}_ut`. Schema inferred from first qualified call. Fixture: `fixtures/plx/expense.spec.plx`.
+
+**Test fixtures**: `fixtures/plx/` — 10 files, 59+ functions. `expense.plx` (fn dog-food), `entity_category.plx` (entity dog-food).
 - `pg_func_save target: "plpgsql://cad"` -> `modules/cad/src/`
 
 ### Module Layout
@@ -351,6 +392,7 @@ The client (React) is the **only** place where schema and data meet. The server 
 ## Key Conventions
 
 - **ESM project** — `"type": "module"` in package.json, `Node16` module resolution
+- **Strict TypeScript** — `noUncheckedIndexedAccess: true` in tsconfig. Array indexing and regex captures return `T | undefined`. Use `!` assertions when value is guaranteed (after length checks, inside loops, regex groups).
 - **Awilix DI** — Tool factories declare deps as named params, resolved by container. Registration names ending in `Tool` are auto-discovered.
 - **pgTAP test naming** — Unit tests: `{schema}_ut.test_{name}()`, Integration tests: `{schema}_it.test_{name}()`
 - **Schema = Module (DDD)** — Each PostgreSQL schema is a bounded context with its own tables, functions, and tests. Each module provides `nav_items()`, `brand()`, and `get_*/post_*` page functions. The router `pgv.route()` dispatches automatically via pg_proc introspection.

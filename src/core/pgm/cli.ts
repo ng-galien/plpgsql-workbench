@@ -289,7 +289,8 @@ mod
   .option("-s, --schema <name>", "Public schema name (default: module name)")
   .option("-d, --description <text>", "Module description")
   .option("-p, --port <port>", "MCP server port (default: 3100)", "3100")
-  .action(async (moduleName: string, opts: { schema?: string; description?: string; port: string }) => {
+  .option("--plx", "Scaffold a PLX-first module (src/<name>.plx + generated build/*.sql)")
+  .action(async (moduleName: string, opts: { schema?: string; description?: string; plx?: boolean; port: string }) => {
     const wsRoot = await findWorkspaceRoot(process.cwd());
     const modulesDir = path.join(wsRoot, "modules");
     const moduleDir = path.join(modulesDir, moduleName);
@@ -304,15 +305,26 @@ mod
 
     const schemaName = opts.schema ?? moduleName;
     const mcpPort = parseInt(opts.port, 10);
+    if (opts.plx && schemaName !== moduleName) {
+      console.error("PLX scaffolds currently require the public schema to match the module name");
+      process.exit(1);
+    }
 
     console.log(`Creating module ${moduleName}...\n`);
 
-    const created = await scaffoldModule(moduleDir, moduleName, schemaName, mcpPort, opts.description);
+    const created = await scaffoldModule(moduleDir, moduleName, schemaName, mcpPort, {
+      description: opts.description,
+      mode: opts.plx ? "plx" : "sql",
+    });
     for (const f of created) {
       console.log(`  ${f}`);
     }
 
-    console.log(`\nDone. Start dev DB (make dev-up) then iterate with pg_func_set.`);
+    if (opts.plx) {
+      console.log(`\nDone. Edit src/${moduleName}.plx, then run "pgm module build ${moduleName}".`);
+    } else {
+      console.log(`\nDone. Start dev DB (make dev-up) then iterate with pg_func_set.`);
+    }
   });
 
 // --- module info ---

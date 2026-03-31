@@ -22,6 +22,24 @@ PLPGSQL_CONNECTION=postgresql://postgres:postgres@localhost:5433/postgres npx ts
 }
 ```
 
+## Codex Local MCP Setup
+
+Codex does not read this repo's `.mcp.json` automatically. To launch Codex with the same local MCP wiring used by the repo, use:
+
+```bash
+./scripts/codex-local.sh
+```
+
+Optional session override:
+
+```bash
+WORKBENCH_MCP_SESSION=quote ./scripts/codex-local.sh
+```
+
+This injects repo-local MCP settings for `plpgsql-workbench`, `maket`, and `workbench-msg` without modifying `~/.codex/config.toml`.
+
+See [`docs/P3-MVP.md`](docs/P3-MVP.md) for the P3 MVP scope and local Codex workflow.
+
 ## Tools
 
 | Tool | Purpose |

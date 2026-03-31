@@ -13,6 +13,8 @@ import { createBroadcastService } from "../broadcast.js";
 import type { DbClient } from "../connection.js";
 import type { ToolPack, WithClient } from "../container.js";
 import { buildModuleRegistry } from "../pgm/registry.js";
+import { createPgmModuleApplyTool } from "../tools/pgm/module-apply.js";
+import { createPgmModuleStatusTool } from "../tools/pgm/module-status.js";
 import { createAlterTool } from "../tools/plpgsql/alter.js";
 import { createBroadcastTool } from "../tools/plpgsql/broadcast.js";
 import { createCoverageTool } from "../tools/plpgsql/coverage.js";
@@ -106,6 +108,8 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
     schemaTool: asFunction(createSchemaTool).singleton(),
     docTool: asFunction(createDocTool).singleton(),
     packTool: asFunction(createPackTool).singleton(),
+    pgmModuleStatusTool: asFunction(createPgmModuleStatusTool).singleton(),
+    pgmModuleApplyTool: asFunction(createPgmModuleApplyTool).singleton(),
     funcDelTool: asFunction(createFuncDelTool).singleton(),
     funcRenameTool: asFunction(createFuncRenameTool).singleton(),
     funcBulkDelTool: asFunction(createFuncBulkDelTool).singleton(),
