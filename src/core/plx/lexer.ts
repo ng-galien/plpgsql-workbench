@@ -298,6 +298,11 @@ function tokenizeLine(
       continue;
     }
 
+    if (line[pos] === "-" && line[pos + 1] === ">" && line[pos + 2] === ">") {
+      push({ type: "OPERATOR", value: "->>", line: lineNum, col });
+      pos += 3;
+      continue;
+    }
     if (line[pos] === "-" && line[pos + 1] === ">") {
       push({ type: "ARROW", value: "->", line: lineNum, col });
       pos += 2;
@@ -394,7 +399,14 @@ function collectSqlLines(
   baseIndent: number,
 ): { sql: string; lastLine: number } {
   let sql = initialSql;
-  let lastLine = startLine - 1; // default: no continuation consumed
+  let lastLine = startLine - 1;
+
+  // Track paren depth for subquery blocks like := (SELECT ...)
+  let parenDepth = 0;
+  for (const ch of initialSql) {
+    if (ch === "(") parenDepth++;
+    else if (ch === ")") parenDepth--;
+  }
 
   for (let i = startLine; i < lines.length; i++) {
     const raw = lines[i]!;
@@ -405,15 +417,27 @@ function collectSqlLines(
     }
 
     const indent = raw.length - t.length;
-    if (indent <= baseIndent) {
+
+    // If parens are balanced AND indent dropped, stop
+    if (parenDepth <= 0 && indent <= baseIndent) {
       if (t.toLowerCase().startsWith("else raise")) {
         sql += `\n${t}`;
         lastLine = i;
       }
       break;
     }
+
+    // Track parens in this line (outside strings)
+    for (const ch of t) {
+      if (ch === "(") parenDepth++;
+      else if (ch === ")") parenDepth--;
+    }
+
     sql += `\n${t}`;
     lastLine = i;
+
+    // If parens just balanced, stop after this line
+    if (parenDepth <= 0 && indent <= baseIndent) break;
   }
 
   return { sql, lastLine };
