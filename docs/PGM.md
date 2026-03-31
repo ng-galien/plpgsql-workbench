@@ -181,6 +181,9 @@ Manifeste déclaratif d'un module :
     "sql/ddl.sql",
     "sql/functions.sql"
   ],
+  "plx": {
+    "entry": "src/cad.plx"
+  },
   "assets": {
     "frontend": ["frontend/viewer.html"],
     "scripts": ["frontend/cad.js"],
@@ -205,11 +208,33 @@ Manifeste déclaratif d'un module :
 | `dependencies` | Modules requis (installés/déployés avant) |
 | `extensions` | Extensions PostgreSQL requises |
 | `sql` | Fichiers SQL à déployer, dans l'ordre |
+| `plx.entry` | Entrée PLX optionnelle. Si présente, `pgm` vérifie que `module` et `depends` du fichier PLX restent cohérents avec `module.json` |
 | `assets.frontend` | Fichiers copiés dans `frontend/` de l'app |
 | `assets.scripts` | JS chargés par le shell (composants Alpine.js) |
 | `assets.styles` | CSS chargés par le shell (styles du module) |
 | `grants` | Rôles et schemas pour GRANT automatique |
 | `docker` | Image Docker requise (si différente du défaut) |
+
+### Contrat PLX optionnel
+
+Un module peut déclarer une entrée PLX dans son manifeste :
+
+```json
+{
+  "name": "quote",
+  "dependencies": ["pgv", "crm"],
+  "plx": {
+    "entry": "src/quote.plx"
+  }
+}
+```
+
+Si cette entrée existe, `pgm` lit le header PLX et vérifie :
+
+- que `module <name>` correspond au `name` du manifeste
+- que chaque `depends` déclaré dans le PLX est couvert par `module.json`
+
+Le manifeste reste la source de vérité packaging/deploy. Le header PLX devient la source de vérité du contrat de module dans le code.
 
 ### Application
 

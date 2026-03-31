@@ -268,10 +268,11 @@ app
     console.log(ctx.config.name);
     for (let i = 0; i < plan.order.length; i++) {
       const m = plan.order[i];
+      if (!m) continue;
       const isLast = i === plan.order.length - 1;
       const prefix = isLast ? "└── " : "├── ";
-      const deps = m!.dependencies.length > 0 ? ` (needs: ${m!.dependencies.join(", ")})` : "";
-      console.log(`${prefix}${m!.name}@${m!.version}${deps}`);
+      const deps = m.dependencies.length > 0 ? ` (needs: ${m.dependencies.join(", ")})` : "";
+      console.log(`${prefix}${m.name}@${m.version}${deps}`);
     }
   });
 
@@ -332,6 +333,17 @@ mod
     console.log(`  dependencies: ${manifest.dependencies.length > 0 ? manifest.dependencies.join(", ") : "none"}`);
     console.log(`  extensions: ${manifest.extensions.length > 0 ? manifest.extensions.join(", ") : "none"}`);
     console.log(`  sql: ${manifest.sql.join(", ")}`);
+    if (manifest.plx?.entry) {
+      console.log(`  plx: ${manifest.plx.entry}`);
+      if (manifest.plxContract) {
+        const plxDepends = manifest.plxContract.depends.length > 0 ? manifest.plxContract.depends.join(", ") : "none";
+        console.log(`    contract module: ${manifest.plxContract.moduleName}`);
+        console.log(`    contract depends: ${plxDepends}`);
+        console.log(
+          `    contract symbols: ${manifest.plxContract.exports.length} export, ${manifest.plxContract.internals.length} internal`,
+        );
+      }
+    }
     const frontend = manifest.assets?.frontend ?? [];
     const scripts = manifest.assets?.scripts ?? [];
     const styles = manifest.assets?.styles ?? [];

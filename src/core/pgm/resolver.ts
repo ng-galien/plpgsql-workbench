@@ -5,6 +5,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { type ModuleContract, readModuleContract } from "../plx/contract.js";
 
 // --- Types ---
 
@@ -19,6 +20,8 @@ export interface ModuleManifest {
   assets: { frontend?: string[]; scripts?: string[]; styles?: string[] };
   grants: Record<string, string[]>;
   docker?: { image: string; note?: string };
+  plx?: { entry: string };
+  plxContract?: ModuleContract;
 }
 
 export interface AppConfig {
@@ -77,11 +80,56 @@ export async function loadManifest(modulesDir: string, name: string): Promise<Mo
   } catch {
     throw new Error(`Module '${name}' not found at ${manifestPath}`);
   }
+  let manifest: ModuleManifest;
   try {
-    return JSON.parse(raw) as ModuleManifest;
+    manifest = JSON.parse(raw) as ModuleManifest;
   } catch {
     throw new Error(`Invalid JSON in ${manifestPath}`);
   }
+  return await enrichManifestFromPlx(modulesDir, manifest);
+}
+
+async function enrichManifestFromPlx(modulesDir: string, manifest: ModuleManifest): Promise<ModuleManifest> {
+  const plxEntry = manifest.plx?.entry;
+  if (!plxEntry) return manifest;
+
+  const entryPath = path.join(modulesDir, manifest.name, plxEntry);
+  let source: string;
+  try {
+    source = await fs.readFile(entryPath, "utf-8");
+  } catch {
+    throw new Error(`PLX entry '${plxEntry}' not found for module '${manifest.name}'`);
+  }
+
+  const contractResult = readModuleContract(source);
+  if (contractResult.errors.length > 0) {
+    const first = contractResult.errors[0];
+    throw new Error(
+      `Invalid PLX contract for module '${manifest.name}' in ${plxEntry}: ${first?.code ?? "error"} ${first?.message ?? "unknown error"}`,
+    );
+  }
+
+  const contract = contractResult.contract;
+  if (!contract?.moduleName) {
+    throw new Error(`PLX entry '${plxEntry}' for module '${manifest.name}' is missing a module declaration`);
+  }
+  if (contract.moduleName !== manifest.name) {
+    throw new Error(
+      `PLX module '${contract.moduleName}' does not match manifest name '${manifest.name}' in ${plxEntry}`,
+    );
+  }
+
+  const missingDependencies = contract.depends.filter((dep) => !manifest.dependencies.includes(dep));
+  if (missingDependencies.length > 0) {
+    throw new Error(
+      `module.json dependencies for '${manifest.name}' must include PLX depends: ${missingDependencies.join(", ")}`,
+    );
+  }
+
+  return {
+    ...manifest,
+    plxContract: contract,
+  };
 }
 
 export async function loadAppConfig(appDir: string): Promise<AppConfig> {
