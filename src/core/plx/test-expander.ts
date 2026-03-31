@@ -96,6 +96,12 @@ function findQualifiedCallInExpr(expr: Expression): string | undefined {
   if (expr.kind === "binary") {
     return findQualifiedCallInExpr(expr.left) ?? findQualifiedCallInExpr(expr.right);
   }
+  if (expr.kind === "unary") {
+    return findQualifiedCallInExpr(expr.expression);
+  }
+  if (expr.kind === "group") {
+    return findQualifiedCallInExpr(expr.expression);
+  }
   return undefined;
 }
 

@@ -96,6 +96,8 @@ const SQL_STARTERS = new Set(["select", "insert", "update", "delete", "with"]);
 const FOR_IN_RE = /^for\s+(\w+)\s+in\s+(.+)$/i;
 const RETURN_QUERY_RE = /^return\s+(query\s+)(select\b|insert\b|update\b|delete\b|with\b)/i;
 const SUBQUERY_RE = /^\(\s*select\b/i;
+const SQL_CONTINUATION_RE =
+  /^(from|where|group\s+by|order\s+by|limit|offset|fetch|having|window|union|intersect|except|join|left\s+join|right\s+join|full\s+join|cross\s+join|inner\s+join|on|returning|set|values)\b/i;
 const SINGLE_CHARS: Record<string, TokenType> = {
   "(": "LPAREN",
   ")": "RPAREN",
@@ -432,13 +434,16 @@ function collectSqlLines(
 
     const indent = raw.length - t.length;
 
-    // If parens are balanced AND indent dropped, stop
+    const isContinuation = SQL_CONTINUATION_RE.test(t);
+
+    // If parens are balanced AND indent dropped, stop unless SQL clearly continues
     if (parenDepth <= 0 && indent <= baseIndent) {
       if (t.toLowerCase().startsWith("else raise")) {
         sql += `\n${t}`;
         lastLine = i;
+      } else if (!isContinuation) {
+        break;
       }
-      break;
     }
 
     // Track parens in this line (outside strings)
@@ -450,8 +455,8 @@ function collectSqlLines(
     sql += `\n${t}`;
     lastLine = i;
 
-    // If parens just balanced, stop after this line
-    if (parenDepth <= 0 && indent <= baseIndent) break;
+    // If parens just balanced, stop after this line unless SQL clearly continues
+    if (parenDepth <= 0 && indent <= baseIndent && !isContinuation) break;
   }
 
   return { sql, lastLine };

@@ -9,6 +9,7 @@ import type {
   Expression,
   FieldAccess,
   ForInStatement,
+  GroupExpr,
   Identifier,
   IfStatement,
   JsonLiteral,
@@ -21,13 +22,22 @@ import type {
   SqlStatement,
   Statement,
   StringInterp,
+  UnaryExpr,
 } from "./ast.js";
-import type { Token, TokenType } from "./lexer.js";
+import { LexError, type Token, type TokenType, tokenize } from "./lexer.js";
 import { sqlEscape } from "./util.js";
 
 // Hoisted regexes for parseSqlBlock
 const ELSE_RAISE_RE = /\nelse\s+raise\s+['"](.*?)['"]\s*$/i;
 const TABLE_INFER_RE = /select\s+\*\s+from\s+(\w+\.\w+)/i;
+
+type Assoc = "left" | "right";
+
+interface BinaryOpInfo {
+  op: string;
+  precedence: number;
+  assoc: Assoc;
+}
 
 export class ParseError extends Error {
   constructor(
@@ -86,6 +96,13 @@ export class ParseContext {
   /** Skip NEWLINE + INDENT + DEDENT — for multi-line expressions inside parens/case */
   skipExprWs(): void {
     while (this.peek().type === "NEWLINE" || this.peek().type === "INDENT" || this.peek().type === "DEDENT") {
+      this.pos++;
+    }
+  }
+
+  /** Skip expression-internal whitespace without consuming block-closing DEDENT. */
+  skipInlineExprWs(): void {
+    while (this.peek().type === "NEWLINE" || this.peek().type === "INDENT") {
       this.pos++;
     }
   }
@@ -380,32 +397,45 @@ export class ParseContext {
 
   // ---------- Expression parsing ----------
 
-  parseExpression(): Expression {
-    return this.parseBinary();
-  }
-
-  private parseBinary(): Expression {
-    let left = this.parsePrimary();
+  parseExpression(minPrecedence = 0): Expression {
+    this.skipInlineExprWs();
+    let left = this.parsePrefix();
 
     while (true) {
-      const tok = this.peek();
-      if (tok.type === "OPERATOR") {
-        const op = this.advance().value;
-        const right = this.parsePrimary();
-        left = { kind: "binary", op, left, right, loc: left.loc };
-      } else if (tok.type === "IDENT" && (tok.value === "and" || tok.value === "or")) {
-        const op = this.advance().value.toUpperCase();
-        const right = this.parsePrimary();
-        left = { kind: "binary", op, left, right, loc: left.loc };
-      } else {
-        break;
-      }
+      this.skipInlineExprWs();
+      const opInfo = this.peekBinaryOperator();
+      if (!opInfo || opInfo.precedence < minPrecedence) break;
+
+      this.advanceBinaryOperator(opInfo);
+      const nextMin = opInfo.assoc === "right" ? opInfo.precedence : opInfo.precedence + 1;
+      const right = this.parseExpression(nextMin);
+      left = { kind: "binary", op: opInfo.op, left, right, loc: left.loc };
     }
 
     return left;
   }
 
+  private parsePrefix(): Expression {
+    this.skipInlineExprWs();
+    const tok = this.peek();
+
+    if (tok.type === "NOT") {
+      this.advance();
+      const expression = this.parseExpression(UNARY_PRECEDENCE);
+      return { kind: "unary", op: "NOT", expression, loc: { line: tok.line, col: tok.col } } as UnaryExpr;
+    }
+
+    if (tok.type === "OPERATOR" && (tok.value === "+" || tok.value === "-")) {
+      this.advance();
+      const expression = this.parseExpression(UNARY_PRECEDENCE);
+      return { kind: "unary", op: tok.value, expression, loc: { line: tok.line, col: tok.col } } as UnaryExpr;
+    }
+
+    return this.parsePrimary();
+  }
+
   private parsePrimary(): Expression {
+    this.skipInlineExprWs();
     const tok = this.peek();
 
     if (tok.type === "CASE") return this.parseCaseExpr();
@@ -424,18 +454,6 @@ export class ParseContext {
         return { kind: "literal", value: tok.value === "true", type: "boolean", loc: { line: tok.line, col: tok.col } };
       }
       return { kind: "literal", value: Number(tok.value), type: "int", loc: { line: tok.line, col: tok.col } };
-    }
-
-    if (tok.type === "NOT") {
-      this.advance();
-      const expr = this.parsePrimary();
-      return {
-        kind: "binary",
-        op: "NOT",
-        left: { kind: "literal", value: true, type: "boolean", loc: { line: tok.line, col: tok.col } },
-        right: expr,
-        loc: { line: tok.line, col: tok.col },
-      };
     }
 
     if (tok.type === "IDENT") {
@@ -489,10 +507,11 @@ export class ParseContext {
     }
 
     if (tok.type === "LPAREN") {
+      const loc = { line: tok.line, col: tok.col };
       this.advance();
       const expr = this.parseExpression();
       this.expect("RPAREN");
-      return expr;
+      return { kind: "group", expression: expr, loc } as GroupExpr;
     }
 
     throw new ParseError(`unexpected token: ${tok.type} '${tok.value}'`, { line: tok.line, col: tok.col });
@@ -602,21 +621,9 @@ export class ParseContext {
           parts.push(current);
           current = "";
         }
-        i += 2;
-        let expr = "";
-        let depth = 1;
-        while (i < raw.length && depth > 0) {
-          if (raw[i] === "{") depth++;
-          if (raw[i] === "}") depth--;
-          if (depth > 0) expr += raw[i];
-          i++;
-        }
-        if (expr.includes(".")) {
-          const [obj, field] = expr.split(".", 2);
-          parts.push({ kind: "field_access", object: obj!, field: field!, loc } as FieldAccess);
-        } else {
-          parts.push({ kind: "identifier", name: expr, loc } as Identifier);
-        }
+        const parsed = parseInterpolatedExpression(raw, i + 2, loc);
+        parts.push(parsed.expression);
+        i = parsed.nextIndex;
       } else {
         current += raw[i];
         i++;
@@ -627,6 +634,256 @@ export class ParseContext {
     return { kind: "string_interp", parts, loc };
   }
 }
+
+const UNARY_PRECEDENCE = 90;
+
+function isExprStartToken(tok: Token | undefined): boolean {
+  if (!tok) return false;
+  return (
+    tok.type === "IDENT" ||
+    tok.type === "NUMBER" ||
+    tok.type === "STRING" ||
+    tok.type === "INTERP_STRING" ||
+    tok.type === "LPAREN" ||
+    tok.type === "LBRACE" ||
+    tok.type === "LBRACKET" ||
+    tok.type === "CASE" ||
+    tok.type === "NOT" ||
+    (tok.type === "OPERATOR" && (tok.value === "+" || tok.value === "-"))
+  );
+}
+
+function parseInterpolatedExpression(
+  raw: string,
+  start: number,
+  loc: Loc,
+): { expression: Expression; nextIndex: number } {
+  let i = start;
+  let depth = 1;
+  let quote: "'" | '"' | null = null;
+  let expr = "";
+
+  while (i < raw.length && depth > 0) {
+    const ch = raw[i]!;
+
+    if (quote) {
+      expr += ch;
+      if (ch === quote) {
+        if (quote === "'" && raw[i + 1] === "'") {
+          expr += "'";
+          i += 2;
+          continue;
+        }
+        quote = null;
+      }
+      i++;
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      expr += ch;
+      i++;
+      continue;
+    }
+
+    if (ch === "{") {
+      depth++;
+      expr += ch;
+      i++;
+      continue;
+    }
+
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        i++;
+        break;
+      }
+      expr += ch;
+      i++;
+      continue;
+    }
+
+    expr += ch;
+    i++;
+  }
+
+  const interpolationLoc = {
+    line: loc.line,
+    col: loc.col + start - 1,
+  };
+
+  if (depth !== 0) {
+    throw new ParseError("unterminated interpolation", interpolationLoc);
+  }
+
+  const leadingTrim = expr.length - expr.trimStart().length;
+  const source = expr.trim();
+  const baseLoc = {
+    line: loc.line,
+    col: loc.col + 1 + start + leadingTrim,
+  };
+
+  if (source === "") {
+    throw new ParseError("empty interpolation", baseLoc);
+  }
+
+  try {
+    const tokens = tokenize(source);
+    const exprCtx = new ParseContext(tokens);
+    const expression = exprCtx.parseExpression();
+    exprCtx.skipNewlines();
+    exprCtx.expect("EOF");
+    remapExpressionLocs(expression, baseLoc);
+    return { expression, nextIndex: i };
+  } catch (error) {
+    throw remapInterpolationError(error, baseLoc);
+  }
+}
+
+function remapInterpolationError(error: unknown, baseLoc: Loc): ParseError {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const message = stripLocPrefix(rawMessage);
+
+  if (error instanceof ParseError) {
+    return new ParseError(message, shiftRelativeLoc(error.loc, baseLoc));
+  }
+
+  if (error instanceof LexError) {
+    return new ParseError(message, shiftRelativeLoc({ line: error.line, col: error.col }, baseLoc));
+  }
+
+  const loc = extractRelativeLoc(rawMessage);
+  return new ParseError(message, loc ? shiftRelativeLoc(loc, baseLoc) : baseLoc);
+}
+
+function extractRelativeLoc(message: string): Loc | undefined {
+  const match = message.match(/plx:(\d+):(\d+)/);
+  if (!match) return undefined;
+  return { line: Number(match[1]), col: Number(match[2]) };
+}
+
+function stripLocPrefix(message: string): string {
+  return message.replace(/^plx:\d+:\d+:\s*/, "");
+}
+
+function shiftRelativeLoc(loc: Loc, baseLoc: Loc): Loc {
+  const lineOffset = loc.line - 1;
+  return {
+    line: baseLoc.line + lineOffset,
+    col: lineOffset === 0 ? baseLoc.col + loc.col : loc.col,
+  };
+}
+
+function remapExpressionLocs(expr: Expression, baseLoc: Loc): void {
+  expr.loc = shiftRelativeLoc(expr.loc, baseLoc);
+
+  switch (expr.kind) {
+    case "binary":
+      remapExpressionLocs(expr.left, baseLoc);
+      remapExpressionLocs(expr.right, baseLoc);
+      return;
+    case "unary":
+    case "group":
+      remapExpressionLocs(expr.expression, baseLoc);
+      return;
+    case "call":
+      for (const arg of expr.args) remapExpressionLocs(arg, baseLoc);
+      return;
+    case "case_expr":
+      remapExpressionLocs(expr.subject, baseLoc);
+      for (const arm of expr.arms) {
+        remapExpressionLocs(arm.pattern, baseLoc);
+        remapExpressionLocs(arm.result, baseLoc);
+      }
+      if (expr.elseResult) remapExpressionLocs(expr.elseResult, baseLoc);
+      return;
+    case "array_literal":
+      for (const element of expr.elements) remapExpressionLocs(element, baseLoc);
+      return;
+    case "json_literal":
+      for (const entry of expr.entries) remapExpressionLocs(entry.value, baseLoc);
+      return;
+    case "string_interp":
+      for (const part of expr.parts) {
+        if (typeof part !== "string") remapExpressionLocs(part, baseLoc);
+      }
+      return;
+    case "identifier":
+    case "field_access":
+    case "literal":
+    case "sql_block":
+      return;
+  }
+}
+
+function binaryOpInfo(tok: Token, next: Token | undefined): BinaryOpInfo | undefined {
+  if (tok.type === "IDENT") {
+    if (tok.value === "or") return { op: "OR", precedence: 10, assoc: "left" };
+    if (tok.value === "and") return { op: "AND", precedence: 20, assoc: "left" };
+    return undefined;
+  }
+
+  if (tok.type === "ARROW") {
+    return isExprStartToken(next) ? { op: "->", precedence: 70, assoc: "left" } : undefined;
+  }
+
+  if (tok.type !== "OPERATOR") return undefined;
+
+  switch (tok.value) {
+    case "=":
+    case "!=":
+    case ">":
+    case "<":
+    case ">=":
+    case "<=":
+      return { op: tok.value, precedence: 30, assoc: "left" };
+    case "||":
+      return { op: tok.value, precedence: 40, assoc: "left" };
+    case "+":
+    case "-":
+      return { op: tok.value, precedence: 50, assoc: "left" };
+    case "*":
+    case "/":
+      return { op: tok.value, precedence: 60, assoc: "left" };
+    case "->>":
+      return { op: tok.value, precedence: 70, assoc: "left" };
+    case "::":
+      return { op: tok.value, precedence: 80, assoc: "right" };
+    default:
+      return undefined;
+  }
+}
+
+declare module "./parse-context.js" {
+  interface ParseContext {
+    peekBinaryOperator(): BinaryOpInfo | undefined;
+    advanceBinaryOperator(opInfo: BinaryOpInfo): void;
+  }
+}
+
+ParseContext.prototype.peekBinaryOperator = function peekBinaryOperator(this: ParseContext): BinaryOpInfo | undefined {
+  const tok = this.peek();
+  let offset = 1;
+  let next = this.peekAt(offset);
+  while (next && (next.type === "NEWLINE" || next.type === "INDENT" || next.type === "DEDENT")) {
+    offset++;
+    next = this.peekAt(offset);
+  }
+  return binaryOpInfo(tok, next);
+};
+
+ParseContext.prototype.advanceBinaryOperator = function advanceBinaryOperator(
+  this: ParseContext,
+  opInfo: BinaryOpInfo,
+): void {
+  if (this.peek().type === "IDENT" && (opInfo.op === "AND" || opInfo.op === "OR")) {
+    this.advance();
+    return;
+  }
+  this.advance();
+};
 
 // ---------- Standalone helpers ----------
 

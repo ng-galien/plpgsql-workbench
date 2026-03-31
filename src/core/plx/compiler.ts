@@ -1,7 +1,9 @@
-import { generate } from "./codegen.js";
+import type { Loc } from "./ast.js";
+import { type GeneratedLineMap, type GeneratedSourceMap, generateWithSourceMap } from "./codegen.js";
 import { expandEntities } from "./entity-expander.js";
 import { tokenize } from "./lexer.js";
 import { parse } from "./parser.js";
+import { analyzeModule } from "./semantic.js";
 import { expandTests } from "./test-expander.js";
 
 export interface CompileResult {
@@ -19,19 +21,28 @@ export interface CompileError {
   line: number;
   col: number;
   message: string;
-  phase: "lex" | "parse" | "codegen" | "validate";
+  phase: "lex" | "parse" | "semantic" | "codegen" | "validate";
 }
 
 export interface CompileWarning {
   message: string;
   functionName: string;
+  line?: number;
+  col?: number;
 }
 
 const LOC_RE = /plx:(\d+):(\d+)/;
-const FN_NAME_RE = /FUNCTION\s+(\S+)\(/;
+
+interface ValidationBlock {
+  sql: string;
+  functionName: string;
+  loc: Loc;
+  sourceMap: GeneratedSourceMap;
+}
 
 export function compile(source: string): CompileResult {
   const errors: CompileError[] = [];
+  const warnings: CompileWarning[] = [];
 
   let tokens: ReturnType<typeof tokenize>;
   try {
@@ -39,7 +50,7 @@ export function compile(source: string): CompileResult {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     errors.push({ ...extractLoc(msg), message: msg, phase: "lex" });
-    return { sql: "", errors, warnings: [], functionCount: 0 };
+    return { sql: "", errors, warnings, functionCount: 0 };
   }
 
   let mod: ReturnType<typeof parse>;
@@ -48,7 +59,23 @@ export function compile(source: string): CompileResult {
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     errors.push({ ...extractLoc(msg), message: msg, phase: "parse" });
-    return { sql: "", errors, warnings: [], functionCount: 0 };
+    return { sql: "", errors, warnings, functionCount: 0 };
+  }
+
+  const semantic = analyzeModule(mod);
+  for (const err of semantic.errors) {
+    errors.push({ line: err.loc.line, col: err.loc.col, message: `${err.owner}: ${err.message}`, phase: "semantic" });
+  }
+  for (const warning of semantic.warnings) {
+    warnings.push({
+      functionName: warning.owner,
+      line: warning.loc.line,
+      col: warning.loc.col,
+      message: warning.message,
+    });
+  }
+  if (errors.length > 0) {
+    return { sql: "", errors, warnings, functionCount: 0 };
   }
 
   // Expand entities into functions + DDL
@@ -57,7 +84,7 @@ export function compile(source: string): CompileResult {
     errors.push({ line: err.loc.line, col: err.loc.col, message: err.message, phase: "codegen" });
   }
   if (errors.length > 0) {
-    return { sql: "", errors, warnings: [], functionCount: 0 };
+    return { sql: "", errors, warnings, functionCount: 0 };
   }
 
   // Expand tests into pgTAP functions
@@ -67,7 +94,7 @@ export function compile(source: string): CompileResult {
   }
 
   if (errors.length > 0) {
-    return { sql: "", errors, warnings: [], functionCount: 0 };
+    return { sql: "", errors, warnings, functionCount: 0 };
   }
 
   // Merge expanded functions with hand-written ones
@@ -80,9 +107,17 @@ export function compile(source: string): CompileResult {
   }
 
   const sqlParts: string[] = [];
+  const validationBlocks: ValidationBlock[] = [];
   for (const fn of allFunctions) {
     try {
-      sqlParts.push(generate(fn, aliases));
+      const generated = generateWithSourceMap(fn, aliases);
+      sqlParts.push(generated.sql);
+      validationBlocks.push({
+        sql: generated.sql,
+        functionName: `${fn.schema}.${fn.name}`,
+        loc: fn.loc,
+        sourceMap: generated.sourceMap,
+      });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push({ line: fn.loc.line, col: fn.loc.col, message: msg, phase: "codegen" });
@@ -93,7 +128,14 @@ export function compile(source: string): CompileResult {
   const testSqlParts: string[] = [];
   for (const fn of testResult.functions) {
     try {
-      testSqlParts.push(generate(fn, aliases));
+      const generated = generateWithSourceMap(fn, aliases);
+      testSqlParts.push(generated.sql);
+      validationBlocks.push({
+        sql: generated.sql,
+        functionName: `${fn.schema}.${fn.name}`,
+        loc: fn.loc,
+        sourceMap: generated.sourceMap,
+      });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push({ line: fn.loc.line, col: fn.loc.col, message: msg, phase: "codegen" });
@@ -101,7 +143,7 @@ export function compile(source: string): CompileResult {
   }
 
   if (errors.length > 0) {
-    return { sql: "", errors, warnings: [], functionCount: 0 };
+    return { sql: "", errors, warnings, functionCount: 0 };
   }
 
   const ddlSql = expandResult.ddlFragments.length > 0 ? expandResult.ddlFragments.join("\n\n") : undefined;
@@ -112,13 +154,13 @@ export function compile(source: string): CompileResult {
     ddlSql,
     testSql,
     errors: [],
-    warnings: [],
+    warnings,
     functionCount: allFunctions.length,
     entityCount: mod.entities.length,
     testCount: testResult.functions.length,
-    // Attach individual blocks for validation without re-splitting
-    _blocks: sqlParts,
-  } as CompileResult & { _blocks: string[] };
+    // Attach generated blocks for validation with source metadata.
+    _blocks: validationBlocks,
+  } as CompileResult & { _blocks: ValidationBlock[] };
 }
 
 /**
@@ -130,24 +172,48 @@ export function compile(source: string): CompileResult {
  * the heavy WASM module (~4GB) when validation is not requested.
  */
 export async function compileAndValidate(source: string): Promise<CompileResult> {
-  const result = compile(source) as CompileResult & { _blocks?: string[] };
+  const result = compile(source) as CompileResult & { _blocks?: ValidationBlock[] };
   if (result.errors.length > 0) return result;
 
-  // Dynamic import — only loads WASM when validation is actually called
-  const { loadModule, parsePlPgSQL } = await import("@libpg-query/parser");
-  await loadModule();
+  const warnings: CompileWarning[] = [...result.warnings];
+  const blocks =
+    result._blocks ??
+    (result.sql
+      ? [
+          {
+            sql: result.sql,
+            functionName: "unknown",
+            loc: { line: 0, col: 0 },
+            sourceMap: { lines: [] },
+          },
+        ]
+      : []);
 
-  const warnings: CompileWarning[] = [];
-  const blocks = result._blocks ?? [result.sql];
+  let parsePlPgSQLSync: ((query: string) => unknown) | undefined;
+  try {
+    // Dynamic import — only loads WASM when validation is actually called
+    const parser = await import("@libpg-query/parser");
+    await parser.loadModule();
+    parsePlPgSQLSync = parser.parsePlPgSQLSync;
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    delete result._blocks;
+    return {
+      ...result,
+      warnings: [{ functionName: "validator", message: `PG validator unavailable: ${msg}` }],
+    };
+  }
 
   for (const block of blocks) {
-    const nameMatch = block.match(FN_NAME_RE);
-    const fnName = nameMatch?.[1] ?? "unknown";
     try {
-      parsePlPgSQL(block);
+      parsePlPgSQLSync(block.sql);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      warnings.push({ message: `PG parse: ${msg}`, functionName: fnName });
+      warnings.push({
+        functionName: block.functionName,
+        ...resolveValidationLoc(msg, block),
+        message: `PG parse: ${msg}`,
+      });
     }
   }
 
@@ -158,4 +224,82 @@ export async function compileAndValidate(source: string): Promise<CompileResult>
 function extractLoc(msg: string): { line: number; col: number } {
   const m = msg.match(LOC_RE);
   return m ? { line: Number(m[1]), col: Number(m[2]) } : { line: 0, col: 0 };
+}
+
+function resolveValidationLoc(message: string, block: ValidationBlock): { line: number; col: number } {
+  const generatedLine = extractGeneratedLine(message);
+  if (generatedLine !== undefined) {
+    const lineMap = block.sourceMap.lines.find((line) => line.generatedLine === generatedLine);
+    if (lineMap) {
+      const token = extractNearToken(message);
+      return resolveLineLoc(lineMap, token) ?? lineMap.loc ?? block.loc;
+    }
+  }
+
+  const token = extractNearToken(message);
+  if (token) {
+    const segment = findBestSegment(block.sourceMap, token);
+    if (segment) return segment.loc;
+  }
+
+  if (/end of input/i.test(message)) {
+    const lastMapped =
+      [...block.sourceMap.lines].reverse().find((line) => line.segments.length > 0) ??
+      [...block.sourceMap.lines]
+        .reverse()
+        .find((line) => line.loc && (line.loc.line !== block.loc.line || line.loc.col !== block.loc.col));
+    if (lastMapped) {
+      return lastMapped.segments.at(-1)?.loc ?? lastMapped.loc ?? block.loc;
+    }
+  }
+
+  return block.loc;
+}
+
+function extractGeneratedLine(message: string): number | undefined {
+  const match = message.match(/\bline\s+(\d+)\b/i);
+  return match ? Number(match[1]) : undefined;
+}
+
+function extractNearToken(message: string): string | undefined {
+  const match = message.match(/at or near "([^"]+)"/i);
+  return match?.[1];
+}
+
+function resolveLineLoc(line: GeneratedLineMap, token: string | undefined): { line: number; col: number } | undefined {
+  if (!token) return line.segments.at(-1)?.loc ?? line.loc;
+  const segment = findBestSegmentInLine(line, token);
+  if (segment) return segment.loc;
+  return line.loc;
+}
+
+function findBestSegment(
+  sourceMap: GeneratedSourceMap,
+  token: string,
+): GeneratedLineMap["segments"][number] | undefined {
+  const scored = sourceMap.lines
+    .flatMap((line) => line.segments.map((segment) => ({ segment, score: scoreSegment(segment.text, token) })))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.segment.text.length - b.segment.text.length);
+  return scored[0]?.segment;
+}
+
+function findBestSegmentInLine(
+  line: GeneratedLineMap,
+  token: string,
+): GeneratedLineMap["segments"][number] | undefined {
+  const scored = line.segments
+    .map((segment) => ({ segment, score: scoreSegment(segment.text, token) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.segment.text.length - b.segment.text.length);
+  return scored[0]?.segment;
+}
+
+function scoreSegment(text: string, token: string): number {
+  if (!token) return 0;
+  if (text === token) return 4;
+  if (text.startsWith(token)) return 3;
+  if (text.includes(token)) return 2;
+  if (token.length > 1 && text.replace(/\s+/g, "").includes(token.replace(/\s+/g, ""))) return 1;
+  return 0;
 }

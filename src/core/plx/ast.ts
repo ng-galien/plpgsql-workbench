@@ -275,6 +275,8 @@ export type Expression =
   | FieldAccess
   | Identifier
   | Literal
+  | GroupExpr
+  | UnaryExpr
   | BinaryExpr
   | CallExpr
   | CaseExpr;
@@ -289,7 +291,6 @@ export interface CaseExpr {
 
 export type BinaryOp =
   | "IS NOT NULL"
-  | "NOT"
   | "AND"
   | "OR"
   | "="
@@ -298,10 +299,16 @@ export type BinaryOp =
   | "<"
   | ">="
   | "<="
+  | "||"
   | "+"
   | "-"
   | "*"
-  | "/";
+  | "/"
+  | "::"
+  | "->"
+  | "->>";
+
+export type UnaryOp = "NOT" | "+" | "-";
 
 export interface SqlBlockExpr {
   kind: "sql_block";
@@ -346,6 +353,19 @@ export interface Literal {
   kind: "literal";
   value: string | number | boolean | null;
   type: "text" | "int" | "boolean" | "null";
+  loc: Loc;
+}
+
+export interface GroupExpr {
+  kind: "group";
+  expression: Expression;
+  loc: Loc;
+}
+
+export interface UnaryExpr {
+  kind: "unary";
+  op: UnaryOp;
+  expression: Expression;
   loc: Loc;
 }
 

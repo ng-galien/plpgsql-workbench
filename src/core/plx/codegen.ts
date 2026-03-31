@@ -9,10 +9,12 @@ import type {
   Expression,
   FieldAccess,
   ForInStatement,
+  GroupExpr,
   Identifier,
   IfStatement,
   JsonLiteral,
   Literal,
+  Loc,
   MatchStatement,
   Param,
   PlxFunction,
@@ -22,6 +24,7 @@ import type {
   SqlStatement,
   Statement,
   StringInterp,
+  UnaryExpr,
 } from "./ast.js";
 import { sqlEscape } from "./util.js";
 
@@ -41,6 +44,9 @@ const INFER_RETURNING_ROW_RE = /(?:insert\s+into|update|delete\s+from)\s+(\w+\.\
 const INFER_RETURNING_SCALAR_RE = /\breturning\s+\w+\s*$/i;
 
 const INDENTS = ["", "  ", "    ", "      ", "        ", "          "];
+const PRIMARY_PRECEDENCE = 100;
+
+type Assoc = "left" | "right";
 
 interface VarInfo {
   plName: string;
@@ -49,7 +55,43 @@ interface VarInfo {
   isRow: boolean;
 }
 
+export interface SourceSegment {
+  startCol: number;
+  endCol: number;
+  loc: Loc;
+  text: string;
+}
+
+export interface GeneratedLineMap {
+  generatedLine: number;
+  text: string;
+  loc?: Loc;
+  segments: SourceSegment[];
+}
+
+export interface GeneratedSourceMap {
+  lines: GeneratedLineMap[];
+}
+
+interface MappedText {
+  text: string;
+  segments: SourceSegment[];
+}
+
+interface EmittedLine {
+  text: string;
+  loc?: Loc;
+  segments: SourceSegment[];
+}
+
 export function generate(fn: PlxFunction, aliases?: Map<string, string>): string {
+  return generateWithSourceMap(fn, aliases).sql;
+}
+
+export function generateWithSourceMap(
+  fn: PlxFunction,
+  aliases?: Map<string, string>,
+): { sql: string; sourceMap: GeneratedSourceMap } {
   return new CodegenContext(fn, aliases).emit();
 }
 
@@ -57,7 +99,7 @@ class CodegenContext {
   private vars = new Map<string, VarInfo>();
   private paramNames: Set<string>;
   private aliases: Map<string, string>;
-  private lines: string[] = [];
+  private lines: EmittedLine[] = [];
   private indent = 1;
 
   constructor(
@@ -69,13 +111,17 @@ class CodegenContext {
     this.collectVars(fn.body);
   }
 
-  emit(): string {
-    const parts: string[] = [];
+  emit(): { sql: string; sourceMap: GeneratedSourceMap } {
+    const parts: EmittedLine[] = [];
 
     const params = this.fn.params.map(formatParam).join(", ");
     const returns = this.fn.setof ? `SETOF ${this.fn.returnType}` : this.fn.returnType;
 
-    parts.push(`CREATE OR REPLACE FUNCTION ${this.fn.schema}.${this.fn.name}(${params})`);
+    parts.push({
+      text: `CREATE OR REPLACE FUNCTION ${this.fn.schema}.${this.fn.name}(${params})`,
+      loc: this.fn.loc,
+      segments: [],
+    });
 
     // Function attributes
     const attrParts: string[] = [];
@@ -86,23 +132,37 @@ class CodegenContext {
     if (attrs.includes("strict")) attrParts.push("STRICT");
 
     const langAndAttrs = [`RETURNS ${returns}`, "LANGUAGE plpgsql", ...attrParts].join("\n ");
-    parts.push(` ${langAndAttrs} AS $$`);
+    for (const line of ` ${langAndAttrs} AS $$`.split("\n")) {
+      parts.push({ text: line, loc: this.fn.loc, segments: [] });
+    }
 
     if (this.vars.size > 0) {
-      parts.push("DECLARE");
+      parts.push({ text: "DECLARE", loc: this.fn.loc, segments: [] });
       for (const v of this.vars.values()) {
         const init = v.init ? ` := ${v.init}` : "";
-        parts.push(`  ${v.plName} ${v.type}${init};`);
+        parts.push({ text: `  ${v.plName} ${v.type}${init};`, loc: this.fn.loc, segments: [] });
       }
     }
 
-    parts.push("BEGIN");
+    parts.push({ text: "BEGIN", loc: this.fn.loc, segments: [] });
     for (const stmt of this.fn.body) this.emitStatement(stmt);
     for (const line of this.lines) parts.push(line);
-    parts.push("END;");
-    parts.push("$$;");
+    parts.push({ text: "END;", loc: this.fn.loc, segments: [] });
+    parts.push({ text: "$$;", loc: this.fn.loc, segments: [] });
 
-    return parts.join("\n");
+    const sourceMap: GeneratedSourceMap = {
+      lines: parts.map((line, index) => ({
+        generatedLine: index + 1,
+        text: line.text,
+        loc: line.loc,
+        segments: line.segments,
+      })),
+    };
+
+    return {
+      sql: parts.map((line) => line.text).join("\n"),
+      sourceMap,
+    };
   }
 
   // ---------- DECLARE inference ----------
@@ -215,21 +275,21 @@ class CodegenContext {
     const msg = stmt.message ?? `assert line ${stmt.loc.line}`;
     const escaped = sqlEscape(msg);
     if (stmt.expression.kind === "binary" && stmt.expression.op === "=") {
-      const left = this.emitExpr(stmt.expression.left);
-      const right = this.emitExpr(stmt.expression.right);
-      this.line(`RETURN NEXT is(${left}, ${right}, '${escaped}');`);
+      const left = this.emitExprMap(stmt.expression.left);
+      const right = this.emitExprMap(stmt.expression.right);
+      this.lineFromParts(["RETURN NEXT is(", left, ", ", right, `, '${escaped}');`], stmt.loc);
     } else if (stmt.expression.kind === "binary" && stmt.expression.op === "!=") {
-      const left = this.emitExpr(stmt.expression.left);
-      const right = this.emitExpr(stmt.expression.right);
-      this.line(`RETURN NEXT isnt(${left}, ${right}, '${escaped}');`);
+      const left = this.emitExprMap(stmt.expression.left);
+      const right = this.emitExprMap(stmt.expression.right);
+      this.lineFromParts(["RETURN NEXT isnt(", left, ", ", right, `, '${escaped}');`], stmt.loc);
     } else {
-      this.line(`RETURN NEXT ok(${this.emitExpr(stmt.expression)}, '${escaped}');`);
+      this.lineFromParts(["RETURN NEXT ok(", this.emitExprMap(stmt.expression), `, '${escaped}');`], stmt.loc);
     }
   }
 
   private emitAssign(stmt: AssignStatement): void {
     if (stmt.target === "_") {
-      this.line(`PERFORM ${this.emitExpr(stmt.value)};`);
+      this.lineFromParts(["PERFORM ", this.emitExprMap(stmt.value), ";"], stmt.loc);
       return;
     }
     const varInfo = this.vars.get(stmt.target);
@@ -240,7 +300,7 @@ class CodegenContext {
       return;
     }
     if (varInfo?.init && this.isInitEquivalent(varInfo.init, stmt.value)) return;
-    this.line(`${plName} := ${this.emitExpr(stmt.value)};`);
+    this.lineFromParts([`${plName} := `, this.emitExprMap(stmt.value), ";"], stmt.loc);
   }
 
   private isInitEquivalent(init: string, value: Expression): boolean {
@@ -260,14 +320,14 @@ class CodegenContext {
       const innerFromMatch = inner.match(SELECT_FROM_RE);
       if (innerFromMatch) {
         const rewritten = `${innerFromMatch[1]}INTO ${plName} ${innerFromMatch[2]}${inner.slice(innerFromMatch[0].length)}`;
-        this.line(`${rewritten};`);
+        this.line(rewritten + ";", sql.loc);
       } else if (SELECT_NO_FROM_RE.test(innerLower) && !innerLower.includes(" from ")) {
-        this.line(`${inner.replace(SELECT_NO_FROM_RE, `$&INTO ${plName} `)};`);
+        this.line(`${inner.replace(SELECT_NO_FROM_RE, `$&INTO ${plName} `)};`, sql.loc);
       } else {
         // Fallback: direct assignment for non-SELECT subqueries
-        this.line(`${plName} := ${sqlText};`);
+        this.line(`${plName} := ${sqlText};`, sql.loc);
       }
-      this.emitNotFoundGuard(sql.elseRaise);
+      this.emitNotFoundGuard(sql.elseRaise, sql.loc);
       return;
     }
 
@@ -292,122 +352,126 @@ class CodegenContext {
       sqlText = sqlText.replace(RETURNING_APPEND_RE, `$1 INTO ${plName}`);
     }
 
-    this.line(`${sqlText};`);
-    this.emitNotFoundGuard(sql.elseRaise);
+    this.line(`${sqlText};`, sql.loc);
+    this.emitNotFoundGuard(sql.elseRaise, sql.loc);
   }
 
-  private emitNotFoundGuard(msg: string | undefined): void {
+  private emitNotFoundGuard(msg: string | undefined, loc?: Loc): void {
     if (!msg) return;
-    this.line("IF NOT FOUND THEN");
+    this.line("IF NOT FOUND THEN", loc);
     this.indent++;
-    this.line(`RAISE EXCEPTION '${sqlEscape(msg)}';`);
+    this.line(`RAISE EXCEPTION '${sqlEscape(msg)}';`, loc);
     this.indent--;
-    this.line("END IF;");
+    this.line("END IF;", loc);
   }
 
   private emitAppend(stmt: AppendStatement): void {
     const varInfo = this.vars.get(stmt.target);
     const plName = varInfo?.plName ?? `v_${stmt.target}`;
-    this.line(`${plName} := ${plName} || ${this.emitExpr(stmt.value)};`);
+    this.lineFromParts([`${plName} := ${plName} || `, this.emitExprMap(stmt.value), ";"], stmt.loc);
   }
 
   private emitIf(stmt: IfStatement): void {
-    this.line(`IF ${this.emitExpr(stmt.condition)} THEN`);
+    this.lineFromParts(["IF ", this.emitExprMap(stmt.condition), " THEN"], stmt.loc);
     this.indent++;
     for (const s of stmt.body) this.emitStatement(s);
     this.indent--;
     for (const elsif of stmt.elsifs) {
-      this.line(`ELSIF ${this.emitExpr(elsif.condition)} THEN`);
+      this.lineFromParts(["ELSIF ", this.emitExprMap(elsif.condition), " THEN"], elsif.condition.loc);
       this.indent++;
       for (const s of elsif.body) this.emitStatement(s);
       this.indent--;
     }
     if (stmt.elseBody) {
-      this.line("ELSE");
+      this.line("ELSE", stmt.loc);
       this.indent++;
       for (const s of stmt.elseBody) this.emitStatement(s);
       this.indent--;
     }
-    this.line("END IF;");
+    this.line("END IF;", stmt.loc);
   }
 
   private emitFor(stmt: ForInStatement): void {
-    this.line(`FOR v_${stmt.variable} IN ${stmt.query} LOOP`);
+    this.line(`FOR v_${stmt.variable} IN ${stmt.query} LOOP`, stmt.loc);
     this.indent++;
     for (const s of stmt.body) this.emitStatement(s);
     this.indent--;
-    this.line("END LOOP;");
+    this.line("END LOOP;", stmt.loc);
   }
 
   private emitReturn(stmt: ReturnStatement): void {
     // Bare return — use RETURN for void/setof, RETURN NULL for scalar return types
     if (stmt.value.kind === "literal" && stmt.value.type === "null") {
       if (this.fn.returnType === "void" || this.fn.setof) {
-        this.line("RETURN;");
+        this.line("RETURN;", stmt.loc);
       } else {
-        this.line("RETURN NULL;");
+        this.line("RETURN NULL;", stmt.loc);
       }
       return;
     }
 
     // return query → RETURN QUERY
     if (stmt.mode === "query") {
-      this.line(`RETURN QUERY ${this.emitExpr(stmt.value)};`);
+      this.lineFromParts(["RETURN QUERY ", this.emitExprMap(stmt.value), ";"], stmt.loc);
       return;
     }
 
     // return execute → RETURN QUERY EXECUTE
     if (stmt.mode === "execute") {
-      this.line(`RETURN QUERY EXECUTE ${this.emitExpr(stmt.value)};`);
+      this.lineFromParts(["RETURN QUERY EXECUTE ", this.emitExprMap(stmt.value), ";"], stmt.loc);
       return;
     }
 
     // yield / setof → RETURN NEXT
     if (stmt.isYield || this.fn.setof) {
       if (stmt.value.kind === "sql_block") {
-        this.line(`RETURN QUERY ${stmt.value.sql};`);
+        this.line(`RETURN QUERY ${stmt.value.sql};`, stmt.loc);
       } else {
-        this.line(`RETURN NEXT ${this.emitExpr(stmt.value)};`);
+        this.lineFromParts(["RETURN NEXT ", this.emitExprMap(stmt.value), ";"], stmt.loc);
       }
       return;
     }
 
-    this.line(`RETURN ${this.emitExpr(stmt.value)};`);
+    this.lineFromParts(["RETURN ", this.emitExprMap(stmt.value), ";"], stmt.loc);
   }
 
   private emitRaise(stmt: RaiseStatement): void {
-    this.line(`RAISE EXCEPTION '${sqlEscape(stmt.message)}';`);
+    this.line(`RAISE EXCEPTION '${sqlEscape(stmt.message)}';`, stmt.loc);
   }
 
   private emitMatch(stmt: MatchStatement): void {
-    this.line(`CASE ${this.emitExpr(stmt.subject)}`);
+    this.lineFromParts(["CASE ", this.emitExprMap(stmt.subject)], stmt.loc);
     this.indent++;
     for (const arm of stmt.arms) {
-      this.line(`WHEN ${this.emitExpr(arm.pattern)} THEN`);
+      this.lineFromParts(["WHEN ", this.emitExprMap(arm.pattern), " THEN"], arm.pattern.loc);
       this.indent++;
       for (const s of arm.body) this.emitStatement(s);
       this.indent--;
     }
     if (stmt.elseBody) {
-      this.line("ELSE");
+      this.line("ELSE", stmt.loc);
       this.indent++;
       for (const s of stmt.elseBody) this.emitStatement(s);
       this.indent--;
     }
     this.indent--;
-    this.line("END CASE;");
+    this.line("END CASE;", stmt.loc);
   }
 
   private emitSqlStatement(stmt: SqlStatement): void {
-    this.line(`${stmt.sql};`);
+    this.line(`${stmt.sql};`, stmt.loc);
   }
 
   // ---------- Expression emission ----------
 
   private emitExpr(expr: Expression): string {
+    return this.emitExprMap(expr).text;
+  }
+
+  private emitExprMap(expr: Expression): MappedText {
     switch (expr.kind) {
       case "sql_block":
-        return expr.sql;
+        return { text: expr.sql, segments: [segmentForText(expr.sql, expr.loc)] };
       case "json_literal":
         return this.emitJson(expr);
       case "array_literal":
@@ -420,6 +484,10 @@ class CodegenContext {
         return this.emitIdent(expr);
       case "literal":
         return emitLiteral(expr);
+      case "group":
+        return this.emitGroup(expr);
+      case "unary":
+        return this.emitUnary(expr);
       case "binary":
         return this.emitBinary(expr);
       case "call":
@@ -429,66 +497,128 @@ class CodegenContext {
     }
   }
 
-  private emitJson(json: JsonLiteral): string {
-    if (json.entries.length === 0) return "'{}'::jsonb";
-    const pairs = json.entries.map((e) => `'${e.key}', ${this.emitJsonValue(e.value)}`);
-    return `jsonb_build_object(${pairs.join(", ")})`;
+  private emitJson(json: JsonLiteral): MappedText {
+    if (json.entries.length === 0) return mappedLiteral("'{}'::jsonb", json.loc);
+    const parts: (string | MappedText)[] = ["jsonb_build_object("];
+    json.entries.forEach((entry, index) => {
+      if (index > 0) parts.push(", ");
+      parts.push(`'${entry.key}', `);
+      parts.push(this.emitJsonValue(entry.value));
+    });
+    parts.push(")");
+    return withContainerSegment(concatMapped(parts), json.loc);
   }
 
-  private emitJsonValue(expr: Expression): string {
+  private emitJsonValue(expr: Expression): MappedText {
     if (expr.kind === "identifier") {
       const varInfo = this.vars.get(expr.name);
-      if (varInfo?.isRow) return `row_to_json(${varInfo.plName})::jsonb`;
+      if (varInfo?.isRow)
+        return withContainerSegment(mappedLiteral(`row_to_json(${varInfo.plName})::jsonb`, expr.loc), expr.loc);
       return this.emitIdent(expr);
     }
-    return this.emitExpr(expr);
+    return this.emitExprMap(expr);
   }
 
-  private emitArray(arr: ArrayLiteral): string {
-    if (arr.elements.length === 0) return "'[]'::jsonb";
-    return `jsonb_build_array(${arr.elements.map((e) => this.emitExpr(e)).join(", ")})`;
+  private emitArray(arr: ArrayLiteral): MappedText {
+    if (arr.elements.length === 0) return mappedLiteral("'[]'::jsonb", arr.loc);
+    const parts: (string | MappedText)[] = ["jsonb_build_array("];
+    arr.elements.forEach((element, index) => {
+      if (index > 0) parts.push(", ");
+      parts.push(this.emitExprMap(element));
+    });
+    parts.push(")");
+    return withContainerSegment(concatMapped(parts), arr.loc);
   }
 
-  private emitInterp(interp: StringInterp): string {
-    return interp.parts.map((p) => (typeof p === "string" ? `'${sqlEscape(p)}'` : this.emitExpr(p))).join(" || ");
+  private emitInterp(interp: StringInterp): MappedText {
+    const parts: (string | MappedText)[] = [];
+    interp.parts.forEach((part, index) => {
+      if (index > 0) parts.push(" || ");
+      parts.push(typeof part === "string" ? `'${sqlEscape(part)}'` : this.emitExprMap(part));
+    });
+    return withContainerSegment(concatMapped(parts), interp.loc);
   }
 
-  private emitFieldAccess(fa: FieldAccess): string {
-    return `${this.resolveVarName(fa.object)}.${fa.field}`;
+  private emitFieldAccess(fa: FieldAccess): MappedText {
+    return mappedLiteral(`${this.resolveVarName(fa.object)}.${fa.field}`, fa.loc);
   }
 
-  private emitIdent(id: Identifier): string {
-    return this.resolveVarName(id.name);
+  private emitIdent(id: Identifier): MappedText {
+    return mappedLiteral(this.resolveVarName(id.name), id.loc);
   }
 
-  private emitBinary(bin: BinaryExpr): string {
-    if (bin.op === "IS NOT NULL") return `${this.emitExpr(bin.left)} IS NOT NULL`;
-    if (bin.op === "NOT") return `NOT ${this.emitExpr(bin.right)}`;
+  private emitGroup(group: GroupExpr): MappedText {
+    return withContainerSegment(concatMapped(["(", this.emitExprMap(group.expression), ")"]), group.loc);
+  }
+
+  private emitUnary(unary: UnaryExpr): MappedText {
+    const precedence = unaryPrecedence(unary.op);
+    const expression = this.emitNestedExpr(unary.expression, precedence, "right", "right");
+    if (unary.op === "NOT") return withContainerSegment(concatMapped(["NOT ", expression]), unary.loc);
+    return withContainerSegment(concatMapped([unary.op, expression]), unary.loc);
+  }
+
+  private emitBinary(bin: BinaryExpr): MappedText {
+    if (bin.op === "IS NOT NULL") {
+      return withContainerSegment(
+        concatMapped([this.emitNestedExpr(bin.left, 30, "left", "left"), " IS NOT NULL"]),
+        bin.loc,
+      );
+    }
     // x = null → x IS NULL, x != null → x IS NOT NULL (SQL three-valued logic)
     if (isNullExpr(bin.right)) {
-      if (bin.op === "=") return `${this.emitExpr(bin.left)} IS NULL`;
-      if (bin.op === "!=") return `${this.emitExpr(bin.left)} IS NOT NULL`;
+      if (bin.op === "=")
+        return withContainerSegment(
+          concatMapped([this.emitNestedExpr(bin.left, 30, "left", "left"), " IS NULL"]),
+          bin.loc,
+        );
+      if (bin.op === "!=")
+        return withContainerSegment(
+          concatMapped([this.emitNestedExpr(bin.left, 30, "left", "left"), " IS NOT NULL"]),
+          bin.loc,
+        );
     }
     if (isNullExpr(bin.left)) {
-      if (bin.op === "=") return `${this.emitExpr(bin.right)} IS NULL`;
-      if (bin.op === "!=") return `${this.emitExpr(bin.right)} IS NOT NULL`;
+      if (bin.op === "=")
+        return withContainerSegment(
+          concatMapped([this.emitNestedExpr(bin.right, 30, "right", "left"), " IS NULL"]),
+          bin.loc,
+        );
+      if (bin.op === "!=")
+        return withContainerSegment(
+          concatMapped([this.emitNestedExpr(bin.right, 30, "right", "left"), " IS NOT NULL"]),
+          bin.loc,
+        );
     }
-    if (bin.op === "::") return `${this.emitExpr(bin.left)}::${this.emitExpr(bin.right)}`;
-    // ->> / -> JSON operators — no spaces, wrap in parens for precedence
-    if (bin.op === "->>" || bin.op === "->") return `(${this.emitExpr(bin.left)}${bin.op}${this.emitExpr(bin.right)})`;
-
-    return `${this.emitExpr(bin.left)} ${bin.op} ${this.emitExpr(bin.right)}`;
+    const { precedence, assoc } = binaryPrecedence(bin.op);
+    const left = this.emitNestedExpr(bin.left, precedence, "left", assoc);
+    const right = this.emitNestedExpr(bin.right, precedence, "right", assoc);
+    if (bin.op === "::") return withContainerSegment(concatMapped([left, "::", right]), bin.loc);
+    if (bin.op === "->>" || bin.op === "->") return withContainerSegment(concatMapped([left, bin.op, right]), bin.loc);
+    return withContainerSegment(concatMapped([left, ` ${bin.op} `, right]), bin.loc);
   }
 
-  private emitCall(call: CallExpr): string {
+  private emitCall(call: CallExpr): MappedText {
     const name = this.aliases.get(call.name) ?? call.name;
-    return `${name}(${call.args.map((a) => this.emitExpr(a)).join(", ")})`;
+    const parts: (string | MappedText)[] = [`${name}(`];
+    call.args.forEach((arg, index) => {
+      if (index > 0) parts.push(", ");
+      parts.push(this.emitExprMap(arg));
+    });
+    parts.push(")");
+    return withContainerSegment(concatMapped(parts), call.loc);
   }
 
-  private emitCaseExpr(c: CaseExpr): string {
-    const arms = c.arms.map((a) => `WHEN ${this.emitExpr(a.pattern)} THEN ${this.emitExpr(a.result)}`).join(" ");
-    const elseClause = c.elseResult ? ` ELSE ${this.emitExpr(c.elseResult)}` : "";
-    return `CASE ${this.emitExpr(c.subject)} ${arms}${elseClause} END`;
+  private emitCaseExpr(c: CaseExpr): MappedText {
+    const parts: (string | MappedText)[] = ["CASE ", this.emitExprMap(c.subject)];
+    for (const arm of c.arms) {
+      parts.push(" WHEN ", this.emitExprMap(arm.pattern), " THEN ", this.emitExprMap(arm.result));
+    }
+    if (c.elseResult) {
+      parts.push(" ELSE ", this.emitExprMap(c.elseResult));
+    }
+    parts.push(" END");
+    return withContainerSegment(concatMapped(parts), c.loc);
   }
 
   // ---------- Helpers ----------
@@ -499,8 +629,41 @@ class CodegenContext {
     return v ? v.plName : name;
   }
 
-  private line(text: string): void {
-    this.lines.push((INDENTS[this.indent] ?? "  ".repeat(this.indent)) + text);
+  private line(text: string, loc?: Loc, segments: SourceSegment[] = []): void {
+    const indentText = INDENTS[this.indent] ?? "  ".repeat(this.indent);
+    const shiftedSegments = segments.map((segment) => ({
+      ...segment,
+      startCol: segment.startCol + indentText.length,
+      endCol: segment.endCol + indentText.length,
+    }));
+    for (const lineText of text.split("\n")) {
+      this.lines.push({
+        text: `${indentText}${lineText}`,
+        loc,
+        segments: lineText === text ? shiftedSegments : [],
+      });
+    }
+  }
+
+  private lineFromParts(parts: (string | MappedText)[], loc?: Loc): void {
+    const mapped = concatMapped(parts);
+    this.line(mapped.text, loc, mapped.segments);
+  }
+
+  private emitNestedExpr(expr: Expression, parentPrecedence: number, side: "left" | "right", assoc: Assoc): MappedText {
+    if (expr.kind === "group") return this.emitExprMap(expr);
+    const rendered = this.emitExprMap(expr);
+    const childPrecedence = expressionPrecedence(expr);
+    const equalNeedsParens =
+      expr.kind === "binary" &&
+      childPrecedence === parentPrecedence &&
+      ((assoc === "left" && side === "right") || (assoc === "right" && side === "left"));
+
+    if (childPrecedence < parentPrecedence || equalNeedsParens) {
+      return concatMapped(["(", rendered, ")"]);
+    }
+
+    return rendered;
   }
 }
 
@@ -510,14 +673,113 @@ function isNullExpr(expr: Expression): boolean {
   return false;
 }
 
-function emitLiteral(lit: Literal): string {
-  if (lit.type === "text") return `'${sqlEscape(String(lit.value))}'`;
-  if (lit.type === "null") return "NULL";
-  return String(lit.value);
+function emitLiteral(lit: Literal): MappedText {
+  if (lit.type === "text") return mappedLiteral(`'${sqlEscape(String(lit.value))}'`, lit.loc);
+  if (lit.type === "null") return mappedLiteral("NULL", lit.loc);
+  return mappedLiteral(String(lit.value), lit.loc);
+}
+
+function unaryPrecedence(op: UnaryExpr["op"]): number {
+  if (op === "NOT") return 90;
+  return 90;
+}
+
+function binaryPrecedence(op: string): { precedence: number; assoc: Assoc } {
+  switch (op) {
+    case "OR":
+      return { precedence: 10, assoc: "left" };
+    case "AND":
+      return { precedence: 20, assoc: "left" };
+    case "=":
+    case "!=":
+    case ">":
+    case "<":
+    case ">=":
+    case "<=":
+    case "IS NOT NULL":
+      return { precedence: 30, assoc: "left" };
+    case "||":
+      return { precedence: 40, assoc: "left" };
+    case "+":
+    case "-":
+      return { precedence: 50, assoc: "left" };
+    case "*":
+    case "/":
+      return { precedence: 60, assoc: "left" };
+    case "->":
+    case "->>":
+      return { precedence: 70, assoc: "left" };
+    case "::":
+      return { precedence: 80, assoc: "right" };
+    default:
+      return { precedence: 30, assoc: "left" };
+  }
+}
+
+function expressionPrecedence(expr: Expression): number {
+  switch (expr.kind) {
+    case "group":
+      return PRIMARY_PRECEDENCE;
+    case "unary":
+      return unaryPrecedence(expr.op);
+    case "binary":
+      return binaryPrecedence(expr.op).precedence;
+    case "case_expr":
+      return 5;
+    default:
+      return PRIMARY_PRECEDENCE;
+  }
 }
 
 function formatParam(p: Param): string {
   let s = `${p.name} ${p.type}`;
   if (p.defaultValue !== undefined) s += ` DEFAULT ${p.defaultValue}`;
   return s;
+}
+
+function concatMapped(parts: (string | MappedText)[]): MappedText {
+  let text = "";
+  const segments: SourceSegment[] = [];
+
+  for (const part of parts) {
+    if (typeof part === "string") {
+      text += part;
+      continue;
+    }
+
+    const offset = text.length;
+    text += part.text;
+    for (const segment of part.segments) {
+      segments.push({
+        ...segment,
+        startCol: segment.startCol + offset,
+        endCol: segment.endCol + offset,
+      });
+    }
+  }
+
+  return { text, segments };
+}
+
+function mappedLiteral(text: string, loc: Loc): MappedText {
+  return {
+    text,
+    segments: [segmentForText(text, loc)],
+  };
+}
+
+function withContainerSegment(mapped: MappedText, loc: Loc): MappedText {
+  return {
+    text: mapped.text,
+    segments: [segmentForText(mapped.text, loc), ...mapped.segments],
+  };
+}
+
+function segmentForText(text: string, loc: Loc): SourceSegment {
+  return {
+    startCol: 0,
+    endCol: text.length,
+    loc,
+    text,
+  };
 }
