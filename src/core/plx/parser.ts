@@ -98,13 +98,7 @@ class Parser {
     const loc = this.loc();
     this.expect("IMPORT");
 
-    // Parse qualified name: ident or ident.ident
-    let original = this.expect("IDENT").value;
-    if (this.isAt("DOT")) {
-      this.advance();
-      original += `.${this.expect("IDENT").value}`;
-    }
-
+    const original = this.parseQualifiedName();
     this.expect("AS");
     const alias = this.expect("IDENT").value;
     this.skipNewlines();
@@ -161,11 +155,7 @@ class Parser {
   private parseFieldDef(): PlxTrait["fields"][number] {
     const loc = this.loc();
     const name = this.expect("IDENT").value;
-    let type = this.expect("IDENT").value;
-    if (this.isAt("DOT")) {
-      this.advance();
-      type += `.${this.expect("IDENT").value}`;
-    }
+    const type = this.parseQualifiedName();
     let nullable = false;
     if (this.isAt("QUESTION")) {
       this.advance();
@@ -242,11 +232,7 @@ class Parser {
       if (kw === "table") {
         this.advance();
         this.expect("COLON");
-        table = this.expect("IDENT").value;
-        if (this.isAt("DOT")) {
-          this.advance();
-          table += `.${this.expect("IDENT").value}`;
-        }
+        table = this.parseQualifiedName();
       } else if (kw === "uri") {
         this.advance();
         this.expect("COLON");
@@ -353,11 +339,7 @@ class Parser {
   private parseEntityField(): EntityField {
     const loc = this.loc();
     const name = this.expect("IDENT").value;
-    let type = this.expect("IDENT").value;
-    if (this.isAt("DOT")) {
-      this.advance();
-      type += `.${this.expect("IDENT").value}`;
-    }
+    const type = this.parseQualifiedName();
 
     let nullable = false;
     let required = false;
@@ -596,11 +578,7 @@ class Parser {
       while (!this.isAt("RBRACE") && !this.isAt("EOF")) {
         const k = this.expect("IDENT").value;
         this.expect("COLON");
-        let v = this.expect("IDENT", "STRING").value;
-        if (this.isAt("DOT")) {
-          this.advance();
-          v += `.${this.expect("IDENT").value}`;
-        }
+        const v = this.parseQualifiedValue();
         if (k === "key") key = v;
         else if (k === "label") label = v;
         if (this.isAt("COMMA")) this.advance();
@@ -683,12 +661,7 @@ class Parser {
         const v = this.advance().value;
         required = v === "true";
       } else {
-        let v = this.expect("IDENT", "STRING").value;
-        // Qualified names: expense.field_name
-        if (this.isAt("DOT")) {
-          this.advance();
-          v += `.${this.expect("IDENT").value}`;
-        }
+        const v = this.parseQualifiedValue();
         if (k === "key") key = v;
         else if (k === "type") type = v;
         else if (k === "label") label = v;
@@ -715,11 +688,7 @@ class Parser {
     while (!this.isAt("RBRACE") && !this.isAt("EOF")) {
       const k = this.expect("IDENT").value;
       this.expect("COLON");
-      let v = this.expect("IDENT", "STRING").value;
-      if (this.isAt("DOT")) {
-        this.advance();
-        v += `.${this.expect("IDENT").value}`;
-      }
+      const v = this.parseQualifiedValue();
       if (k === "label") label = v;
       else if (k === "icon") icon = v;
       else if (k === "variant") variant = v;
@@ -736,18 +705,9 @@ class Parser {
 
   private parseStrategyDecl(): StrategyDecl {
     const loc = this.loc();
-    // slot.name: fn_name
-    let slot = this.expect("IDENT").value;
-    if (this.isAt("DOT")) {
-      this.advance();
-      slot += `.${this.expect("IDENT").value}`;
-    }
+    const slot = this.parseQualifiedName();
     this.expect("COLON");
-    let fn = this.expect("IDENT").value;
-    if (this.isAt("DOT")) {
-      this.advance();
-      fn += `.${this.expect("IDENT").value}`;
-    }
+    const fn = this.parseQualifiedName();
     return { slot, fn, loc };
   }
 
@@ -871,11 +831,7 @@ class Parser {
   }
 
   private parseType(): string {
-    let type = this.expect("IDENT").value;
-    if (this.isAt("DOT")) {
-      this.advance();
-      type += `.${this.expect("IDENT").value}`;
-    }
+    let type = this.parseQualifiedName();
     if (this.isAt("LBRACKET") && this.peekAt(1)?.type === "RBRACKET") {
       this.advance();
       this.advance();
@@ -1421,6 +1377,16 @@ class Parser {
       name += `.${this.expect("IDENT").value}`;
     }
     return name;
+  }
+
+  /** Parse a value that can be STRING or qualified IDENT (for brace KV objects) */
+  private parseQualifiedValue(): string {
+    let v = this.expect("IDENT", "STRING").value;
+    if (this.isAt("DOT")) {
+      this.advance();
+      v += `.${this.expect("IDENT").value}`;
+    }
+    return v;
   }
 
   /** Parse an indented block of items: INDENT item* DEDENT */
