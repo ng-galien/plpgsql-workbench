@@ -19,6 +19,9 @@ export type TokenType =
   | "END"
   | "IMPORT"
   | "AS"
+  | "ENTITY"
+  | "TRAIT"
+  | "USES"
   | "INDENT"
   | "DEDENT"
   | "NEWLINE"
@@ -80,6 +83,9 @@ const KEYWORDS = new Map<string, TokenType>([
   ["end", "END"],
   ["import", "IMPORT"],
   ["as", "AS"],
+  ["entity", "ENTITY"],
+  ["trait", "TRAIT"],
+  ["uses", "USES"],
 ]);
 
 const SQL_STARTERS = new Set(["select", "insert", "update", "delete", "with"]);

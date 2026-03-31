@@ -1,11 +1,17 @@
 import type {
+  ActionDef,
   AppendStatement,
   ArrayLiteral,
   AssignStatement,
   CaseExpr,
+  EntityField,
+  EntityHook,
+  EntityHookEvent,
   Expression,
   FieldAccess,
   ForInStatement,
+  FormField,
+  FormSection,
   FuncAttribute,
   Identifier,
   IfStatement,
@@ -14,15 +20,24 @@ import type {
   Loc,
   MatchStatement,
   Param,
+  PlxEntity,
   PlxFunction,
   PlxModule,
+  PlxTrait,
   RaiseStatement,
+  RelatedDef,
   ReturnMode,
   ReturnStatement,
   SqlBlockExpr,
   SqlStatement,
+  StatDef,
+  StateBlock,
   Statement,
+  StateTransition,
+  StrategyDecl,
   StringInterp,
+  ViewBlock,
+  ViewSection,
 } from "./ast.js";
 import type { Token, TokenType } from "./lexer.js";
 import { sqlEscape } from "./util.js";
@@ -62,11 +77,20 @@ class Parser {
       this.skipNewlines();
     }
 
+    const traits: PlxTrait[] = [];
+    const entities: PlxEntity[] = [];
+
     while (!this.isAt("EOF")) {
-      functions.push(this.parseFunction());
+      if (this.isAt("TRAIT")) {
+        traits.push(this.parseTrait());
+      } else if (this.isAt("ENTITY")) {
+        entities.push(this.parseEntity());
+      } else {
+        functions.push(this.parseFunction());
+      }
       this.skipNewlines();
     }
-    return { imports, traits: [], entities: [], functions };
+    return { imports, traits, entities, functions };
   }
 
   /** import original as alias */
@@ -86,6 +110,674 @@ class Parser {
     this.skipNewlines();
     return { original, alias, loc };
   }
+
+  // ---------- Trait parsing ----------
+
+  private parseTrait(): PlxTrait {
+    const loc = this.loc();
+    this.expect("TRAIT");
+    const name = this.expect("IDENT").value;
+    this.expect("COLON");
+    this.skipNewlines();
+    this.expect("INDENT");
+
+    const fields: PlxTrait["fields"] = [];
+    const hooks: PlxTrait["hooks"] = [];
+    let defaultScope: string | undefined;
+
+    while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+      this.skipNewlines();
+      if (this.isAt("DEDENT")) break;
+      const kw = this.peek().value;
+
+      if (kw === "fields") {
+        this.advance();
+        this.expect("COLON");
+        this.skipNewlines();
+        this.expect("INDENT");
+        while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+          this.skipNewlines();
+          if (this.isAt("DEDENT")) break;
+          fields.push(this.parseFieldDef());
+          this.skipNewlines();
+        }
+        this.expect("DEDENT");
+      } else if (kw === "default_scope") {
+        this.advance();
+        this.expect("COLON");
+        defaultScope = this.expect("IDENT", "STRING").value;
+        this.skipNewlines();
+      } else {
+        // Skip unknown for now
+        this.advance();
+        this.skipNewlines();
+      }
+    }
+
+    this.expect("DEDENT");
+    return { kind: "trait", name, fields, hooks, defaultScope, loc };
+  }
+
+  private parseFieldDef(): PlxTrait["fields"][number] {
+    const loc = this.loc();
+    const name = this.expect("IDENT").value;
+    let type = this.expect("IDENT").value;
+    if (this.isAt("DOT")) {
+      this.advance();
+      type += `.${this.expect("IDENT").value}`;
+    }
+    let nullable = false;
+    if (this.isAt("QUESTION")) {
+      this.advance();
+      nullable = true;
+    }
+    let defaultValue: string | undefined;
+    if (this.isAt("IDENT") && this.peek().value === "default") {
+      this.advance();
+      this.expect("LPAREN");
+      // Collect default expression tokens until )
+      let expr = "";
+      let depth = 1;
+      while (depth > 0 && !this.isAt("EOF")) {
+        const t = this.advance();
+        if (t.type === "LPAREN") depth++;
+        else if (t.type === "RPAREN") {
+          depth--;
+          if (depth === 0) break;
+        }
+        expr += (expr ? " " : "") + t.value;
+      }
+      defaultValue = expr;
+    }
+    return { name, type, nullable, defaultValue, loc };
+  }
+
+  // ---------- Entity parsing ----------
+
+  private parseEntity(): PlxEntity {
+    const loc = this.loc();
+    this.expect("ENTITY");
+
+    // schema.name
+    const schema = this.expect("IDENT").value;
+    this.expect("DOT");
+    const name = this.expect("IDENT").value;
+
+    // Optional: uses trait1, trait2
+    const traits: string[] = [];
+    if (this.isAt("USES")) {
+      this.advance();
+      traits.push(this.expect("IDENT").value);
+      while (this.isAt("COMMA")) {
+        this.advance();
+        traits.push(this.expect("IDENT").value);
+      }
+    }
+
+    this.expect("COLON");
+    this.skipNewlines();
+    this.expect("INDENT");
+
+    // Entity body — key-value pairs and sub-blocks
+    let table = `${schema}.${name}`;
+    let uri = `${schema}://${name}`;
+    let icon: string | undefined;
+    let label = `${schema}.entity_${name}`;
+    let listOrder = "id";
+    let readKey: string | undefined;
+    const fields: EntityField[] = [];
+    let states: StateBlock | undefined;
+    let updateStates: string[] | undefined;
+    let view: ViewBlock = { compact: [] };
+    const actions: ActionDef[] = [];
+    const strategies: StrategyDecl[] = [];
+    const hooks: EntityHook[] = [];
+
+    while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+      this.skipNewlines();
+      if (this.isAt("DEDENT") || this.isAt("EOF")) break;
+
+      const kw = this.peek().value;
+
+      if (kw === "table") {
+        this.advance();
+        this.expect("COLON");
+        table = this.expect("IDENT").value;
+        if (this.isAt("DOT")) {
+          this.advance();
+          table += `.${this.expect("IDENT").value}`;
+        }
+      } else if (kw === "uri") {
+        this.advance();
+        this.expect("COLON");
+        uri = this.expect("STRING").value;
+      } else if (kw === "icon") {
+        this.advance();
+        this.expect("COLON");
+        icon = this.expect("STRING").value;
+      } else if (kw === "label") {
+        this.advance();
+        this.expect("COLON");
+        label = this.expect("STRING").value;
+      } else if (kw === "list_order") {
+        this.advance();
+        this.expect("COLON");
+        listOrder = this.expect("STRING").value;
+      } else if (kw === "read_key") {
+        this.advance();
+        this.expect("COLON");
+        readKey = this.expect("STRING").value;
+      } else if (kw === "fields") {
+        this.advance();
+        this.expect("COLON");
+        this.skipNewlines();
+        this.expect("INDENT");
+        while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+          this.skipNewlines();
+          if (this.isAt("DEDENT")) break;
+          fields.push(this.parseEntityField());
+          this.skipNewlines();
+        }
+        this.expect("DEDENT");
+      } else if (kw === "states") {
+        states = this.parseStateBlock();
+      } else if (kw === "update_states") {
+        this.advance();
+        this.expect("COLON");
+        this.expect("LBRACKET");
+        updateStates = [];
+        while (!this.isAt("RBRACKET") && !this.isAt("EOF")) {
+          updateStates.push(this.expect("IDENT").value);
+          if (this.isAt("COMMA")) this.advance();
+        }
+        this.expect("RBRACKET");
+      } else if (kw === "view") {
+        view = this.parseViewBlock();
+      } else if (kw === "actions") {
+        this.advance();
+        this.expect("COLON");
+        this.skipNewlines();
+        this.expect("INDENT");
+        while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+          this.skipNewlines();
+          if (this.isAt("DEDENT")) break;
+          actions.push(this.parseActionDef());
+          this.skipNewlines();
+        }
+        this.expect("DEDENT");
+      } else if (kw === "strategies") {
+        this.advance();
+        this.expect("COLON");
+        this.skipNewlines();
+        this.expect("INDENT");
+        while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+          this.skipNewlines();
+          if (this.isAt("DEDENT")) break;
+          strategies.push(this.parseStrategyDecl());
+          this.skipNewlines();
+        }
+        this.expect("DEDENT");
+      } else if (kw === "before" || kw === "after") {
+        hooks.push(this.parseEntityHook());
+      } else {
+        // Unknown key — skip line
+        this.advance();
+      }
+      this.skipNewlines();
+    }
+
+    this.expect("DEDENT");
+
+    return {
+      kind: "entity",
+      schema,
+      name,
+      table,
+      uri,
+      icon,
+      label,
+      traits,
+      fields,
+      states,
+      updateStates,
+      view,
+      actions,
+      strategies,
+      hooks,
+      listOrder,
+      readKey,
+      loc,
+    };
+  }
+
+  private parseEntityField(): EntityField {
+    const loc = this.loc();
+    const name = this.expect("IDENT").value;
+    let type = this.expect("IDENT").value;
+    if (this.isAt("DOT")) {
+      this.advance();
+      type += `.${this.expect("IDENT").value}`;
+    }
+
+    let nullable = false;
+    let required = false;
+    let unique = false;
+    let createOnly = false;
+    let readOnly = false;
+    let defaultValue: string | undefined;
+
+    // Parse modifiers: required, unique, create_only, read_only, default(...)
+    while (this.isAt("IDENT") || this.isAt("QUESTION")) {
+      if (this.isAt("QUESTION")) {
+        this.advance();
+        nullable = true;
+        continue;
+      }
+      const mod = this.peek().value;
+      if (mod === "required") {
+        this.advance();
+        required = true;
+      } else if (mod === "unique") {
+        this.advance();
+        unique = true;
+      } else if (mod === "create_only") {
+        this.advance();
+        createOnly = true;
+      } else if (mod === "read_only") {
+        this.advance();
+        readOnly = true;
+      } else if (mod === "default") {
+        this.advance();
+        this.expect("LPAREN");
+        let expr = "";
+        let depth = 1;
+        while (depth > 0 && !this.isAt("EOF")) {
+          const t = this.advance();
+          if (t.type === "LPAREN") depth++;
+          else if (t.type === "RPAREN") {
+            depth--;
+            if (depth === 0) break;
+          }
+          expr += (expr ? " " : "") + t.value;
+        }
+        defaultValue = expr;
+      } else {
+        break;
+      }
+    }
+
+    return { name, type, nullable, required, unique, createOnly, readOnly, defaultValue, loc };
+  }
+
+  private parseStateBlock(): StateBlock {
+    const loc = this.loc();
+    this.advance(); // "states"
+
+    // Parse state values: draft -> submitted -> validated -> reimbursed
+    const values: string[] = [];
+    values.push(this.expect("IDENT").value);
+    while (this.isAt("ARROW")) {
+      this.advance();
+      values.push(this.expect("IDENT").value);
+    }
+
+    this.expect("COLON");
+    this.skipNewlines();
+    this.expect("INDENT");
+
+    const transitions: StateTransition[] = [];
+    while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+      this.skipNewlines();
+      if (this.isAt("DEDENT")) break;
+
+      const trLoc = this.loc();
+      const trName = this.expect("IDENT").value;
+      this.expect("LPAREN");
+      const from = this.expect("IDENT").value;
+      this.expect("ARROW");
+      const to = this.expect("IDENT").value;
+      this.expect("RPAREN");
+
+      let guard: string | undefined;
+      let body: Statement[] | undefined;
+
+      // Optional colon + indent for guard/body
+      if (this.isAt("COLON")) {
+        this.advance();
+        this.skipNewlines();
+        this.expect("INDENT");
+        while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+          this.skipNewlines();
+          if (this.isAt("DEDENT")) break;
+          if (this.peek().value === "guard") {
+            this.advance();
+            this.expect("COLON");
+            // Collect guard expression as raw text until newline
+            let guardExpr = "";
+            while (!this.isAt("NEWLINE") && !this.isAt("DEDENT") && !this.isAt("EOF")) {
+              guardExpr += (guardExpr ? " " : "") + this.advance().value;
+            }
+            guard = guardExpr;
+          } else {
+            // Body statement
+            if (!body) body = [];
+            body.push(this.parseStatement());
+          }
+          this.skipNewlines();
+        }
+        this.expect("DEDENT");
+      }
+
+      transitions.push({ name: trName, from, to, guard, body, loc: trLoc });
+      this.skipNewlines();
+    }
+
+    this.expect("DEDENT");
+
+    return { column: "status", initial: values[0]!, values, transitions, loc };
+  }
+
+  private parseViewBlock(): ViewBlock {
+    this.advance(); // "view"
+    this.expect("COLON");
+    this.skipNewlines();
+    this.expect("INDENT");
+
+    let compact: string[] = [];
+    let standard: ViewSection | undefined;
+    let expanded: ViewSection | undefined;
+    let form: FormSection[] | undefined;
+
+    while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+      this.skipNewlines();
+      if (this.isAt("DEDENT")) break;
+      const kw = this.peek().value;
+
+      if (kw === "compact") {
+        this.advance();
+        this.expect("COLON");
+        compact = this.parseStringList();
+      } else if (kw === "standard") {
+        this.advance();
+        this.expect("COLON");
+        standard = this.parseViewSection();
+      } else if (kw === "expanded") {
+        this.advance();
+        this.expect("COLON");
+        expanded = this.parseViewSection();
+      } else if (kw === "form") {
+        this.advance();
+        this.expect("COLON");
+        form = this.parseFormSections();
+      } else {
+        this.advance(); // skip unknown
+      }
+      this.skipNewlines();
+    }
+
+    this.expect("DEDENT");
+    return { compact, standard, expanded, form };
+  }
+
+  /** Parse [ident, ident, ...] as string names (NOT as PLX expressions) */
+  private parseStringList(): string[] {
+    this.expect("LBRACKET");
+    this.skipExprWs();
+    const items: string[] = [];
+    while (!this.isAt("RBRACKET") && !this.isAt("EOF")) {
+      // Accept ident or {key: ...} object as string
+      if (this.isAt("IDENT")) {
+        items.push(this.advance().value);
+      } else if (this.isAt("LBRACE")) {
+        // Skip complex field objects in compact — just capture the key
+        this.advance();
+        while (!this.isAt("RBRACE") && !this.isAt("EOF")) this.advance();
+        this.expect("RBRACE");
+      }
+      this.skipExprWs();
+      if (this.isAt("COMMA")) {
+        this.advance();
+        this.skipExprWs();
+      }
+    }
+    this.expect("RBRACKET");
+    return items;
+  }
+
+  private parseViewSection(): ViewSection {
+    this.skipNewlines();
+    // Can be inline [fields] or indented block with fields/stats/related
+    if (this.isAt("LBRACKET")) {
+      return { fields: this.parseStringList() };
+    }
+
+    this.expect("INDENT");
+    let fields: string[] = [];
+    let stats: StatDef[] | undefined;
+    let related: RelatedDef[] | undefined;
+
+    while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+      this.skipNewlines();
+      if (this.isAt("DEDENT")) break;
+      const kw = this.peek().value;
+
+      if (kw === "fields") {
+        this.advance();
+        this.expect("COLON");
+        fields = this.parseStringList();
+      } else if (kw === "stats") {
+        this.advance();
+        this.expect("COLON");
+        stats = this.parseStatDefs();
+      } else if (kw === "related") {
+        this.advance();
+        this.expect("COLON");
+        related = this.parseRelatedDefs();
+      } else {
+        this.advance();
+      }
+      this.skipNewlines();
+    }
+    this.expect("DEDENT");
+    return { fields, stats, related };
+  }
+
+  private parseStatDefs(): StatDef[] {
+    this.skipNewlines();
+    this.expect("INDENT");
+    const defs: StatDef[] = [];
+    while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+      this.skipNewlines();
+      if (this.isAt("DEDENT")) break;
+      // {key: x, label: y}
+      this.expect("LBRACE");
+      let key = "";
+      let label = "";
+      while (!this.isAt("RBRACE") && !this.isAt("EOF")) {
+        const k = this.expect("IDENT").value;
+        this.expect("COLON");
+        let v = this.expect("IDENT", "STRING").value;
+        if (this.isAt("DOT")) {
+          this.advance();
+          v += `.${this.expect("IDENT").value}`;
+        }
+        if (k === "key") key = v;
+        else if (k === "label") label = v;
+        if (this.isAt("COMMA")) this.advance();
+      }
+      this.expect("RBRACE");
+      defs.push({ key, label });
+      this.skipNewlines();
+    }
+    this.expect("DEDENT");
+    return defs;
+  }
+
+  private parseRelatedDefs(): RelatedDef[] {
+    this.skipNewlines();
+    this.expect("INDENT");
+    const defs: RelatedDef[] = [];
+    while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+      this.skipNewlines();
+      if (this.isAt("DEDENT")) break;
+      this.expect("LBRACE");
+      let entity = "";
+      let label = "";
+      let filter = "";
+      while (!this.isAt("RBRACE") && !this.isAt("EOF")) {
+        const k = this.expect("IDENT").value;
+        this.expect("COLON");
+        const v = this.expect("IDENT", "STRING").value;
+        if (k === "entity") entity = v;
+        else if (k === "label") label = v;
+        else if (k === "filter") filter = v;
+        if (this.isAt("COMMA")) this.advance();
+      }
+      this.expect("RBRACE");
+      defs.push({ entity, label, filter });
+      this.skipNewlines();
+    }
+    this.expect("DEDENT");
+    return defs;
+  }
+
+  private parseFormSections(): FormSection[] {
+    this.skipNewlines();
+    this.expect("INDENT");
+    const sections: FormSection[] = [];
+    while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+      this.skipNewlines();
+      if (this.isAt("DEDENT")) break;
+      // "section.label":
+      const label = this.expect("STRING").value;
+      this.expect("COLON");
+      this.skipNewlines();
+      this.expect("INDENT");
+      const fields: FormField[] = [];
+      while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+        this.skipNewlines();
+        if (this.isAt("DEDENT")) break;
+        fields.push(this.parseFormField());
+        this.skipNewlines();
+      }
+      this.expect("DEDENT");
+      sections.push({ label, fields });
+      this.skipNewlines();
+    }
+    this.expect("DEDENT");
+    return sections;
+  }
+
+  private parseFormField(): FormField {
+    this.expect("LBRACE");
+    this.skipExprWs();
+    let key = "";
+    let type = "text";
+    let label = "";
+    let required: boolean | undefined;
+    while (!this.isAt("RBRACE") && !this.isAt("EOF")) {
+      const k = this.expect("IDENT").value;
+      this.expect("COLON");
+      if (k === "required") {
+        // boolean value
+        const v = this.advance().value;
+        required = v === "true";
+      } else {
+        let v = this.expect("IDENT", "STRING").value;
+        // Qualified names: expense.field_name
+        if (this.isAt("DOT")) {
+          this.advance();
+          v += `.${this.expect("IDENT").value}`;
+        }
+        if (k === "key") key = v;
+        else if (k === "type") type = v;
+        else if (k === "label") label = v;
+      }
+      this.skipExprWs();
+      if (this.isAt("COMMA")) {
+        this.advance();
+        this.skipExprWs();
+      }
+    }
+    this.expect("RBRACE");
+    return { key, type, label, required };
+  }
+
+  private parseActionDef(): ActionDef {
+    const name = this.expect("IDENT").value;
+    this.expect("COLON");
+    this.expect("LBRACE");
+    this.skipExprWs();
+    let label = "";
+    let icon: string | undefined;
+    let variant: string | undefined;
+    let confirm: string | undefined;
+    while (!this.isAt("RBRACE") && !this.isAt("EOF")) {
+      const k = this.expect("IDENT").value;
+      this.expect("COLON");
+      let v = this.expect("IDENT", "STRING").value;
+      if (this.isAt("DOT")) {
+        this.advance();
+        v += `.${this.expect("IDENT").value}`;
+      }
+      if (k === "label") label = v;
+      else if (k === "icon") icon = v;
+      else if (k === "variant") variant = v;
+      else if (k === "confirm") confirm = v;
+      this.skipExprWs();
+      if (this.isAt("COMMA")) {
+        this.advance();
+        this.skipExprWs();
+      }
+    }
+    this.expect("RBRACE");
+    return { name, label, icon, variant, confirm };
+  }
+
+  private parseStrategyDecl(): StrategyDecl {
+    const loc = this.loc();
+    // slot.name: fn_name
+    let slot = this.expect("IDENT").value;
+    if (this.isAt("DOT")) {
+      this.advance();
+      slot += `.${this.expect("IDENT").value}`;
+    }
+    this.expect("COLON");
+    let fn = this.expect("IDENT").value;
+    if (this.isAt("DOT")) {
+      this.advance();
+      fn += `.${this.expect("IDENT").value}`;
+    }
+    return { slot, fn, loc };
+  }
+
+  private parseEntityHook(): EntityHook {
+    const loc = this.loc();
+    const event = this.advance().value; // "before" or "after"
+    const action = this.expect("IDENT").value; // "create", "update"
+    const hookEvent = `${event}_${action}` as EntityHookEvent;
+
+    // Optional params: (p_row)
+    const params: string[] = [];
+    if (this.isAt("LPAREN")) {
+      this.advance();
+      while (!this.isAt("RPAREN") && !this.isAt("EOF")) {
+        params.push(this.expect("IDENT").value);
+        if (this.isAt("COMMA")) this.advance();
+      }
+      this.expect("RPAREN");
+    }
+
+    this.expect("COLON");
+    this.skipNewlines();
+    this.expect("INDENT");
+    const body = this.parseBlock();
+    this.expect("DEDENT");
+
+    return { event: hookEvent, params, body, loc };
+  }
+
+  // ---------- Function parsing ----------
 
   private parseFunction(): PlxFunction {
     const loc = this.loc();
