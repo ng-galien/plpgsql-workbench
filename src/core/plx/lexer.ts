@@ -183,13 +183,13 @@ function tokenizeForLine(
       const indent = raw.length - t.length;
       if (indent <= baseIndent) break;
       if (t.endsWith(":")) {
-        sqlPart += "\n" + t.slice(0, -1).trim();
+        sqlPart += `\n${t.slice(0, -1).trim()}`;
         lastLine = i;
         allLines[i] = "";
         endsWithColon = true;
         break;
       }
-      sqlPart += "\n" + t;
+      sqlPart += `\n${t}`;
       lastLine = i;
       allLines[i] = "";
     }
@@ -244,7 +244,8 @@ function tokenizeLine(
 
       if (SQL_STARTERS.has(firstWord)) {
         const rest = line.slice(restStart);
-        const assignIndent = allLines[lineIdx]!.length - allLines[lineIdx]!.trimStart().length;
+        const currentLine = allLines[lineIdx] ?? "";
+        const assignIndent = currentLine.length - currentLine.trimStart().length;
         const sqlBlock = collectSqlLines(allLines, lineIdx + 1, rest, assignIndent);
         // lastLine is from continuation; if no continuation, it stays at lineIdx
         push({ type: "SQL_BLOCK", value: sqlBlock.sql, line: lineNum, col: col + 2 });
@@ -370,12 +371,12 @@ function collectSqlLines(
     const indent = raw.length - t.length;
     if (indent <= baseIndent) {
       if (t.toLowerCase().startsWith("else raise")) {
-        sql += "\n" + t;
+        sql += `\n${t}`;
         lastLine = i;
       }
       break;
     }
-    sql += "\n" + t;
+    sql += `\n${t}`;
     lastLine = i;
   }
 

@@ -23,10 +23,10 @@ program
     for (const w of result.warnings) console.error(`  WARN   ${w.functionName}: ${w.message}`);
 
     if (opts.stdout) {
-      process.stdout.write(result.sql + "\n");
+      process.stdout.write(`${result.sql}\n`);
     } else {
       const outPath = opts.output ?? file.replace(/\.plx$/, ".sql");
-      await fs.writeFile(outPath, result.sql + "\n", "utf-8");
+      await fs.writeFile(outPath, `${result.sql}\n`, "utf-8");
       console.log(`  BUILD  ${path.basename(file)} -> ${path.basename(outPath)} (${result.functionCount} functions)`);
     }
   });

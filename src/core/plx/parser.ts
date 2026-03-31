@@ -113,7 +113,7 @@ class Parser {
     let type = this.expect("IDENT").value;
     if (this.isAt("DOT")) {
       this.advance();
-      type += "." + this.expect("IDENT").value;
+      type += `.${this.expect("IDENT").value}`;
     }
     if (this.isAt("LBRACKET") && this.peekAt(1)?.type === "RBRACKET") {
       this.advance();
@@ -398,7 +398,7 @@ class Parser {
         if (this.isAt("DOT")) {
           this.advance();
           const subfield = this.expect("IDENT").value;
-          const fa: Expression = { kind: "field_access", object: tok.value + "." + second, field: subfield, loc };
+          const fa: Expression = { kind: "field_access", object: `${tok.value}.${second}`, field: subfield, loc };
           if (this.isAt("QUESTION")) {
             this.advance();
             return nullCheck(fa, loc);
