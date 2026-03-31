@@ -66,7 +66,7 @@ class Parser {
       functions.push(this.parseFunction());
       this.skipNewlines();
     }
-    return { imports, functions };
+    return { imports, traits: [], entities: [], functions };
   }
 
   /** import original as alias */

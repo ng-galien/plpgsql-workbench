@@ -1,4 +1,4 @@
-// PLX AST — Phase 1: Function blocks only
+// PLX AST
 
 export interface Loc {
   line: number;
@@ -15,7 +15,144 @@ export interface ImportAlias {
 
 export interface PlxModule {
   imports: ImportAlias[];
+  traits: PlxTrait[];
+  entities: PlxEntity[];
   functions: PlxFunction[];
+}
+
+// ---------- Traits ----------
+
+export interface PlxTrait {
+  kind: "trait";
+  name: string;
+  fields: FieldDef[];
+  hooks: TraitHook[];
+  defaultScope?: string; // SQL WHERE fragment injected into list/read
+  loc: Loc;
+}
+
+export interface FieldDef {
+  name: string;
+  type: string;
+  nullable: boolean;
+  defaultValue?: string; // SQL expression: "now()", "'draft'"
+  loc: Loc;
+}
+
+export type TraitHookEvent = "before_create" | "after_create" | "before_update" | "after_update" | "delete";
+
+export interface TraitHook {
+  event: TraitHookEvent;
+  body: Statement[];
+  loc: Loc;
+}
+
+// ---------- Entities ----------
+
+export interface PlxEntity {
+  kind: "entity";
+  schema: string;
+  name: string; // "category", "expense_report"
+  table: string; // "expense.category"
+  uri: string; // "expense://category"
+  icon?: string;
+  label: string; // i18n key
+  traits: string[];
+  fields: EntityField[];
+  states?: StateBlock;
+  updateStates?: string[]; // restrict update to these states
+  view: ViewBlock;
+  actions: ActionDef[];
+  strategies: StrategyDecl[];
+  hooks: EntityHook[];
+  listOrder: string; // ORDER BY fragment, default "id"
+  readKey?: string; // WHERE fragment, default "t.id = p_id::int"
+  loc: Loc;
+}
+
+export interface EntityField extends FieldDef {
+  required: boolean;
+  unique: boolean;
+  createOnly: boolean;
+  readOnly: boolean;
+  viewType?: string; // "date", "currency", "status", "textarea"
+  label?: string; // i18n key override
+}
+
+export interface StateBlock {
+  column: string; // default "status"
+  initial: string; // "draft"
+  values: string[]; // all states
+  transitions: StateTransition[];
+  loc: Loc;
+}
+
+export interface StateTransition {
+  name: string; // "submit"
+  from: string; // "draft"
+  to: string; // "submitted"
+  guard?: string; // SQL boolean expression
+  body?: Statement[];
+  loc: Loc;
+}
+
+export interface ViewBlock {
+  compact: string[];
+  standard?: ViewSection;
+  expanded?: ViewSection;
+  form?: FormSection[];
+}
+
+export interface ViewSection {
+  fields: string[];
+  stats?: StatDef[];
+  related?: RelatedDef[];
+}
+
+export interface StatDef {
+  key: string;
+  label: string;
+}
+
+export interface RelatedDef {
+  entity: string; // URI
+  label: string;
+  filter: string; // RSQL template
+}
+
+export interface FormSection {
+  label: string; // i18n key
+  fields: FormField[];
+}
+
+export interface FormField {
+  key: string;
+  type: string; // "text", "date", "textarea", "select"
+  label: string; // i18n key
+  required?: boolean;
+}
+
+export interface ActionDef {
+  name: string; // "edit", "delete", "submit"
+  label: string; // i18n key
+  icon?: string;
+  variant?: string; // "muted", "primary", "danger"
+  confirm?: string; // i18n key for confirmation dialog
+}
+
+export interface StrategyDecl {
+  slot: string; // "read.query", "list.query", "create.enrich", "delete.guard"
+  fn: string; // fully qualified function name
+  loc: Loc;
+}
+
+export type EntityHookEvent = "before_create" | "after_create" | "before_update" | "after_update";
+
+export interface EntityHook {
+  event: EntityHookEvent;
+  params: string[];
+  body: Statement[];
+  loc: Loc;
 }
 
 export type FuncAttribute = "stable" | "immutable" | "volatile" | "definer" | "strict";

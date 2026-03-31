@@ -1,12 +1,15 @@
 import { generate } from "./codegen.js";
+import { expandEntities } from "./entity-expander.js";
 import { tokenize } from "./lexer.js";
 import { parse } from "./parser.js";
 
 export interface CompileResult {
   sql: string;
+  ddlSql?: string;
   errors: CompileError[];
   warnings: CompileWarning[];
   functionCount: number;
+  entityCount?: number;
 }
 
 export interface CompileError {
@@ -45,6 +48,18 @@ export function compile(source: string): CompileResult {
     return { sql: "", errors, warnings: [], functionCount: 0 };
   }
 
+  // Expand entities into functions + DDL
+  const expandResult = expandEntities(mod);
+  for (const err of expandResult.errors) {
+    errors.push({ line: err.loc.line, col: err.loc.col, message: err.message, phase: "codegen" });
+  }
+  if (errors.length > 0) {
+    return { sql: "", errors, warnings: [], functionCount: 0 };
+  }
+
+  // Merge expanded functions with hand-written ones
+  const allFunctions = [...mod.functions, ...expandResult.functions];
+
   // Build alias map from imports
   const aliases = new Map<string, string>();
   for (const imp of mod.imports) {
@@ -52,7 +67,7 @@ export function compile(source: string): CompileResult {
   }
 
   const sqlParts: string[] = [];
-  for (const fn of mod.functions) {
+  for (const fn of allFunctions) {
     try {
       sqlParts.push(generate(fn, aliases));
     } catch (e: unknown) {
@@ -65,11 +80,15 @@ export function compile(source: string): CompileResult {
     return { sql: "", errors, warnings: [], functionCount: 0 };
   }
 
+  const ddlSql = expandResult.ddlFragments.length > 0 ? expandResult.ddlFragments.join("\n\n") : undefined;
+
   return {
     sql: sqlParts.join("\n\n"),
+    ddlSql,
     errors: [],
     warnings: [],
-    functionCount: mod.functions.length,
+    functionCount: allFunctions.length,
+    entityCount: mod.entities.length,
     // Attach individual blocks for validation without re-splitting
     _blocks: sqlParts,
   } as CompileResult & { _blocks: string[] };

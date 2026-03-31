@@ -434,8 +434,10 @@ class CodegenContext {
       if (bin.op === "=") return `${this.emitExpr(bin.right)} IS NULL`;
       if (bin.op === "!=") return `${this.emitExpr(bin.right)} IS NOT NULL`;
     }
-    // :: type cast — no spaces
     if (bin.op === "::") return `${this.emitExpr(bin.left)}::${this.emitExpr(bin.right)}`;
+    // ->> / -> JSON operators — no spaces, wrap in parens for precedence
+    if (bin.op === "->>" || bin.op === "->") return `(${this.emitExpr(bin.left)}${bin.op}${this.emitExpr(bin.right)})`;
+
     return `${this.emitExpr(bin.left)} ${bin.op} ${this.emitExpr(bin.right)}`;
   }
 
