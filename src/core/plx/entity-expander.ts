@@ -344,8 +344,26 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
     } as IfStatement,
   ];
 
-  // HATEOAS actions
-  if (entity.states) {
+  // HATEOAS actions — read.hateoas strategy overrides entirely
+  const hateoasStrategy = findStrategy(entity, "read.hateoas");
+  if (hateoasStrategy) {
+    stmts.push(
+      ret("value", {
+        kind: "binary",
+        op: "||",
+        left: ident("result"),
+        right: jObj([
+          jEntry("actions", {
+            kind: "call",
+            name: hateoasStrategy.fn,
+            args: [ident("result")],
+            loc: LOC,
+          }),
+        ]),
+        loc: LOC,
+      }),
+    );
+  } else if (entity.states) {
     // State-based: extract status, build CASE with per-state actions
     stmts.push(assign("status", sqlBlock(`(v_result->>'status')`)));
     stmts.push(assign("id", sqlBlock(`(v_result->>'id')::int`)));
@@ -437,12 +455,19 @@ function buildCreateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
   const colNames = writableFields.map((f) => f.name).join(", ");
   const colValues = writableFields.map((f) => `p_row.${f.name}`).join(", ");
 
+  // create.enrich strategy: call enrichment function on p_row before INSERT
+  const enrichStrategy = findStrategy(entity, "create.enrich");
+  const enrichStmts: Statement[] = enrichStrategy
+    ? [assign("p_row", { kind: "call", name: enrichStrategy.fn, args: [ident("p_row")], loc: LOC })]
+    : [];
+
   // Inject hook body before INSERT
   const hookStmts = getHookStatements(entity, "before_create");
 
   const insertSql = `INSERT INTO ${entity.table} (${colNames})\n    VALUES (${colValues})\n    RETURNING *`;
 
   const stmts: Statement[] = [
+    ...enrichStmts,
     ...hookStmts,
     assign("result", sqlBlock(insertSql)),
     ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }),
@@ -508,10 +533,30 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
     sql = `DELETE FROM ${entity.table} WHERE ${where} RETURNING *`;
   }
 
-  const stmts: Statement[] = [
-    assign("result", sqlBlock(sql)),
-    ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }),
-  ];
+  const stmts: Statement[] = [];
+
+  // delete.guard strategy: fetch row, call guard (raises if invalid)
+  const guardStrategy = findStrategy(entity, "delete.guard");
+  if (guardStrategy) {
+    stmts.push(assign("row", sqlBlock(`(SELECT to_jsonb(t) FROM ${entity.table} t WHERE t.id = p_id::int)`)));
+    stmts.push({
+      kind: "if",
+      condition: { kind: "binary", op: "=", left: ident("row"), right: nullLit(), loc: LOC },
+      body: [{ kind: "raise", message: `${entity.schema}.err_not_found`, loc: LOC }],
+      elsifs: [],
+      loc: LOC,
+    } as Statement);
+    // Call guard — it raises if the delete should be blocked
+    stmts.push({
+      kind: "assign",
+      target: "_",
+      value: { kind: "call", name: guardStrategy.fn, args: [ident("row")], loc: LOC },
+      loc: LOC,
+    });
+  }
+
+  stmts.push(assign("result", sqlBlock(sql)));
+  stmts.push(ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }));
 
   return makeFn(
     entity,
