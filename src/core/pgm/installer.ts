@@ -6,6 +6,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { buildPlxModule } from "./plx-builder.js";
 import type { InstallPlan } from "./resolver.js";
 
 // --- Slot assignment ---
@@ -32,6 +33,17 @@ export async function installModules(modulesDir: string, appDir: string, plan: I
   for (const manifest of plan.order) {
     const moduleDir = path.join(modulesDir, manifest.name);
     const files: string[] = [];
+
+    try {
+      const build = await buildPlxModule(modulesDir, manifest, { validate: false });
+      for (const warning of build.warnings) {
+        console.warn(`  WARN   ${manifest.name}: ${warning}`);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`  ERROR  PLX build failed for ${manifest.name}: ${msg}`);
+      continue;
+    }
 
     // --- SQL files ---
     for (const sqlFile of manifest.sql) {

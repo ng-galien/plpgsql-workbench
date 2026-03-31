@@ -6,6 +6,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
+import { buildPlxModule } from "./plx-builder.js";
 import type { InstallPlan, ModuleManifest } from "./resolver.js";
 
 // --- Check types ---
@@ -195,6 +196,22 @@ export async function deployModules(
   try {
     for (const manifest of plan.order) {
       if (only && manifest.name !== only) continue;
+
+      try {
+        const build = await buildPlxModule(modulesDir, manifest, { validate: false });
+        for (const warning of build.warnings) {
+          console.warn(`  WARN   ${manifest.name}: ${warning}`);
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        results.push({
+          module: manifest.name,
+          version: manifest.version ?? "",
+          ok: false,
+          files: [{ name: "plx-build", ok: false, error: msg }],
+        });
+        break;
+      }
 
       const result = await deployModule(client, modulesDir, manifest);
       results.push(result);

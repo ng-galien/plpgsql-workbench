@@ -20,6 +20,7 @@ import path from "node:path";
 import { Command } from "commander";
 import { checkModules, deployModules } from "./deployer.js";
 import { installModules } from "./installer.js";
+import { buildPlxModule } from "./plx-builder.js";
 import {
   findAppRoot,
   findWorkspaceRoot,
@@ -315,6 +316,35 @@ mod
   });
 
 // --- module info ---
+
+mod
+  .command("build <name>")
+  .description("Build SQL artifacts from the module PLX entry when declared")
+  .option("--no-validate", "Skip PG parser validation during PLX build")
+  .action(async (moduleName: string, opts: { validate?: boolean }) => {
+    const wsRoot = await findWorkspaceRoot(process.cwd());
+    const modulesDir = path.join(wsRoot, "modules");
+    const manifest = await loadManifest(modulesDir, moduleName);
+
+    if (!manifest.plx?.entry) {
+      console.log(`Module "${moduleName}" has no plx.entry`);
+      return;
+    }
+
+    const result = await buildPlxModule(modulesDir, manifest, { validate: opts.validate });
+    if (result.files.length === 0) {
+      console.log(`No PLX artifacts generated for ${moduleName}`);
+    } else {
+      console.log(`Built ${moduleName} from ${manifest.plx.entry}`);
+      for (const file of result.files) {
+        console.log(`  ${file}`);
+      }
+    }
+
+    for (const warning of result.warnings) {
+      console.warn(`  WARN   ${moduleName}: ${warning}`);
+    }
+  });
 
 mod
   .command("info <name>")

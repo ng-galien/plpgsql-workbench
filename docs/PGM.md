@@ -236,6 +236,10 @@ Si cette entrée existe, `pgm` lit le header PLX et vérifie :
 
 Le manifeste reste la source de vérité packaging/deploy. Le header PLX devient la source de vérité du contrat de module dans le code.
 
+`pgm module build <name>` compile ensuite cette entrée `PLX` vers les fichiers SQL déclarés dans `module.json`.
+
+Quand un module déclare `plx.entry`, `pgm app install` et `pgm app deploy` régénèrent aussi ces artefacts juste avant de les copier ou de les exécuter.
+
 ### Application
 
 Une application vit dans `apps/` et déclare ses modules dans `workbench.json` :
