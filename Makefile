@@ -163,19 +163,24 @@ CHANNEL_FLAG := --dangerously-load-development-channels server:workbench-msg
 .PHONY: team team-stop team-restart team-status team-ping team-confirm member member-stop member-ping member-log
 
 team: ## Start all team members (one tmux session per module)
-	@for mod in modules/*/; do \
+	@started=""; \
+	for mod in modules/*/; do \
 		name=$$(basename "$$mod"); \
 		if tmux has-session -t "$$name" 2>/dev/null; then \
 			echo "  OK    $$name (already running)"; \
 		else \
-			printf '#!/bin/sh\nunset $(STRIP_VARS)\nclaude $(CHANNEL_FLAG) -c 2>/dev/null || exec claude $(CHANNEL_FLAG)\n' > "/tmp/pgw-spawn-$$name.sh"; \
+			printf '#!/bin/sh\nunset $(STRIP_VARS)\nclaude $(CHANNEL_FLAG) 2>/dev/null || exec claude $(CHANNEL_FLAG)\n' > "/tmp/pgw-spawn-$$name.sh"; \
 			chmod 700 "/tmp/pgw-spawn-$$name.sh"; \
 			tmux new-session -d -s "$$name" -c "$$mod" "/tmp/pgw-spawn-$$name.sh"; \
 			tmux set-option -t "$$name" history-limit 50000 2>/dev/null || true; \
 			tmux set-option -t "$$name" remain-on-exit on 2>/dev/null || true; \
+			started="$$started $$name"; \
 			echo "  JOIN  $$name"; \
 		fi; \
-	done
+	done; \
+	if [ -n "$$started" ]; then \
+		( sleep 3; for name in $$started; do tmux send-keys -t "$$name" Enter 2>/dev/null; done; echo "  AUTO-CONFIRM done" ) & \
+	fi
 
 team-confirm: ## Send Enter to all members (accept channel confirmation)
 	@for mod in modules/*/; do \
@@ -212,12 +217,13 @@ team-status: ## Show current activity of each team member
 		fi; \
 	done
 
-team-ping: ## Send "go" to all team members
-	@for mod in modules/*/; do \
+team-ping: ## Send message to all team members (MSG="text", default: "go")
+	@msg="$${MSG:-go}"; \
+	for mod in modules/*/; do \
 		name=$$(basename "$$mod"); \
 		if tmux has-session -t "$$name" 2>/dev/null; then \
-			tmux send-keys -t "$$name" "go" Enter; \
-			echo "  PING  $$name"; \
+			tmux send-keys -t "$$name" "$$msg" Enter; \
+			echo "  PING  $$name  ←  $$msg"; \
 		fi; \
 	done
 
@@ -233,6 +239,7 @@ member: ## Start one team member (M=name). Ex: make member M=docs
 		tmux new-session -d -s "$(M)" -c "modules/$(M)" "/tmp/pgw-spawn-$(M).sh"; \
 		tmux set-option -t "$(M)" history-limit 50000 2>/dev/null || true; \
 		tmux set-option -t "$(M)" remain-on-exit on 2>/dev/null || true; \
+		sleep 2 && tmux send-keys -t "$(M)" Enter & \
 		echo "  JOIN  $(M)"; \
 	fi
 
@@ -248,11 +255,12 @@ member-stop: ## Stop one team member (M=name). Ex: make member-stop M=crm
 
 member-restart: member-stop member ## Restart one team member (M=name)
 
-member-ping: ## Send "go" to one team member (M=name). Ex: make member-ping M=docs
-	@test -n "$(M)" || (echo "Usage: make member-ping M=docs" && exit 1)
-	@if tmux has-session -t "$(M)" 2>/dev/null; then \
-		tmux send-keys -t "$(M)" "go" Enter; \
-		echo "  PING  $(M)"; \
+member-ping: ## Send message to one team member (M=name, MSG="text", default: "go")
+	@test -n "$(M)" || (echo "Usage: make member-ping M=docs MSG='do something'" && exit 1)
+	@msg="$${MSG:-go}"; \
+	if tmux has-session -t "$(M)" 2>/dev/null; then \
+		tmux send-keys -t "$(M)" "$$msg" Enter; \
+		echo "  PING  $(M)  ←  $$msg"; \
 	else \
 		echo "  $(M) not running"; \
 	fi

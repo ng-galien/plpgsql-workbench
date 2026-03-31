@@ -6,7 +6,8 @@
   "main": "dist/index.js",
   "bin": {
     "plpgsql-mcp": "dist/index.js",
-    "pgm": "dist/core/pgm/cli.js"
+    "pgm": "dist/core/pgm/cli.js",
+    "plx": "dist/core/plx/cli.js"
   },
   "scripts": {
     "build": "tsc",

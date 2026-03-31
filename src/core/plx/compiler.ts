@@ -1,0 +1,109 @@
+import { generate } from "./codegen.js";
+import { tokenize } from "./lexer.js";
+import { parse } from "./parser.js";
+
+export interface CompileResult {
+  sql: string;
+  errors: CompileError[];
+  warnings: CompileWarning[];
+  functionCount: number;
+}
+
+export interface CompileError {
+  line: number;
+  col: number;
+  message: string;
+  phase: "lex" | "parse" | "codegen" | "validate";
+}
+
+export interface CompileWarning {
+  message: string;
+  functionName: string;
+}
+
+const LOC_RE = /plx:(\d+):(\d+)/;
+const FN_NAME_RE = /FUNCTION\s+(\S+)\(/;
+
+export function compile(source: string): CompileResult {
+  const errors: CompileError[] = [];
+
+  let tokens: ReturnType<typeof tokenize>;
+  try {
+    tokens = tokenize(source);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    errors.push({ ...extractLoc(msg), message: msg, phase: "lex" });
+    return { sql: "", errors, warnings: [], functionCount: 0 };
+  }
+
+  let functions: ReturnType<typeof parse>;
+  try {
+    functions = parse(tokens);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    errors.push({ ...extractLoc(msg), message: msg, phase: "parse" });
+    return { sql: "", errors, warnings: [], functionCount: 0 };
+  }
+
+  const sqlParts: string[] = [];
+  for (const fn of functions) {
+    try {
+      sqlParts.push(generate(fn));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push({ line: fn.loc.line, col: fn.loc.col, message: msg, phase: "codegen" });
+    }
+  }
+
+  if (errors.length > 0) {
+    return { sql: "", errors, warnings: [], functionCount: 0 };
+  }
+
+  return {
+    sql: sqlParts.join("\n\n"),
+    errors: [],
+    warnings: [],
+    functionCount: functions.length,
+    // Attach individual blocks for validation without re-splitting
+    _blocks: sqlParts,
+  } as CompileResult & { _blocks: string[] };
+}
+
+/**
+ * Compile with PG parser validation — validates each generated function
+ * through @libpg-query/parser to catch SQL syntax errors.
+ */
+/**
+ * Compile with PG parser validation. Uses dynamic import to avoid loading
+ * the heavy WASM module (~4GB) when validation is not requested.
+ */
+export async function compileAndValidate(source: string): Promise<CompileResult> {
+  const result = compile(source) as CompileResult & { _blocks?: string[] };
+  if (result.errors.length > 0) return result;
+
+  // Dynamic import — only loads WASM when validation is actually called
+  const { loadModule, parsePlPgSQL } = await import("@libpg-query/parser");
+  await loadModule();
+
+  const warnings: CompileWarning[] = [];
+  const blocks = result._blocks ?? [result.sql];
+
+  for (const block of blocks) {
+    const nameMatch = block.match(FN_NAME_RE);
+    const fnName = nameMatch?.[1] ?? "unknown";
+    try {
+      parsePlPgSQL(block);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      warnings.push({ message: `PG parse: ${msg}`, functionName: fnName });
+    }
+  }
+
+  delete result._blocks;
+  return { ...result, warnings };
+}
+
+function extractLoc(msg: string): { line: number; col: number } {
+  const m = msg.match(LOC_RE);
+  return m ? { line: Number(m[1]), col: Number(m[2]) } : { line: 0, col: 0 };
+}
