@@ -1412,6 +1412,31 @@ class Parser {
       this.pos++;
     }
   }
+
+  /** Parse "ident" or "ident.ident" as a qualified name string */
+  private parseQualifiedName(): string {
+    let name = this.expect("IDENT").value;
+    if (this.isAt("DOT")) {
+      this.advance();
+      name += `.${this.expect("IDENT").value}`;
+    }
+    return name;
+  }
+
+  /** Parse an indented block of items: INDENT item* DEDENT */
+  private parseIndentedList<T>(parseItem: () => T): T[] {
+    this.skipNewlines();
+    this.expect("INDENT");
+    const items: T[] = [];
+    while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
+      this.skipNewlines();
+      if (this.isAt("DEDENT")) break;
+      items.push(parseItem());
+      this.skipNewlines();
+    }
+    this.expect("DEDENT");
+    return items;
+  }
 }
 
 function nullCheck(expr: Expression, loc: Loc): Expression {

@@ -142,7 +142,7 @@ function generateDDL(entity: PlxEntity, allFields: EntityField[]): string {
 
   for (const f of allFields) {
     let col = `  ${f.name} ${f.type}`;
-    if (!f.nullable && f.required) col += " NOT NULL";
+    if (!f.nullable) col += " NOT NULL";
     if (f.unique) col += " UNIQUE";
     if (f.defaultValue) col += ` DEFAULT ${f.defaultValue}`;
     col += ",";
@@ -152,9 +152,7 @@ function generateDDL(entity: PlxEntity, allFields: EntityField[]): string {
   // State column CHECK constraint
   if (entity.states) {
     const vals = entity.states.values.map((v) => `'${v}'`).join(", ");
-    // Remove trailing comma from last field, add state CHECK
-    const last = lines[lines.length - 1]!;
-    lines[lines.length - 1] = last; // keep comma
+    // Add state column CHECK if not already in fields
     // Only add if status is not already in fields
     if (!allFields.some((f) => f.name === entity.states!.column)) {
       lines.push(
@@ -495,15 +493,12 @@ function buildUpdateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
     setClauses.push("updated_at = now()");
   }
 
-  let whereClause = "id = p_row.id";
-  if (entity.updateStates && entity.updateStates.length > 0) {
-    const states = entity.updateStates.map((s) => `'${s}'`).join(", ");
-    whereClause += entity.updateStates.length === 1 ? ` AND status = ${states}` : ` AND status IN (${states})`;
-  }
-
+  const whereClause = `id = p_row.id${stateGuardWhere(entity)}`;
   const updateSql = `UPDATE ${entity.table} SET\n    ${setClauses.join(",\n    ")}\n    WHERE ${whereClause}\n    RETURNING *`;
 
+  const hookStmts = getHookStatements(entity, "before_update");
   const stmts: Statement[] = [
+    ...hookStmts,
     assign("result", sqlBlock(updateSql)),
     ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }),
   ];
@@ -525,12 +520,7 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
   if (isSoftDelete) {
     sql = `UPDATE ${entity.table} SET deleted_at = now() WHERE id = p_id::int AND deleted_at IS NULL RETURNING *`;
   } else {
-    let where = "id = p_id::int";
-    if (entity.updateStates && entity.updateStates.length > 0) {
-      const states = entity.updateStates.map((s) => `'${s}'`).join(", ");
-      where += entity.updateStates.length === 1 ? ` AND status = ${states}` : ` AND status IN (${states})`;
-    }
-    sql = `DELETE FROM ${entity.table} WHERE ${where} RETURNING *`;
+    sql = `DELETE FROM ${entity.table} WHERE id = p_id::int${stateGuardWhere(entity)} RETURNING *`;
   }
 
   const stmts: Statement[] = [];
@@ -671,8 +661,14 @@ function getHookStatements(entity: PlxEntity, event: EntityHook["event"]): State
   return hook ? hook.body : [];
 }
 
-function shortAlias(entity: PlxEntity): string {
-  return entity.name[0]!;
+function stateGuardWhere(entity: PlxEntity): string {
+  if (!entity.updateStates || entity.updateStates.length === 0) return "";
+  const states = entity.updateStates.map((s) => `'${s}'`).join(", ");
+  return entity.updateStates.length === 1 ? ` AND status = ${states}` : ` AND status IN (${states})`;
+}
+
+function shortAlias(_entity: PlxEntity): string {
+  return "t"; // universal alias — safe, no collision risk between entities
 }
 
 // AST builder helpers
