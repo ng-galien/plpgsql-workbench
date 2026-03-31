@@ -14,6 +14,9 @@ export type TokenType =
   | "SETOF"
   | "NOT"
   | "YIELD"
+  | "CASE"
+  | "THEN"
+  | "END"
   | "INDENT"
   | "DEDENT"
   | "NEWLINE"
@@ -56,24 +59,41 @@ export class LexError extends Error {
   }
 }
 
-const KEYWORDS: Record<string, TokenType> = {
-  fn: "FN",
-  if: "IF",
-  else: "ELSE",
-  elsif: "ELSIF",
-  for: "FOR",
-  in: "IN",
-  return: "RETURN",
-  raise: "RAISE",
-  match: "MATCH",
-  when: "WHEN",
-  setof: "SETOF",
-  not: "NOT",
-  yield: "YIELD",
-};
+const KEYWORDS = new Map<string, TokenType>([
+  ["fn", "FN"],
+  ["if", "IF"],
+  ["else", "ELSE"],
+  ["elsif", "ELSIF"],
+  ["for", "FOR"],
+  ["in", "IN"],
+  ["return", "RETURN"],
+  ["raise", "RAISE"],
+  ["match", "MATCH"],
+  ["when", "WHEN"],
+  ["setof", "SETOF"],
+  ["not", "NOT"],
+  ["yield", "YIELD"],
+  ["case", "CASE"],
+  ["then", "THEN"],
+  ["end", "END"],
+]);
 
 const SQL_STARTERS = new Set(["select", "insert", "update", "delete", "with"]);
 const FOR_IN_RE = /^for\s+(\w+)\s+in\s+(.+)$/i;
+const RETURN_QUERY_RE = /^return\s+(query\s+)(select\b|insert\b|update\b|delete\b|with\b)/i;
+const SUBQUERY_RE = /^\(\s*select\b/i;
+const SINGLE_CHARS: Record<string, TokenType> = {
+  "(": "LPAREN",
+  ")": "RPAREN",
+  "[": "LBRACKET",
+  "]": "RBRACKET",
+  "{": "LBRACE",
+  "}": "RBRACE",
+  ",": "COMMA",
+  ":": "COLON",
+  ".": "DOT",
+  "?": "QUESTION",
+};
 
 export function tokenize(source: string): Token[] {
   const lines = source.split("\n");
@@ -138,6 +158,20 @@ export function tokenize(source: string): Token[] {
         pushToken({ type: "NEWLINE", value: "", line: lineNum, col: 0 });
         continue;
       }
+    }
+
+    // return query <SQL> — capture SQL passthrough (return execute uses PLX expressions, handled in parser)
+    const returnQueryMatch = lowerTrimmed.match(RETURN_QUERY_RE);
+    if (returnQueryMatch) {
+      pushToken({ type: "RETURN", value: "return", line: lineNum, col: indent });
+      pushToken({ type: "IDENT", value: "query", line: lineNum, col: indent + 7 });
+      const sqlStart = returnQueryMatch[0].length - (returnQueryMatch[2]?.length ?? 0);
+      const sqlPart = trimmed.slice(sqlStart).trim();
+      const sqlBlock = collectSqlLines(lines, lineIdx + 1, sqlPart, indent);
+      pushToken({ type: "SQL_BLOCK", value: sqlBlock.sql, line: lineNum, col: indent + sqlStart });
+      lineIdx = Math.max(lineIdx, sqlBlock.lastLine);
+      pushToken({ type: "NEWLINE", value: "", line: lineNum, col: 0 });
+      continue;
     }
 
     tokenizeLine(trimmed, lineNum, indent, tokens, lines, lineIdx, pushToken);
@@ -228,6 +262,13 @@ function tokenizeLine(
 
     const col = baseCol + pos;
 
+    // :: (PG type cast)
+    if (line[pos] === ":" && line[pos + 1] === ":") {
+      push({ type: "OPERATOR", value: "::", line: lineNum, col });
+      pos += 2;
+      continue;
+    }
+
     // := (assignment, possibly followed by SQL)
     if (line[pos] === ":" && line[pos + 1] === "=") {
       push({ type: "ASSIGN", value: ":=", line: lineNum, col });
@@ -242,12 +283,14 @@ function tokenizeLine(
         wordEnd++;
       const firstWord = line.slice(sqlStart, wordEnd).toLowerCase();
 
-      if (SQL_STARTERS.has(firstWord)) {
+      const isSqlStarter = SQL_STARTERS.has(firstWord);
+      const isSubquery = !isSqlStarter && line[restStart] === "(" && SUBQUERY_RE.test(line.slice(restStart));
+
+      if (isSqlStarter || isSubquery) {
         const rest = line.slice(restStart);
         const currentLine = allLines[lineIdx] ?? "";
         const assignIndent = currentLine.length - currentLine.trimStart().length;
         const sqlBlock = collectSqlLines(allLines, lineIdx + 1, rest, assignIndent);
-        // lastLine is from continuation; if no continuation, it stays at lineIdx
         push({ type: "SQL_BLOCK", value: sqlBlock.sql, line: lineNum, col: col + 2 });
         for (let i = lineIdx + 1; i <= sqlBlock.lastLine; i++) allLines[i] = "";
         return;
@@ -270,6 +313,11 @@ function tokenizeLine(
       pos += 2;
       continue;
     }
+    if (line[pos] === "|" && line[pos + 1] === "|") {
+      push({ type: "OPERATOR", value: "||", line: lineNum, col });
+      pos += 2;
+      continue;
+    }
     if (line[pos] === "!" && line[pos + 1] === "=") {
       push({ type: "OPERATOR", value: "!=", line: lineNum, col });
       pos += 2;
@@ -287,19 +335,7 @@ function tokenizeLine(
     }
 
     const ch = line[pos]!;
-    const SINGLE: Record<string, TokenType> = {
-      "(": "LPAREN",
-      ")": "RPAREN",
-      "[": "LBRACKET",
-      "]": "RBRACKET",
-      "{": "LBRACE",
-      "}": "RBRACE",
-      ",": "COMMA",
-      ":": "COLON",
-      ".": "DOT",
-      "?": "QUESTION",
-    };
-    const singleType = SINGLE[ch];
+    const singleType = SINGLE_CHARS[ch];
     if (singleType) {
       push({ type: singleType, value: ch, line: lineNum, col });
       pos++;
@@ -333,7 +369,7 @@ function tokenizeLine(
       const start = pos;
       while (pos < line.length && isIdentChar(line[pos]!)) pos++;
       const ident = line.slice(start, pos);
-      const kw = KEYWORDS[ident.toLowerCase()];
+      const kw = KEYWORDS.get(ident.toLowerCase());
       if (kw) {
         push({ type: kw, value: ident.toLowerCase(), line: lineNum, col });
       } else if (ident === "true" || ident === "false") {

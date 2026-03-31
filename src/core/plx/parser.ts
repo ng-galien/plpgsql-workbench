@@ -2,9 +2,11 @@ import type {
   AppendStatement,
   ArrayLiteral,
   AssignStatement,
+  CaseExpr,
   Expression,
   FieldAccess,
   ForInStatement,
+  FuncAttribute,
   Identifier,
   IfStatement,
   JsonLiteral,
@@ -13,6 +15,7 @@ import type {
   Param,
   PlxFunction,
   RaiseStatement,
+  ReturnMode,
   ReturnStatement,
   SqlBlockExpr,
   SqlStatement,
@@ -25,6 +28,7 @@ import { sqlEscape } from "./util.js";
 // Hoisted regexes for parseSqlBlock
 const ELSE_RAISE_RE = /\nelse\s+raise\s+['"](.*?)['"]\s*$/i;
 const TABLE_INFER_RE = /select\s+\*\s+from\s+(\w+\.\w+)/i;
+const VALID_FUNC_ATTRS = new Set(["stable", "immutable", "volatile", "definer", "strict"]);
 
 class ParseError extends Error {
   constructor(
@@ -75,13 +79,32 @@ class Parser {
     }
     const returnType = this.parseType();
 
+    // Optional attributes: [stable, definer]
+    const attributes: FuncAttribute[] = [];
+    if (this.isAt("LBRACKET")) {
+      this.advance();
+      while (!this.isAt("RBRACKET") && !this.isAt("EOF")) {
+        const tok = this.expect("IDENT");
+        const attr = tok.value.toLowerCase();
+        if (!VALID_FUNC_ATTRS.has(attr)) {
+          throw new ParseError(`unknown function attribute '${attr}' (valid: ${[...VALID_FUNC_ATTRS].join(", ")})`, {
+            line: tok.line,
+            col: tok.col,
+          });
+        }
+        attributes.push(attr as FuncAttribute);
+        if (this.isAt("COMMA")) this.advance();
+      }
+      this.expect("RBRACKET");
+    }
+
     this.expect("COLON");
     this.skipNewlines();
     this.expect("INDENT");
     const body = this.parseBlock();
     this.expect("DEDENT");
 
-    return { kind: "function", schema: firstName, name: funcName, params, returnType, setof, body, loc };
+    return { kind: "function", schema: firstName, name: funcName, params, returnType, setof, attributes, body, loc };
   }
 
   private parseParams(): Param[] {
@@ -99,12 +122,30 @@ class Parser {
   private parseParam(): Param {
     const name = this.expect("IDENT").value;
     const type = this.parseType();
-    const nullable = this.isAt("QUESTION") ? (this.advance(), true) : false;
+    let nullable = false;
+    if (this.isAt("QUESTION")) {
+      this.advance();
+      nullable = true;
+    }
     let defaultValue: string | undefined;
     if (this.isAt("OPERATOR") && this.peek().value === "=") {
       this.advance();
-      const tok = this.expect("STRING", "NUMBER", "IDENT");
-      defaultValue = tok.type === "STRING" ? `'${sqlEscape(tok.value)}'` : tok.value;
+      const tok = this.peek();
+      if (tok.type === "STRING") {
+        this.advance();
+        defaultValue = `'${sqlEscape(tok.value)}'`;
+      } else if (tok.type === "NUMBER") {
+        this.advance();
+        defaultValue = tok.value;
+      } else if (tok.type === "IDENT") {
+        this.advance();
+        // null → NULL, null on nullable type → NULL::type
+        if (tok.value === "null") {
+          defaultValue = nullable ? `NULL::${type}` : "NULL";
+        } else {
+          defaultValue = tok.value;
+        }
+      }
     }
     return { name, type, nullable, defaultValue };
   }
@@ -252,12 +293,49 @@ class Parser {
   private parseReturn(): ReturnStatement {
     const loc = this.loc();
     this.expect("RETURN");
+
+    // Bare return
     if (this.isAt("NEWLINE") || this.isAt("DEDENT") || this.isAt("EOF")) {
-      return { kind: "return", value: { kind: "literal", value: null, type: "null", loc }, isYield: false, loc };
+      return {
+        kind: "return",
+        value: { kind: "literal", value: null, type: "null", loc },
+        isYield: false,
+        mode: "value",
+        loc,
+      };
     }
+
+    let mode: ReturnMode = "value";
+    if (this.isAt("IDENT") && this.peek().value === "query") {
+      this.advance();
+      // return query execute → RETURN QUERY EXECUTE
+      if (this.isAt("IDENT") && this.peek().value === "execute") {
+        this.advance();
+        mode = "execute";
+      } else {
+        mode = "query";
+      }
+    } else if (this.isAt("IDENT") && this.peek().value === "execute") {
+      this.advance();
+      mode = "execute";
+    }
+
+    // SQL block after return query (not execute — execute expects a string expression)
+    if (mode === "query" && this.isAt("SQL_BLOCK")) {
+      const sqlTok = this.advance();
+      this.skipNewlines();
+      return {
+        kind: "return",
+        value: { kind: "sql_block", sql: sqlTok.value, loc } as SqlBlockExpr,
+        isYield: false,
+        mode,
+        loc,
+      };
+    }
+
     const value = this.parseExpression();
     this.skipNewlines();
-    return { kind: "return", value, isYield: false, loc };
+    return { kind: "return", value, isYield: false, mode, loc };
   }
 
   private parseYield(): ReturnStatement {
@@ -265,7 +343,7 @@ class Parser {
     this.expect("YIELD");
     const value = this.parseExpression();
     this.skipNewlines();
-    return { kind: "return", value, isYield: true, loc };
+    return { kind: "return", value, isYield: true, mode: "value", loc };
   }
 
   private parseRaise(): RaiseStatement {
@@ -351,6 +429,7 @@ class Parser {
   private parsePrimary(): Expression {
     const tok = this.peek();
 
+    if (tok.type === "CASE") return this.parseCaseExpr();
     if (tok.type === "LBRACE") return this.parseJsonLiteral();
     if (tok.type === "LBRACKET") return this.parseArrayLiteral();
     if (tok.type === "INTERP_STRING") return this.parseInterpString();
@@ -440,16 +519,50 @@ class Parser {
     throw new ParseError(`unexpected token: ${tok.type} '${tok.value}'`, { line: tok.line, col: tok.col });
   }
 
+  /** Parse CASE expr WHEN val THEN result ... ELSE result END */
+  private parseCaseExpr(): CaseExpr {
+    const loc = this.loc();
+    this.expect("CASE");
+    const subject = this.parseExpression();
+    this.skipExprWs();
+
+    const arms: { pattern: Expression; result: Expression }[] = [];
+    let elseResult: Expression | undefined;
+
+    while (this.isAt("WHEN")) {
+      this.advance();
+      const pattern = this.parseExpression();
+      this.expect("THEN");
+      const result = this.parseExpression();
+      arms.push({ pattern, result });
+      this.skipExprWs();
+    }
+
+    if (this.isAt("ELSE")) {
+      this.advance();
+      elseResult = this.parseExpression();
+      this.skipExprWs();
+    }
+
+    this.expect("END");
+    return { kind: "case_expr", subject, arms, elseResult, loc };
+  }
+
   private parseArgList(): Expression[] {
     this.expect("LPAREN");
+    this.skipExprWs();
     const args: Expression[] = [];
     if (!this.isAt("RPAREN")) {
       args.push(this.parseExpression());
+      this.skipExprWs();
       while (this.isAt("COMMA")) {
         this.advance();
+        this.skipExprWs();
         args.push(this.parseExpression());
+        this.skipExprWs();
       }
     }
+    this.skipExprWs();
     this.expect("RPAREN");
     return args;
   }
@@ -571,6 +684,13 @@ class Parser {
 
   private skipNewlines(): void {
     while (this.peek().type === "NEWLINE") this.pos++;
+  }
+
+  /** Skip NEWLINE + INDENT + DEDENT — for multi-line expressions inside parens/case */
+  private skipExprWs(): void {
+    while (this.peek().type === "NEWLINE" || this.peek().type === "INDENT" || this.peek().type === "DEDENT") {
+      this.pos++;
+    }
   }
 }
 

@@ -4,6 +4,7 @@ import type {
   AssignStatement,
   BinaryExpr,
   CallExpr,
+  CaseExpr,
   Expression,
   FieldAccess,
   ForInStatement,
@@ -68,7 +69,17 @@ class CodegenContext {
     const returns = this.fn.setof ? `SETOF ${this.fn.returnType}` : this.fn.returnType;
 
     parts.push(`CREATE OR REPLACE FUNCTION ${this.fn.schema}.${this.fn.name}(${params})`);
-    parts.push(`RETURNS ${returns} LANGUAGE plpgsql AS $$`);
+
+    // Function attributes
+    const attrParts: string[] = [];
+    const attrs = this.fn.attributes;
+    if (attrs.includes("stable")) attrParts.push("STABLE");
+    else if (attrs.includes("immutable")) attrParts.push("IMMUTABLE");
+    if (attrs.includes("definer")) attrParts.push("SECURITY DEFINER");
+    if (attrs.includes("strict")) attrParts.push("STRICT");
+
+    const langAndAttrs = [`RETURNS ${returns}`, "LANGUAGE plpgsql", ...attrParts].join("\n ");
+    parts.push(` ${langAndAttrs} AS $$`);
 
     if (this.vars.size > 0) {
       parts.push("DECLARE");
@@ -213,6 +224,13 @@ class CodegenContext {
     let sqlText = sql.sql;
     const lowerSql = sqlText.toLowerCase().trim();
 
+    // Parenthesized subquery: := (SELECT ...) → direct assignment, no INTO
+    if (lowerSql.startsWith("(")) {
+      this.line(`${plName} := ${sqlText};`);
+      this.emitNotFoundGuard(sql.elseRaise);
+      return;
+    }
+
     // SELECT ... FROM ... → SELECT ... INTO v_x FROM ...
     const fromMatch = sqlText.match(SELECT_FROM_RE);
     if (fromMatch) {
@@ -235,14 +253,16 @@ class CodegenContext {
     }
 
     this.line(`${sqlText};`);
+    this.emitNotFoundGuard(sql.elseRaise);
+  }
 
-    if (sql.elseRaise) {
-      this.line("IF NOT FOUND THEN");
-      this.indent++;
-      this.line(`RAISE EXCEPTION '${sqlEscape(sql.elseRaise)}';`);
-      this.indent--;
-      this.line("END IF;");
-    }
+  private emitNotFoundGuard(msg: string | undefined): void {
+    if (!msg) return;
+    this.line("IF NOT FOUND THEN");
+    this.indent++;
+    this.line(`RAISE EXCEPTION '${sqlEscape(msg)}';`);
+    this.indent--;
+    this.line("END IF;");
   }
 
   private emitAppend(stmt: AppendStatement): void {
@@ -280,10 +300,25 @@ class CodegenContext {
   }
 
   private emitReturn(stmt: ReturnStatement): void {
+    // Bare return
     if (stmt.value.kind === "literal" && stmt.value.type === "null") {
       this.line("RETURN;");
       return;
     }
+
+    // return query → RETURN QUERY
+    if (stmt.mode === "query") {
+      this.line(`RETURN QUERY ${this.emitExpr(stmt.value)};`);
+      return;
+    }
+
+    // return execute → RETURN QUERY EXECUTE
+    if (stmt.mode === "execute") {
+      this.line(`RETURN QUERY EXECUTE ${this.emitExpr(stmt.value)};`);
+      return;
+    }
+
+    // yield / setof → RETURN NEXT
     if (stmt.isYield || this.fn.setof) {
       if (stmt.value.kind === "sql_block") {
         this.line(`RETURN QUERY ${stmt.value.sql};`);
@@ -292,6 +327,7 @@ class CodegenContext {
       }
       return;
     }
+
     this.line(`RETURN ${this.emitExpr(stmt.value)};`);
   }
 
@@ -344,6 +380,8 @@ class CodegenContext {
         return this.emitBinary(expr);
       case "call":
         return this.emitCall(expr);
+      case "case_expr":
+        return this.emitCaseExpr(expr);
     }
   }
 
@@ -382,11 +420,28 @@ class CodegenContext {
   private emitBinary(bin: BinaryExpr): string {
     if (bin.op === "IS NOT NULL") return `${this.emitExpr(bin.left)} IS NOT NULL`;
     if (bin.op === "NOT") return `NOT ${this.emitExpr(bin.right)}`;
+    // x = null → x IS NULL, x != null → x IS NOT NULL (SQL three-valued logic)
+    if (isNullExpr(bin.right)) {
+      if (bin.op === "=") return `${this.emitExpr(bin.left)} IS NULL`;
+      if (bin.op === "!=") return `${this.emitExpr(bin.left)} IS NOT NULL`;
+    }
+    if (isNullExpr(bin.left)) {
+      if (bin.op === "=") return `${this.emitExpr(bin.right)} IS NULL`;
+      if (bin.op === "!=") return `${this.emitExpr(bin.right)} IS NOT NULL`;
+    }
+    // :: type cast — no spaces
+    if (bin.op === "::") return `${this.emitExpr(bin.left)}::${this.emitExpr(bin.right)}`;
     return `${this.emitExpr(bin.left)} ${bin.op} ${this.emitExpr(bin.right)}`;
   }
 
   private emitCall(call: CallExpr): string {
     return `${call.name}(${call.args.map((a) => this.emitExpr(a)).join(", ")})`;
+  }
+
+  private emitCaseExpr(c: CaseExpr): string {
+    const arms = c.arms.map((a) => `WHEN ${this.emitExpr(a.pattern)} THEN ${this.emitExpr(a.result)}`).join(" ");
+    const elseClause = c.elseResult ? ` ELSE ${this.emitExpr(c.elseResult)}` : "";
+    return `CASE ${this.emitExpr(c.subject)} ${arms}${elseClause} END`;
   }
 
   // ---------- Helpers ----------
@@ -400,6 +455,12 @@ class CodegenContext {
   private line(text: string): void {
     this.lines.push((INDENTS[this.indent] ?? "  ".repeat(this.indent)) + text);
   }
+}
+
+function isNullExpr(expr: Expression): boolean {
+  if (expr.kind === "literal" && expr.type === "null") return true;
+  if (expr.kind === "identifier" && expr.name === "null") return true;
+  return false;
 }
 
 function emitLiteral(lit: Literal): string {

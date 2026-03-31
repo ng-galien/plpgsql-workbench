@@ -1,5 +1,6 @@
 CREATE OR REPLACE FUNCTION crm.client_read(p_id int)
-RETURNS jsonb LANGUAGE plpgsql AS $$
+ RETURNS jsonb
+ LANGUAGE plpgsql AS $$
 DECLARE
   v_row crm.client;
   v_actions jsonb := '[]'::jsonb;

@@ -7,6 +7,8 @@ export interface Loc {
 
 // ---------- Top-level ----------
 
+export type FuncAttribute = "stable" | "immutable" | "volatile" | "definer" | "strict";
+
 export interface PlxFunction {
   kind: "function";
   schema: string;
@@ -14,6 +16,7 @@ export interface PlxFunction {
   params: Param[];
   returnType: string;
   setof: boolean;
+  attributes: FuncAttribute[];
   body: Statement[];
   loc: Loc;
 }
@@ -61,10 +64,13 @@ export interface ForInStatement {
   loc: Loc;
 }
 
+export type ReturnMode = "value" | "query" | "execute";
+
 export interface ReturnStatement {
   kind: "return";
   value: Expression;
-  isYield: boolean; // yield → RETURN NEXT, return in setof → RETURN (bare exit)
+  isYield: boolean;
+  mode: ReturnMode; // value = RETURN, query = RETURN QUERY, execute = RETURN QUERY EXECUTE
   loc: Loc;
 }
 
@@ -106,7 +112,16 @@ export type Expression =
   | Identifier
   | Literal
   | BinaryExpr
-  | CallExpr;
+  | CallExpr
+  | CaseExpr;
+
+export interface CaseExpr {
+  kind: "case_expr";
+  subject: Expression;
+  arms: { pattern: Expression; result: Expression }[];
+  elseResult?: Expression;
+  loc: Loc;
+}
 
 export type BinaryOp =
   | "IS NOT NULL"
