@@ -642,6 +642,7 @@ function makeFn(
 ): PlxFunction {
   return {
     kind: "function",
+    visibility: entity.visibility,
     schema: entity.schema,
     name,
     params: params.map((p) => ({ ...p, loc: LOC })),

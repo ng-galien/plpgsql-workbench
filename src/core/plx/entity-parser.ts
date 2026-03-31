@@ -16,11 +16,12 @@ import type {
   StrategyDecl,
   ViewBlock,
   ViewSection,
+  Visibility,
 } from "./ast.js";
 import { mergeLoc } from "./ast.js";
 import type { ParseContext } from "./parse-context.js";
 
-export function parseEntity(ctx: ParseContext): PlxEntity {
+export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntity {
   const start = ctx.loc();
   ctx.expect("ENTITY");
 
@@ -152,6 +153,7 @@ export function parseEntity(ctx: ParseContext): PlxEntity {
 
   return {
     kind: "entity",
+    visibility,
     schema,
     name,
     table,

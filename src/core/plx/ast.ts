@@ -41,7 +41,17 @@ export interface ImportAlias {
   loc: Loc;
 }
 
+export interface ModuleDependency {
+  name: string;
+  loc: Loc;
+}
+
+export type Visibility = "export" | "internal";
+
 export interface PlxModule {
+  name?: string;
+  moduleLoc?: Loc;
+  depends: ModuleDependency[];
   imports: ImportAlias[];
   traits: PlxTrait[];
   entities: PlxEntity[];
@@ -80,6 +90,7 @@ export interface TraitHook {
 
 export interface PlxEntity {
   kind: "entity";
+  visibility: Visibility;
   schema: string;
   name: string; // "category", "expense_report"
   table: string; // "expense.category"
@@ -188,6 +199,7 @@ export type FuncAttribute = "stable" | "immutable" | "volatile" | "definer" | "s
 
 export interface PlxFunction {
   kind: "function";
+  visibility: Visibility;
   schema: string;
   name: string;
   params: Param[];

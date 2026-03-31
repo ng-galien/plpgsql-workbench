@@ -34,6 +34,7 @@ export function expandTests(tests: PlxTest[]): TestExpandResult {
     const slug = slugify(test.name);
     functions.push({
       kind: "function",
+      visibility: "internal",
       schema: `${schema}_ut`,
       name: `test_${slug}`,
       params: [],

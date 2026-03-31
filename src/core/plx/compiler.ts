@@ -1,4 +1,4 @@
-import type { Loc } from "./ast.js";
+import type { Loc, PlxFunction, PlxModule } from "./ast.js";
 import { pointLoc } from "./ast.js";
 import { type GeneratedLineMap, type GeneratedSourceMap, generateWithSourceMap } from "./codegen.js";
 import { expandEntities } from "./entity-expander.js";
@@ -17,6 +17,10 @@ export interface CompileResult {
   functionCount: number;
   entityCount?: number;
   testCount?: number;
+  /** Internal: validation blocks for compileAndValidate. Cleaned up after validation. */
+  _blocks?: ValidationBlock[];
+  /** Internal: compiled module artifact for composition. */
+  _artifact?: CompiledModuleArtifact;
 }
 
 export interface CompileError {
@@ -51,6 +55,13 @@ interface ValidationBlock {
   functionName: string;
   loc: Loc;
   sourceMap: GeneratedSourceMap;
+}
+
+export interface CompiledModuleArtifact {
+  aliases: Map<string, string>;
+  functions: PlxFunction[];
+  module: PlxModule;
+  testFunctions: PlxFunction[];
 }
 
 export function compile(source: string): CompileResult {
@@ -165,9 +176,14 @@ export function compile(source: string): CompileResult {
     functionCount: allFunctions.length,
     entityCount: mod.entities.length,
     testCount: testResult.functions.length,
-    // Attach generated blocks for validation with source metadata.
     _blocks: validationBlocks,
-  } as CompileResult & { _blocks: ValidationBlock[] };
+    _artifact: {
+      aliases,
+      functions: allFunctions,
+      module: mod,
+      testFunctions: testResult.functions,
+    },
+  };
 }
 
 /**
@@ -179,7 +195,7 @@ export function compile(source: string): CompileResult {
  * the heavy WASM module (~4GB) when validation is not requested.
  */
 export async function compileAndValidate(source: string): Promise<CompileResult> {
-  const result = compile(source) as CompileResult & { _blocks?: ValidationBlock[] };
+  const result = compile(source);
   if (result.errors.length > 0) return result;
 
   const warnings: CompileWarning[] = [...result.warnings];
@@ -241,6 +257,7 @@ export async function compileAndValidate(source: string): Promise<CompileResult>
   }
 
   delete result._blocks;
+  delete result._artifact;
   return { ...result, warnings };
 }
 
@@ -327,7 +344,7 @@ function scoreSegment(text: string, token: string): number {
   return 0;
 }
 
-function createDiagnostic(
+export function createDiagnostic(
   phase: CompileError["phase"],
   code: string,
   message: string,

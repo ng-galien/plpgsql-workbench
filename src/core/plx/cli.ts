@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
 import { type CompileResult, compile, compileAndValidate } from "./compiler.js";
+import { compose } from "./composition.js";
 
 const program = new Command();
 
@@ -37,7 +38,7 @@ program
       if (source === undefined) return;
 
       const result = opts.validate === false ? compile(source) : await compileAndValidate(source);
-      reportErrors(result);
+      reportDiagnosticErrors(result.errors);
 
       for (const w of result.warnings) console.error(formatWarning(w));
 
@@ -98,7 +99,7 @@ program
       process.exit(result.errors.length === 0 ? 0 : 1);
     }
 
-    reportErrors(result);
+    reportDiagnosticErrors(result.errors);
 
     for (const w of result.warnings) console.error(formatWarning(w));
 
@@ -107,13 +108,51 @@ program
     console.log(`  OK     ${path.basename(file)} (${result.functionCount} functions${testInfo}, ${status})`);
   });
 
+program
+  .command("compose <files...>")
+  .description("Check a composed set of PLX modules and verify cross-module contracts")
+  .option("--json", "Print machine-readable diagnostics")
+  .option("--no-validate", "Skip PG parser validation for individual modules")
+  .action(async (files: string[], opts: { json?: boolean; validate?: boolean }) => {
+    const inputs: Array<{ file: string; source: string }> = [];
+    for (const file of files) {
+      const source = await readPlx(file).catch(() => {
+        emitReadError(file, Boolean(opts.json));
+        return undefined;
+      });
+      if (source === undefined) return;
+      inputs.push({ file, source });
+    }
+
+    const result = await compose(inputs, { validate: opts.validate });
+    if (opts.json) {
+      process.stdout.write(
+        `${JSON.stringify(
+          buildComposePayload(
+            inputs.map((input) => input.file),
+            result,
+          ),
+          null,
+          2,
+        )}\n`,
+      );
+      process.exit(result.errors.length === 0 ? 0 : 1);
+    }
+
+    reportDiagnosticErrors(result.errors);
+
+    for (const w of result.warnings) console.error(formatWarning(w));
+
+    const moduleCount = result.modules.filter((module) => module.moduleName).length;
+    const status = result.warnings.length > 0 ? "with warnings" : "no errors";
+    console.log(`  OK     composition (${moduleCount} modules, ${status})`);
+  });
+
 program.parse();
 
-function reportErrors(result: CompileResult): void {
-  if (result.errors.length === 0) return;
-  for (const err of result.errors) {
-    console.error(formatError(err));
-  }
+function reportDiagnosticErrors(errors: CompileResult["errors"]): void {
+  if (errors.length === 0) return;
+  for (const err of errors) console.error(formatError(err));
   process.exit(1);
 }
 
@@ -134,6 +173,25 @@ function buildCheckPayload(file: string, result: CompileResult): object {
     testCount: result.testCount ?? 0,
     warnings: result.warnings,
     errors: result.errors,
+  };
+}
+
+function buildComposePayload(files: string[], result: Awaited<ReturnType<typeof compose>>): object {
+  return {
+    files: files.map((file) => path.resolve(file)),
+    ok: result.errors.length === 0,
+    moduleCount: result.modules.filter((module) => module.moduleName).length,
+    warnings: result.warnings,
+    errors: result.errors,
+    modules: result.modules.map((module) => ({
+      file: path.resolve(module.file),
+      moduleName: module.moduleName,
+      functionCount: module.functionCount,
+      entityCount: module.entityCount,
+      testCount: module.testCount,
+      warnings: module.warnings,
+      errors: module.errors,
+    })),
   };
 }
 

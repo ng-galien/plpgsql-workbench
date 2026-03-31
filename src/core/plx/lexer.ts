@@ -19,6 +19,10 @@ export type TokenType =
   | "END"
   | "IMPORT"
   | "AS"
+  | "MODULE"
+  | "DEPENDS"
+  | "EXPORT"
+  | "INTERNAL"
   | "ENTITY"
   | "TRAIT"
   | "USES"
@@ -104,6 +108,10 @@ const KEYWORDS = new Map<string, TokenType>([
   ["end", "END"],
   ["import", "IMPORT"],
   ["as", "AS"],
+  ["module", "MODULE"],
+  ["depends", "DEPENDS"],
+  ["export", "EXPORT"],
+  ["internal", "INTERNAL"],
   ["entity", "ENTITY"],
   ["trait", "TRAIT"],
   ["uses", "USES"],

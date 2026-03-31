@@ -71,4 +71,53 @@ fn demo.bad() -> text:
     );
     expect(payload.errors[0]?.hint).toContain("Declare the variable first");
   });
+
+  it("emits machine-readable JSON for composed module checks", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "plx-compose-"));
+    const crmFile = path.join(tmpDir, "crm.plx");
+    const quoteFile = path.join(tmpDir, "quote.plx");
+
+    await fs.writeFile(
+      crmFile,
+      `
+module crm
+
+export fn crm.client_read(id int) -> jsonb:
+  return {id}
+`,
+      "utf-8",
+    );
+    await fs.writeFile(
+      quoteFile,
+      `
+module quote
+depends crm
+
+export fn quote.estimate_read(id int) -> jsonb:
+  return crm.client_read(id)
+`,
+      "utf-8",
+    );
+
+    const output = execFileSync(
+      "node",
+      ["--import", "tsx", CLI, "compose", "--json", "--no-validate", crmFile, quoteFile],
+      {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+      },
+    );
+
+    const payload = JSON.parse(output) as {
+      errors: unknown[];
+      moduleCount: number;
+      ok: boolean;
+      warnings: unknown[];
+    };
+
+    expect(payload.ok).toBe(true);
+    expect(payload.moduleCount).toBe(2);
+    expect(payload.errors).toEqual([]);
+    expect(payload.warnings).toEqual([]);
+  });
 });

@@ -1,6 +1,17 @@
 // PLX Parser — Slim orchestrator (top-level parsing, delegates to parse-context + entity-parser)
 
-import type { FuncAttribute, ImportAlias, Param, PlxEntity, PlxFunction, PlxModule, PlxTest, PlxTrait } from "./ast.js";
+import type {
+  FuncAttribute,
+  ImportAlias,
+  ModuleDependency,
+  Param,
+  PlxEntity,
+  PlxFunction,
+  PlxModule,
+  PlxTest,
+  PlxTrait,
+  Visibility,
+} from "./ast.js";
 import { mergeLoc, pointLoc } from "./ast.js";
 import { parseEntity } from "./entity-parser.js";
 import type { Token } from "./lexer.js";
@@ -15,9 +26,30 @@ export function parse(tokens: Token[]): PlxModule {
 }
 
 function parseProgram(ctx: ParseContext): PlxModule {
+  let moduleName: string | undefined;
+  let moduleLoc: PlxModule["moduleLoc"];
+  let depends: ModuleDependency[] = [];
   const imports: ImportAlias[] = [];
   const functions: PlxFunction[] = [];
   ctx.skipNewlines();
+
+  if (ctx.isAt("MODULE")) {
+    const parsedModule = parseModuleDecl(ctx);
+    moduleName = parsedModule.name;
+    moduleLoc = parsedModule.loc;
+    ctx.skipNewlines();
+  }
+
+  if (ctx.isAt("DEPENDS")) {
+    if (!moduleName) {
+      throw new ParseError("depends requires a preceding module declaration", ctx.loc(), {
+        code: "parse.depends-without-module",
+        hint: "Declare `module <name>` before listing dependencies.",
+      });
+    }
+    depends = parseDepends(ctx);
+    ctx.skipNewlines();
+  }
 
   // Parse imports at top of file
   while (ctx.isAt("IMPORT")) {
@@ -30,18 +62,32 @@ function parseProgram(ctx: ParseContext): PlxModule {
   const tests: PlxTest[] = [];
 
   while (!ctx.isAt("EOF")) {
+    const visibility = parseTopLevelVisibility(ctx, moduleName ? "internal" : "export");
+
     if (ctx.isAt("TRAIT")) {
+      if (visibility.explicit) {
+        throw new ParseError(`${visibility.value} is only supported on fn and entity declarations`, ctx.loc(), {
+          code: "parse.invalid-visibility-target",
+          hint: "Use export/internal before fn or entity declarations only.",
+        });
+      }
       traits.push(parseTrait(ctx));
     } else if (ctx.isAt("ENTITY")) {
-      entities.push(parseEntity(ctx));
+      entities.push(parseEntity(ctx, visibility.value));
     } else if (ctx.isAt("TEST")) {
+      if (visibility.explicit) {
+        throw new ParseError(`${visibility.value} is only supported on fn and entity declarations`, ctx.loc(), {
+          code: "parse.invalid-visibility-target",
+          hint: "Use export/internal before fn or entity declarations only.",
+        });
+      }
       tests.push(parseTest(ctx));
     } else {
-      functions.push(parseFunction(ctx));
+      functions.push(parseFunction(ctx, visibility.value));
     }
     ctx.skipNewlines();
   }
-  return { imports, traits, entities, functions, tests };
+  return { name: moduleName, moduleLoc, depends, imports, traits, entities, functions, tests };
 }
 
 /** import original as alias */
@@ -53,6 +99,41 @@ function parseImport(ctx: ParseContext): ImportAlias {
   const aliasTok = ctx.expect("IDENT");
   ctx.skipNewlines();
   return { original, alias: aliasTok.value, loc: mergeLoc(start, aliasTok) };
+}
+
+function parseModuleDecl(ctx: ParseContext): { loc: PlxModule["moduleLoc"]; name: string } {
+  const start = ctx.loc();
+  ctx.expect("MODULE");
+  const nameTok = ctx.expect("IDENT");
+  return { name: nameTok.value, loc: mergeLoc(start, nameTok) };
+}
+
+function parseDepends(ctx: ParseContext): ModuleDependency[] {
+  ctx.expect("DEPENDS");
+  const depends: ModuleDependency[] = [];
+  const first = ctx.expect("IDENT");
+  depends.push({ name: first.value, loc: pointLoc(first.line, first.col) });
+  while (ctx.isAt("COMMA")) {
+    ctx.advance();
+    const depTok = ctx.expect("IDENT");
+    depends.push({ name: depTok.value, loc: pointLoc(depTok.line, depTok.col) });
+  }
+  return depends;
+}
+
+function parseTopLevelVisibility(
+  ctx: ParseContext,
+  defaultVisibility: Visibility,
+): { explicit: boolean; value: Visibility } {
+  if (ctx.isAt("EXPORT")) {
+    ctx.advance();
+    return { explicit: true, value: "export" };
+  }
+  if (ctx.isAt("INTERNAL")) {
+    ctx.advance();
+    return { explicit: true, value: "internal" };
+  }
+  return { explicit: false, value: defaultVisibility };
 }
 
 // ---------- Trait parsing ----------
@@ -134,7 +215,7 @@ function parseFieldDef(ctx: ParseContext): PlxTrait["fields"][number] {
 
 // ---------- Function parsing ----------
 
-function parseFunction(ctx: ParseContext): PlxFunction {
+function parseFunction(ctx: ParseContext, visibility: Visibility): PlxFunction {
   const start = ctx.loc();
   ctx.expect("FN");
 
@@ -186,6 +267,7 @@ function parseFunction(ctx: ParseContext): PlxFunction {
 
   return {
     kind: "function",
+    visibility,
     schema: firstName,
     name: funcName,
     params,
