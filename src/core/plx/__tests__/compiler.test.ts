@@ -60,7 +60,7 @@ test "no schema":
 `;
     const result = compile(source);
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]!.message).toContain("cannot infer schema");
+    expect(result.errors[0]?.message).toContain("cannot infer schema");
   });
 
   it("does not break existing function compilation", () => {
@@ -134,13 +134,22 @@ fn demo.bad() -> void:
 `;
     const result = await compileAndValidate(source);
     expect(result.errors).toHaveLength(0);
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toMatchObject({
-      functionName: "demo.bad",
-      line: 3,
-      col: 2,
-    });
-    expect(result.warnings[0]!.message).toContain("PG parse:");
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "sql.dml-without-where",
+          functionName: "demo.bad",
+          line: 3,
+          col: 2,
+        }),
+        expect.objectContaining({
+          code: "validate.pg-parse-error",
+          functionName: "demo.bad",
+          line: 3,
+          col: 2,
+        }),
+      ]),
+    );
   });
 
   it("errors on unknown identifiers", () => {
@@ -150,8 +159,12 @@ fn demo.bad() -> text:
 `;
     const result = compile(source);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.phase).toBe("semantic");
-    expect(result.errors[0]!.message).toContain("unknown identifier 'missing_value'");
+    expect(result.errors[0]).toMatchObject({
+      phase: "semantic",
+      code: "semantic.unknown-identifier",
+    });
+    expect(result.errors[0]?.hint).toContain("Declare the variable first");
+    expect(result.errors[0]?.message).toContain("unknown identifier 'missing_value'");
   });
 
   it("errors on parameter reassignment", () => {
@@ -162,8 +175,8 @@ fn demo.bad(p_id int) -> int:
 `;
     const result = compile(source);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.phase).toBe("semantic");
-    expect(result.errors[0]!.message).toContain("cannot assign to parameter 'p_id'");
+    expect(result.errors[0]?.phase).toBe("semantic");
+    expect(result.errors[0]?.message).toContain("cannot assign to parameter 'p_id'");
   });
 
   it("warns on unused import aliases", () => {
@@ -181,7 +194,7 @@ fn demo.ok() -> int:
       line: 2,
       col: 0,
     });
-    expect(result.warnings[0]!.message).toContain("unused import alias 'obj'");
+    expect(result.warnings[0]?.message).toContain("unused import alias 'obj'");
   });
 
   it("maps semantic errors inside interpolation to source location", () => {
@@ -196,7 +209,7 @@ fn demo.bad(name text) -> text:
       line: 3,
       col: 18,
     });
-    expect(result.errors[0]!.message).toContain("unknown identifier 'missing_value'");
+    expect(result.errors[0]?.message).toContain("unknown identifier 'missing_value'");
   });
 
   it("parses full expressions inside interpolation", () => {
@@ -220,15 +233,18 @@ fn demo.msg(name text, row jsonb) -> text:
   return "Hello #{upper(name)} / #{(row->>'id')::int}"
 `;
     const mod = parse(tokenize(source));
-    const generated = generateWithSourceMap(mod.functions[0]!);
+    const fn = mod.functions[0];
+    expect(fn).toBeDefined();
+    if (!fn) throw new Error("expected generated function");
+    const generated = generateWithSourceMap(fn);
     const returnLine = generated.sourceMap.lines.find((line) => line.text.includes("RETURN 'Hello '"));
 
     expect(returnLine).toBeDefined();
-    expect(returnLine!.loc).toEqual({ line: 3, col: 2 });
-    expect(returnLine!.segments).toEqual(
+    expect(returnLine?.loc).toEqual(expect.objectContaining({ line: 3, col: 2, endLine: 3 }));
+    expect(returnLine?.segments).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ text: "upper(name)", loc: { line: 3, col: 18 } }),
-        expect.objectContaining({ text: "(row->>'id')::int", loc: { line: 3, col: 35 } }),
+        expect.objectContaining({ text: "upper(name)", loc: expect.objectContaining({ line: 3, col: 18 }) }),
+        expect.objectContaining({ text: "(row->>'id')::int", loc: expect.objectContaining({ line: 3, col: 35 }) }),
       ]),
     );
   });
@@ -251,8 +267,8 @@ fn demo.bad(name text) -> text:
 `;
     const result = compile(source);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.phase).toBe("parse");
-    expect(result.errors[0]!.message).toContain("unterminated interpolation");
+    expect(result.errors[0]?.phase).toBe("parse");
+    expect(result.errors[0]?.message).toContain("unterminated interpolation");
   });
 
   it("reports empty interpolation as a parse error", () => {
@@ -267,6 +283,72 @@ fn demo.bad() -> text:
       line: 3,
       col: 18,
     });
-    expect(result.errors[0]!.message).toContain("empty interpolation");
+    expect(result.errors[0]?.message).toContain("empty interpolation");
+  });
+
+  it("warns on obvious assignment type mismatches", () => {
+    const source = `
+fn demo.bad() -> void:
+  value := 1
+  value := 'oops'
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "type.assignment-mismatch",
+          functionName: "demo.bad",
+          line: 4,
+          col: 2,
+        }),
+      ]),
+    );
+  });
+
+  it("warns when conditions are not boolean", () => {
+    const source = `
+fn demo.bad() -> int:
+  if 42:
+    return 1
+  return 0
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "type.non-boolean-condition",
+          functionName: "demo.bad",
+          line: 3,
+          col: 2,
+        }),
+      ]),
+    );
+  });
+
+  it("warns on dynamic SQL execute patterns", () => {
+    const source = `
+fn demo.query(name text) -> setof text:
+  return execute "select " || name
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "sql.dynamic-execute",
+          functionName: "demo.query",
+          line: 3,
+          col: 2,
+        }),
+        expect.objectContaining({
+          code: "sql.dynamic-execute-concat",
+          functionName: "demo.query",
+          line: 3,
+          col: 2,
+        }),
+      ]),
+    );
   });
 });

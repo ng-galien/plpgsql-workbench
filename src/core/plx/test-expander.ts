@@ -1,8 +1,6 @@
 // PLX Test Expander — Transforms PlxTest[] into PlxFunction[] (pgTAP-compatible)
 
-import type { CallExpr, Expression, Loc, PlxFunction, PlxTest, Statement } from "./ast.js";
-
-const LOC: Loc = { line: 0, col: 0 };
+import type { Expression, Loc, PlxFunction, PlxTest, Statement } from "./ast.js";
 
 export interface TestExpandResult {
   functions: PlxFunction[];

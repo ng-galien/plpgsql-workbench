@@ -3,6 +3,34 @@
 export interface Loc {
   line: number;
   col: number;
+  endLine: number;
+  endCol: number;
+}
+
+export function pointLoc(line = 0, col = 0): Loc {
+  return { line, col, endLine: line, endCol: col };
+}
+
+export function spanLoc(start: Pick<Loc, "line" | "col">, end: Pick<Loc, "endLine" | "endCol">): Loc {
+  return {
+    line: start.line,
+    col: start.col,
+    endLine: end.endLine,
+    endCol: end.endCol,
+  };
+}
+
+export function mergeLoc(start: Loc, end: Loc): Loc {
+  return spanLoc(start, end);
+}
+
+export function shiftLoc(loc: Loc, lineDelta: number, colDelta: number): Loc {
+  return {
+    line: loc.line + lineDelta,
+    col: loc.line === 1 ? loc.col + colDelta : loc.col,
+    endLine: loc.endLine + lineDelta,
+    endCol: loc.endLine === 1 ? loc.endCol + colDelta : loc.endCol,
+  };
 }
 
 // ---------- Top-level ----------
@@ -182,6 +210,7 @@ export interface Param {
   type: string;
   nullable: boolean;
   defaultValue?: string;
+  loc: Loc;
 }
 
 // ---------- Statements ----------

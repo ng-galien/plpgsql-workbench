@@ -1,6 +1,7 @@
 // PLX Parser — Slim orchestrator (top-level parsing, delegates to parse-context + entity-parser)
 
 import type { FuncAttribute, ImportAlias, Param, PlxEntity, PlxFunction, PlxModule, PlxTest, PlxTrait } from "./ast.js";
+import { mergeLoc, pointLoc } from "./ast.js";
 import { parseEntity } from "./entity-parser.js";
 import type { Token } from "./lexer.js";
 import { ParseContext, ParseError } from "./parse-context.js";
@@ -45,19 +46,19 @@ function parseProgram(ctx: ParseContext): PlxModule {
 
 /** import original as alias */
 function parseImport(ctx: ParseContext): ImportAlias {
-  const loc = ctx.loc();
+  const start = ctx.loc();
   ctx.expect("IMPORT");
   const original = ctx.parseQualifiedName();
   ctx.expect("AS");
-  const alias = ctx.expect("IDENT").value;
+  const aliasTok = ctx.expect("IDENT");
   ctx.skipNewlines();
-  return { original, alias, loc };
+  return { original, alias: aliasTok.value, loc: mergeLoc(start, aliasTok) };
 }
 
 // ---------- Trait parsing ----------
 
 function parseTrait(ctx: ParseContext): PlxTrait {
-  const loc = ctx.loc();
+  const start = ctx.loc();
   ctx.expect("TRAIT");
   const name = ctx.expect("IDENT").value;
   ctx.expect("COLON");
@@ -97,8 +98,8 @@ function parseTrait(ctx: ParseContext): PlxTrait {
     }
   }
 
-  ctx.expect("DEDENT");
-  return { kind: "trait", name, fields, hooks, defaultScope, loc };
+  const end = ctx.expect("DEDENT");
+  return { kind: "trait", name, fields, hooks, defaultScope, loc: mergeLoc(start, end) };
 }
 
 function parseFieldDef(ctx: ParseContext): PlxTrait["fields"][number] {
@@ -134,7 +135,7 @@ function parseFieldDef(ctx: ParseContext): PlxTrait["fields"][number] {
 // ---------- Function parsing ----------
 
 function parseFunction(ctx: ParseContext): PlxFunction {
-  const loc = ctx.loc();
+  const start = ctx.loc();
   ctx.expect("FN");
 
   // Accept keywords as schema/function names (e.g. fn test.something())
@@ -162,10 +163,14 @@ function parseFunction(ctx: ParseContext): PlxFunction {
       const tok = ctx.expect("IDENT");
       const attr = tok.value.toLowerCase();
       if (!VALID_FUNC_ATTRS.has(attr)) {
-        throw new ParseError(`unknown function attribute '${attr}' (valid: ${[...VALID_FUNC_ATTRS].join(", ")})`, {
-          line: tok.line,
-          col: tok.col,
-        });
+        throw new ParseError(
+          `unknown function attribute '${attr}' (valid: ${[...VALID_FUNC_ATTRS].join(", ")})`,
+          pointLoc(tok.line, tok.col),
+          {
+            code: "parse.unknown-function-attribute",
+            hint: `Use one of: ${[...VALID_FUNC_ATTRS].join(", ")}.`,
+          },
+        );
       }
       attributes.push(attr as FuncAttribute);
       if (ctx.isAt("COMMA")) ctx.advance();
@@ -177,9 +182,19 @@ function parseFunction(ctx: ParseContext): PlxFunction {
   ctx.skipNewlines();
   ctx.expect("INDENT");
   const body = ctx.parseBlock();
-  ctx.expect("DEDENT");
+  const end = ctx.expect("DEDENT");
 
-  return { kind: "function", schema: firstName, name: funcName, params, returnType, setof, attributes, body, loc };
+  return {
+    kind: "function",
+    schema: firstName,
+    name: funcName,
+    params,
+    returnType,
+    setof,
+    attributes,
+    body,
+    loc: mergeLoc(start, end),
+  };
 }
 
 function parseParams(ctx: ParseContext): Param[] {
@@ -195,6 +210,7 @@ function parseParams(ctx: ParseContext): Param[] {
 }
 
 function parseParam(ctx: ParseContext): Param {
+  const start = ctx.loc();
   const name = ctx.expect("IDENT").value;
   const type = parseType(ctx);
   let nullable = false;
@@ -222,7 +238,7 @@ function parseParam(ctx: ParseContext): Param {
       }
     }
   }
-  return { name, type, nullable, defaultValue };
+  return { name, type, nullable, defaultValue, loc: start };
 }
 
 function parseType(ctx: ParseContext): string {
@@ -238,13 +254,13 @@ function parseType(ctx: ParseContext): string {
 // ---------- Test parsing ----------
 
 function parseTest(ctx: ParseContext): PlxTest {
-  const loc = ctx.loc();
+  const start = ctx.loc();
   ctx.expect("TEST");
   const name = ctx.expect("STRING").value;
   ctx.expect("COLON");
   ctx.skipNewlines();
   ctx.expect("INDENT");
   const body = ctx.parseBlock();
-  ctx.expect("DEDENT");
-  return { kind: "test", name, body, loc };
+  const end = ctx.expect("DEDENT");
+  return { kind: "test", name, body, loc: mergeLoc(start, end) };
 }

@@ -1,7 +1,9 @@
 import type { Loc } from "./ast.js";
+import { pointLoc } from "./ast.js";
 import { type GeneratedLineMap, type GeneratedSourceMap, generateWithSourceMap } from "./codegen.js";
 import { expandEntities } from "./entity-expander.js";
-import { tokenize } from "./lexer.js";
+import { LexError, tokenize } from "./lexer.js";
+import { ParseError } from "./parse-context.js";
 import { parse } from "./parser.js";
 import { analyzeModule } from "./semantic.js";
 import { expandTests } from "./test-expander.js";
@@ -18,17 +20,28 @@ export interface CompileResult {
 }
 
 export interface CompileError {
+  code: string;
   line: number;
   col: number;
+  endLine: number;
+  endCol: number;
+  span: Loc;
   message: string;
+  hint?: string;
   phase: "lex" | "parse" | "semantic" | "codegen" | "validate";
 }
 
 export interface CompileWarning {
+  code: string;
   message: string;
   functionName: string;
-  line?: number;
-  col?: number;
+  line: number;
+  col: number;
+  endLine: number;
+  endCol: number;
+  span: Loc;
+  hint?: string;
+  phase: "lex" | "parse" | "semantic" | "codegen" | "validate";
 }
 
 const LOC_RE = /plx:(\d+):(\d+)/;
@@ -48,8 +61,7 @@ export function compile(source: string): CompileResult {
   try {
     tokens = tokenize(source);
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    errors.push({ ...extractLoc(msg), message: msg, phase: "lex" });
+    errors.push(toCompileError("lex", e, "lex.invalid-token"));
     return { sql: "", errors, warnings, functionCount: 0 };
   }
 
@@ -57,21 +69,18 @@ export function compile(source: string): CompileResult {
   try {
     mod = parse(tokens);
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    errors.push({ ...extractLoc(msg), message: msg, phase: "parse" });
+    errors.push(toCompileError("parse", e, "parse.invalid-syntax"));
     return { sql: "", errors, warnings, functionCount: 0 };
   }
 
   const semantic = analyzeModule(mod);
   for (const err of semantic.errors) {
-    errors.push({ line: err.loc.line, col: err.loc.col, message: `${err.owner}: ${err.message}`, phase: "semantic" });
+    errors.push(createDiagnostic("semantic", err.code, `${err.owner}: ${err.message}`, err.loc, err.hint));
   }
   for (const warning of semantic.warnings) {
     warnings.push({
+      ...createDiagnostic("semantic", warning.code, warning.message, warning.loc, warning.hint),
       functionName: warning.owner,
-      line: warning.loc.line,
-      col: warning.loc.col,
-      message: warning.message,
     });
   }
   if (errors.length > 0) {
@@ -81,7 +90,7 @@ export function compile(source: string): CompileResult {
   // Expand entities into functions + DDL
   const expandResult = expandEntities(mod);
   for (const err of expandResult.errors) {
-    errors.push({ line: err.loc.line, col: err.loc.col, message: err.message, phase: "codegen" });
+    errors.push(createDiagnostic("codegen", "codegen.entity-expansion-failed", err.message, err.loc));
   }
   if (errors.length > 0) {
     return { sql: "", errors, warnings, functionCount: 0 };
@@ -90,7 +99,7 @@ export function compile(source: string): CompileResult {
   // Expand tests into pgTAP functions
   const testResult = expandTests(mod.tests);
   for (const err of testResult.errors) {
-    errors.push({ line: err.loc.line, col: err.loc.col, message: err.message, phase: "codegen" });
+    errors.push(createDiagnostic("codegen", "codegen.test-expansion-failed", err.message, err.loc));
   }
 
   if (errors.length > 0) {
@@ -119,8 +128,7 @@ export function compile(source: string): CompileResult {
         sourceMap: generated.sourceMap,
       });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push({ line: fn.loc.line, col: fn.loc.col, message: msg, phase: "codegen" });
+      errors.push(toCompileError("codegen", e, "codegen.generate-failed", fn.loc));
     }
   }
 
@@ -137,8 +145,7 @@ export function compile(source: string): CompileResult {
         sourceMap: generated.sourceMap,
       });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push({ line: fn.loc.line, col: fn.loc.col, message: msg, phase: "codegen" });
+      errors.push(toCompileError("codegen", e, "codegen.generate-failed", fn.loc));
     }
   }
 
@@ -183,7 +190,7 @@ export async function compileAndValidate(source: string): Promise<CompileResult>
           {
             sql: result.sql,
             functionName: "unknown",
-            loc: { line: 0, col: 0 },
+            loc: pointLoc(),
             sourceMap: { lines: [] },
           },
         ]
@@ -200,7 +207,18 @@ export async function compileAndValidate(source: string): Promise<CompileResult>
     delete result._blocks;
     return {
       ...result,
-      warnings: [{ functionName: "validator", message: `PG validator unavailable: ${msg}` }],
+      warnings: [
+        ...warnings,
+        {
+          ...createDiagnostic(
+            "validate",
+            "validate.validator-unavailable",
+            `PG validator unavailable: ${msg}`,
+            pointLoc(),
+          ),
+          functionName: "validator",
+        },
+      ],
     };
   }
 
@@ -210,9 +228,14 @@ export async function compileAndValidate(source: string): Promise<CompileResult>
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       warnings.push({
+        ...createDiagnostic(
+          "validate",
+          "validate.pg-parse-error",
+          `PG parse: ${msg}`,
+          resolveValidationLoc(msg, block),
+          "Inspect the generated SQL around this span or rerun with --json for the mapped location.",
+        ),
         functionName: block.functionName,
-        ...resolveValidationLoc(msg, block),
-        message: `PG parse: ${msg}`,
       });
     }
   }
@@ -221,12 +244,12 @@ export async function compileAndValidate(source: string): Promise<CompileResult>
   return { ...result, warnings };
 }
 
-function extractLoc(msg: string): { line: number; col: number } {
+function extractLoc(msg: string): Loc {
   const m = msg.match(LOC_RE);
-  return m ? { line: Number(m[1]), col: Number(m[2]) } : { line: 0, col: 0 };
+  return m ? pointLoc(Number(m[1]), Number(m[2])) : pointLoc();
 }
 
-function resolveValidationLoc(message: string, block: ValidationBlock): { line: number; col: number } {
+function resolveValidationLoc(message: string, block: ValidationBlock): Loc {
   const generatedLine = extractGeneratedLine(message);
   if (generatedLine !== undefined) {
     const lineMap = block.sourceMap.lines.find((line) => line.generatedLine === generatedLine);
@@ -266,7 +289,7 @@ function extractNearToken(message: string): string | undefined {
   return match?.[1];
 }
 
-function resolveLineLoc(line: GeneratedLineMap, token: string | undefined): { line: number; col: number } | undefined {
+function resolveLineLoc(line: GeneratedLineMap, token: string | undefined): Loc | undefined {
   if (!token) return line.segments.at(-1)?.loc ?? line.loc;
   const segment = findBestSegmentInLine(line, token);
   if (segment) return segment.loc;
@@ -302,4 +325,53 @@ function scoreSegment(text: string, token: string): number {
   if (text.includes(token)) return 2;
   if (token.length > 1 && text.replace(/\s+/g, "").includes(token.replace(/\s+/g, ""))) return 1;
   return 0;
+}
+
+function createDiagnostic(
+  phase: CompileError["phase"],
+  code: string,
+  message: string,
+  span: Loc,
+  hint?: string,
+): CompileError {
+  return {
+    phase,
+    code,
+    message: stripLocPrefix(message),
+    hint,
+    line: span.line,
+    col: span.col,
+    endLine: span.endLine,
+    endCol: span.endCol,
+    span,
+  };
+}
+
+function toCompileError(
+  phase: CompileError["phase"],
+  error: unknown,
+  fallbackCode: string,
+  fallbackLoc?: Loc,
+): CompileError {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof LexError) {
+    return createDiagnostic(phase, error.code, message, toLoc(error), error.hint);
+  }
+  if (error instanceof ParseError) {
+    return createDiagnostic(phase, error.code, message, error.loc, error.hint);
+  }
+  return createDiagnostic(phase, fallbackCode, message, fallbackLoc ?? extractLoc(message));
+}
+
+function toLoc(loc: Pick<Loc, "line" | "col" | "endLine" | "endCol">): Loc {
+  return {
+    line: loc.line,
+    col: loc.col,
+    endLine: loc.endLine,
+    endCol: loc.endCol,
+  };
+}
+
+function stripLocPrefix(message: string): string {
+  return message.replace(/^plx:\d+:\d+:\s*/, "");
 }

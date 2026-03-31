@@ -17,10 +17,11 @@ import type {
   ViewBlock,
   ViewSection,
 } from "./ast.js";
+import { mergeLoc } from "./ast.js";
 import type { ParseContext } from "./parse-context.js";
 
 export function parseEntity(ctx: ParseContext): PlxEntity {
-  const loc = ctx.loc();
+  const start = ctx.loc();
   ctx.expect("ENTITY");
 
   // schema.name
@@ -147,7 +148,7 @@ export function parseEntity(ctx: ParseContext): PlxEntity {
     ctx.skipNewlines();
   }
 
-  ctx.expect("DEDENT");
+  const end = ctx.expect("DEDENT");
 
   return {
     kind: "entity",
@@ -167,7 +168,7 @@ export function parseEntity(ctx: ParseContext): PlxEntity {
     hooks,
     listOrder,
     readKey,
-    loc,
+    loc: mergeLoc(start, end),
   };
 }
 
@@ -229,7 +230,7 @@ function parseEntityField(ctx: ParseContext): EntityField {
 }
 
 function parseStateBlock(ctx: ParseContext): StateBlock {
-  const loc = ctx.loc();
+  const start = ctx.loc();
   ctx.advance(); // "states"
 
   // Parse state values: draft -> submitted -> validated -> reimbursed
@@ -291,9 +292,10 @@ function parseStateBlock(ctx: ParseContext): StateBlock {
     ctx.skipNewlines();
   }
 
-  ctx.expect("DEDENT");
+  const end = ctx.expect("DEDENT");
+  const initial = values[0] ?? "";
 
-  return { column: "status", initial: values[0]!, values, transitions, loc };
+  return { column: "status", initial, values, transitions, loc: mergeLoc(start, end) };
 }
 
 function parseViewBlock(ctx: ParseContext): ViewBlock {

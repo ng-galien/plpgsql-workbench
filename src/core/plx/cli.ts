@@ -30,7 +30,12 @@ program
         validate?: boolean;
       },
     ) => {
-      const source = await readPlx(file);
+      const source = await readPlx(file).catch(() => {
+        emitReadError(file, false);
+        return undefined;
+      });
+      if (source === undefined) return;
+
       const result = opts.validate === false ? compile(source) : await compileAndValidate(source);
       reportErrors(result);
 
@@ -78,10 +83,21 @@ program
 program
   .command("check <file>")
   .description("Check a .plx file for errors and validate generated SQL")
+  .option("--json", "Print machine-readable diagnostics")
   .option("--no-validate", "Skip PG parser validation")
-  .action(async (file: string, opts: { validate?: boolean }) => {
-    const source = await readPlx(file);
+  .action(async (file: string, opts: { json?: boolean; validate?: boolean }) => {
+    const source = await readPlx(file).catch(() => {
+      emitReadError(file, Boolean(opts.json));
+      return undefined;
+    });
+    if (source === undefined) return;
+
     const result = opts.validate === false ? compile(source) : await compileAndValidate(source);
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(buildCheckPayload(file, result), null, 2)}\n`);
+      process.exit(result.errors.length === 0 ? 0 : 1);
+    }
+
     reportErrors(result);
 
     for (const w of result.warnings) console.error(formatWarning(w));
@@ -96,25 +112,74 @@ program.parse();
 function reportErrors(result: CompileResult): void {
   if (result.errors.length === 0) return;
   for (const err of result.errors) {
-    console.error(`  ERROR  ${err.phase}:${err.line}:${err.col} ${err.message}`);
+    console.error(formatError(err));
   }
   process.exit(1);
 }
 
 async function readPlx(file: string): Promise<string> {
-  try {
-    return await fs.readFile(file, "utf-8");
-  } catch {
-    console.error(`  ERROR  cannot read file: ${file}`);
-    process.exit(1);
-  }
+  return await fs.readFile(file, "utf-8");
 }
 
 function deriveArtifactPath(baseOutput: string, kind: "ddl" | "test"): string {
   return baseOutput.endsWith(".sql") ? baseOutput.replace(/\.sql$/, `.${kind}.sql`) : `${baseOutput}.${kind}.sql`;
 }
 
+function buildCheckPayload(file: string, result: CompileResult): object {
+  return {
+    file: path.resolve(file),
+    ok: result.errors.length === 0,
+    functionCount: result.functionCount,
+    entityCount: result.entityCount ?? 0,
+    testCount: result.testCount ?? 0,
+    warnings: result.warnings,
+    errors: result.errors,
+  };
+}
+
+function emitReadError(file: string, json: boolean): never {
+  if (json) {
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          file: path.resolve(file),
+          ok: false,
+          functionCount: 0,
+          entityCount: 0,
+          testCount: 0,
+          warnings: [],
+          errors: [
+            {
+              phase: "lex",
+              code: "io.read-failed",
+              message: `cannot read file: ${file}`,
+              hint: "Check that the file exists and is readable.",
+              line: 0,
+              col: 0,
+              endLine: 0,
+              endCol: 0,
+              span: { line: 0, col: 0, endLine: 0, endCol: 0 },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  } else {
+    console.error(`  ERROR  cannot read file: ${file}`);
+  }
+  process.exit(1);
+}
+
+function formatError(error: CompileResult["errors"][number]): string {
+  const loc = `${error.phase}:${error.line}:${error.col}`;
+  const hint = error.hint ? `\n         hint: ${error.hint}` : "";
+  return `  ERROR  ${loc} [${error.code}] ${error.message}${hint}`;
+}
+
 function formatWarning(warning: CompileResult["warnings"][number]): string {
   const loc = warning.line !== undefined && warning.col !== undefined ? `${warning.line}:${warning.col} ` : "";
-  return `  WARN   ${warning.functionName}: ${loc}${warning.message}`;
+  const hint = warning.hint ? `\n         hint: ${warning.hint}` : "";
+  return `  WARN   ${warning.functionName}: ${loc}[${warning.code}] ${warning.message}${hint}`;
 }

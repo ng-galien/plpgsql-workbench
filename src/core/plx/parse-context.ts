@@ -7,10 +7,8 @@ import type {
   AssignStatement,
   CaseExpr,
   Expression,
-  FieldAccess,
   ForInStatement,
   GroupExpr,
-  Identifier,
   IfStatement,
   JsonLiteral,
   Loc,
@@ -24,8 +22,8 @@ import type {
   StringInterp,
   UnaryExpr,
 } from "./ast.js";
+import { mergeLoc, pointLoc, shiftLoc } from "./ast.js";
 import { LexError, type Token, type TokenType, tokenize } from "./lexer.js";
-import { sqlEscape } from "./util.js";
 
 // Hoisted regexes for parseSqlBlock
 const ELSE_RAISE_RE = /\nelse\s+raise\s+['"](.*?)['"]\s*$/i;
@@ -40,11 +38,20 @@ interface BinaryOpInfo {
 }
 
 export class ParseError extends Error {
+  code: string;
+  hint?: string;
+
   constructor(
     msg: string,
     public loc: Loc,
+    options?: {
+      code?: string;
+      hint?: string;
+    },
   ) {
     super(`plx:${loc.line}:${loc.col}: ${msg}`);
+    this.code = options?.code ?? "parse.invalid-syntax";
+    this.hint = options?.hint;
   }
 }
 
@@ -56,7 +63,7 @@ export class ParseContext {
   // ---------- Token navigation ----------
 
   peek(): Token {
-    return this.tokens[this.pos] ?? { type: "EOF" as const, value: "", line: 0, col: 0 };
+    return this.tokens[this.pos] ?? { type: "EOF" as const, value: "", line: 0, col: 0, endLine: 0, endCol: 0 };
   }
 
   peekAt(offset: number): Token | undefined {
@@ -64,8 +71,7 @@ export class ParseContext {
   }
 
   loc(): Loc {
-    const t = this.peek();
-    return { line: t.line, col: t.col };
+    return tokenLoc(this.peek());
   }
 
   isAt(type: TokenType): boolean {
@@ -73,7 +79,7 @@ export class ParseContext {
   }
 
   advance(): Token {
-    const t = this.tokens[this.pos]!;
+    const t = this.peek();
     this.pos++;
     return t;
   }
@@ -81,10 +87,19 @@ export class ParseContext {
   expect(...types: TokenType[]): Token {
     const tok = this.peek();
     if (types.length === 1 ? tok.type !== types[0] : !types.includes(tok.type)) {
-      throw new ParseError(`expected ${types.join(" or ")}, got ${tok.type} '${tok.value}'`, {
-        line: tok.line,
-        col: tok.col,
-      });
+      throw new ParseError(
+        `expected ${types.join(" or ")}, got ${tok.type} '${tok.value}'`,
+        {
+          line: tok.line,
+          col: tok.col,
+          endLine: tok.endLine,
+          endCol: tok.endCol,
+        },
+        {
+          code: "parse.unexpected-token",
+          hint: `Expected ${types.join(" or ")} at this position.`,
+        },
+      );
     }
     return this.advance();
   }
@@ -180,40 +195,41 @@ export class ParseContext {
   }
 
   private parseAssign(): AssignStatement {
-    const loc = this.loc();
-    const target = this.expect("IDENT").value;
+    const targetTok = this.expect("IDENT");
+    const loc = tokenLoc(targetTok);
+    const target = targetTok.value;
     this.expect("ASSIGN");
 
     if (this.isAt("SQL_BLOCK")) {
       const sqlTok = this.advance();
       const value = parseSqlBlock(sqlTok);
       this.skipNewlines();
-      return { kind: "assign", target, value, loc };
+      return { kind: "assign", target, value, loc: mergeLoc(loc, value.loc) };
     }
 
     const value = this.parseExpression();
     this.skipNewlines();
-    return { kind: "assign", target, value, loc };
+    return { kind: "assign", target, value, loc: mergeLoc(loc, value.loc) };
   }
 
   private parseAppend(): AppendStatement {
-    const loc = this.loc();
-    const target = this.expect("IDENT").value;
+    const targetTok = this.expect("IDENT");
+    const loc = tokenLoc(targetTok);
+    const target = targetTok.value;
     this.expect("APPEND");
     const value = this.parseExpression();
     this.skipNewlines();
-    return { kind: "append", target, value, loc };
+    return { kind: "append", target, value, loc: mergeLoc(loc, value.loc) };
   }
 
   private parseIf(): IfStatement {
-    const loc = this.loc();
-    this.expect("IF");
+    const start = tokenLoc(this.expect("IF"));
     const condition = this.parseExpression();
     this.expect("COLON");
     this.skipNewlines();
     this.expect("INDENT");
     const body = this.parseBlock();
-    this.expect("DEDENT");
+    let end = tokenLoc(this.expect("DEDENT"));
     this.skipNewlines();
 
     const elsifs: { condition: Expression; body: Statement[] }[] = [];
@@ -224,7 +240,7 @@ export class ParseContext {
       this.skipNewlines();
       this.expect("INDENT");
       const elsifBody = this.parseBlock();
-      this.expect("DEDENT");
+      end = tokenLoc(this.expect("DEDENT"));
       this.skipNewlines();
       elsifs.push({ condition: elsifCond, body: elsifBody });
     }
@@ -236,17 +252,17 @@ export class ParseContext {
       this.skipNewlines();
       this.expect("INDENT");
       elseBody = this.parseBlock();
-      this.expect("DEDENT");
+      end = tokenLoc(this.expect("DEDENT"));
       this.skipNewlines();
     }
 
-    return { kind: "if", condition, body, elsifs, elseBody, loc };
+    return { kind: "if", condition, body, elsifs, elseBody, loc: mergeLoc(start, end) };
   }
 
   private parseFor(): ForInStatement {
-    const loc = this.loc();
-    this.expect("FOR");
-    const variable = this.expect("IDENT").value;
+    const start = tokenLoc(this.expect("FOR"));
+    const variableTok = this.expect("IDENT");
+    const variable = variableTok.value;
     this.expect("IN");
 
     if (this.isAt("SQL_BLOCK")) {
@@ -255,8 +271,8 @@ export class ParseContext {
       this.skipNewlines();
       this.expect("INDENT");
       const body = this.parseBlock();
-      this.expect("DEDENT");
-      return { kind: "for_in", variable, query: sqlTok.value, body, loc };
+      const end = tokenLoc(this.expect("DEDENT"));
+      return { kind: "for_in", variable, query: sqlTok.value, body, loc: mergeLoc(start, end) };
     }
 
     // Fallback: collect tokens until ":"
@@ -268,23 +284,22 @@ export class ParseContext {
     this.skipNewlines();
     this.expect("INDENT");
     const body = this.parseBlock();
-    this.expect("DEDENT");
+    const end = tokenLoc(this.expect("DEDENT"));
 
-    return { kind: "for_in", variable, query: parts.join(" "), body, loc };
+    return { kind: "for_in", variable, query: parts.join(" "), body, loc: mergeLoc(start, end) };
   }
 
   private parseReturn(): ReturnStatement {
-    const loc = this.loc();
-    this.expect("RETURN");
+    const start = tokenLoc(this.expect("RETURN"));
 
     // Bare return
     if (this.isAt("NEWLINE") || this.isAt("DEDENT") || this.isAt("EOF")) {
       return {
         kind: "return",
-        value: { kind: "literal", value: null, type: "null", loc },
+        value: { kind: "literal", value: null, type: "null", loc: start },
         isYield: false,
         mode: "value",
-        loc,
+        loc: start,
       };
     }
 
@@ -307,39 +322,37 @@ export class ParseContext {
     if (mode === "query" && this.isAt("SQL_BLOCK")) {
       const sqlTok = this.advance();
       this.skipNewlines();
+      const value = { kind: "sql_block", sql: sqlTok.value, loc: tokenLoc(sqlTok) } as SqlBlockExpr;
       return {
         kind: "return",
-        value: { kind: "sql_block", sql: sqlTok.value, loc } as SqlBlockExpr,
+        value,
         isYield: false,
         mode,
-        loc,
+        loc: mergeLoc(start, value.loc),
       };
     }
 
     const value = this.parseExpression();
     this.skipNewlines();
-    return { kind: "return", value, isYield: false, mode, loc };
+    return { kind: "return", value, isYield: false, mode, loc: mergeLoc(start, value.loc) };
   }
 
   private parseYield(): ReturnStatement {
-    const loc = this.loc();
-    this.expect("YIELD");
+    const start = tokenLoc(this.expect("YIELD"));
     const value = this.parseExpression();
     this.skipNewlines();
-    return { kind: "return", value, isYield: true, mode: "value", loc };
+    return { kind: "return", value, isYield: true, mode: "value", loc: mergeLoc(start, value.loc) };
   }
 
   private parseRaise(): RaiseStatement {
-    const loc = this.loc();
-    this.expect("RAISE");
-    const msg = this.expect("STRING").value;
+    const start = tokenLoc(this.expect("RAISE"));
+    const msgTok = this.expect("STRING");
     this.skipNewlines();
-    return { kind: "raise", message: msg, loc };
+    return { kind: "raise", message: msgTok.value, loc: mergeLoc(start, tokenLoc(msgTok)) };
   }
 
   private parseMatch(): MatchStatement {
-    const loc = this.loc();
-    this.expect("MATCH");
+    const start = tokenLoc(this.expect("MATCH"));
     const subject = this.parseExpression();
     this.expect("COLON");
     this.skipNewlines();
@@ -347,6 +360,7 @@ export class ParseContext {
 
     const arms: { pattern: Expression; body: Statement[] }[] = [];
     let elseBody: Statement[] | undefined;
+    let end = subject.loc;
 
     while (!this.isAt("DEDENT") && !this.isAt("EOF")) {
       this.skipNewlines();
@@ -358,41 +372,42 @@ export class ParseContext {
         this.skipNewlines();
         this.expect("INDENT");
         elseBody = this.parseBlock();
-        this.expect("DEDENT");
+        end = tokenLoc(this.expect("DEDENT"));
       } else {
         const pattern = this.parseExpression();
         this.expect("COLON", "ARROW");
         this.skipNewlines();
         this.expect("INDENT");
         const body = this.parseBlock();
-        this.expect("DEDENT");
+        end = tokenLoc(this.expect("DEDENT"));
         arms.push({ pattern, body });
       }
       this.skipNewlines();
     }
 
-    this.expect("DEDENT");
-    return { kind: "match", subject, arms, elseBody, loc };
+    end = tokenLoc(this.expect("DEDENT"));
+    return { kind: "match", subject, arms, elseBody, loc: mergeLoc(start, end) };
   }
 
   private parseAssert(): AssertStatement {
-    const loc = this.loc();
-    this.expect("ASSERT");
+    const start = tokenLoc(this.expect("ASSERT"));
     const expression = this.parseExpression();
     let message: string | undefined;
+    let end = expression.loc;
     if (this.isAt("COMMA")) {
       this.advance();
-      message = this.expect("STRING").value;
+      const messageTok = this.expect("STRING");
+      message = messageTok.value;
+      end = tokenLoc(messageTok);
     }
     this.skipNewlines();
-    return { kind: "assert", expression, message, loc };
+    return { kind: "assert", expression, message, loc: mergeLoc(start, end) };
   }
 
   private parseSqlStatement(): SqlStatement {
-    const loc = this.loc();
     const tok = this.advance();
     this.skipNewlines();
-    return { kind: "sql_statement", sql: tok.value, loc };
+    return { kind: "sql_statement", sql: tok.value, loc: tokenLoc(tok) };
   }
 
   // ---------- Expression parsing ----------
@@ -409,7 +424,7 @@ export class ParseContext {
       this.advanceBinaryOperator(opInfo);
       const nextMin = opInfo.assoc === "right" ? opInfo.precedence : opInfo.precedence + 1;
       const right = this.parseExpression(nextMin);
-      left = { kind: "binary", op: opInfo.op, left, right, loc: left.loc };
+      left = { kind: "binary", op: opInfo.op, left, right, loc: mergeLoc(left.loc, right.loc) };
     }
 
     return left;
@@ -422,13 +437,13 @@ export class ParseContext {
     if (tok.type === "NOT") {
       this.advance();
       const expression = this.parseExpression(UNARY_PRECEDENCE);
-      return { kind: "unary", op: "NOT", expression, loc: { line: tok.line, col: tok.col } } as UnaryExpr;
+      return { kind: "unary", op: "NOT", expression, loc: mergeLoc(tokenLoc(tok), expression.loc) } as UnaryExpr;
     }
 
     if (tok.type === "OPERATOR" && (tok.value === "+" || tok.value === "-")) {
       this.advance();
       const expression = this.parseExpression(UNARY_PRECEDENCE);
-      return { kind: "unary", op: tok.value, expression, loc: { line: tok.line, col: tok.col } } as UnaryExpr;
+      return { kind: "unary", op: tok.value, expression, loc: mergeLoc(tokenLoc(tok), expression.loc) } as UnaryExpr;
     }
 
     return this.parsePrimary();
@@ -445,82 +460,98 @@ export class ParseContext {
 
     if (tok.type === "STRING") {
       this.advance();
-      return { kind: "literal", value: tok.value, type: "text", loc: { line: tok.line, col: tok.col } };
+      return { kind: "literal", value: tok.value, type: "text", loc: tokenLoc(tok) };
     }
 
     if (tok.type === "NUMBER") {
       this.advance();
       if (tok.value === "true" || tok.value === "false") {
-        return { kind: "literal", value: tok.value === "true", type: "boolean", loc: { line: tok.line, col: tok.col } };
+        return { kind: "literal", value: tok.value === "true", type: "boolean", loc: tokenLoc(tok) };
       }
-      return { kind: "literal", value: Number(tok.value), type: "int", loc: { line: tok.line, col: tok.col } };
+      return { kind: "literal", value: Number(tok.value), type: "int", loc: tokenLoc(tok) };
     }
 
     if (tok.type === "IDENT") {
       this.advance();
-      const loc: Loc = { line: tok.line, col: tok.col };
+      const loc = tokenLoc(tok);
 
       if (this.isAt("DOT")) {
         this.advance();
-        const second = this.expect("IDENT").value;
+        const secondTok = this.expect("IDENT");
+        const second = secondTok.value;
+        let currentLoc = mergeLoc(loc, tokenLoc(secondTok));
 
         // schema.func(args)
         if (this.isAt("LPAREN")) {
           const args = this.parseArgList();
-          return { kind: "call", name: `${tok.value}.${second}`, args, loc };
+          const end = args.at(-1)?.loc ?? currentLoc;
+          return { kind: "call", name: `${tok.value}.${second}`, args, loc: mergeLoc(loc, end) };
         }
 
         // ident.field.subfield
         if (this.isAt("DOT")) {
           this.advance();
-          const subfield = this.expect("IDENT").value;
-          const fa: Expression = { kind: "field_access", object: `${tok.value}.${second}`, field: subfield, loc };
+          const subfieldTok = this.expect("IDENT");
+          const subfield = subfieldTok.value;
+          currentLoc = mergeLoc(currentLoc, tokenLoc(subfieldTok));
+          const fa: Expression = {
+            kind: "field_access",
+            object: `${tok.value}.${second}`,
+            field: subfield,
+            loc: currentLoc,
+          };
           if (this.isAt("QUESTION")) {
-            this.advance();
-            return nullCheck(fa, loc);
+            const questionTok = this.advance();
+            return nullCheck(fa, mergeLoc(currentLoc, tokenLoc(questionTok)));
           }
           return fa;
         }
 
         // ident.field?
         if (this.isAt("QUESTION")) {
-          this.advance();
-          return nullCheck({ kind: "field_access", object: tok.value, field: second, loc }, loc);
+          const questionTok = this.advance();
+          return nullCheck(
+            { kind: "field_access", object: tok.value, field: second, loc: currentLoc },
+            mergeLoc(currentLoc, tokenLoc(questionTok)),
+          );
         }
 
-        return { kind: "field_access", object: tok.value, field: second, loc };
+        return { kind: "field_access", object: tok.value, field: second, loc: currentLoc };
       }
 
       // func(args)
       if (this.isAt("LPAREN")) {
         const args = this.parseArgList();
-        return { kind: "call", name: tok.value, args, loc };
+        const end = args.at(-1)?.loc ?? loc;
+        return { kind: "call", name: tok.value, args, loc: mergeLoc(loc, end) };
       }
 
       // ident?
       if (this.isAt("QUESTION")) {
-        this.advance();
-        return nullCheck({ kind: "identifier", name: tok.value, loc }, loc);
+        const questionTok = this.advance();
+        return nullCheck({ kind: "identifier", name: tok.value, loc }, mergeLoc(loc, tokenLoc(questionTok)));
       }
 
       return { kind: "identifier", name: tok.value, loc };
     }
 
     if (tok.type === "LPAREN") {
-      const loc = { line: tok.line, col: tok.col };
+      const start = tokenLoc(tok);
       this.advance();
       const expr = this.parseExpression();
-      this.expect("RPAREN");
-      return { kind: "group", expression: expr, loc } as GroupExpr;
+      const end = tokenLoc(this.expect("RPAREN"));
+      return { kind: "group", expression: expr, loc: mergeLoc(start, end) } as GroupExpr;
     }
 
-    throw new ParseError(`unexpected token: ${tok.type} '${tok.value}'`, { line: tok.line, col: tok.col });
+    throw new ParseError(`unexpected token: ${tok.type} '${tok.value}'`, tokenLoc(tok), {
+      code: "parse.unexpected-token",
+      hint: "Check for a missing operator, closing delimiter, or misplaced keyword.",
+    });
   }
 
   /** Parse CASE expr WHEN val THEN result ... ELSE result END */
   private parseCaseExpr(): CaseExpr {
-    const loc = this.loc();
-    this.expect("CASE");
+    const start = tokenLoc(this.expect("CASE"));
     const subject = this.parseExpression();
     this.skipExprWs();
 
@@ -542,8 +573,8 @@ export class ParseContext {
       this.skipExprWs();
     }
 
-    this.expect("END");
-    return { kind: "case_expr", subject, arms, elseResult, loc };
+    const end = tokenLoc(this.expect("END"));
+    return { kind: "case_expr", subject, arms, elseResult, loc: mergeLoc(start, end) };
   }
 
   parseArgList(): Expression[] {
@@ -566,8 +597,7 @@ export class ParseContext {
   }
 
   private parseJsonLiteral(): JsonLiteral {
-    const loc = this.loc();
-    this.expect("LBRACE");
+    const start = tokenLoc(this.expect("LBRACE"));
     const entries: { key: string; value: Expression }[] = [];
 
     if (!this.isAt("RBRACE")) {
@@ -579,22 +609,22 @@ export class ParseContext {
       }
     }
 
-    this.expect("RBRACE");
-    return { kind: "json_literal", entries, loc };
+    const end = tokenLoc(this.expect("RBRACE"));
+    return { kind: "json_literal", entries, loc: mergeLoc(start, end) };
   }
 
   private parseJsonEntry(): { key: string; value: Expression } {
-    const key = this.expect("IDENT").value;
+    const keyTok = this.expect("IDENT");
+    const key = keyTok.value;
     if (!this.isAt("COLON")) {
-      return { key, value: { kind: "identifier", name: key, loc: this.loc() } };
+      return { key, value: { kind: "identifier", name: key, loc: tokenLoc(keyTok) } };
     }
     this.expect("COLON");
     return { key, value: this.parseExpression() };
   }
 
   private parseArrayLiteral(): ArrayLiteral {
-    const loc = this.loc();
-    this.expect("LBRACKET");
+    const start = tokenLoc(this.expect("LBRACKET"));
     const elements: Expression[] = [];
     if (!this.isAt("RBRACKET")) {
       elements.push(this.parseExpression());
@@ -603,13 +633,13 @@ export class ParseContext {
         elements.push(this.parseExpression());
       }
     }
-    this.expect("RBRACKET");
-    return { kind: "array_literal", elements, loc };
+    const end = tokenLoc(this.expect("RBRACKET"));
+    return { kind: "array_literal", elements, loc: mergeLoc(start, end) };
   }
 
   private parseInterpString(): StringInterp {
     const tok = this.advance();
-    const loc: Loc = { line: tok.line, col: tok.col };
+    const loc = tokenLoc(tok);
     const parts: (string | Expression)[] = [];
     const raw = tok.value;
 
@@ -664,7 +694,8 @@ function parseInterpolatedExpression(
   let expr = "";
 
   while (i < raw.length && depth > 0) {
-    const ch = raw[i]!;
+    const ch = raw[i];
+    if (ch === undefined) break;
 
     if (quote) {
       expr += ch;
@@ -712,10 +743,15 @@ function parseInterpolatedExpression(
   const interpolationLoc = {
     line: loc.line,
     col: loc.col + start - 1,
+    endLine: loc.line,
+    endCol: loc.col + start + 1,
   };
 
   if (depth !== 0) {
-    throw new ParseError("unterminated interpolation", interpolationLoc);
+    throw new ParseError("unterminated interpolation", interpolationLoc, {
+      code: "parse.unterminated-interpolation",
+      hint: "Close the interpolation with '}'.",
+    });
   }
 
   const leadingTrim = expr.length - expr.trimStart().length;
@@ -723,10 +759,15 @@ function parseInterpolatedExpression(
   const baseLoc = {
     line: loc.line,
     col: loc.col + 1 + start + leadingTrim,
+    endLine: loc.line,
+    endCol: loc.col + 1 + start + leadingTrim,
   };
 
   if (source === "") {
-    throw new ParseError("empty interpolation", baseLoc);
+    throw new ParseError("empty interpolation", baseLoc, {
+      code: "parse.empty-interpolation",
+      hint: "Insert a PLX expression between '#{' and '}'.",
+    });
   }
 
   try {
@@ -751,7 +792,7 @@ function remapInterpolationError(error: unknown, baseLoc: Loc): ParseError {
   }
 
   if (error instanceof LexError) {
-    return new ParseError(message, shiftRelativeLoc({ line: error.line, col: error.col }, baseLoc));
+    return new ParseError(message, shiftRelativeLoc(tokenLoc(error), baseLoc));
   }
 
   const loc = extractRelativeLoc(rawMessage);
@@ -761,7 +802,7 @@ function remapInterpolationError(error: unknown, baseLoc: Loc): ParseError {
 function extractRelativeLoc(message: string): Loc | undefined {
   const match = message.match(/plx:(\d+):(\d+)/);
   if (!match) return undefined;
-  return { line: Number(match[1]), col: Number(match[2]) };
+  return pointLoc(Number(match[1]), Number(match[2]));
 }
 
 function stripLocPrefix(message: string): string {
@@ -769,11 +810,7 @@ function stripLocPrefix(message: string): string {
 }
 
 function shiftRelativeLoc(loc: Loc, baseLoc: Loc): Loc {
-  const lineOffset = loc.line - 1;
-  return {
-    line: baseLoc.line + lineOffset,
-    col: lineOffset === 0 ? baseLoc.col + loc.col : loc.col,
-  };
+  return shiftLoc(loc, baseLoc.line - 1, baseLoc.col);
 }
 
 function remapExpressionLocs(expr: Expression, baseLoc: Loc): void {
@@ -905,7 +942,7 @@ export function parseSqlBlock(tok: Token): SqlBlockExpr {
   const elseMatch = sql.match(ELSE_RAISE_RE);
   if (elseMatch) {
     elseRaise = elseMatch[1];
-    sql = sql.slice(0, elseMatch.index!).trim();
+    sql = sql.slice(0, elseMatch.index ?? 0).trim();
   }
 
   const tableMatch = sql.match(TABLE_INFER_RE);
@@ -913,5 +950,14 @@ export function parseSqlBlock(tok: Token): SqlBlockExpr {
     inferredTable = tableMatch[1];
   }
 
-  return { kind: "sql_block", sql: sql.trim(), elseRaise, inferredTable, loc: { line: tok.line, col: tok.col } };
+  return { kind: "sql_block", sql: sql.trim(), elseRaise, inferredTable, loc: tokenLoc(tok) };
+}
+
+function tokenLoc(token: Pick<Token, "line" | "col" | "endLine" | "endCol">): Loc {
+  return {
+    line: token.line,
+    col: token.col,
+    endLine: token.endLine,
+    endCol: token.endCol,
+  };
 }

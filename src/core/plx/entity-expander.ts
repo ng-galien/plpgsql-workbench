@@ -1,5 +1,4 @@
 import type {
-  ActionDef,
   AssignStatement,
   EntityField,
   EntityHook,
@@ -9,7 +8,6 @@ import type {
   IfStatement,
   JsonLiteral,
   Loc,
-  MatchStatement,
   PlxEntity,
   PlxFunction,
   PlxModule,
@@ -19,11 +17,11 @@ import type {
   Statement,
   StateTransition,
   StrategyDecl,
-  ViewBlock,
   ViewSection,
 } from "./ast.js";
+import { pointLoc } from "./ast.js";
 
-const LOC: Loc = { line: 0, col: 0 };
+const LOC: Loc = pointLoc();
 
 // ---------- Public API ----------
 
@@ -150,19 +148,18 @@ function generateDDL(entity: PlxEntity, allFields: EntityField[]): string {
   }
 
   // State column CHECK constraint
-  if (entity.states) {
-    const vals = entity.states.values.map((v) => `'${v}'`).join(", ");
+  const states = entity.states;
+  if (states) {
+    const vals = states.values.map((v) => `'${v}'`).join(", ");
     // Add state column CHECK if not already in fields
     // Only add if status is not already in fields
-    if (!allFields.some((f) => f.name === entity.states!.column)) {
-      lines.push(
-        `  ${entity.states.column} text NOT NULL DEFAULT '${entity.states.initial}' CHECK (${entity.states.column} IN (${vals})),`,
-      );
+    if (!allFields.some((f) => f.name === states.column)) {
+      lines.push(`  ${states.column} text NOT NULL DEFAULT '${states.initial}' CHECK (${states.column} IN (${vals})),`);
     }
   }
 
   // Remove trailing comma from last line
-  const lastLine = lines[lines.length - 1]!;
+  const lastLine = lines.at(-1) ?? "";
   lines[lines.length - 1] = lastLine.replace(/,$/, "");
 
   lines.push(");");
@@ -559,7 +556,11 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
 }
 
 function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFunction {
-  const col = entity.states!.column;
+  const states = entity.states;
+  if (!states) {
+    throw new Error(`transition '${tr.name}' requires entity states`);
+  }
+  const col = states.column;
   const updateSql = `UPDATE ${entity.table} SET ${col} = '${tr.to}' WHERE id = p_id::int AND ${col} = '${tr.from}' RETURNING *`;
 
   const stmts: Statement[] = [];

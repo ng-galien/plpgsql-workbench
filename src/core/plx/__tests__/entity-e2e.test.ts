@@ -64,7 +64,10 @@ describe("PLX entity E2E", () => {
       "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon; END IF; END $$",
     );
     await pool.query("CREATE SCHEMA IF NOT EXISTS expense");
-    await pool.query(result.ddlSql!);
+    const ddlSql = result.ddlSql;
+    expect(ddlSql).toBeDefined();
+    if (!ddlSql) throw new Error("expected generated DDL");
+    await pool.query(ddlSql);
 
     // Deploy all functions — every single one must succeed
     const fnBlocks = result.sql.split(/(?=CREATE OR REPLACE FUNCTION)/).filter((s) => s.trim());
@@ -84,13 +87,15 @@ describe("PLX entity E2E", () => {
       rows: [inserted],
     } = await pool.query("INSERT INTO expense.category (name, accounting_code) VALUES ('Test', '601') RETURNING *");
     expect(inserted).toHaveProperty("name", "Test");
-    const id = inserted!.id;
+    if (!inserted) throw new Error("expected inserted row");
+    const id = inserted.id;
 
     // READ
     const {
       rows: [readRow],
     } = await pool.query<Record<string, unknown>>(`SELECT expense.category_read('${id}') as r`);
-    const rr = readRow!.r as Record<string, unknown>;
+    if (!readRow) throw new Error("expected read row");
+    const rr = readRow.r as Record<string, unknown>;
     expect(rr).toHaveProperty("name", "Test");
     expect(rr).toHaveProperty("actions");
 
@@ -102,7 +107,8 @@ describe("PLX entity E2E", () => {
     const {
       rows: [deleted],
     } = await pool.query<Record<string, unknown>>(`SELECT expense.category_delete('${id}') as r`);
-    const dr = deleted!.r as Record<string, unknown>;
+    if (!deleted) throw new Error("expected deleted row");
+    const dr = deleted.r as Record<string, unknown>;
     expect(dr).toHaveProperty("name", "Test");
   });
 });
