@@ -9,6 +9,7 @@ import type {
   IfStatement,
   JsonLiteral,
   Loc,
+  MatchStatement,
   PlxEntity,
   PlxFunction,
   PlxModule,
@@ -16,6 +17,7 @@ import type {
   ReturnStatement,
   SqlBlockExpr,
   Statement,
+  StateTransition,
   StrategyDecl,
   ViewBlock,
   ViewSection,
@@ -56,6 +58,12 @@ export function expandEntities(mod: PlxModule): ExpandResult {
       functions.push(buildCreateFunction(entity, resolvedFields));
       functions.push(buildUpdateFunction(entity, resolvedFields));
       functions.push(buildDeleteFunction(entity));
+      // State transition functions
+      if (entity.states) {
+        for (const tr of entity.states.transitions) {
+          functions.push(buildTransitionFunction(entity, tr));
+        }
+      }
       ddlFragments.push(generateDDL(entity, resolvedFields));
     } catch (e: unknown) {
       errors.push({
@@ -171,9 +179,22 @@ function buildViewFunction(entity: PlxEntity): PlxFunction {
   if (view.form) template.push(jEntry("form", buildFormSections(view.form)));
   entries.push(jEntry("template", jObj(template)));
 
-  // Actions catalog
-  if (entity.actions.length > 0) {
-    const actionEntries = entity.actions.map((a) => {
+  // Actions catalog: explicit actions + auto-generated transition actions
+  const allActions = [...entity.actions];
+  if (entity.states) {
+    for (const tr of entity.states.transitions) {
+      // Don't duplicate if already declared explicitly
+      if (!allActions.some((a) => a.name === tr.name)) {
+        allActions.push({
+          name: tr.name,
+          label: `${entity.schema}.action_${tr.name}`,
+          variant: "primary",
+        });
+      }
+    }
+  }
+  if (allActions.length > 0) {
+    const actionEntries = allActions.map((a) => {
       const props: JsonLiteral["entries"] = [jEntry("label", strLit(a.label))];
       if (a.icon) props.push(jEntry("icon", strLit(a.icon)));
       if (a.variant) props.push(jEntry("variant", strLit(a.variant)));
@@ -306,36 +327,77 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
     } as IfStatement,
   ];
 
-  // HATEOAS: static actions (no state machine in Phase B — added in Phase C)
-  if (entity.actions.length > 0) {
-    const idExpr: Expression = {
-      kind: "binary",
-      op: "->>",
-      left: ident("result"),
-      right: strLit("id"),
-      loc: LOC,
-    };
-    const actionArr = entity.actions.map((a) =>
-      jObj([
-        jEntry("method", strLit(a.name)),
-        jEntry("uri", {
-          kind: "binary",
-          op: "||",
-          left: { kind: "binary", op: "||", left: strLit(`${entity.uri}/`), right: idExpr, loc: LOC },
-          right: strLit(`/${a.name}`),
-          loc: LOC,
-        }),
-      ]),
-    );
+  // HATEOAS actions
+  if (entity.states) {
+    // State-based: extract status, build CASE with per-state actions
+    stmts.push(assign("status", sqlBlock(`(v_result->>'status')`)));
+    stmts.push(assign("id", sqlBlock(`(v_result->>'id')::int`)));
+    stmts.push(assign("actions", { kind: "array_literal", elements: [], loc: LOC }));
 
-    const returnExpr: Expression = {
-      kind: "binary",
-      op: "||",
-      left: ident("result"),
-      right: jObj([jEntry("actions", { kind: "array_literal", elements: actionArr, loc: LOC })]),
+    // Group transitions by from-state
+    const byState = new Map<string, { name: string; from: string; to: string }[]>();
+    for (const tr of entity.states.transitions) {
+      const list = byState.get(tr.from) ?? [];
+      list.push(tr);
+      byState.set(tr.from, list);
+    }
+
+    // Also add static actions (edit, delete) to relevant states
+    const hasEdit = entity.actions.some((a) => a.name === "edit");
+    const hasDelete = entity.actions.some((a) => a.name === "delete");
+
+    const arms: { pattern: Expression; body: Statement[] }[] = [];
+    for (const [state, transitions] of byState) {
+      const actionObjs: Expression[] = [];
+      // Add edit action if entity has it and this is an editable state
+      if (hasEdit && entity.updateStates?.includes(state)) {
+        actionObjs.push(actionObj(entity, "edit"));
+      }
+      // Add transition actions
+      for (const tr of transitions) {
+        actionObjs.push(actionObj(entity, tr.name));
+      }
+      // Add delete action if entity has it and this is a deletable state
+      if (hasDelete && entity.updateStates?.includes(state)) {
+        actionObjs.push(actionObj(entity, "delete"));
+      }
+      arms.push({
+        pattern: strLit(state),
+        body: [assign("actions", { kind: "array_literal", elements: actionObjs, loc: LOC } as Expression)],
+      });
+    }
+
+    // match status: arms + else: empty actions
+    const matchStmt: Statement = {
+      kind: "match",
+      subject: ident("status"),
+      arms,
+      elseBody: [assign("actions", { kind: "array_literal", elements: [], loc: LOC } as Expression)],
       loc: LOC,
     };
-    stmts.push(ret("value", returnExpr));
+    stmts.push(matchStmt);
+
+    stmts.push(
+      ret("value", {
+        kind: "binary",
+        op: "||",
+        left: ident("result"),
+        right: jObj([jEntry("actions", ident("actions"))]),
+        loc: LOC,
+      }),
+    );
+  } else if (entity.actions.length > 0) {
+    // Static actions (no state machine)
+    const actionArr = entity.actions.map((a) => actionObj(entity, a.name));
+    stmts.push(
+      ret("value", {
+        kind: "binary",
+        op: "||",
+        left: ident("result"),
+        right: jObj([jEntry("actions", { kind: "array_literal", elements: actionArr, loc: LOC })]),
+        loc: LOC,
+      }),
+    );
   } else {
     stmts.push(ret("value", ident("result")));
   }
@@ -442,6 +504,76 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
     ["definer"],
     stmts,
   );
+}
+
+function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFunction {
+  const col = entity.states!.column;
+  const updateSql = `UPDATE ${entity.table} SET ${col} = '${tr.to}' WHERE id = p_id::int AND ${col} = '${tr.from}' RETURNING *`;
+
+  const stmts: Statement[] = [];
+
+  // Optional guard
+  if (tr.guard) {
+    // Fetch row first for guard evaluation
+    stmts.push(assign("row", sqlBlock(`(SELECT to_jsonb(t) FROM ${entity.table} t WHERE t.id = p_id::int)`)));
+    stmts.push({
+      kind: "if",
+      condition: { kind: "binary", op: "=", left: ident("row"), right: nullLit(), loc: LOC },
+      body: [{ kind: "raise", message: `${entity.schema}.err_not_found`, loc: LOC }],
+      elsifs: [],
+      loc: LOC,
+    } as Statement);
+    // Guard check — raw SQL expression
+    stmts.push({
+      kind: "if",
+      condition: {
+        kind: "binary",
+        op: "NOT",
+        left: { kind: "literal", value: true, type: "boolean", loc: LOC },
+        right: sqlBlock(tr.guard),
+        loc: LOC,
+      },
+      body: [{ kind: "raise", message: `${entity.schema}.err_guard_${tr.name}`, loc: LOC }],
+      elsifs: [],
+      loc: LOC,
+    } as Statement);
+  }
+
+  // Transition body statements
+  if (tr.body) stmts.push(...tr.body);
+
+  // The UPDATE
+  stmts.push(assign("result", sqlBlock(updateSql, `${entity.schema}.err_not_${tr.from}`)));
+  stmts.push(ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }));
+
+  return makeFn(
+    entity,
+    `${entity.name}_${tr.name}`,
+    [{ name: "p_id", type: "text", nullable: false }],
+    "jsonb",
+    ["definer"],
+    stmts,
+  );
+}
+
+/** Build a HATEOAS action object: {method: name, uri: entity://name/id/action} */
+function actionObj(entity: PlxEntity, name: string): Expression {
+  return jObj([
+    jEntry("method", strLit(name)),
+    jEntry("uri", {
+      kind: "binary",
+      op: "||",
+      left: {
+        kind: "binary",
+        op: "||",
+        left: strLit(`${entity.uri}/`),
+        right: ident("id"),
+        loc: LOC,
+      },
+      right: strLit(`/${name}`),
+      loc: LOC,
+    }),
+  ]);
 }
 
 // ---------- Helpers ----------
