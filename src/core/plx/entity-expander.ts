@@ -108,6 +108,17 @@ function resolveTraitFields(entity: PlxEntity, registry: Map<string, PlxTrait>, 
   return [...entity.fields, ...traitFields];
 }
 
+/** Returns a WHERE fragment from traits (e.g., soft_delete → "deleted_at IS NULL") */
+function defaultScope(entity: PlxEntity, alias: string): string {
+  const scopes: string[] = [];
+  if (entity.traits.includes("soft_delete")) {
+    scopes.push(`${alias}.deleted_at IS NULL`);
+  }
+  // Custom traits with defaultScope
+  // (handled when trait registry is fully wired)
+  return scopes.length > 0 ? scopes.join(" AND ") : "";
+}
+
 function fieldDef(name: string, type: string, nullable: boolean, defaultValue?: string): EntityField {
   return {
     name,
@@ -265,7 +276,11 @@ function buildListFunction(entity: PlxEntity): PlxFunction {
   }
 
   // Default: IF p_filter IS NULL → static, ELSE → dynamic
-  const staticSql = `SELECT to_jsonb(${t}) FROM ${entity.table} ${t} ORDER BY ${t}.${order}`;
+  const scope = defaultScope(entity, t);
+  const whereScope = scope ? ` WHERE ${scope}` : "";
+  const andScope = scope ? ` AND ${scope}` : "";
+
+  const staticSql = `SELECT to_jsonb(${t}) FROM ${entity.table} ${t}${whereScope} ORDER BY ${t}.${order}`;
   const dynamicExpr: Expression = {
     kind: "binary",
     op: "||",
@@ -281,7 +296,7 @@ function buildListFunction(entity: PlxEntity): PlxFunction {
       },
       loc: LOC,
     },
-    right: strLit(` ORDER BY ${t}.${order}`),
+    right: strLit(`${andScope} ORDER BY ${t}.${order}`),
     loc: LOC,
   };
 
@@ -310,10 +325,12 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
   const readKey = entity.readKey ?? `${shortAlias(entity)}.id = p_id::int`;
   const t = shortAlias(entity);
 
-  // Query part
+  // Query part (with soft_delete scope if applicable)
+  const scope = defaultScope(entity, t);
+  const andScope = scope ? ` AND ${scope}` : "";
   const querySql = strategy
     ? `(SELECT ${strategy.fn}(p_id))`
-    : `(SELECT to_jsonb(${t}) FROM ${entity.table} ${t} WHERE ${readKey})`;
+    : `(SELECT to_jsonb(${t}) FROM ${entity.table} ${t} WHERE ${readKey}${andScope})`;
 
   const stmts: Statement[] = [
     assign("result", sqlBlock(querySql)),
