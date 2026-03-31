@@ -49,6 +49,9 @@ describe("pgm scaffold", () => {
     expect(source).toContain("depends pgv");
     expect(source).toContain("export fn quote.health() -> jsonb [stable]:");
     expect(source).toContain('return {name: "quote", status: "ok"}');
+    expect(source).toContain("assert quote.health()->>'name' = 'quote'");
+    expect(source).toContain("assert quote.health()->>'status' = 'ok'");
+    expect(source).not.toContain("row := quote.health()");
 
     const claude = await fs.readFile(path.join(moduleDir, "CLAUDE.md"), "utf-8");
     expect(claude).toContain("pgm module build quote");

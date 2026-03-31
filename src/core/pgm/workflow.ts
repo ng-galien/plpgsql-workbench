@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DbClient } from "../connection.js";
 import type { TestReport } from "../tools/plpgsql/test.js";
-import { hashContent, type PreparedPlxModule, preparePlxModule } from "./plx-builder.js";
+import { hashContent, type PreparedPlxModule, preparePlxModule, writePreparedBuildFiles } from "./plx-builder.js";
 import { loadManifest, type ModuleManifest } from "./resolver.js";
 
 export type ModuleWorkflowArtifactKind = "extension" | "ddl" | "function" | "test" | "grant";
@@ -69,6 +69,7 @@ export interface ModuleApplyExecutionResult {
   results: ModuleApplyArtifactResult[];
   warnings: string[];
   obsolete: AppliedArtifactState[];
+  buildFiles: string[];
   testSchema?: string;
   testReport?: TestReport | null;
   failure?: ModuleApplyFailure;
@@ -166,6 +167,7 @@ export async function applyModuleIncremental(
   workflow: PreparedModuleWorkflow,
   runTests: (client: DbClient, testSchema: string, pattern?: string) => Promise<TestReport | null>,
 ): Promise<ModuleApplyExecutionResult> {
+  const buildFiles = await syncModuleBuildFiles(workflow);
   await ensureApplyTrackingTable(client);
 
   const applied = await readAppliedArtifacts(client, workflow.manifest.name);
@@ -175,6 +177,7 @@ export async function applyModuleIncremental(
       ok: true,
       diff,
       obsolete: diff.obsolete,
+      buildFiles,
       results: diff.unchanged.map((artifact) => ({
         key: artifact.key,
         kind: artifact.kind,
@@ -235,6 +238,7 @@ export async function applyModuleIncremental(
         ok: false,
         diff,
         obsolete: diff.obsolete,
+        buildFiles,
         results,
         warnings,
         testSchema,
@@ -254,6 +258,7 @@ export async function applyModuleIncremental(
       ok: true,
       diff,
       obsolete: diff.obsolete,
+      buildFiles,
       results: [
         ...results,
         ...diff.unchanged.map((artifact) => ({
@@ -276,11 +281,18 @@ export async function applyModuleIncremental(
       ok: false,
       diff,
       obsolete: diff.obsolete,
+      buildFiles,
       results,
       warnings,
       failure: toApplyFailure(error),
     };
   }
+}
+
+export async function syncModuleBuildFiles(workflow: PreparedModuleWorkflow): Promise<string[]> {
+  const written = await writePreparedBuildFiles(workflow.moduleDir, workflow.prepared, workflow.manifest.name);
+  workflow.buildFiles = await collectBuildFileStatus(workflow.moduleDir, workflow.prepared);
+  return written;
 }
 
 async function collectBuildFileStatus(
@@ -313,7 +325,7 @@ async function collectBuildFileStatus(
     let currentHash: string | undefined;
     try {
       const content = await fs.readFile(filePath, "utf-8");
-      currentHash = hashContent(content.trimEnd());
+      currentHash = hashContent(content);
     } catch {
       entries.push({
         kind: entry.kind,

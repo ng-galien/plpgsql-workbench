@@ -65,7 +65,10 @@ test "estimate read":
     const manifest = await loadManifest(modulesDir, "quote");
     const result = await buildPlxModule(modulesDir, manifest, { validate: false });
 
-    expect(result.files).toEqual(["build/quote.func.sql", "build/quote_ut.func.sql"]);
+    expect(result.files).toEqual(["build/quote.ddl.sql", "build/quote.func.sql", "build/quote_ut.func.sql"]);
+    await expect(fs.readFile(path.join(modulesDir, "quote", "build", "quote.ddl.sql"), "utf-8")).resolves.toContain(
+      'CREATE SCHEMA IF NOT EXISTS "quote"',
+    );
     await expect(fs.readFile(path.join(modulesDir, "quote", "build", "quote.func.sql"), "utf-8")).resolves.toContain(
       "quote.estimate_read",
     );
@@ -86,7 +89,7 @@ test "estimate read":
         schemas: { public: "quote", private: null },
         dependencies: [],
         extensions: [],
-        sql: ["build/quote.func.sql"],
+        sql: ["build/quote.ddl.sql", "build/quote.func.sql"],
         assets: {},
         grants: {},
         plx: { entry: "src/quote.plx" },
@@ -107,8 +110,8 @@ export fn quote.estimate_read(id int) -> jsonb:
     const plan = await resolve(modulesDir, ["quote"]);
     const results = await installModules(modulesDir, appDir, plan);
 
-    // PLX build generates build/quote.func.sql, then install copies it to sql/05-quote.func.sql
-    expect(results[0]?.files).toEqual(expect.arrayContaining(["sql/05-quote.func.sql"]));
+    // PLX build generates build/quote.ddl.sql + build/quote.func.sql, then install copies both.
+    expect(results[0]?.files).toEqual(expect.arrayContaining(["sql/05-quote.ddl.sql", "sql/05-quote.func.sql"]));
     await expect(fs.readFile(path.join(appDir, "sql", "05-quote.func.sql"), "utf-8")).resolves.toContain(
       "quote.estimate_read",
     );

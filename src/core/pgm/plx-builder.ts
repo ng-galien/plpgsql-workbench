@@ -38,33 +38,7 @@ export async function buildPlxModule(
 ): Promise<PlxBuildResult> {
   const prepared = await preparePlxModule(modulesDir, manifest, options);
   const moduleDir = path.join(modulesDir, manifest.name);
-  const written: string[] = [];
-
-  if (prepared.outputs.ddl) {
-    if (!prepared.outputs.ddl.file) {
-      throw new Error(`PLX module '${manifest.name}' generated DDL but module.json has no primary .ddl.sql target`);
-    }
-    await writeModuleFile(moduleDir, prepared.outputs.ddl.file, prepared.outputs.ddl.content);
-    written.push(prepared.outputs.ddl.file);
-  }
-
-  if (prepared.outputs.func?.content.trim()) {
-    if (!prepared.outputs.func.file) {
-      throw new Error(
-        `PLX module '${manifest.name}' generated functions but module.json has no primary .func.sql target`,
-      );
-    }
-    await writeModuleFile(moduleDir, prepared.outputs.func.file, prepared.outputs.func.content);
-    written.push(prepared.outputs.func.file);
-  }
-
-  if (prepared.outputs.test?.content.trim()) {
-    if (!prepared.outputs.test.file) {
-      throw new Error(`PLX module '${manifest.name}' generated tests but module.json has no _ut.func.sql target`);
-    }
-    await writeModuleFile(moduleDir, prepared.outputs.test.file, prepared.outputs.test.content);
-    written.push(prepared.outputs.test.file);
-  }
+  const written = await writePreparedBuildFiles(moduleDir, prepared, manifest.name);
 
   return {
     files: written,
@@ -113,8 +87,9 @@ export async function preparePlxModule(
 
   // Collect artifacts before validation (which deletes _blocks/_artifact)
   const targets = resolveTargets(manifest);
-  const ddlHash = result.ddlSql ? hashContent(result.ddlSql) : undefined;
-  const artifacts = collectPreparedArtifacts(result, targets, ddlHash);
+  const ddlContent = buildGeneratedDdl(manifest, result.ddlSql);
+  const ddlHash = ddlContent ? hashContent(ddlContent) : undefined;
+  const artifacts = collectPreparedArtifacts(result, targets, ddlContent, ddlHash);
 
   // Validate after artifact collection if requested
   if (options.validate !== false) {
@@ -127,7 +102,7 @@ export async function preparePlxModule(
     files: loaded.files,
     warnings: result.warnings.map(formatWarning),
     outputs: {
-      ddl: result.ddlSql ? { file: targets.ddl, content: result.ddlSql, hash: ddlHash! } : undefined,
+      ddl: ddlContent && ddlHash ? { file: targets.ddl, content: ddlContent, hash: ddlHash } : undefined,
       func: result.sql.trim() ? { file: targets.func, content: result.sql, hash: hashContent(result.sql) } : undefined,
       test: result.testSql?.trim()
         ? { file: targets.test, content: result.testSql, hash: hashContent(result.testSql) }
@@ -135,6 +110,40 @@ export async function preparePlxModule(
     },
     artifacts,
   };
+}
+
+export async function writePreparedBuildFiles(
+  moduleDir: string,
+  prepared: PreparedPlxModule,
+  moduleName = path.basename(moduleDir),
+): Promise<string[]> {
+  const written: string[] = [];
+
+  if (prepared.outputs.ddl) {
+    if (!prepared.outputs.ddl.file) {
+      throw new Error(`PLX module '${moduleName}' generated DDL but module.json has no primary .ddl.sql target`);
+    }
+    await writeModuleFile(moduleDir, prepared.outputs.ddl.file, prepared.outputs.ddl.content);
+    written.push(prepared.outputs.ddl.file);
+  }
+
+  if (prepared.outputs.func?.content.trim()) {
+    if (!prepared.outputs.func.file) {
+      throw new Error(`PLX module '${moduleName}' generated functions but module.json has no primary .func.sql target`);
+    }
+    await writeModuleFile(moduleDir, prepared.outputs.func.file, prepared.outputs.func.content);
+    written.push(prepared.outputs.func.file);
+  }
+
+  if (prepared.outputs.test?.content.trim()) {
+    if (!prepared.outputs.test.file) {
+      throw new Error(`PLX module '${moduleName}' generated tests but module.json has no _ut.func.sql target`);
+    }
+    await writeModuleFile(moduleDir, prepared.outputs.test.file, prepared.outputs.test.content);
+    written.push(prepared.outputs.test.file);
+  }
+
+  return written;
 }
 
 function resolveTargets(manifest: ModuleManifest): {
@@ -164,25 +173,33 @@ function isUnitTestFunc(file: string): boolean {
 
 async function writeModuleFile(moduleDir: string, relativePath: string, content: string): Promise<void> {
   const outputPath = path.join(moduleDir, relativePath);
+  const expected = `${content}\n`;
+  try {
+    const current = await fs.readFile(outputPath, "utf-8");
+    if (current === expected) return;
+  } catch {
+    // Fall through: file is missing or unreadable, write a fresh copy.
+  }
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await fs.writeFile(outputPath, `${content}\n`, "utf-8");
+  await fs.writeFile(outputPath, expected, "utf-8");
 }
 
 function collectPreparedArtifacts(
   result: CompileResult,
   targets: ReturnType<typeof resolveTargets>,
+  ddlContent?: string,
   precomputedDdlHash?: string,
 ): PlxPreparedArtifact[] {
   const artifacts: PlxPreparedArtifact[] = [];
 
-  if (result.ddlSql) {
+  if (ddlContent) {
     artifacts.push({
       key: "ddl",
       kind: "ddl",
       name: targets.ddl ?? "ddl",
       file: targets.ddl,
-      content: result.ddlSql,
-      hash: precomputedDdlHash ?? hashContent(result.ddlSql),
+      content: ddlContent,
+      hash: precomputedDdlHash ?? hashContent(ddlContent),
     });
   }
 
@@ -203,7 +220,29 @@ function collectPreparedArtifacts(
 }
 
 export function hashContent(content: string): string {
-  return crypto.createHash("sha256").update(content).digest("hex").slice(0, 16);
+  return crypto.createHash("sha256").update(content.trimEnd()).digest("hex").slice(0, 16);
+}
+
+function buildGeneratedDdl(manifest: ModuleManifest, compilerDdl?: string): string | undefined {
+  const parts: string[] = [];
+  const { public: pub, private: priv, qa } = manifest.schemas;
+
+  if (pub) {
+    parts.push(`CREATE SCHEMA IF NOT EXISTS "${pub.replace(/"/g, '""')}";`);
+    parts.push(`CREATE SCHEMA IF NOT EXISTS "${`${pub}_ut`.replace(/"/g, '""')}";`);
+  }
+  if (priv) {
+    parts.push(`CREATE SCHEMA IF NOT EXISTS "${priv.replace(/"/g, '""')}";`);
+  }
+  if (qa) {
+    parts.push(`CREATE SCHEMA IF NOT EXISTS "${qa.replace(/"/g, '""')}";`);
+  }
+  if (compilerDdl?.trim()) {
+    parts.push(compilerDdl.trim());
+  }
+
+  if (parts.length === 0) return undefined;
+  return parts.join("\n\n");
 }
 
 function formatWarning(warning: CompileWarning): string {

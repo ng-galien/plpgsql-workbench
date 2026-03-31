@@ -378,10 +378,12 @@ export async function scaffoldModule(
   await fs.writeFile(path.join(moduleDir, "module.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   created.push("module.json");
 
-  // build/<schema>.ddl.sql (DDL placeholder)
+  // build/<schema>.ddl.sql
   await fs.writeFile(
     path.join(moduleDir, "build", `${schemaName}.ddl.sql`),
-    `-- ${name} — DDL\n\nCREATE SCHEMA IF NOT EXISTS ${schemaName};\nCREATE SCHEMA IF NOT EXISTS ${schemaName}_ut;\nCREATE SCHEMA IF NOT EXISTS ${schemaName}_qa;\n`,
+    mode === "plx"
+      ? `-- Auto-generated from src/${name}.plx by "pgm module build ${name}"\n`
+      : `-- ${name} — DDL\n\nCREATE SCHEMA IF NOT EXISTS ${schemaName};\nCREATE SCHEMA IF NOT EXISTS ${schemaName}_ut;\nCREATE SCHEMA IF NOT EXISTS ${schemaName}_qa;\n`,
   );
   created.push(`build/${schemaName}.ddl.sql`);
 
@@ -449,10 +451,10 @@ function moduleClaudeMd(name: string, schema: string, description: string | unde
   const workflow =
     mode === "plx"
       ? `1. **PLX** -> edit \`src/${name}.plx\`
-2. **Build** -> \`pgm module build ${name}\` to generate \`build/${schema}.func.sql\` and \`build/${schema}_ut.func.sql\`
+2. **Build** -> \`pgm module build ${name}\` to generate \`build/${schema}.ddl.sql\`, \`build/${schema}.func.sql\` and \`build/${schema}_ut.func.sql\`
 3. **Install/Deploy** -> \`pgm app install\` then \`pgm app deploy --apply\`
 4. Use MCP tools for DB inspection/tests, but keep PLX as the source of truth
-5. JAMAIS editer \`build/*.func.sql\` ou \`build/*_ut.func.sql\` a la main`
+5. JAMAIS editer \`build/*.ddl.sql\`, \`build/*.func.sql\` ou \`build/*_ut.func.sql\` a la main`
       : `1. **DDL** → Write dans \`build/{schema}.ddl.sql\` → \`pg_schema\` pour appliquer
 2. **Fonctions** → \`pg_func_set\` pour creer/modifier + \`pg_test\` pour valider
 3. **Exporter** → \`pg_pack\` (→ \`build/{schema}.func.sql\`) + \`pg_func_save\` (→ \`src/\`)
@@ -588,9 +590,8 @@ export fn ${name}.health() -> jsonb [stable]:
   return {name: "${name}", status: "ok"}
 
 test "health":
-  row := ${name}.health()
-  assert row->>'name' = '${name}'
-  assert row->>'status' = 'ok'
+  assert ${name}.health()->>'name' = '${name}'
+  assert ${name}.health()->>'status' = 'ok'
 `;
 }
 

@@ -28,7 +28,7 @@ function parseTap(rows: { runtests: string }[]): TestReport {
   for (const row of rows) lines.push(...row.runtests.split("\n"));
 
   for (const line of lines) {
-    const tapMatch = line.match(/^\s+(not )?ok \d+ - (.+)$/);
+    const tapMatch = line.match(/^\s*(not )?ok \d+ - (.+)$/);
     if (tapMatch) {
       if (current) results.push(current);
       current = { ok: !tapMatch[1], description: tapMatch[2]! };

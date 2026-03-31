@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildPlxModule } from "../plx-builder.js";
-import { diffModuleArtifacts, prepareModuleWorkflow } from "../workflow.js";
+import { diffModuleArtifacts, prepareModuleWorkflow, syncModuleBuildFiles } from "../workflow.js";
 
 const tmpRoots: string[] = [];
 
@@ -27,7 +27,7 @@ async function writeModule(root: string, name: string): Promise<void> {
         schemas: { public: name, private: null },
         dependencies: [],
         extensions: [],
-        sql: [`build/${name}.func.sql`, `build/${name}_ut.func.sql`],
+        sql: [`build/${name}.ddl.sql`, `build/${name}.func.sql`, `build/${name}_ut.func.sql`],
         assets: {},
         grants: {},
         plx: { entry: `src/${name}.plx` },
@@ -74,11 +74,17 @@ describe("pgm module workflow", () => {
 
     expect(workflow.prepared.files.map((file) => path.basename(file))).toEqual(["quote.plx", "brand.plx"]);
     expect(workflow.artifacts.map((artifact) => artifact.key)).toEqual([
+      "ddl",
       "function:quote.brand",
       "test:quote_ut.test_brand",
     ]);
     expect(workflow.buildFiles).toEqual([
-      { kind: "ddl", status: "not_generated" },
+      {
+        kind: "ddl",
+        file: "build/quote.ddl.sql",
+        expectedHash: expect.any(String),
+        status: "missing",
+      },
       {
         kind: "func",
         file: "build/quote.func.sql",
@@ -106,14 +112,14 @@ describe("pgm module workflow", () => {
       schemas: { public: "quote", private: null },
       dependencies: [],
       extensions: [],
-      sql: ["build/quote.func.sql", "build/quote_ut.func.sql"],
+      sql: ["build/quote.ddl.sql", "build/quote.func.sql", "build/quote_ut.func.sql"],
       assets: {},
       grants: {},
       plx: { entry: "src/quote.plx" },
     });
 
     const workflow = await prepareModuleWorkflow(root, "quote");
-    expect(workflow.buildFiles.map((file) => file.status)).toEqual(["not_generated", "up_to_date", "up_to_date"]);
+    expect(workflow.buildFiles.map((file) => file.status)).toEqual(["up_to_date", "up_to_date", "up_to_date"]);
     const brandArtifact = workflow.artifacts.find((artifact) => artifact.key === "function:quote.brand");
     expect(brandArtifact).toBeDefined();
     if (!brandArtifact) {
@@ -144,8 +150,30 @@ describe("pgm module workflow", () => {
     ]);
 
     const diff = diffModuleArtifacts(workflow.artifacts, applied);
-    expect(diff.changed.map((artifact) => artifact.key)).toEqual(["test:quote_ut.test_brand"]);
+    expect(diff.changed.map((artifact) => artifact.key)).toEqual(["ddl", "test:quote_ut.test_brand"]);
     expect(diff.unchanged.map((artifact) => artifact.key)).toEqual(["function:quote.brand"]);
     expect(diff.obsolete.map((artifact) => artifact.key)).toEqual(["function:quote.old_brand"]);
+  });
+
+  it("syncs generated build files to disk before apply", async () => {
+    const root = await createWorkspace();
+    await writeModule(root, "quote");
+
+    const workflow = await prepareModuleWorkflow(root, "quote");
+    expect(workflow.buildFiles.map((file) => file.status)).toEqual(["missing", "missing", "missing"]);
+
+    const written = await syncModuleBuildFiles(workflow);
+    expect(written).toEqual(["build/quote.ddl.sql", "build/quote.func.sql", "build/quote_ut.func.sql"]);
+
+    expect(workflow.buildFiles.map((file) => file.status)).toEqual(["up_to_date", "up_to_date", "up_to_date"]);
+    await expect(
+      fs.readFile(path.join(root, "modules", "quote", "build", "quote.ddl.sql"), "utf-8"),
+    ).resolves.toContain('CREATE SCHEMA IF NOT EXISTS "quote"');
+    await expect(
+      fs.readFile(path.join(root, "modules", "quote", "build", "quote.func.sql"), "utf-8"),
+    ).resolves.toContain("quote.brand");
+    await expect(
+      fs.readFile(path.join(root, "modules", "quote", "build", "quote_ut.func.sql"), "utf-8"),
+    ).resolves.toContain("quote_ut.test_brand");
   });
 });

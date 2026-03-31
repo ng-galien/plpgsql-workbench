@@ -133,6 +133,7 @@ function formatApplyExecution(
     results: { action: "applied" | "unchanged"; kind: string; name: string; warning?: string }[];
     warnings: string[];
     obsolete: { kind: string; name: string }[];
+    buildFiles: string[];
     testSchema?: string;
     testReport?: TestReport | null;
     failure?: { problem: string; where: string; fixHint?: string };
@@ -145,7 +146,14 @@ function formatApplyExecution(
   body.push(`applied: ${result.results.filter((item) => item.action === "applied").length}`);
   body.push(`unchanged: ${result.results.filter((item) => item.action === "unchanged").length}`);
   body.push(`obsolete: ${result.obsolete.length}`);
+  body.push(`build_files: ${result.buildFiles.length}`);
   body.push("");
+
+  if (result.buildFiles.length > 0) {
+    body.push("build:");
+    for (const file of result.buildFiles) body.push(`  - ${file}`);
+    body.push("");
+  }
 
   if (result.failure) {
     body.push(`problem: ${result.failure.problem}`);
