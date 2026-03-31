@@ -270,8 +270,8 @@ app
       const m = plan.order[i];
       const isLast = i === plan.order.length - 1;
       const prefix = isLast ? "└── " : "├── ";
-      const deps = m.dependencies.length > 0 ? ` (needs: ${m.dependencies.join(", ")})` : "";
-      console.log(`${prefix}${m.name}@${m.version}${deps}`);
+      const deps = m!.dependencies.length > 0 ? ` (needs: ${m!.dependencies.join(", ")})` : "";
+      console.log(`${prefix}${m!.name}@${m!.version}${deps}`);
     }
   });
 

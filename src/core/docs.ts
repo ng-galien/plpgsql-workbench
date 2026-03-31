@@ -23,11 +23,11 @@ function parseFrontMatter(raw: string): { meta: Record<string, string>; content:
   const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (!match) return { meta: {}, content: raw };
   const meta: Record<string, string> = {};
-  for (const line of match[1].split("\n")) {
+  for (const line of match[1]!.split("\n")) {
     const kv = line.match(/^(\w+):\s*(.+)$/);
-    if (kv) meta[kv[1]] = kv[2].trim();
+    if (kv) meta[kv[1]!] = kv[2]!.trim();
   }
-  return { meta, content: match[2].trim() };
+  return { meta, content: match[2]!.trim() };
 }
 
 export function loadDocs(): Doc[] {

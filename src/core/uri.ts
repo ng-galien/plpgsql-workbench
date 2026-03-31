@@ -47,16 +47,16 @@ export class PlUri {
     // plpgsql://schema/kind/name
     const full = uri.match(/^plpgsql:\/\/(\w+)\/(\w+)\/(\w+)$/);
     if (full) {
-      const kind = full[2];
+      const kind = full[2]!;
       if (["function", "table", "trigger", "type"].includes(kind)) {
-        return new PlUri(full[1], kind as ResourceKind, full[3]);
+        return new PlUri(full[1]!, kind as ResourceKind, full[3]!);
       }
       return null;
     }
     // plpgsql://schema
     const schemaOnly = uri.match(/^plpgsql:\/\/(\w+)\/?$/);
     if (schemaOnly) {
-      return new PlUri(schemaOnly[1]);
+      return new PlUri(schemaOnly[1]!);
     }
     return null;
   }

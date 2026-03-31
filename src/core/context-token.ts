@@ -34,16 +34,16 @@ export async function computeContextToken(client: DbClient, schema: string, name
   );
   if (rows.length === 0) return null;
 
-  const bodyHash = crypto.createHash("md5").update(rows[0].prosrc).digest("hex");
+  const bodyHash = crypto.createHash("md5").update(rows[0]!.prosrc).digest("hex");
 
   // Extract schema-qualified calls from body
   const calls: string[] = [];
   const re = /\b(\w+)\.(\w+)\s*\(/g;
-  let m: RegExpExecArray | null = re.exec(rows[0].prosrc);
+  let m: RegExpExecArray | null = re.exec(rows[0]!.prosrc);
   while (m !== null) {
     const qname = `${m[1]}.${m[2]}`;
     if (!calls.includes(qname)) calls.push(qname);
-    m = re.exec(rows[0].prosrc);
+    m = re.exec(rows[0]!.prosrc);
   }
 
   // Get callee body hashes in one query

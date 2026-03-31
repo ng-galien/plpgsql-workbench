@@ -249,7 +249,7 @@ export function createHealthTool({
               const file = line.slice(3); // skip status chars
               const match = file.match(/^modules\/([^/]+)\//);
               if (match) {
-                const modName = match[1];
+                const modName = match[1]!;
                 if (filterMod && modName !== filterMod) continue;
                 if (!byMod.has(modName)) byMod.set(modName, []);
                 byMod.get(modName)!.push(line.trim());

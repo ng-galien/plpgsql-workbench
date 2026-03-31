@@ -198,16 +198,16 @@ export function createSetFunction({
     // Apply COMMENT ON FUNCTION if description provided
     if (description) {
       const {
-        rows: [{ ident }],
+        rows: [row],
       } = await client.query<{ ident: string }>(
         `SELECT p.oid::regprocedure::text AS ident
          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = $1 AND p.proname = $2 LIMIT 1`,
         [schema, name],
       );
-      if (ident) {
+      if (row?.ident) {
         const escaped = description.replace(/'/g, "''");
-        await client.query(`COMMENT ON FUNCTION ${ident} IS '${escaped}'`);
+        await client.query(`COMMENT ON FUNCTION ${row.ident} IS '${escaped}'`);
       }
     }
 

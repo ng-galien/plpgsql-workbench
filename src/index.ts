@@ -356,7 +356,7 @@ app.post("/hooks/:module", async (req, res) => {
     const re = new RegExp(INTERNAL_CALL_RE.source, INTERNAL_CALL_RE.flags);
     let match: RegExpExecArray | null = re.exec(body);
     while (match !== null) {
-      const callSchema = match[1];
+      const callSchema = match[1]!;
       if (!schemas.includes(callSchema)) {
         internalCalls.push(`${callSchema}._${match[2]}`);
       }
@@ -815,7 +815,7 @@ httpServer.on("upgrade", (req, socket, head) => {
   log.info({ url: req.url }, "WS upgrade request");
   const tmuxMatch = req.url?.match(/^\/ws\/tmux\/([a-zA-Z0-9_.-]+)$/);
   if (tmuxMatch) {
-    const session = tmuxMatch[1];
+    const session = tmuxMatch[1]!;
     log.info({ session, url: req.url }, "WS tmux attach — parsed session from URL");
     wss.handleUpgrade(req, socket, head, (ws) => {
       handleTmuxAttach(ws, session);
@@ -995,7 +995,7 @@ app.get("/api/tmux", async (_req, res) => {
         { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
       );
       for (const line of rawPanes.trim().split("\n").filter(Boolean)) {
-        const [sess, cwd, dead] = line.split("\t");
+        const [sess, cwd, dead] = line.split("\t") as [string, string, string];
         if (!paneMap.has(sess)) {
           paneMap.set(sess, { cwd: cwd || "", dead: dead === "1" });
         }
@@ -1011,7 +1011,7 @@ app.get("/api/tmux", async (_req, res) => {
       .split("\n")
       .filter(Boolean)
       .map((line) => {
-        const [name, created, activity] = line.split("\t");
+        const [name, created, activity] = line.split("\t") as [string, string, string];
         const pane = paneMap.get(name) ?? { cwd: "", dead: false };
         return {
           name,
@@ -1032,7 +1032,7 @@ app.get("/api/tmux", async (_req, res) => {
             encoding: "utf8",
           });
           const lines = stdout.split("\n").filter((l) => activityRe.test(l));
-          if (lines.length > 0) s.status = lines[lines.length - 1].trim();
+          if (lines.length > 0) s.status = lines[lines.length - 1]!.trim();
         } catch {}
       }),
     );

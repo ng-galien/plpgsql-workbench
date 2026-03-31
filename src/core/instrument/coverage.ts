@@ -25,11 +25,11 @@ function extractBody(ddl: string): { body: string; bodyStart: number } | null {
   // Dollar-quote tags: $ followed by optional identifier followed by $
   const asMatch = ddl.match(/AS\s+(\$(?:[a-zA-Z_][a-zA-Z0-9_]*)?\$)/i);
   if (!asMatch || asMatch.index === undefined) return null;
-  const tag = asMatch[1]; // capture group = just the $tag$ part
+  const tag = asMatch[1]!; // capture group = just the $tag$ part
   const tagStart = asMatch.index + asMatch[0].indexOf(tag);
   const openIdx = tagStart + tag.length;
   // Find closing tag — must be the same tag, search from after the opening
-  const closeIdx = ddl.indexOf(tag, openIdx);
+  const closeIdx = ddl.indexOf(tag!, openIdx);
   if (closeIdx < 0) return null;
   return { body: ddl.slice(openIdx, closeIdx), bodyStart: openIdx };
 }
@@ -57,7 +57,7 @@ function instrumentBody(body: string, points: CoveragePoint[]): string {
   for (const lineNo of sortedLines) {
     const idx = lineNo - 1;
     if (idx < 0 || idx >= lines.length) continue;
-    const indent = lines[idx].match(/^(\s*)/)?.[1] ?? "  ";
+    const indent = lines[idx]!.match(/^(\s*)/)?.[1] ?? "  ";
     const markers = byLine.get(lineNo) ?? [];
     const injected = markers.reverse().map((p) => `${indent}RAISE WARNING '${COV_PREFIX}%', '${p.id}';`);
     lines.splice(idx, 0, ...injected);
@@ -71,7 +71,7 @@ function instrumentBody(body: string, points: CoveragePoint[]): string {
     const afterLine = findOriginalLine(p.searchAfter ?? 0, beforePoints);
     const endIfIdx = findPattern(lines, afterLine, /^\s*END\s+IF\s*;/i);
     if (endIfIdx >= 0) {
-      const indent = lines[endIfIdx].match(/^(\s*)/)?.[1] ?? "  ";
+      const indent = lines[endIfIdx]!.match(/^(\s*)/)?.[1] ?? "  ";
       lines.splice(endIfIdx, 0, `${indent}ELSE`, `${indent}  RAISE WARNING '${COV_PREFIX}%', '${p.id}';`);
     }
   }
@@ -83,7 +83,7 @@ function instrumentBody(body: string, points: CoveragePoint[]): string {
     const afterLine = findOriginalLine(p.searchAfter ?? 0, beforePoints);
     const endLoopIdx = findPattern(lines, afterLine, /^\s*END\s+LOOP\s*;/i);
     if (endLoopIdx >= 0) {
-      const indent = lines[endLoopIdx].match(/^(\s*)/)?.[1] ?? "  ";
+      const indent = lines[endLoopIdx]!.match(/^(\s*)/)?.[1] ?? "  ";
       lines.splice(endLoopIdx + 1, 0, `${indent}RAISE WARNING '${COV_PREFIX}%', '${p.id}';`);
     }
   }
@@ -118,8 +118,8 @@ function findPattern(lines: string[], startIdx: number, pattern: RegExp): number
     // is the first one that drops depth below 0.
     let depth = 0;
     for (let i = startIdx; i < lines.length; i++) {
-      if (/^\s*IF\b/i.test(lines[i])) depth++;
-      if (/^\s*END\s+IF\s*;/i.test(lines[i])) {
+      if (/^\s*IF\b/i.test(lines[i]!)) depth++;
+      if (/^\s*END\s+IF\s*;/i.test(lines[i]!)) {
         depth--;
         if (depth < 0) return i;
       }
@@ -130,8 +130,8 @@ function findPattern(lines: string[], startIdx: number, pattern: RegExp): number
   if (isEndLoop) {
     let depth = 0;
     for (let i = startIdx; i < lines.length; i++) {
-      if (/^\s*(FOR|WHILE|LOOP)\b/i.test(lines[i])) depth++;
-      if (/^\s*END\s+LOOP\s*;/i.test(lines[i])) {
+      if (/^\s*(FOR|WHILE|LOOP)\b/i.test(lines[i]!)) depth++;
+      if (/^\s*END\s+LOOP\s*;/i.test(lines[i]!)) {
         depth--;
         if (depth < 0) return i;
       }
@@ -140,7 +140,7 @@ function findPattern(lines: string[], startIdx: number, pattern: RegExp): number
   }
 
   for (let i = startIdx; i < lines.length; i++) {
-    if (pattern.test(lines[i])) return i;
+    if (pattern.test(lines[i]!)) return i;
   }
   return -1;
 }

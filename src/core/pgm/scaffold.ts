@@ -35,7 +35,7 @@ export async function findNextPorts(wsRoot: string): Promise<Ports> {
           // Parse port from connection string
           const m = config.connection.match(/:(\d+)\//);
           if (m) {
-            const pg = parseInt(m[1], 10);
+            const pg = parseInt(m[1]!, 10);
             used.push({ pg, pgrst: pg - 2440, http: pg + 2640, mcp: pg - 2340 });
           }
         }

@@ -111,7 +111,7 @@ export function createFuncLoadTool({
         return text(`problem: invalid target: ${target}\nwhere: pg_func_load\nfix_hint: expected plpgsql://schema`);
       }
 
-      const schema = schemaMatch[1];
+      const schema = schemaMatch[1]!;
       const registry = await moduleRegistry;
       const srcDir = registry.savePath(schema);
       if (!srcDir) {

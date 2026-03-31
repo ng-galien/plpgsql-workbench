@@ -179,8 +179,8 @@ Actions:
             const items = elements
               .map((el) => ({ el, bb: bbox(el) }))
               .sort((a, b) => (ax === "x" ? a.bb.x - b.bb.x : a.bb.y - b.bb.y));
-            const first = items[0].bb;
-            const last = items[items.length - 1].bb;
+            const first = items[0]!.bb;
+            const last = items[items.length - 1]!.bb;
             const totalSize = items.reduce((s, i) => s + (ax === "x" ? i.bb.w : i.bb.h), 0);
             const fixedGap = args.gap as number | undefined;
             const gap =

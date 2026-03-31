@@ -119,7 +119,7 @@ export function createGmailReadTool({ gmailClient }: { gmailClient: GmailClient 
       parts.push("");
       parts.push("next:");
       if (attachments.length > 0) {
-        parts.push(`  - gmail_attachment message_id:${messageId} attachment_id:${attachments[0].id}`);
+        parts.push(`  - gmail_attachment message_id:${messageId} attachment_id:${attachments[0]!.id}`);
       }
 
       return text(parts.join("\n"));

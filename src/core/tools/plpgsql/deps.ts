@@ -58,13 +58,13 @@ function collectPlpgsqlExprs(node: Node, out: string[]): void {
 /** Extract the function body from DDL (between $tag$...$tag$ delimiters) */
 function extractBody(ddl: string): string | null {
   const match = ddl.match(/\$([^$]*)\$([\s\S]*)\$\1\$/);
-  return match ? match[2] : null;
+  return match ? match[2]! : null;
 }
 
 /** Normalize PL/pgSQL expression for SQL parsing (strip assignment) */
 function normalizePlExpr(expr: string): string {
   const assignMatch = expr.match(/^\s*\w+\s*:=\s*([\s\S]+)$/);
-  return assignMatch ? assignMatch[1] : expr;
+  return assignMatch ? assignMatch[1]! : expr;
 }
 
 export interface FuncInfo {

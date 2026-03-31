@@ -31,7 +31,7 @@ function parseTap(rows: { runtests: string }[]): TestReport {
     const tapMatch = line.match(/^\s+(not )?ok \d+ - (.+)$/);
     if (tapMatch) {
       if (current) results.push(current);
-      current = { ok: !tapMatch[1], description: tapMatch[2] };
+      current = { ok: !tapMatch[1], description: tapMatch[2]! };
       continue;
     }
 
@@ -79,12 +79,12 @@ export async function runTests(client: DbClient, testSchema: string, pattern?: s
     `SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = $1) AS exists`,
     [testSchema],
   );
-  if (!schemaCheck[0].exists) return null;
+  if (!schemaCheck[0]!.exists) return null;
 
   const { rows: extCheck } = await client.query<{ exists: boolean }>(
     `SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pgtap') AS exists`,
   );
-  if (!extCheck[0].exists) return null;
+  if (!extCheck[0]!.exists) return null;
 
   const sourceSchema = testSchema.replace(/_(ut|it)$/, "");
   const isIntegration = testSchema.endsWith("_it");

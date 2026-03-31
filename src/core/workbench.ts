@@ -29,7 +29,7 @@ export async function resolveDoc(client: DbClient, topic: string): Promise<strin
     topic,
   ]);
   if (rows.length === 0) return `doc "${topic}" not found`;
-  return wrap(`plpgsql://workbench/doc/${topic}`, "full", rows[0].content, [`get plpgsql://workbench/doc`]);
+  return wrap(`plpgsql://workbench/doc/${topic}`, "full", rows[0]!.content, [`get plpgsql://workbench/doc`]);
 }
 
 export async function resolveDocIndex(client: DbClient): Promise<string> {

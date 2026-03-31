@@ -28,7 +28,7 @@ export async function queryFunctionDdl(client: DbClient, schema: string, name: s
   `,
     [schema, name],
   );
-  return rows.length > 0 ? rows[0].def : null;
+  return rows.length > 0 ? rows[0]!.def : null;
 }
 
 export async function queryFunction(client: DbClient, schema: string, name: string): Promise<FunctionDetail | null> {
@@ -57,7 +57,7 @@ export async function queryFunction(client: DbClient, schema: string, name: stri
 
   if (rows.length === 0) return null;
 
-  const row = rows[0];
+  const row = rows[0]!;
   const body = row.prosrc.trim();
   const args = parseArgs(row.args);
   const variables = extractVariables(body);
@@ -121,9 +121,9 @@ function parseArgs(argsStr: string): { name: string; type: string }[] {
     const parts = a.trim().split(/\s+/);
     // Skip mode keywords (OUT, INOUT, VARIADIC)
     let i = 0;
-    if (parts.length > 1 && ARG_MODES.has(parts[0].toUpperCase())) i++;
+    if (parts.length > 1 && ARG_MODES.has(parts[0]!.toUpperCase())) i++;
     if (parts.length - i >= 2) {
-      return { name: parts[i], type: parts.slice(i + 1).join(" ") };
+      return { name: parts[i]!, type: parts.slice(i + 1).join(" ") };
     }
     return { name: "", type: parts.slice(i).join(" ") };
   });
@@ -134,10 +134,10 @@ function extractVariables(body: string): { name: string; type: string }[] {
   const declareMatch = body.match(/DECLARE\s+([\s\S]*?)BEGIN/i);
   if (!declareMatch) return vars;
 
-  for (const line of declareMatch[1].split("\n")) {
+  for (const line of declareMatch[1]!.split("\n")) {
     const m = line.trim().match(/^(\w+)\s+(.+?)\s*(?::=.*)?;$/i);
     if (m) {
-      vars.push({ name: m[1], type: m[2].trim() });
+      vars.push({ name: m[1]!, type: m[2]!.trim() });
     }
   }
   return vars;
@@ -148,7 +148,7 @@ function extractCalls(body: string): string[] {
   const re = /(?:PERFORM|SELECT|:=)\s+(?:(\w+)\.)?(\w+)\s*\(/gi;
   let match: RegExpExecArray | null = re.exec(body);
   while (match !== null) {
-    const fn = match[2];
+    const fn = match[2]!;
     if (!SQL_BUILTINS.has(fn.toLowerCase())) {
       calls.add(match[1] ? `${match[1]}.${fn}` : fn);
     }

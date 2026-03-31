@@ -68,7 +68,7 @@ export function createGmailSearchTool({ gmailClient }: { gmailClient: GmailClien
       }
 
       parts.push("next:");
-      parts.push(`  - gmail_read message_id:${messages[0].id}`);
+      parts.push(`  - gmail_read message_id:${messages[0]!.id}`);
 
       return text(parts.join("\n"));
     },

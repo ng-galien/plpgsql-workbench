@@ -82,7 +82,7 @@ async function queryDeps(client: DbClient, schemas: string[]): Promise<Dep[]> {
         ddl: fn.ddl,
       });
       for (const callee of calls) {
-        const [targetSchema, targetName] = callee.split(".");
+        const [targetSchema, targetName] = callee.split(".") as [string, string];
         rows.push({
           source_schema: schema,
           source: fn.proname,

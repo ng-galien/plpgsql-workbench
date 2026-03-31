@@ -206,10 +206,10 @@ export function createScanTool({ withClient }: { withClient: WithClient }): Tool
           parts.push(`  - fs_scan path:${rootPath} offset:${offset + limit}${extFilter ? ` ext:${extFilter}` : ""}`);
         }
         if (subdirs.length > 0) {
-          parts.push(`  - fs_scan path:${path.join(rootPath, subdirs[0].name)} recursive:false`);
+          parts.push(`  - fs_scan path:${path.join(rootPath, subdirs[0]!.name)} recursive:false`);
         }
         if (page.length > 0) {
-          parts.push(`  - fs_peek path:${page[0].path}`);
+          parts.push(`  - fs_peek path:${page[0]!.path}`);
         }
         parts.push(`  - fs_sync path:${rootPath}`);
 

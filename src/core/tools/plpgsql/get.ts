@@ -18,7 +18,7 @@ export async function resolveUri(uri: string, client: DbClient): Promise<string>
   // plpgsql://workbench/doc/* -> documentation
   const docMatch = uri.match(/^plpgsql:\/\/workbench\/doc\/(.+)$/);
   if (docMatch) {
-    return await resolveDoc(client, docMatch[1]);
+    return await resolveDoc(client, docMatch[1]!);
   }
   if (uri === "plpgsql://workbench/doc" || uri === "plpgsql://workbench") {
     return await resolveDocIndex(client);
@@ -35,27 +35,27 @@ export async function resolveUri(uri: string, client: DbClient): Promise<string>
   const glob = uri.match(/^plpgsql:\/\/(\w+)\/(\w+)\/\*$/);
   if (glob) {
     const [, schema, kind] = glob;
-    const overview = await querySchema(client, schema);
+    const overview = await querySchema(client, schema!);
     const results: string[] = [];
 
     if (kind === "function") {
       for (const f of overview.functions) {
-        const fn = await queryFunction(client, schema, f.name);
+        const fn = await queryFunction(client, schema!, f.name);
         if (fn) results.push(formatFunction(fn));
       }
     } else if (kind === "table") {
       for (const t of overview.tables) {
-        const tbl = await queryTable(client, schema, t.name);
+        const tbl = await queryTable(client, schema!, t.name);
         if (tbl) results.push(formatTable(tbl));
       }
     } else if (kind === "trigger") {
       for (const tr of overview.triggers) {
-        const trg = await queryTrigger(client, schema, tr.name);
+        const trg = await queryTrigger(client, schema!, tr.name);
         if (trg) results.push(formatTrigger(trg));
       }
     }
     const body = results.length > 0 ? results.join("\n---\n") : `no ${kind}s in ${schema}`;
-    return wrap(uri, "full", body, [`pg_get ${PlUri.schema(schema)}`]);
+    return wrap(uri, "full", body, [`pg_get ${PlUri.schema(schema!)}`]);
   }
 
   // plpgsql://schema/kind/name -> single resource
@@ -79,8 +79,8 @@ export async function resolveUri(uri: string, client: DbClient): Promise<string>
       const next: string[] = [];
       for (const t of fn.tables_used) next.push(`pg_get ${PlUri.table(fn.schema, t.name)}`);
       for (const c of fn.callers.slice(0, 3)) {
-        const name = c.includes(".") ? c.split(".")[1] : c;
-        const schema = c.includes(".") ? c.split(".")[0] : fn.schema;
+        const name = c.includes(".") ? c.split(".")[1]! : c;
+        const schema = c.includes(".") ? c.split(".")[0]! : fn.schema;
         next.push(`pg_get ${PlUri.fn(schema, name)}`);
       }
       if (next.length === 0) next.push(`pg_search content:${fn.name}`);

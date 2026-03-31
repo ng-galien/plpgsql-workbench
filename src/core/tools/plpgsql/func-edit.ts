@@ -54,7 +54,7 @@ export function createFuncEditTool({
 
         let patched = ddl;
         for (let i = 0; i < edits.length; i++) {
-          const { old: oldStr, new: newStr } = edits[i];
+          const { old: oldStr, new: newStr } = edits[i]!;
           const count = patched.split(oldStr).length - 1;
 
           if (count === 0) {

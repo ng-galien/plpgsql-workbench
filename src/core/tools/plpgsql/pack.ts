@@ -193,7 +193,7 @@ export function createPackTool({
               edges.push({ caller: callerName, callee });
             }
             // Detect cross-module calls to _* internal functions
-            const [calleeSchema, calleeFnName] = callee.split(".");
+            const [calleeSchema, calleeFnName] = callee.split(".") as [string, string];
             if (calleeFnName?.startsWith("_") && !schemas.includes(calleeSchema)) {
               boundaryViolations.push({ caller: callerName, callee });
             }

@@ -45,8 +45,8 @@ export function createAlterTool({ withClient }: { withClient: WithClient }): Too
           if (!match) {
             return text(`problem: invalid URI: ${uri}\nwhere: pg_alter`);
           }
-          targetSchema = match[1];
-          targetPattern = match[2];
+          targetSchema = match[1]!;
+          targetPattern = match[2]!;
         } else {
           targetSchema = schema!;
           targetPattern = pattern;

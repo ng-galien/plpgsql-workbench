@@ -44,7 +44,7 @@ export async function queryTrigger(client: DbClient, schema: string, name: strin
 
   if (rows.length === 0) return null;
 
-  const row = rows[0];
+  const row = rows[0]!;
   return {
     name,
     schema,

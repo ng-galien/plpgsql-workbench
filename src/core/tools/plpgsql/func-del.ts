@@ -53,7 +53,7 @@ export function createFuncDelTool({ withClient }: { withClient: WithClient }): T
           );
         }
 
-        const ident = identRes.rows[0].ident;
+        const ident = identRes.rows[0]!.ident;
 
         // Capture function state before deletion
         const fn = await queryFunction(client, schema, name);

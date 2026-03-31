@@ -40,7 +40,7 @@ export function createDocImportTool({
           if (res.rows.length === 0) {
             throw new Error("Config missing: workbench.config(docman, documentsRoot). Set it with pg_query.");
           }
-          return res.rows[0].value;
+          return res.rows[0]!.value;
         });
       }
 
