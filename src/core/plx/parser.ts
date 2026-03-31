@@ -9,11 +9,13 @@ import type {
   FuncAttribute,
   Identifier,
   IfStatement,
+  ImportAlias,
   JsonLiteral,
   Loc,
   MatchStatement,
   Param,
   PlxFunction,
+  PlxModule,
   RaiseStatement,
   ReturnMode,
   ReturnStatement,
@@ -39,7 +41,7 @@ class ParseError extends Error {
   }
 }
 
-export function parse(tokens: Token[]): PlxFunction[] {
+export function parse(tokens: Token[]): PlxModule {
   const p = new Parser(tokens);
   return p.parseProgram();
 }
@@ -49,14 +51,40 @@ class Parser {
 
   constructor(private tokens: Token[]) {}
 
-  parseProgram(): PlxFunction[] {
-    const fns: PlxFunction[] = [];
+  parseProgram(): PlxModule {
+    const imports: ImportAlias[] = [];
+    const functions: PlxFunction[] = [];
     this.skipNewlines();
-    while (!this.isAt("EOF")) {
-      fns.push(this.parseFunction());
+
+    // Parse imports at top of file
+    while (this.isAt("IMPORT")) {
+      imports.push(this.parseImport());
       this.skipNewlines();
     }
-    return fns;
+
+    while (!this.isAt("EOF")) {
+      functions.push(this.parseFunction());
+      this.skipNewlines();
+    }
+    return { imports, functions };
+  }
+
+  /** import original as alias */
+  private parseImport(): ImportAlias {
+    const loc = this.loc();
+    this.expect("IMPORT");
+
+    // Parse qualified name: ident or ident.ident
+    let original = this.expect("IDENT").value;
+    if (this.isAt("DOT")) {
+      this.advance();
+      original += `.${this.expect("IDENT").value}`;
+    }
+
+    this.expect("AS");
+    const alias = this.expect("IDENT").value;
+    this.skipNewlines();
+    return { original, alias, loc };
   }
 
   private parseFunction(): PlxFunction {

@@ -47,18 +47,23 @@ interface VarInfo {
   isRow: boolean;
 }
 
-export function generate(fn: PlxFunction): string {
-  return new CodegenContext(fn).emit();
+export function generate(fn: PlxFunction, aliases?: Map<string, string>): string {
+  return new CodegenContext(fn, aliases).emit();
 }
 
 class CodegenContext {
   private vars = new Map<string, VarInfo>();
   private paramNames: Set<string>;
+  private aliases: Map<string, string>;
   private lines: string[] = [];
   private indent = 1;
 
-  constructor(private fn: PlxFunction) {
+  constructor(
+    private fn: PlxFunction,
+    aliases?: Map<string, string>,
+  ) {
     this.paramNames = new Set(fn.params.map((p) => p.name));
+    this.aliases = aliases ?? new Map();
     this.collectVars(fn.body);
   }
 
@@ -435,7 +440,8 @@ class CodegenContext {
   }
 
   private emitCall(call: CallExpr): string {
-    return `${call.name}(${call.args.map((a) => this.emitExpr(a)).join(", ")})`;
+    const name = this.aliases.get(call.name) ?? call.name;
+    return `${name}(${call.args.map((a) => this.emitExpr(a)).join(", ")})`;
   }
 
   private emitCaseExpr(c: CaseExpr): string {

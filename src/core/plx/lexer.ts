@@ -17,6 +17,8 @@ export type TokenType =
   | "CASE"
   | "THEN"
   | "END"
+  | "IMPORT"
+  | "AS"
   | "INDENT"
   | "DEDENT"
   | "NEWLINE"
@@ -76,6 +78,8 @@ const KEYWORDS = new Map<string, TokenType>([
   ["case", "CASE"],
   ["then", "THEN"],
   ["end", "END"],
+  ["import", "IMPORT"],
+  ["as", "AS"],
 ]);
 
 const SQL_STARTERS = new Set(["select", "insert", "update", "delete", "with"]);

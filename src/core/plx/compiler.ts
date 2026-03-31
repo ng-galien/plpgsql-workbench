@@ -36,19 +36,25 @@ export function compile(source: string): CompileResult {
     return { sql: "", errors, warnings: [], functionCount: 0 };
   }
 
-  let functions: ReturnType<typeof parse>;
+  let mod: ReturnType<typeof parse>;
   try {
-    functions = parse(tokens);
+    mod = parse(tokens);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     errors.push({ ...extractLoc(msg), message: msg, phase: "parse" });
     return { sql: "", errors, warnings: [], functionCount: 0 };
   }
 
+  // Build alias map from imports
+  const aliases = new Map<string, string>();
+  for (const imp of mod.imports) {
+    aliases.set(imp.alias, imp.original);
+  }
+
   const sqlParts: string[] = [];
-  for (const fn of functions) {
+  for (const fn of mod.functions) {
     try {
-      sqlParts.push(generate(fn));
+      sqlParts.push(generate(fn, aliases));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push({ line: fn.loc.line, col: fn.loc.col, message: msg, phase: "codegen" });
@@ -63,7 +69,7 @@ export function compile(source: string): CompileResult {
     sql: sqlParts.join("\n\n"),
     errors: [],
     warnings: [],
-    functionCount: functions.length,
+    functionCount: mod.functions.length,
     // Attach individual blocks for validation without re-splitting
     _blocks: sqlParts,
   } as CompileResult & { _blocks: string[] };

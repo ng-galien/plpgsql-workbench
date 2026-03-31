@@ -7,6 +7,17 @@ export interface Loc {
 
 // ---------- Top-level ----------
 
+export interface ImportAlias {
+  original: string; // jsonb_build_object, pgv.t, crm.client_read
+  alias: string; // obj, t, get_client
+  loc: Loc;
+}
+
+export interface PlxModule {
+  imports: ImportAlias[];
+  functions: PlxFunction[];
+}
+
 export type FuncAttribute = "stable" | "immutable" | "volatile" | "definer" | "strict";
 
 export interface PlxFunction {
