@@ -21,6 +21,7 @@ export type TokenType =
   | "AS"
   | "MODULE"
   | "DEPENDS"
+  | "INCLUDE"
   | "EXPORT"
   | "INTERNAL"
   | "ENTITY"
@@ -54,6 +55,7 @@ export type TokenType =
   | "EOF";
 
 export interface Token {
+  file?: string;
   type: TokenType;
   value: string;
   line: number;
@@ -64,6 +66,7 @@ export interface Token {
 
 export class LexError extends Error {
   code: string;
+  file?: string;
   hint?: string;
   endLine: number;
   endCol: number;
@@ -74,6 +77,7 @@ export class LexError extends Error {
     public col: number,
     options?: {
       code?: string;
+      file?: string;
       hint?: string;
       endLine?: number;
       endCol?: number;
@@ -83,6 +87,7 @@ export class LexError extends Error {
     const endCol = options?.endCol ?? col;
     super(`plx:${line}:${col}: ${msg}`);
     this.code = options?.code ?? "lex.invalid-token";
+    this.file = options?.file;
     this.hint = options?.hint;
     this.endLine = endLine;
     this.endCol = endCol;
@@ -110,6 +115,7 @@ const KEYWORDS = new Map<string, TokenType>([
   ["as", "AS"],
   ["module", "MODULE"],
   ["depends", "DEPENDS"],
+  ["include", "INCLUDE"],
   ["export", "EXPORT"],
   ["internal", "INTERNAL"],
   ["entity", "ENTITY"],
@@ -138,11 +144,12 @@ const SINGLE_CHARS: Record<string, TokenType> = {
   "?": "QUESTION",
 };
 
-export function tokenize(source: string): Token[] {
+export function tokenize(source: string, options: { file?: string } = {}): Token[] {
   const lines = source.split("\n");
   const tokens: Token[] = [];
   const indentStack: number[] = [0];
   let lastMeaningful: TokenType | null = null;
+  const file = options.file;
 
   function pushToken(tok: Token): void {
     tokens.push(tok);
@@ -163,16 +170,17 @@ export function tokenize(source: string): Token[] {
 
     if (indent > currentIndent) {
       indentStack.push(indent);
-      pushToken(makeToken("INDENT", "", lineNum, 0));
+      pushToken(makeToken(file, "INDENT", "", lineNum, 0));
     } else if (indent < currentIndent) {
       while (indentStack.length > 1 && (indentStack.at(-1) ?? 0) > indent) {
         indentStack.pop();
-        pushToken(makeToken("DEDENT", "", lineNum, 0));
+        pushToken(makeToken(file, "DEDENT", "", lineNum, 0));
       }
       const expectedIndent = indentStack.at(-1) ?? 0;
       if (expectedIndent !== indent) {
         throw new LexError(`inconsistent indentation (got ${indent}, expected ${expectedIndent})`, lineNum, 0, {
           code: "lex.inconsistent-indentation",
+          file,
           hint: "Align the block indentation with the previous PLX block level.",
         });
       }
@@ -186,19 +194,19 @@ export function tokenize(source: string): Token[] {
       (lowerTrimmed.startsWith("update ") || lowerTrimmed.startsWith("insert ") || lowerTrimmed.startsWith("delete "))
     ) {
       const sqlBlock = collectSqlLines(lines, lineIdx + 1, trimmed, indent);
-      pushToken(makeToken("SQL_BLOCK", sqlBlock.sql, lineNum, indent, sqlBlock.endLine, sqlBlock.endCol));
+      pushToken(makeToken(file, "SQL_BLOCK", sqlBlock.sql, lineNum, indent, sqlBlock.endLine, sqlBlock.endCol));
       lineIdx = Math.max(lineIdx, sqlBlock.lastLine);
-      pushToken(makeToken("NEWLINE", "", lineNum, 0));
+      pushToken(makeToken(file, "NEWLINE", "", lineNum, 0));
       continue;
     }
 
     // for VAR in SQL_QUERY: — preserve raw SQL
     if (lowerTrimmed.startsWith("for ")) {
-      const forResult = tokenizeForLine(trimmed, lineNum, indent, lines, lineIdx);
+      const forResult = tokenizeForLine(trimmed, lineNum, indent, lines, lineIdx, file);
       if (forResult) {
         for (const t of forResult.tokens) pushToken(t);
         lineIdx = forResult.lastLine;
-        pushToken(makeToken("NEWLINE", "", lineNum, 0));
+        pushToken(makeToken(file, "NEWLINE", "", lineNum, 0));
         continue;
       }
     }
@@ -206,26 +214,28 @@ export function tokenize(source: string): Token[] {
     // return query <SQL> — capture SQL passthrough (return execute uses PLX expressions, handled in parser)
     const returnQueryMatch = lowerTrimmed.match(RETURN_QUERY_RE);
     if (returnQueryMatch) {
-      pushToken(makeToken("RETURN", "return", lineNum, indent));
-      pushToken(makeToken("IDENT", "query", lineNum, indent + 7));
+      pushToken(makeToken(file, "RETURN", "return", lineNum, indent));
+      pushToken(makeToken(file, "IDENT", "query", lineNum, indent + 7));
       const sqlStart = returnQueryMatch[0].length - (returnQueryMatch[2]?.length ?? 0);
       const sqlPart = trimmed.slice(sqlStart).trim();
       const sqlBlock = collectSqlLines(lines, lineIdx + 1, sqlPart, indent);
-      pushToken(makeToken("SQL_BLOCK", sqlBlock.sql, lineNum, indent + sqlStart, sqlBlock.endLine, sqlBlock.endCol));
+      pushToken(
+        makeToken(file, "SQL_BLOCK", sqlBlock.sql, lineNum, indent + sqlStart, sqlBlock.endLine, sqlBlock.endCol),
+      );
       lineIdx = Math.max(lineIdx, sqlBlock.lastLine);
-      pushToken(makeToken("NEWLINE", "", lineNum, 0));
+      pushToken(makeToken(file, "NEWLINE", "", lineNum, 0));
       continue;
     }
 
-    tokenizeLine(trimmed, lineNum, indent, tokens, lines, lineIdx, pushToken);
+    tokenizeLine(trimmed, lineNum, indent, tokens, lines, lineIdx, pushToken, file);
   }
 
   while (indentStack.length > 1) {
     indentStack.pop();
-    pushToken(makeToken("DEDENT", "", lines.length, 0));
+    pushToken(makeToken(file, "DEDENT", "", lines.length, 0));
   }
 
-  pushToken(makeToken("EOF", "", lines.length + 1, 0));
+  pushToken(makeToken(file, "EOF", "", lines.length + 1, 0));
   return tokens;
 }
 
@@ -235,6 +245,7 @@ function tokenizeForLine(
   baseIndent: number,
   allLines: string[],
   lineIdx: number,
+  file?: string,
 ): { tokens: Token[]; lastLine: number } | null {
   const m = trimmed.match(FOR_IN_RE);
   if (!m) return null;
@@ -275,11 +286,11 @@ function tokenizeForLine(
   if (!endsWithColon) return null;
 
   const tokens: Token[] = [
-    makeToken("FOR", "for", lineNum, baseIndent),
-    makeToken("IDENT", varName, lineNum, baseIndent + 4),
-    makeToken("IN", "in", lineNum, baseIndent + 4 + varName.length + 1),
-    makeToken("SQL_BLOCK", sqlPart.trim(), lineNum, baseIndent + 4 + varName.length + 4),
-    makeToken("COLON", ":", lineNum, 0),
+    makeToken(file, "FOR", "for", lineNum, baseIndent),
+    makeToken(file, "IDENT", varName, lineNum, baseIndent + 4),
+    makeToken(file, "IN", "in", lineNum, baseIndent + 4 + varName.length + 1),
+    makeToken(file, "SQL_BLOCK", sqlPart.trim(), lineNum, baseIndent + 4 + varName.length + 4),
+    makeToken(file, "COLON", ":", lineNum, 0),
   ];
 
   return { tokens, lastLine };
@@ -293,6 +304,7 @@ function tokenizeLine(
   allLines: string[],
   lineIdx: number,
   push: (tok: Token) => void,
+  file?: string,
 ): void {
   let pos = 0;
 
@@ -307,14 +319,14 @@ function tokenizeLine(
 
     // :: (PG type cast)
     if (line[pos] === ":" && line[pos + 1] === ":") {
-      push(makeToken("OPERATOR", "::", lineNum, col));
+      push(makeToken(file, "OPERATOR", "::", lineNum, col));
       pos += 2;
       continue;
     }
 
     // := (assignment, possibly followed by SQL)
     if (line[pos] === ":" && line[pos + 1] === "=") {
-      push(makeToken("ASSIGN", ":=", lineNum, col));
+      push(makeToken(file, "ASSIGN", ":=", lineNum, col));
       pos += 2;
 
       // Check for SQL keyword after :=
@@ -334,7 +346,7 @@ function tokenizeLine(
         const currentLine = allLines[lineIdx] ?? "";
         const assignIndent = currentLine.length - currentLine.trimStart().length;
         const sqlBlock = collectSqlLines(allLines, lineIdx + 1, rest, assignIndent);
-        push(makeToken("SQL_BLOCK", sqlBlock.sql, lineNum, col + 2, sqlBlock.endLine, sqlBlock.endCol));
+        push(makeToken(file, "SQL_BLOCK", sqlBlock.sql, lineNum, col + 2, sqlBlock.endLine, sqlBlock.endCol));
         for (let i = lineIdx + 1; i <= sqlBlock.lastLine; i++) allLines[i] = "";
         return;
       }
@@ -342,42 +354,42 @@ function tokenizeLine(
     }
 
     if (line[pos] === "-" && line[pos + 1] === ">" && line[pos + 2] === ">") {
-      push(makeToken("OPERATOR", "->>", lineNum, col));
+      push(makeToken(file, "OPERATOR", "->>", lineNum, col));
       pos += 3;
       continue;
     }
     if (line[pos] === "-" && line[pos + 1] === ">") {
-      push(makeToken("ARROW", "->", lineNum, col));
+      push(makeToken(file, "ARROW", "->", lineNum, col));
       pos += 2;
       continue;
     }
     if (line[pos] === "<" && line[pos + 1] === "<") {
-      push(makeToken("APPEND", "<<", lineNum, col));
+      push(makeToken(file, "APPEND", "<<", lineNum, col));
       pos += 2;
       continue;
     }
     if (line[pos] === "|" && line[pos + 1] === ">") {
-      push(makeToken("PIPE", "|>", lineNum, col));
+      push(makeToken(file, "PIPE", "|>", lineNum, col));
       pos += 2;
       continue;
     }
     if (line[pos] === "|" && line[pos + 1] === "|") {
-      push(makeToken("OPERATOR", "||", lineNum, col));
+      push(makeToken(file, "OPERATOR", "||", lineNum, col));
       pos += 2;
       continue;
     }
     if (line[pos] === "!" && line[pos + 1] === "=") {
-      push(makeToken("OPERATOR", "!=", lineNum, col));
+      push(makeToken(file, "OPERATOR", "!=", lineNum, col));
       pos += 2;
       continue;
     }
     if (line[pos] === ">" && line[pos + 1] === "=") {
-      push(makeToken("OPERATOR", ">=", lineNum, col));
+      push(makeToken(file, "OPERATOR", ">=", lineNum, col));
       pos += 2;
       continue;
     }
     if (line[pos] === "<" && line[pos + 1] === "=") {
-      push(makeToken("OPERATOR", "<=", lineNum, col));
+      push(makeToken(file, "OPERATOR", "<=", lineNum, col));
       pos += 2;
       continue;
     }
@@ -386,13 +398,13 @@ function tokenizeLine(
     if (ch === undefined) break;
     const singleType = SINGLE_CHARS[ch];
     if (singleType) {
-      push(makeToken(singleType, ch, lineNum, col));
+      push(makeToken(file, singleType, ch, lineNum, col));
       pos++;
       continue;
     }
 
     if (ch === "=" || ch === ">" || ch === "<" || ch === "+" || ch === "-" || ch === "*" || ch === "/") {
-      push(makeToken("OPERATOR", ch, lineNum, col));
+      push(makeToken(file, "OPERATOR", ch, lineNum, col));
       pos++;
       continue;
     }
@@ -400,7 +412,7 @@ function tokenizeLine(
     // String literals
     if (ch === "'" || ch === '"') {
       const { value, end, isInterp } = readString(line, pos, ch, lineNum);
-      push(makeToken(isInterp ? "INTERP_STRING" : "STRING", value, lineNum, col, lineNum, baseCol + end));
+      push(makeToken(file, isInterp ? "INTERP_STRING" : "STRING", value, lineNum, col, lineNum, baseCol + end));
       pos = end;
       continue;
     }
@@ -413,7 +425,7 @@ function tokenizeLine(
         if (next === undefined || !((next >= "0" && next <= "9") || next === ".")) break;
         pos++;
       }
-      push(makeToken("NUMBER", line.slice(start, pos), lineNum, col));
+      push(makeToken(file, "NUMBER", line.slice(start, pos), lineNum, col));
       continue;
     }
 
@@ -428,24 +440,25 @@ function tokenizeLine(
       const ident = line.slice(start, pos);
       const kw = KEYWORDS.get(ident.toLowerCase());
       if (kw) {
-        push(makeToken(kw, ident.toLowerCase(), lineNum, col));
+        push(makeToken(file, kw, ident.toLowerCase(), lineNum, col));
       } else if (ident === "true" || ident === "false") {
-        push(makeToken("NUMBER", ident, lineNum, col));
+        push(makeToken(file, "NUMBER", ident, lineNum, col));
       } else {
-        push(makeToken("IDENT", ident, lineNum, col));
+        push(makeToken(file, "IDENT", ident, lineNum, col));
       }
       continue;
     }
 
     throw new LexError(`unexpected character '${ch}'`, lineNum, col, {
       code: "lex.unexpected-character",
+      file,
       hint: "Check for a missing quote, comma, or unsupported operator in this expression.",
       endLine: lineNum,
       endCol: col + 1,
     });
   }
 
-  push(makeToken("NEWLINE", "", lineNum, 0));
+  push(makeToken(file, "NEWLINE", "", lineNum, 0));
 }
 
 /** Collect SQL continuation lines deeper than baseIndent, including optional else raise */
@@ -563,6 +576,7 @@ function isIdentChar(ch: string): boolean {
 }
 
 function makeToken(
+  file: string | undefined,
   type: TokenType,
   value: string,
   line: number,
@@ -572,6 +586,7 @@ function makeToken(
 ): Token {
   const measured = measureSpan(value, line, col);
   return {
+    file,
     type,
     value,
     line,

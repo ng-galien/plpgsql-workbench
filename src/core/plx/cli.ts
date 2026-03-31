@@ -3,8 +3,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
-import { type CompileResult, compile, compileAndValidate } from "./compiler.js";
-import { compose } from "./composition.js";
+import { type CompileResult, compileModule, compileModuleAndValidate } from "./compiler.js";
+import { type CompositionResult, composeModules } from "./composition.js";
+import { loadPlxModule } from "./module-loader.js";
 
 const program = new Command();
 
@@ -31,13 +32,10 @@ program
         validate?: boolean;
       },
     ) => {
-      const source = await readPlx(file).catch(() => {
-        emitReadError(file, false);
-        return undefined;
-      });
-      if (source === undefined) return;
-
-      const result = opts.validate === false ? compile(source) : await compileAndValidate(source);
+      const loaded = await loadModuleOrExit(file, false);
+      if (!loaded) return;
+      const result =
+        opts.validate === false ? compileModule(loaded.module) : await compileModuleAndValidate(loaded.module);
       reportDiagnosticErrors(result.errors);
 
       for (const w of result.warnings) console.error(formatWarning(w));
@@ -87,13 +85,10 @@ program
   .option("--json", "Print machine-readable diagnostics")
   .option("--no-validate", "Skip PG parser validation")
   .action(async (file: string, opts: { json?: boolean; validate?: boolean }) => {
-    const source = await readPlx(file).catch(() => {
-      emitReadError(file, Boolean(opts.json));
-      return undefined;
-    });
-    if (source === undefined) return;
-
-    const result = opts.validate === false ? compile(source) : await compileAndValidate(source);
+    const loaded = await loadModuleOrExit(file, Boolean(opts.json));
+    if (!loaded) return;
+    const result =
+      opts.validate === false ? compileModule(loaded.module) : await compileModuleAndValidate(loaded.module);
     if (opts.json) {
       process.stdout.write(`${JSON.stringify(buildCheckPayload(file, result), null, 2)}\n`);
       process.exit(result.errors.length === 0 ? 0 : 1);
@@ -114,22 +109,22 @@ program
   .option("--json", "Print machine-readable diagnostics")
   .option("--no-validate", "Skip PG parser validation for individual modules")
   .action(async (files: string[], opts: { json?: boolean; validate?: boolean }) => {
-    const inputs: Array<{ file: string; source: string }> = [];
+    const loadedInputs: Array<{
+      file: string;
+      module: NonNullable<Awaited<ReturnType<typeof loadPlxModule>>["module"]>;
+    }> = [];
     for (const file of files) {
-      const source = await readPlx(file).catch(() => {
-        emitReadError(file, Boolean(opts.json));
-        return undefined;
-      });
-      if (source === undefined) return;
-      inputs.push({ file, source });
+      const loaded = await loadModuleOrExit(file, Boolean(opts.json));
+      if (!loaded) return;
+      loadedInputs.push({ file, module: loaded.module });
     }
 
-    const result = await compose(inputs, { validate: opts.validate });
+    const result = await composeModules(loadedInputs, { validate: opts.validate });
     if (opts.json) {
       process.stdout.write(
         `${JSON.stringify(
           buildComposePayload(
-            inputs.map((input) => input.file),
+            loadedInputs.map((input) => input.file),
             result,
           ),
           null,
@@ -156,8 +151,34 @@ function reportDiagnosticErrors(errors: CompileResult["errors"]): void {
   process.exit(1);
 }
 
-async function readPlx(file: string): Promise<string> {
-  return await fs.readFile(file, "utf-8");
+async function loadModuleOrExit(
+  file: string,
+  json: boolean,
+): Promise<{ module: NonNullable<Awaited<ReturnType<typeof loadPlxModule>>["module"]> } | undefined> {
+  const loaded = await loadPlxModule(file);
+  if (!loaded.module) {
+    if (json) {
+      process.stdout.write(
+        `${JSON.stringify(
+          {
+            file: path.resolve(file),
+            ok: false,
+            functionCount: 0,
+            entityCount: 0,
+            testCount: 0,
+            warnings: [],
+            errors: loaded.errors,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    } else {
+      reportDiagnosticErrors(loaded.errors);
+    }
+    process.exit(1);
+  }
+  return { module: loaded.module };
 }
 
 function deriveArtifactPath(baseOutput: string, kind: "ddl" | "test"): string {
@@ -176,7 +197,7 @@ function buildCheckPayload(file: string, result: CompileResult): object {
   };
 }
 
-function buildComposePayload(files: string[], result: Awaited<ReturnType<typeof compose>>): object {
+function buildComposePayload(files: string[], result: CompositionResult): object {
   return {
     files: files.map((file) => path.resolve(file)),
     ok: result.errors.length === 0,
@@ -195,49 +216,16 @@ function buildComposePayload(files: string[], result: Awaited<ReturnType<typeof 
   };
 }
 
-function emitReadError(file: string, json: boolean): never {
-  if (json) {
-    process.stdout.write(
-      `${JSON.stringify(
-        {
-          file: path.resolve(file),
-          ok: false,
-          functionCount: 0,
-          entityCount: 0,
-          testCount: 0,
-          warnings: [],
-          errors: [
-            {
-              phase: "lex",
-              code: "io.read-failed",
-              message: `cannot read file: ${file}`,
-              hint: "Check that the file exists and is readable.",
-              line: 0,
-              col: 0,
-              endLine: 0,
-              endCol: 0,
-              span: { line: 0, col: 0, endLine: 0, endCol: 0 },
-            },
-          ],
-        },
-        null,
-        2,
-      )}\n`,
-    );
-  } else {
-    console.error(`  ERROR  cannot read file: ${file}`);
-  }
-  process.exit(1);
-}
-
 function formatError(error: CompileResult["errors"][number]): string {
-  const loc = `${error.phase}:${error.line}:${error.col}`;
+  const file = error.file ? `${path.relative(process.cwd(), error.file)}:` : "";
+  const loc = `${file}${error.phase}:${error.line}:${error.col}`;
   const hint = error.hint ? `\n         hint: ${error.hint}` : "";
   return `  ERROR  ${loc} [${error.code}] ${error.message}${hint}`;
 }
 
 function formatWarning(warning: CompileResult["warnings"][number]): string {
-  const loc = warning.line !== undefined && warning.col !== undefined ? `${warning.line}:${warning.col} ` : "";
+  const file = warning.file ? `${path.relative(process.cwd(), warning.file)}:` : "";
+  const loc = warning.line !== undefined && warning.col !== undefined ? `${file}${warning.line}:${warning.col} ` : "";
   const hint = warning.hint ? `\n         hint: ${warning.hint}` : "";
   return `  WARN   ${warning.functionName}: ${loc}[${warning.code}] ${warning.message}${hint}`;
 }

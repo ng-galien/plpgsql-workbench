@@ -5,7 +5,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { type ModuleContract, readModuleContract } from "../plx/contract.js";
+import { type ModuleContract, readModuleContractEntry } from "../plx/contract.js";
 
 // --- Types ---
 
@@ -94,14 +94,7 @@ async function enrichManifestFromPlx(modulesDir: string, manifest: ModuleManifes
   if (!plxEntry) return manifest;
 
   const entryPath = path.join(modulesDir, manifest.name, plxEntry);
-  let source: string;
-  try {
-    source = await fs.readFile(entryPath, "utf-8");
-  } catch {
-    throw new Error(`PLX entry '${plxEntry}' not found for module '${manifest.name}'`);
-  }
-
-  const contractResult = readModuleContract(source);
+  const contractResult = await readModuleContractEntry(entryPath);
   if (contractResult.errors.length > 0) {
     const first = contractResult.errors[0];
     throw new Error(

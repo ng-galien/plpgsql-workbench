@@ -25,6 +25,7 @@ export interface CompileResult {
 
 export interface CompileError {
   code: string;
+  file?: string;
   line: number;
   col: number;
   endLine: number;
@@ -37,6 +38,7 @@ export interface CompileError {
 
 export interface CompileWarning {
   code: string;
+  file?: string;
   message: string;
   functionName: string;
   line: number;
@@ -83,6 +85,13 @@ export function compile(source: string): CompileResult {
     errors.push(toCompileError("parse", e, "parse.invalid-syntax"));
     return { sql: "", errors, warnings, functionCount: 0 };
   }
+
+  return compileModule(mod);
+}
+
+export function compileModule(mod: PlxModule): CompileResult {
+  const errors: CompileError[] = [];
+  const warnings: CompileWarning[] = [];
 
   const semantic = analyzeModule(mod);
   for (const err of semantic.errors) {
@@ -196,6 +205,15 @@ export function compile(source: string): CompileResult {
  */
 export async function compileAndValidate(source: string): Promise<CompileResult> {
   const result = compile(source);
+  return await validateCompiledResult(result);
+}
+
+export async function compileModuleAndValidate(mod: PlxModule): Promise<CompileResult> {
+  const result = compileModule(mod);
+  return await validateCompiledResult(result);
+}
+
+async function validateCompiledResult(result: CompileResult): Promise<CompileResult> {
   if (result.errors.length > 0) return result;
 
   const warnings: CompileWarning[] = [...result.warnings];
@@ -354,6 +372,7 @@ export function createDiagnostic(
   return {
     phase,
     code,
+    file: span.file,
     message: stripLocPrefix(message),
     hint,
     line: span.line,
@@ -380,8 +399,9 @@ function toCompileError(
   return createDiagnostic(phase, fallbackCode, message, fallbackLoc ?? extractLoc(message));
 }
 
-function toLoc(loc: Pick<Loc, "line" | "col" | "endLine" | "endCol">): Loc {
+function toLoc(loc: Pick<Loc, "file" | "line" | "col" | "endLine" | "endCol">): Loc {
   return {
+    file: loc.file,
     line: loc.line,
     col: loc.col,
     endLine: loc.endLine,

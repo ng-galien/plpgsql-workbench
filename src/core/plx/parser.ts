@@ -4,6 +4,8 @@ import type {
   FuncAttribute,
   ImportAlias,
   ModuleDependency,
+  ModuleExport,
+  ModuleInclude,
   Param,
   PlxEntity,
   PlxFunction,
@@ -20,27 +22,34 @@ import { sqlEscape } from "./util.js";
 
 const VALID_FUNC_ATTRS = new Set(["stable", "immutable", "volatile", "definer", "strict"]);
 
-export function parse(tokens: Token[]): PlxModule {
-  const ctx = new ParseContext(tokens);
-  return parseProgram(ctx);
+export interface ParseOptions {
+  kind?: "module" | "fragment";
 }
 
-function parseProgram(ctx: ParseContext): PlxModule {
+export function parse(tokens: Token[], options: ParseOptions = {}): PlxModule {
+  const ctx = new ParseContext(tokens);
+  return parseProgram(ctx, options);
+}
+
+function parseProgram(ctx: ParseContext, options: ParseOptions): PlxModule {
+  const kind = options.kind ?? "module";
   let moduleName: string | undefined;
   let moduleLoc: PlxModule["moduleLoc"];
   let depends: ModuleDependency[] = [];
+  const exports: ModuleExport[] = [];
+  const includes: ModuleInclude[] = [];
   const imports: ImportAlias[] = [];
   const functions: PlxFunction[] = [];
   ctx.skipNewlines();
 
-  if (ctx.isAt("MODULE")) {
+  if (kind === "module" && ctx.isAt("MODULE")) {
     const parsedModule = parseModuleDecl(ctx);
     moduleName = parsedModule.name;
     moduleLoc = parsedModule.loc;
     ctx.skipNewlines();
   }
 
-  if (ctx.isAt("DEPENDS")) {
+  if (kind === "module" && ctx.isAt("DEPENDS")) {
     if (!moduleName) {
       throw new ParseError("depends requires a preceding module declaration", ctx.loc(), {
         code: "parse.depends-without-module",
@@ -51,18 +60,46 @@ function parseProgram(ctx: ParseContext): PlxModule {
     ctx.skipNewlines();
   }
 
-  // Parse imports at top of file
-  while (ctx.isAt("IMPORT")) {
-    imports.push(parseImport(ctx));
-    ctx.skipNewlines();
-  }
-
   const traits: PlxTrait[] = [];
   const entities: PlxEntity[] = [];
   const tests: PlxTest[] = [];
 
   while (!ctx.isAt("EOF")) {
-    const visibility = parseTopLevelVisibility(ctx, moduleName ? "internal" : "export");
+    if (ctx.isAt("IMPORT")) {
+      imports.push(parseImport(ctx));
+      ctx.skipNewlines();
+      continue;
+    }
+
+    if (kind === "module" && ctx.isAt("INCLUDE")) {
+      if (!moduleName) {
+        throw new ParseError("include requires a preceding module declaration", ctx.loc(), {
+          code: "parse.include-without-module",
+          hint: "Declare `module <name>` before including PLX fragments.",
+        });
+      }
+      includes.push(parseInclude(ctx));
+      ctx.skipNewlines();
+      continue;
+    }
+
+    if (kind === "module" && isExportDeclaration(ctx)) {
+      if (!moduleName) {
+        throw new ParseError("export requires a preceding module declaration", ctx.loc(), {
+          code: "parse.export-without-module",
+          hint: "Declare `module <name>` before exporting symbols from the module root.",
+        });
+      }
+      exports.push(parseExportDecl(ctx));
+      ctx.skipNewlines();
+      continue;
+    }
+
+    if (kind === "fragment" && isFragmentForbiddenDirective(ctx)) {
+      throw fragmentDirectiveError(ctx);
+    }
+
+    const visibility = parseTopLevelVisibility(ctx, kind === "fragment" || moduleName ? "internal" : "export", kind);
 
     if (ctx.isAt("TRAIT")) {
       if (visibility.explicit) {
@@ -87,7 +124,7 @@ function parseProgram(ctx: ParseContext): PlxModule {
     }
     ctx.skipNewlines();
   }
-  return { name: moduleName, moduleLoc, depends, imports, traits, entities, functions, tests };
+  return { name: moduleName, moduleLoc, depends, exports, includes, imports, traits, entities, functions, tests };
 }
 
 /** import original as alias */
@@ -112,24 +149,76 @@ function parseDepends(ctx: ParseContext): ModuleDependency[] {
   ctx.expect("DEPENDS");
   const depends: ModuleDependency[] = [];
   const first = ctx.expect("IDENT");
-  depends.push({ name: first.value, loc: pointLoc(first.line, first.col) });
+  depends.push({ name: first.value, loc: pointLoc(first.line, first.col, first.file) });
   while (ctx.isAt("COMMA")) {
     ctx.advance();
     const depTok = ctx.expect("IDENT");
-    depends.push({ name: depTok.value, loc: pointLoc(depTok.line, depTok.col) });
+    depends.push({ name: depTok.value, loc: pointLoc(depTok.line, depTok.col, depTok.file) });
   }
   return depends;
+}
+
+function parseInclude(ctx: ParseContext): ModuleInclude {
+  const start = ctx.loc();
+  ctx.expect("INCLUDE");
+  const pathTok = ctx.expect("STRING");
+  return { path: pathTok.value, loc: mergeLoc(start, pathTok) };
+}
+
+function parseExportDecl(ctx: ParseContext): ModuleExport {
+  const start = ctx.loc();
+  ctx.expect("EXPORT");
+  const name = ctx.parseQualifiedName();
+  if (!name.includes(".")) {
+    throw new ParseError("export expects a qualified symbol name", start, {
+      code: "parse.invalid-export-name",
+      hint: "Use `export schema.symbol` from the module root.",
+    });
+  }
+  return { name, loc: mergeLoc(start, ctx.loc()) };
+}
+
+function isExportDeclaration(ctx: ParseContext): boolean {
+  if (!ctx.isAt("EXPORT")) return false;
+  const next = ctx.peekAt(1);
+  return next?.type !== "FN" && next?.type !== "ENTITY";
+}
+
+function isFragmentForbiddenDirective(ctx: ParseContext): boolean {
+  return ctx.isAt("MODULE") || ctx.isAt("DEPENDS") || ctx.isAt("INCLUDE") || isExportDeclaration(ctx);
+}
+
+function fragmentDirectiveError(ctx: ParseContext): ParseError {
+  const tok = ctx.peek();
+  const keyword = tok.value || tok.type.toLowerCase();
+  return new ParseError(`'${keyword}' is only allowed in the module entry file`, ctx.loc(), {
+    code: "parse.fragment-root-only-directive",
+    hint: "Keep `module`, `depends`, `include` and root export declarations in the entry .plx file only.",
+  });
 }
 
 function parseTopLevelVisibility(
   ctx: ParseContext,
   defaultVisibility: Visibility,
+  kind: ParseOptions["kind"],
 ): { explicit: boolean; value: Visibility } {
   if (ctx.isAt("EXPORT")) {
+    if (kind === "fragment") {
+      throw new ParseError("export visibility is not allowed inside included fragments", ctx.loc(), {
+        code: "parse.fragment-visibility",
+        hint: "Declare exported symbols from the module entry file with `export schema.symbol`.",
+      });
+    }
     ctx.advance();
     return { explicit: true, value: "export" };
   }
   if (ctx.isAt("INTERNAL")) {
+    if (kind === "fragment") {
+      throw new ParseError("internal visibility is not allowed inside included fragments", ctx.loc(), {
+        code: "parse.fragment-visibility",
+        hint: "Fragments are internal by default. Remove the `internal` keyword here.",
+      });
+    }
     ctx.advance();
     return { explicit: true, value: "internal" };
   }

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { type CompileWarning, compile, compileAndValidate } from "../plx/compiler.js";
+import { type CompileWarning, compileModule, compileModuleAndValidate } from "../plx/compiler.js";
+import { loadPlxModule } from "../plx/module-loader.js";
 import type { ModuleManifest } from "./resolver.js";
 
 export interface PlxBuildResult {
@@ -18,8 +19,18 @@ export async function buildPlxModule(
 
   const moduleDir = path.join(modulesDir, manifest.name);
   const entryPath = path.join(moduleDir, entry);
-  const source = await fs.readFile(entryPath, "utf-8");
-  const result = options.validate === false ? compile(source) : await compileAndValidate(source);
+  await fs.access(entryPath);
+
+  const loaded = await loadPlxModule(entryPath);
+  if (!loaded.module) {
+    const formatted = loaded.errors
+      .map((error) => `${error.code} ${error.message} (${error.file ?? "plx"}:${error.line}:${error.col})`)
+      .join("; ");
+    throw new Error(`PLX build failed for module '${manifest.name}': ${formatted}`);
+  }
+
+  const result =
+    options.validate === false ? compileModule(loaded.module) : await compileModuleAndValidate(loaded.module);
 
   if (result.errors.length > 0) {
     const formatted = result.errors

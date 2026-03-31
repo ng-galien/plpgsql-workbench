@@ -120,4 +120,56 @@ export fn quote.estimate_read(id int) -> jsonb:
     expect(payload.errors).toEqual([]);
     expect(payload.warnings).toEqual([]);
   });
+
+  it("checks a multi-file module entry with included fragments", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "plx-cli-multi-"));
+    const entry = path.join(tmpDir, "quote.plx");
+
+    await fs.writeFile(
+      entry,
+      `
+module quote
+
+include "./brand.plx"
+include "./quote.spec.plx"
+
+export quote.brand
+`,
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(tmpDir, "brand.plx"),
+      `
+fn quote.brand() -> text [stable]:
+  return 'Quote'
+`,
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(tmpDir, "quote.spec.plx"),
+      `
+test "brand":
+  label := quote.brand()
+  assert label = 'Quote'
+`,
+      "utf-8",
+    );
+
+    const output = execFileSync("node", ["--import", "tsx", CLI, "check", "--json", "--no-validate", entry], {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+    });
+
+    const payload = JSON.parse(output) as {
+      errors: unknown[];
+      functionCount: number;
+      ok: boolean;
+      testCount: number;
+    };
+
+    expect(payload.ok).toBe(true);
+    expect(payload.functionCount).toBe(1);
+    expect(payload.testCount).toBe(1);
+    expect(payload.errors).toEqual([]);
+  });
 });

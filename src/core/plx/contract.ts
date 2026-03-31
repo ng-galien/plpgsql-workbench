@@ -1,10 +1,8 @@
-import type { Loc, Visibility } from "./ast.js";
+import type { Loc, PlxModule, Visibility } from "./ast.js";
 import { pointLoc } from "./ast.js";
 import type { CompileError } from "./compiler.js";
 import { createDiagnostic } from "./compiler.js";
-import { LexError, tokenize } from "./lexer.js";
-import { ParseError } from "./parse-context.js";
-import { parse } from "./parser.js";
+import { buildModuleFromSource, loadPlxModule } from "./module-loader.js";
 
 export interface ModuleContractSymbol {
   kind: "entity" | "function";
@@ -29,20 +27,18 @@ export interface ModuleContractResult {
 }
 
 export function readModuleContract(source: string): ModuleContractResult {
-  let tokens: ReturnType<typeof tokenize>;
-  try {
-    tokens = tokenize(source);
-  } catch (error: unknown) {
-    return { errors: [toContractError("lex", error, "lex.invalid-token")] };
-  }
+  const loaded = buildModuleFromSource(source);
+  if (!loaded.module) return { errors: loaded.errors };
+  return { contract: buildModuleContract(loaded.module), errors: [] };
+}
 
-  let mod: ReturnType<typeof parse>;
-  try {
-    mod = parse(tokens);
-  } catch (error: unknown) {
-    return { errors: [toContractError("parse", error, "parse.invalid-syntax")] };
-  }
+export async function readModuleContractEntry(entryPath: string): Promise<ModuleContractResult> {
+  const loaded = await loadPlxModule(entryPath);
+  if (!loaded.module) return { errors: loaded.errors };
+  return { contract: buildModuleContract(loaded.module), errors: [] };
+}
 
+export function buildModuleContract(mod: PlxModule): ModuleContract {
   const symbols: ModuleContractSymbol[] = [
     ...mod.functions.map((fn) => ({
       kind: "function" as const,
@@ -59,44 +55,45 @@ export function readModuleContract(source: string): ModuleContractResult {
   ];
 
   return {
-    contract: {
-      depends: mod.depends.map((dep) => dep.name),
-      exports: symbols.filter((symbol) => symbol.visibility === "export"),
-      internals: symbols.filter((symbol) => symbol.visibility === "internal"),
-      moduleName: mod.name ?? null,
-      spans: {
-        module: mod.moduleLoc,
-      },
+    depends: mod.depends.map((dep) => dep.name),
+    exports: symbols.filter((symbol) => symbol.visibility === "export"),
+    internals: symbols.filter((symbol) => symbol.visibility === "internal"),
+    moduleName: mod.name ?? null,
+    spans: {
+      module: mod.moduleLoc,
     },
-    errors: [],
   };
 }
 
-function toContractError(
+export function toContractError(
   phase: CompileError["phase"],
   error: unknown,
   fallbackCode: string,
   fallbackLoc: Loc = pointLoc(),
 ): CompileError {
-  if (error instanceof LexError) {
+  if (error instanceof Error && "loc" in error && typeof error.loc === "object" && error.loc) {
+    return createDiagnostic(phase, (error as { code?: string }).code ?? fallbackCode, error.message, error.loc as Loc);
+  }
+
+  if (error instanceof Error && "line" in error && "col" in error) {
     return createDiagnostic(
       phase,
-      error.code ?? fallbackCode,
+      (error as { code?: string }).code ?? fallbackCode,
       error.message,
       {
-        line: error.line,
-        col: error.col,
-        endLine: error.endLine,
-        endCol: error.endCol,
+        file: (error as { file?: string }).file,
+        line: Number((error as { line: number }).line),
+        col: Number((error as { col: number }).col),
+        endLine: Number((error as { endLine?: number }).endLine ?? (error as { line: number }).line),
+        endCol: Number((error as { endCol?: number }).endCol ?? (error as { col: number }).col),
       },
-      error.hint,
+      (error as { hint?: string }).hint,
     );
   }
-  if (error instanceof ParseError) {
-    return createDiagnostic(phase, error.code ?? fallbackCode, error.message, error.loc, error.hint);
-  }
+
   if (error instanceof Error) {
     return createDiagnostic(phase, fallbackCode, error.message, fallbackLoc);
   }
+
   return createDiagnostic(phase, fallbackCode, String(error), fallbackLoc);
 }

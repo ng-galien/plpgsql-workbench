@@ -1,4 +1,4 @@
-import type { Expression, Loc, Statement, Visibility } from "./ast.js";
+import type { Expression, Loc, PlxModule, Statement, Visibility } from "./ast.js";
 import { pointLoc } from "./ast.js";
 import {
   type CompiledModuleArtifact,
@@ -7,12 +7,19 @@ import {
   type CompileWarning,
   compile,
   compileAndValidate,
+  compileModule,
+  compileModuleAndValidate,
   createDiagnostic,
 } from "./compiler.js";
 
 export interface CompositionInput {
   file: string;
   source: string;
+}
+
+export interface CompositionModuleInput {
+  file: string;
+  module: PlxModule;
 }
 
 export interface CompositionModuleResult {
@@ -53,6 +60,174 @@ export async function compose(
 
   for (const input of inputs) {
     const result = options.validate === false ? compile(input.source) : await compileAndValidate(input.source);
+    warnings.push(...result.warnings);
+    errors.push(...result.errors);
+    compiled.push({
+      artifact: result._artifact,
+      file: input.file,
+      result,
+    });
+  }
+
+  const moduleResults = compiled.map((entry) => ({
+    entityCount: entry.result.entityCount ?? 0,
+    errors: entry.result.errors,
+    file: entry.file,
+    functionCount: entry.result.functionCount,
+    moduleName: entry.artifact?.module.name ?? null,
+    testCount: entry.result.testCount ?? 0,
+    warnings: entry.result.warnings,
+  }));
+
+  if (errors.length > 0) {
+    return { errors, modules: moduleResults, warnings };
+  }
+
+  const registry = new Map<string, CompiledModuleRecord>();
+  for (const entry of compiled) {
+    if (!entry.artifact) continue;
+    const moduleName = entry.artifact.module.name;
+    if (!moduleName) {
+      errors.push(
+        createDiagnostic(
+          "semantic",
+          "module.missing-declaration",
+          `composition requires a module declaration for '${entry.file}'`,
+          entry.artifact.module.moduleLoc ?? pointLoc(),
+          "Add `module <name>` at the top of the PLX file before composing it with others.",
+        ),
+      );
+      continue;
+    }
+    if (registry.has(moduleName)) {
+      errors.push(
+        createDiagnostic(
+          "semantic",
+          "module.duplicate-module",
+          `duplicate module '${moduleName}' in composition`,
+          entry.artifact.module.moduleLoc ?? pointLoc(),
+          "Keep exactly one PLX source per module in a composed build.",
+        ),
+      );
+      continue;
+    }
+
+    const symbols = new Map<string, Visibility>();
+    for (const fn of entry.artifact.functions) {
+      if (fn.schema === moduleName) symbols.set(fn.name, fn.visibility);
+    }
+
+    registry.set(moduleName, {
+      artifact: entry.artifact,
+      depends: new Set(entry.artifact.module.depends.map((dep) => dep.name)),
+      file: entry.file,
+      moduleName,
+      symbols,
+    });
+  }
+
+  for (const record of registry.values()) {
+    for (const dep of record.artifact.module.depends) {
+      if (dep.name === record.moduleName) {
+        errors.push(
+          createDiagnostic(
+            "semantic",
+            "module.dependency-cycle",
+            `module '${record.moduleName}' cannot depend on itself`,
+            dep.loc,
+            "Remove the self dependency from the module header.",
+          ),
+        );
+        continue;
+      }
+      if (!registry.has(dep.name)) {
+        errors.push(
+          createDiagnostic(
+            "semantic",
+            "module.missing-dependency",
+            `module '${record.moduleName}' depends on missing module '${dep.name}'`,
+            dep.loc,
+            "Add the dependency to the composition or remove it from the module header.",
+          ),
+        );
+      }
+    }
+  }
+
+  detectDependencyCycles(registry, errors);
+
+  for (const record of registry.values()) {
+    for (const fn of record.artifact.functions) {
+      for (const call of collectCalls(fn.body)) {
+        const targetName = resolveCallTarget(call.name, record.artifact.aliases);
+        if (!targetName.includes(".")) continue;
+
+        const [targetModule, targetFunction] = splitQualifiedCall(targetName);
+        if (!targetModule || !targetFunction || targetModule === record.moduleName) continue;
+
+        if (!record.depends.has(targetModule)) {
+          errors.push(
+            createDiagnostic(
+              "semantic",
+              "module.missing-dependency",
+              `module '${record.moduleName}' calls '${targetName}' without depending on '${targetModule}'`,
+              call.loc,
+              `Add '${targetModule}' to depends or stop calling '${targetName}'.`,
+            ),
+          );
+          continue;
+        }
+
+        const targetRecord = registry.get(targetModule);
+        if (!targetRecord) continue;
+
+        const visibility = targetRecord.symbols.get(targetFunction);
+        if (!visibility) {
+          errors.push(
+            createDiagnostic(
+              "semantic",
+              "module.unknown-export",
+              `module '${record.moduleName}' calls unknown export '${targetName}'`,
+              call.loc,
+              `Export '${targetFunction}' from module '${targetModule}' or fix the call target.`,
+            ),
+          );
+          continue;
+        }
+
+        if (visibility === "internal") {
+          errors.push(
+            createDiagnostic(
+              "semantic",
+              "module.private-symbol-access",
+              `module '${record.moduleName}' cannot access internal symbol '${targetName}'`,
+              call.loc,
+              `Mark '${targetName}' as export or keep the call inside module '${targetModule}'.`,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  return { errors, modules: moduleResults, warnings };
+}
+
+export async function composeModules(
+  inputs: CompositionModuleInput[],
+  options: { validate?: boolean } = {},
+): Promise<CompositionResult> {
+  const warnings: CompileWarning[] = [];
+  const errors: CompileError[] = [];
+  const compiled: Array<{
+    artifact?: CompiledModuleArtifact;
+    file: string;
+    result: CompileResult;
+  }> = [];
+
+  for (const input of inputs) {
+    const result =
+      options.validate === false ? compileModule(input.module) : await compileModuleAndValidate(input.module);
     warnings.push(...result.warnings);
     errors.push(...result.errors);
     compiled.push({

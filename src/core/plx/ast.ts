@@ -1,18 +1,20 @@
 // PLX AST
 
 export interface Loc {
+  file?: string;
   line: number;
   col: number;
   endLine: number;
   endCol: number;
 }
 
-export function pointLoc(line = 0, col = 0): Loc {
-  return { line, col, endLine: line, endCol: col };
+export function pointLoc(line = 0, col = 0, file?: string): Loc {
+  return { file, line, col, endLine: line, endCol: col };
 }
 
-export function spanLoc(start: Pick<Loc, "line" | "col">, end: Pick<Loc, "endLine" | "endCol">): Loc {
+export function spanLoc(start: Pick<Loc, "file" | "line" | "col">, end: Pick<Loc, "file" | "endLine" | "endCol">): Loc {
   return {
+    file: start.file ?? end.file,
     line: start.line,
     col: start.col,
     endLine: end.endLine,
@@ -26,6 +28,7 @@ export function mergeLoc(start: Loc, end: Loc): Loc {
 
 export function shiftLoc(loc: Loc, lineDelta: number, colDelta: number): Loc {
   return {
+    file: loc.file,
     line: loc.line + lineDelta,
     col: loc.line === 1 ? loc.col + colDelta : loc.col,
     endLine: loc.endLine + lineDelta,
@@ -46,12 +49,24 @@ export interface ModuleDependency {
   loc: Loc;
 }
 
+export interface ModuleExport {
+  name: string;
+  loc: Loc;
+}
+
+export interface ModuleInclude {
+  path: string;
+  loc: Loc;
+}
+
 export type Visibility = "export" | "internal";
 
 export interface PlxModule {
   name?: string;
   moduleLoc?: Loc;
   depends: ModuleDependency[];
+  exports: ModuleExport[];
+  includes: ModuleInclude[];
   imports: ImportAlias[];
   traits: PlxTrait[];
   entities: PlxEntity[];

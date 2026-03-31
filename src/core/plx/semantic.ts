@@ -52,6 +52,39 @@ export function analyzeModule(mod: PlxModule): SemanticResult {
   const importTargets = new Map<string, string>();
   const usedImports = new Set<string>();
 
+  checkDuplicates(
+    mod.traits.map((trait) => ({ loc: trait.loc, name: trait.name })),
+    "module",
+    "trait",
+    "semantic.duplicate-trait",
+    "Rename or remove the duplicated trait declaration.",
+    errors,
+  );
+  checkDuplicates(
+    mod.entities.map((entity) => ({ loc: entity.loc, name: `${entity.schema}.${entity.name}` })),
+    "module",
+    "entity",
+    "semantic.duplicate-entity",
+    "Rename or remove the duplicated entity declaration.",
+    errors,
+  );
+  checkDuplicates(
+    mod.functions.map((fn) => ({ loc: fn.loc, name: `${fn.schema}.${fn.name}` })),
+    "module",
+    "function",
+    "semantic.duplicate-function",
+    "Rename or remove the duplicated function declaration.",
+    errors,
+  );
+  checkDuplicates(
+    mod.tests.map((test) => ({ loc: test.loc, name: test.name })),
+    "module",
+    "test",
+    "semantic.duplicate-test",
+    "Rename or remove the duplicated test declaration.",
+    errors,
+  );
+
   for (const imp of mod.imports) {
     const existing = importAliases.get(imp.alias);
     if (existing) {

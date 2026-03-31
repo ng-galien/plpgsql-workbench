@@ -953,8 +953,9 @@ export function parseSqlBlock(tok: Token): SqlBlockExpr {
   return { kind: "sql_block", sql: sql.trim(), elseRaise, inferredTable, loc: tokenLoc(tok) };
 }
 
-function tokenLoc(token: Pick<Token, "line" | "col" | "endLine" | "endCol">): Loc {
+function tokenLoc(token: Pick<Token, "file" | "line" | "col" | "endLine" | "endCol">): Loc {
   return {
+    file: token.file,
     line: token.line,
     col: token.col,
     endLine: token.endLine,
