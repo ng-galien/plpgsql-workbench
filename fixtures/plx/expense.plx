@@ -1,5 +1,10 @@
 -- expense module — full dog-food in PLX
 
+import jsonb_build_object as obj
+import jsonb_build_array as arr
+import pgv.t as t
+import pgv.badge as badge
+
 fn expense._next_reference() -> text:
   yr := select extract(year from now())::text
   mx := (select max(substring(reference from 'NDF-' || v_yr || '-(\d+)')::int)
@@ -9,13 +14,13 @@ fn expense._next_reference() -> text:
   return result
 
 fn expense._status_badge(p_status text) -> text [stable]:
-  return pgv.badge(
+  return badge(
     case p_status
-      when 'draft' then pgv.t('expense.status_draft')
-      when 'submitted' then pgv.t('expense.status_submitted')
-      when 'validated' then pgv.t('expense.status_validated')
-      when 'reimbursed' then pgv.t('expense.status_reimbursed')
-      when 'rejected' then pgv.t('expense.status_rejected')
+      when 'draft' then t('expense.status_draft')
+      when 'submitted' then t('expense.status_submitted')
+      when 'validated' then t('expense.status_validated')
+      when 'reimbursed' then t('expense.status_reimbursed')
+      when 'rejected' then t('expense.status_rejected')
       else p_status
     end,
     case p_status
@@ -29,34 +34,34 @@ fn expense._status_badge(p_status text) -> text [stable]:
   )
 
 fn expense.brand() -> text [stable]:
-  return pgv.t('expense.brand')
+  return t('expense.brand')
 
 fn expense.nav_items() -> jsonb [stable]:
-  return jsonb_build_array(
-    jsonb_build_object('href', '/', 'label', pgv.t('expense.nav_dashboard'), 'icon', 'home'),
-    jsonb_build_object('href', '/expense_reports', 'label', pgv.t('expense.nav_reports'), 'icon', 'file-text', 'entity', 'expense_report', 'uri', 'expense://expense_report'),
-    jsonb_build_object('href', '/categories', 'label', pgv.t('expense.nav_categories'), 'icon', 'tag', 'entity', 'category', 'uri', 'expense://category')
+  return arr(
+    obj('href', '/', 'label', t('expense.nav_dashboard'), 'icon', 'home'),
+    obj('href', '/expense_reports', 'label', t('expense.nav_reports'), 'icon', 'file-text', 'entity', 'expense_report', 'uri', 'expense://expense_report'),
+    obj('href', '/categories', 'label', t('expense.nav_categories'), 'icon', 'tag', 'entity', 'category', 'uri', 'expense://category')
   )
 
 -- Category CRUD
 
 fn expense.category_view() -> jsonb [stable]:
-  return jsonb_build_object(
+  return obj(
     'uri', 'expense://category', 'icon', '🏷', 'label', 'expense.entity_category',
-    'template', jsonb_build_object(
-      'compact', jsonb_build_object('fields', jsonb_build_array('name', 'accounting_code')),
-      'standard', jsonb_build_object('fields', jsonb_build_array('name', 'accounting_code')),
-      'expanded', jsonb_build_object('fields', jsonb_build_array('name', 'accounting_code', 'created_at')),
-      'form', jsonb_build_object('sections', jsonb_build_array(
-        jsonb_build_object('label', 'expense.section_info', 'fields', jsonb_build_array(
-          jsonb_build_object('key', 'name', 'type', 'text', 'label', 'expense.field_name', 'required', true),
-          jsonb_build_object('key', 'accounting_code', 'type', 'text', 'label', 'expense.field_accounting_code')
+    'template', obj(
+      'compact', obj('fields', arr('name', 'accounting_code')),
+      'standard', obj('fields', arr('name', 'accounting_code')),
+      'expanded', obj('fields', arr('name', 'accounting_code', 'created_at')),
+      'form', obj('sections', arr(
+        obj('label', 'expense.section_info', 'fields', arr(
+          obj('key', 'name', 'type', 'text', 'label', 'expense.field_name', 'required', true),
+          obj('key', 'accounting_code', 'type', 'text', 'label', 'expense.field_accounting_code')
         ))
       ))
     ),
-    'actions', jsonb_build_object(
-      'edit', jsonb_build_object('label', 'expense.action_edit', 'icon', '✏', 'variant', 'muted'),
-      'delete', jsonb_build_object('label', 'expense.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'expense.confirm_delete_category')
+    'actions', obj(
+      'edit', obj('label', 'expense.action_edit', 'icon', '✏', 'variant', 'muted'),
+      'delete', obj('label', 'expense.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'expense.confirm_delete_category')
     )
   )
 
@@ -70,9 +75,9 @@ fn expense.category_read(p_id text) -> jsonb [stable]:
   result := (select to_jsonb(c) from expense.category c where c.id = p_id::int)
   if result = null:
     return null
-  return result || jsonb_build_object('actions', jsonb_build_array(
-    jsonb_build_object('method', 'edit', 'uri', 'expense://category/' || (result->>'id') || '/edit'),
-    jsonb_build_object('method', 'delete', 'uri', 'expense://category/' || (result->>'id') || '/delete')
+  return result || obj('actions', arr(
+    obj('method', 'edit', 'uri', 'expense://category/' || (result->>'id') || '/edit'),
+    obj('method', 'delete', 'uri', 'expense://category/' || (result->>'id') || '/delete')
   ))
 
 fn expense.category_create(p_row expense.category) -> jsonb [definer]:
@@ -95,49 +100,49 @@ fn expense.category_delete(p_id text) -> jsonb [definer]:
 -- Expense Report CRUD
 
 fn expense.expense_report_view() -> jsonb [stable]:
-  return jsonb_build_object(
+  return obj(
     'uri', 'expense://expense_report', 'icon', '📋', 'label', 'expense.entity_expense_report',
-    'template', jsonb_build_object(
-      'compact', jsonb_build_object('fields', jsonb_build_array('reference', 'author', 'status', 'total_incl_tax')),
-      'standard', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'author', 'start_date', 'end_date', 'status', 'comment'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'line_count', 'label', 'expense.stat_line_count'),
-          jsonb_build_object('key', 'total_excl_tax', 'label', 'expense.stat_total_excl_tax'),
-          jsonb_build_object('key', 'total_incl_tax', 'label', 'expense.stat_total_incl_tax')
+    'template', obj(
+      'compact', obj('fields', arr('reference', 'author', 'status', 'total_incl_tax')),
+      'standard', obj(
+        'fields', arr('reference', 'author', 'start_date', 'end_date', 'status', 'comment'),
+        'stats', arr(
+          obj('key', 'line_count', 'label', 'expense.stat_line_count'),
+          obj('key', 'total_excl_tax', 'label', 'expense.stat_total_excl_tax'),
+          obj('key', 'total_incl_tax', 'label', 'expense.stat_total_incl_tax')
         ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'ledger://journal_entry', 'label', 'expense.stat_total', 'filter', 'expense_note_id={id}')
+        'related', arr(
+          obj('entity', 'ledger://journal_entry', 'label', 'expense.stat_total', 'filter', 'expense_note_id={id}')
         )
       ),
-      'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('reference', 'author', 'start_date', 'end_date', 'status', 'comment', 'created_at', 'updated_at'),
-        'stats', jsonb_build_array(
-          jsonb_build_object('key', 'line_count', 'label', 'expense.stat_line_count'),
-          jsonb_build_object('key', 'total_excl_tax', 'label', 'expense.stat_total_excl_tax'),
-          jsonb_build_object('key', 'total_incl_tax', 'label', 'expense.stat_total_incl_tax')
+      'expanded', obj(
+        'fields', arr('reference', 'author', 'start_date', 'end_date', 'status', 'comment', 'created_at', 'updated_at'),
+        'stats', arr(
+          obj('key', 'line_count', 'label', 'expense.stat_line_count'),
+          obj('key', 'total_excl_tax', 'label', 'expense.stat_total_excl_tax'),
+          obj('key', 'total_incl_tax', 'label', 'expense.stat_total_incl_tax')
         ),
-        'related', jsonb_build_array(
-          jsonb_build_object('entity', 'ledger://journal_entry', 'label', 'expense.stat_total', 'filter', 'expense_note_id={id}')
+        'related', arr(
+          obj('entity', 'ledger://journal_entry', 'label', 'expense.stat_total', 'filter', 'expense_note_id={id}')
         )
       ),
-      'form', jsonb_build_object('sections', jsonb_build_array(
-        jsonb_build_object('label', 'expense.section_info', 'fields', jsonb_build_array(
-          jsonb_build_object('key', 'author', 'type', 'text', 'label', 'expense.field_author', 'required', true),
-          jsonb_build_object('key', 'start_date', 'type', 'date', 'label', 'expense.field_start_date', 'required', true),
-          jsonb_build_object('key', 'end_date', 'type', 'date', 'label', 'expense.field_end_date', 'required', true),
-          jsonb_build_object('key', 'comment', 'type', 'textarea', 'label', 'expense.field_comment')
+      'form', obj('sections', arr(
+        obj('label', 'expense.section_info', 'fields', arr(
+          obj('key', 'author', 'type', 'text', 'label', 'expense.field_author', 'required', true),
+          obj('key', 'start_date', 'type', 'date', 'label', 'expense.field_start_date', 'required', true),
+          obj('key', 'end_date', 'type', 'date', 'label', 'expense.field_end_date', 'required', true),
+          obj('key', 'comment', 'type', 'textarea', 'label', 'expense.field_comment')
         ))
       ))
     ),
-    'actions', jsonb_build_object(
-      'edit', jsonb_build_object('label', 'expense.action_edit', 'icon', '✏', 'variant', 'muted'),
-      'add_line', jsonb_build_object('label', 'expense.action_add_line', 'icon', '+', 'variant', 'primary'),
-      'submit', jsonb_build_object('label', 'expense.action_submit', 'icon', '→', 'variant', 'primary', 'confirm', 'expense.confirm_submit'),
-      'validate', jsonb_build_object('label', 'expense.action_validate', 'icon', '✓', 'variant', 'primary', 'confirm', 'expense.confirm_validate'),
-      'reject', jsonb_build_object('label', 'expense.action_reject', 'icon', '✗', 'variant', 'danger', 'confirm', 'expense.confirm_reject'),
-      'reimburse', jsonb_build_object('label', 'expense.action_reimburse', 'icon', '€', 'variant', 'primary', 'confirm', 'expense.confirm_reimburse'),
-      'delete', jsonb_build_object('label', 'expense.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'expense.confirm_delete')
+    'actions', obj(
+      'edit', obj('label', 'expense.action_edit', 'icon', '✏', 'variant', 'muted'),
+      'add_line', obj('label', 'expense.action_add_line', 'icon', '+', 'variant', 'primary'),
+      'submit', obj('label', 'expense.action_submit', 'icon', '→', 'variant', 'primary', 'confirm', 'expense.confirm_submit'),
+      'validate', obj('label', 'expense.action_validate', 'icon', '✓', 'variant', 'primary', 'confirm', 'expense.confirm_validate'),
+      'reject', obj('label', 'expense.action_reject', 'icon', '✗', 'variant', 'danger', 'confirm', 'expense.confirm_reject'),
+      'reimburse', obj('label', 'expense.action_reimburse', 'icon', '€', 'variant', 'primary', 'confirm', 'expense.confirm_reimburse'),
+      'delete', obj('label', 'expense.action_delete', 'icon', '×', 'variant', 'danger', 'confirm', 'expense.confirm_delete')
     )
   )
 
@@ -180,23 +185,23 @@ fn expense.expense_report_read(p_id text) -> jsonb [stable]:
   actions := '[]'::jsonb
   match status:
     'draft':
-      actions := jsonb_build_array(
-        jsonb_build_object('method', 'edit', 'uri', 'expense://expense_report/' || id || '/edit'),
-        jsonb_build_object('method', 'add_line', 'uri', 'expense://expense_report/' || id || '/add_line')
+      actions := arr(
+        obj('method', 'edit', 'uri', 'expense://expense_report/' || id || '/edit'),
+        obj('method', 'add_line', 'uri', 'expense://expense_report/' || id || '/add_line')
       )
       if line_count > 0:
-        actions := actions || jsonb_build_array(jsonb_build_object('method', 'submit', 'uri', 'expense://expense_report/' || id || '/submit'))
-      actions := actions || jsonb_build_array(jsonb_build_object('method', 'delete', 'uri', 'expense://expense_report/' || id || '/delete'))
+        actions := actions || arr(obj('method', 'submit', 'uri', 'expense://expense_report/' || id || '/submit'))
+      actions := actions || arr(obj('method', 'delete', 'uri', 'expense://expense_report/' || id || '/delete'))
     'submitted':
-      actions := jsonb_build_array(
-        jsonb_build_object('method', 'validate', 'uri', 'expense://expense_report/' || id || '/validate'),
-        jsonb_build_object('method', 'reject', 'uri', 'expense://expense_report/' || id || '/reject')
+      actions := arr(
+        obj('method', 'validate', 'uri', 'expense://expense_report/' || id || '/validate'),
+        obj('method', 'reject', 'uri', 'expense://expense_report/' || id || '/reject')
       )
     'validated':
-      actions := jsonb_build_array(jsonb_build_object('method', 'reimburse', 'uri', 'expense://expense_report/' || id || '/reimburse'))
+      actions := arr(obj('method', 'reimburse', 'uri', 'expense://expense_report/' || id || '/reimburse'))
     else:
       actions := '[]'::jsonb
-  return result || jsonb_build_object('actions', actions)
+  return result || obj('actions', actions)
 
 fn expense.expense_report_create(p_row expense.expense_report) -> jsonb [definer]:
   ref := expense._next_reference()
