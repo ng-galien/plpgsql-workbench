@@ -1,4 +1,4 @@
--- Test the 4 gaps: attributes, typed defaults, subquery assign, return query/execute
+-- Test the 4 gaps: attributes, typed defaults, subquery assign, SQL triple quotes
 
 -- Gap 1: Function attributes [definer], [stable]
 fn expense.category_create(p_row expense.category) -> jsonb [definer]:
@@ -13,9 +13,13 @@ fn expense.category_view() -> jsonb [stable]:
 -- Gap 2: Default params with null
 fn expense.category_list(p_filter text? = null) -> setof jsonb [stable]:
   if p_filter = null:
-    return query select to_jsonb(c) from expense.category c order by c.name
+    return """
+      select to_jsonb(c)
+      from expense.category c
+      order by c.name
+    """
   else:
-    return execute 'SELECT to_jsonb(c) FROM expense.category c WHERE ' || pgv.rsql_to_where(p_filter, 'expense', 'category') || ' ORDER BY c.name'
+    raise 'expense.err_dynamic_filter_not_supported'
 
 -- Gap 3: Subquery assignment
 fn expense.category_read(p_id text) -> jsonb [stable]:
@@ -24,12 +28,16 @@ fn expense.category_read(p_id text) -> jsonb [stable]:
     return null
   return result
 
--- Gap 4: return query + return execute
+-- Gap 4: SQL multi-line return
 fn expense.expense_report_list(p_filter text? = null) -> setof jsonb [stable]:
   if p_filter = null:
-    return query select to_jsonb(r) from expense.expense_report r order by r.updated_at desc
+    return """
+      select to_jsonb(r)
+      from expense.expense_report r
+      order by r.updated_at desc
+    """
   else:
-    return execute 'SELECT to_jsonb(r) FROM expense.expense_report r WHERE ' || pgv.rsql_to_where(p_filter, 'expense', 'expense_report') || ' ORDER BY r.updated_at DESC'
+    raise 'expense.err_dynamic_filter_not_supported'
 
 -- Combined: definer + stable
 fn expense.brand() -> text [stable]:

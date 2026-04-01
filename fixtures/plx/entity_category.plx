@@ -14,8 +14,8 @@ entity expense.category uses auditable:
     name text required
     accounting_code text?
 
-  validate create:
-    assert coalesce(p_row.accounting_code, '') != '999', expense.err_reserved_accounting_code
+  validate:
+    reserved_accounting_code: coalesce(p_data->>'accounting_code', '') != '999'
 
   view:
     compact: [name, accounting_code]

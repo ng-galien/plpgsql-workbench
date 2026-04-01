@@ -202,12 +202,52 @@ entity demo.task:
 
   states draft -> active:
     activate(draft -> active):
-      guard: title = 'x'
+      guard: """
+        title = 'x'
+      """
 `;
     const result = compile(source);
     expect(result.errors).toHaveLength(0);
     expect(result.sql).toContain("IF NOT title = 'x' THEN");
     expect(result.sql).not.toContain("IF true NOT");
+  });
+
+  it("supports triple-quoted SQL in return and assert", () => {
+    const source = `
+fn demo.list_items() -> setof jsonb:
+  return """
+    select jsonb_build_object('id', 1)
+  """
+
+test "triple quoted assert":
+  items := demo.list_items()
+  assert """
+    select true
+  """
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("RETURN QUERY select jsonb_build_object('id', 1);");
+    expect(result.testSql).toContain("RETURN NEXT ok((select true), 'assert line 9');");
+  });
+
+  it("supports declarative entity validate rules", () => {
+    const source = `
+entity demo.task:
+  fields:
+    title text required
+
+  validate:
+    title_present: coalesce(p_data->>'title', '') != ''
+    title_not_blank: """
+      coalesce(p_data->>'title', '') != ''
+    """
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("title_present");
+    expect(result.sql).toContain("title_not_blank");
+    expect(result.sql).toContain("v_p_data := p_patch;");
   });
 
   it("compiles mixed functions and tests", () => {
@@ -490,26 +530,17 @@ fn demo.bad() -> int:
     );
   });
 
-  it("warns on dynamic SQL execute patterns", () => {
+  it("rejects legacy return query/execute modes", () => {
     const source = `
 fn demo.query(name text) -> setof text:
-  return execute "select " || name
+  return query select name
 `;
     const result = compile(source);
-    expect(result.errors).toHaveLength(0);
-    expect(result.warnings).toEqual(
+    expect(result.errors).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: "sql.dynamic-execute",
-          functionName: "demo.query",
-          line: 3,
-          col: 2,
-        }),
-        expect.objectContaining({
-          code: "sql.dynamic-execute-concat",
-          functionName: "demo.query",
-          line: 3,
-          col: 2,
+          phase: "parse",
+          code: "parse.legacy-return-mode",
         }),
       ]),
     );

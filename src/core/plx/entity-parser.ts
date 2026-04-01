@@ -20,7 +20,7 @@ import type {
 } from "./ast.js";
 import { mergeLoc } from "./ast.js";
 import type { ParseContext } from "./parse-context.js";
-import { ParseError } from "./parse-context.js";
+import { ParseError, parseSqlBlock } from "./parse-context.js";
 
 export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntity {
   const start = ctx.loc();
@@ -144,8 +144,10 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
         ctx.skipNewlines();
       }
       ctx.expect("DEDENT");
-    } else if (kw === "before" || kw === "after" || kw === "validate") {
+    } else if (kw === "before" || kw === "after") {
       hooks.push(parseEntityHook(ctx));
+    } else if (kw === "validate") {
+      hooks.push(...parseValidateBlock(ctx));
     } else {
       // Unknown key — skip line
       ctx.advance();
@@ -301,12 +303,17 @@ function parseStateBlock(ctx: ParseContext): StateBlock {
         if (ctx.peek().value === "guard") {
           ctx.advance();
           ctx.expect("COLON");
-          // Collect guard expression as raw text until newline
-          let guardExpr = "";
-          while (!ctx.isAt("NEWLINE") && !ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
-            guardExpr += (guardExpr ? " " : "") + ctx.advance().value;
+          if (ctx.isAt("SQL_BLOCK")) {
+            guard = ctx.advance().value;
+          } else {
+            let guardExpr = "";
+            while (!ctx.isAt("NEWLINE") && !ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
+              const token = ctx.advance();
+              const fragment = token.type === "STRING" ? `'${token.value.replace(/'/g, "''")}'` : token.value;
+              guardExpr += (guardExpr ? " " : "") + fragment;
+            }
+            guard = guardExpr;
           }
-          guard = guardExpr;
         } else {
           // Body statement
           if (!body) body = [];
@@ -579,6 +586,44 @@ function parseStrategyDecl(ctx: ParseContext): StrategyDecl {
   return { slot, fn, loc };
 }
 
+function parseValidateBlock(ctx: ParseContext): EntityHook[] {
+  const start = ctx.loc();
+  ctx.advance(); // validate
+  ctx.expect("COLON");
+  ctx.skipNewlines();
+  ctx.expect("INDENT");
+
+  const body: Statement[] = [];
+  while (!ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
+    ctx.skipNewlines();
+    if (ctx.isAt("DEDENT")) break;
+
+    const ruleLoc = ctx.loc();
+    const ruleName = ctx.expect("IDENT").value;
+    ctx.expect("COLON");
+    const expression = ctx.isAt("SQL_BLOCK") ? parseSqlBlock(ctx.advance()) : ctx.parseExpression();
+    body.push({ kind: "assert", expression, message: ruleName, loc: mergeLoc(ruleLoc, expression.loc) });
+    ctx.skipNewlines();
+  }
+
+  const end = ctx.expect("DEDENT");
+  const loc = mergeLoc(start, end);
+  return [
+    { event: "validate_create", params: [], body, loc },
+    { event: "validate_update", params: [], body, loc },
+  ];
+}
+
+const VALID_HOOK_EVENTS: Record<string, EntityHookEvent> = {
+  before_create: "before_create",
+  after_create: "after_create",
+  before_update: "before_update",
+  after_update: "after_update",
+  validate_create: "validate_create",
+  validate_update: "validate_update",
+  validate_delete: "validate_delete",
+};
+
 function parseEntityHook(ctx: ParseContext): EntityHook {
   const loc = ctx.loc();
   const event = ctx.advance().value; // "before", "after", "validate"
@@ -595,7 +640,14 @@ function parseEntityHook(ctx: ParseContext): EntityHook {
       hint: "Use validate delete instead.",
     });
   }
-  const hookEvent = `${event}_${action}` as EntityHookEvent;
+  const hookEventKey = `${event}_${action}`;
+  const hookEvent = VALID_HOOK_EVENTS[hookEventKey];
+  if (!hookEvent) {
+    throw new ParseError(`unsupported entity hook '${hookEventKey}'`, loc, {
+      code: "parse.invalid-entity-hook-event",
+      hint: `Valid hooks: ${Object.keys(VALID_HOOK_EVENTS).join(", ")}.`,
+    });
+  }
 
   // Optional params: (p_row)
   const params: string[] = [];

@@ -120,7 +120,7 @@ describe("PLX entity E2E", () => {
     // VALIDATION
     await expect(
       pool.query(`SELECT expense.category_create('{"name":"Blocked","accounting_code":"999"}'::jsonb)`),
-    ).rejects.toMatchObject({ detail: "expense.err_reserved_accounting_code" });
+    ).rejects.toMatchObject({ detail: "reserved_accounting_code" });
 
     // DELETE
     const {

@@ -298,7 +298,7 @@ class CodegenContext {
     const msg = stmt.message ?? `assert line ${stmt.loc.line}`;
     const escaped = sqlEscape(msg);
     if (!this.isPgTapFunction()) {
-      this.lineFromParts(["IF NOT (", this.emitExprMap(stmt.expression), ") THEN"], stmt.loc);
+      this.lineFromParts(["IF NOT (", this.emitAssertExpr(stmt.expression), ") THEN"], stmt.loc);
       this.indent++;
       this.line(`RAISE EXCEPTION USING ERRCODE = 'P0400', MESSAGE = 'Bad Request', DETAIL = '${escaped}';`, stmt.loc);
       this.indent--;
@@ -306,15 +306,15 @@ class CodegenContext {
       return;
     }
     if (stmt.expression.kind === "binary" && stmt.expression.op === "=") {
-      const left = this.emitExprMap(stmt.expression.left);
-      const right = this.emitExprMap(stmt.expression.right);
+      const left = this.emitAssertExpr(stmt.expression.left);
+      const right = this.emitAssertExpr(stmt.expression.right);
       this.lineFromParts(["RETURN NEXT is(", left, ", ", right, `, '${escaped}');`], stmt.loc);
     } else if (stmt.expression.kind === "binary" && stmt.expression.op === "!=") {
-      const left = this.emitExprMap(stmt.expression.left);
-      const right = this.emitExprMap(stmt.expression.right);
+      const left = this.emitAssertExpr(stmt.expression.left);
+      const right = this.emitAssertExpr(stmt.expression.right);
       this.lineFromParts(["RETURN NEXT isnt(", left, ", ", right, `, '${escaped}');`], stmt.loc);
     } else {
-      this.lineFromParts(["RETURN NEXT ok(", this.emitExprMap(stmt.expression), `, '${escaped}');`], stmt.loc);
+      this.lineFromParts(["RETURN NEXT ok(", this.emitAssertExpr(stmt.expression), `, '${escaped}');`], stmt.loc);
     }
   }
 
@@ -467,7 +467,18 @@ class CodegenContext {
       return;
     }
 
+    if (stmt.value.kind === "sql_block") {
+      this.line(`RETURN (${stmt.value.sql});`, stmt.loc);
+      return;
+    }
+
     this.lineFromParts(["RETURN ", this.emitExprMap(stmt.value), ";"], stmt.loc);
+  }
+
+  private emitAssertExpr(expr: Expression): MappedText {
+    const mapped = this.emitExprMap(expr);
+    if (expr.kind !== "sql_block") return mapped;
+    return withContainerSegment(concatMapped(["(", mapped, ")"]), expr.loc);
   }
 
   private emitRaise(stmt: RaiseStatement): void {

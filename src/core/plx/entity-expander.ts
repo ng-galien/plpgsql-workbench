@@ -20,6 +20,9 @@ import type {
   ViewSection,
 } from "./ast.js";
 import { pointLoc } from "./ast.js";
+import { type DdlArtifact, formatDefaultValue, generateDDL } from "./entity-ddl.js";
+
+export type { DdlArtifact } from "./entity-ddl.js";
 
 const LOC: Loc = pointLoc();
 
@@ -38,17 +41,10 @@ export interface ExpandError {
   entityName: string;
 }
 
-interface ResolvedEntityFields {
+export interface ResolvedEntityFields {
   all: EntityField[];
   columns: EntityField[];
   payload: EntityField[];
-}
-
-export interface DdlArtifact {
-  key: string;
-  name: string;
-  sql: string;
-  dependsOn: string[];
 }
 
 export function expandEntities(mod: PlxModule): ExpandResult {
@@ -106,11 +102,11 @@ function resolveEntityFields(
       // Built-in traits
       if (traitName === "auditable") {
         traitFields.push(
-          fieldDef("created_at", "timestamptz", false, "now()"),
-          fieldDef("updated_at", "timestamptz", false, "now()"),
+          fieldDef("created_at", "timestamptz", false, "now()", entity.loc),
+          fieldDef("updated_at", "timestamptz", false, "now()", entity.loc),
         );
       } else if (traitName === "soft_delete") {
-        traitFields.push(fieldDef("deleted_at", "timestamptz", true));
+        traitFields.push(fieldDef("deleted_at", "timestamptz", true, undefined, entity.loc));
       } else {
         errors.push({
           loc: entity.loc,
@@ -151,7 +147,7 @@ function defaultScope(entity: PlxEntity, alias: string): string {
   return scopes.length > 0 ? scopes.join(" AND ") : "";
 }
 
-function fieldDef(name: string, type: string, nullable: boolean, defaultValue?: string): EntityField {
+function fieldDef(name: string, type: string, nullable: boolean, defaultValue?: string, loc: Loc = LOC): EntityField {
   return {
     name,
     type,
@@ -162,93 +158,28 @@ function fieldDef(name: string, type: string, nullable: boolean, defaultValue?: 
     createOnly: false,
     readOnly: false,
     ref: undefined,
-    loc: LOC,
+    loc,
   };
-}
-
-// ---------- DDL generation ----------
-
-function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): { artifacts: DdlArtifact[] } {
-  const lines: string[] = [];
-  lines.push(`CREATE TABLE IF NOT EXISTS ${entity.table} (`);
-  lines.push("  id serial PRIMARY KEY,");
-
-  for (const f of resolved.columns) {
-    let col = `  ${f.name} ${f.type}`;
-    if (!f.nullable) col += " NOT NULL";
-    if (f.unique) col += " UNIQUE";
-    if (f.defaultValue) col += ` DEFAULT ${formatDefaultValue(f.defaultValue, f.type)}`;
-    col += ",";
-    lines.push(col);
-  }
-
-  // State column CHECK constraint
-  const states = entity.states;
-  if (states) {
-    const vals = states.values.map((v) => `'${v}'`).join(", ");
-    // Add state column CHECK if not already in fields
-    // Only add if status is not already in fields
-    if (!resolved.columns.some((f) => f.name === states.column)) {
-      lines.push(`  ${states.column} text NOT NULL DEFAULT '${states.initial}' CHECK (${states.column} IN (${vals})),`);
-    }
-  }
-
-  if (entity.storage === "hybrid") {
-    lines.push("  data jsonb NOT NULL DEFAULT '{}'::jsonb,");
-  }
-
-  // Remove trailing comma from last line
-  const lastLine = lines.at(-1) ?? "";
-  lines[lines.length - 1] = lastLine.replace(/,$/, "");
-
-  lines.push(");");
-
-  const artifacts: DdlArtifact[] = [
-    {
-      key: `ddl:table:${entity.table}`,
-      name: entity.table,
-      sql: lines.join("\n"),
-      dependsOn: [`ddl:schema:${entity.schema}`],
-    },
-  ];
-
-  for (const field of resolved.columns) {
-    if (!field.ref) continue;
-    const constraintName = `${entity.name}_${field.name}_fkey`;
-    artifacts.push({
-      key: `ddl:fk:${entity.table}.${field.name}`,
-      name: `${entity.table}.${field.name}`,
-      sql:
-        `ALTER TABLE ${entity.table} DROP CONSTRAINT IF EXISTS ${constraintName};\n` +
-        `ALTER TABLE ${entity.table} ADD CONSTRAINT ${constraintName} FOREIGN KEY (${field.name}) REFERENCES ${field.ref}(id);`,
-      dependsOn: [`ddl:table:${entity.table}`, `ddl:table:${field.ref}`],
-    });
-  }
-
-  artifacts.push({
-    key: `ddl:grant:${entity.table}`,
-    name: `${entity.table}.grant`,
-    sql: `GRANT USAGE ON SCHEMA ${entity.schema} TO anon;\nGRANT SELECT ON TABLE ${entity.table} TO anon;`,
-    dependsOn: [`ddl:table:${entity.table}`],
-  });
-
-  return { artifacts };
 }
 
 // ---------- Function builders ----------
 
 function buildViewFunction(entity: PlxEntity): PlxFunction {
+  const loc = entity.loc;
   const view = entity.view;
-  const entries: JsonLiteral["entries"] = [jEntry("uri", strLit(entity.uri)), jEntry("label", strLit(entity.label))];
-  if (entity.icon) entries.push(jEntry("icon", strLit(entity.icon)));
+  const entries: JsonLiteral["entries"] = [
+    jEntry("uri", strLit(entity.uri, loc)),
+    jEntry("label", strLit(entity.label, loc)),
+  ];
+  if (entity.icon) entries.push(jEntry("icon", strLit(entity.icon, loc)));
 
   // Template
   const template: JsonLiteral["entries"] = [];
-  template.push(jEntry("compact", jObj([jEntry("fields", strArr(view.compact))])));
-  if (view.standard) template.push(jEntry("standard", buildViewSection(view.standard)));
-  if (view.expanded) template.push(jEntry("expanded", buildViewSection(view.expanded)));
-  if (view.form) template.push(jEntry("form", buildFormSections(view.form)));
-  entries.push(jEntry("template", jObj(template)));
+  template.push(jEntry("compact", jObj([jEntry("fields", strArr(view.compact, loc))], loc)));
+  if (view.standard) template.push(jEntry("standard", buildViewSection(view.standard, loc)));
+  if (view.expanded) template.push(jEntry("expanded", buildViewSection(view.expanded, loc)));
+  if (view.form) template.push(jEntry("form", buildFormSections(view.form, loc)));
+  entries.push(jEntry("template", jObj(template, loc)));
 
   // Actions catalog: explicit actions + auto-generated transition actions
   const allActions = [...entity.actions];
@@ -266,64 +197,76 @@ function buildViewFunction(entity: PlxEntity): PlxFunction {
   }
   if (allActions.length > 0) {
     const actionEntries = allActions.map((a) => {
-      const props: JsonLiteral["entries"] = [jEntry("label", strLit(a.label))];
-      if (a.icon) props.push(jEntry("icon", strLit(a.icon)));
-      if (a.variant) props.push(jEntry("variant", strLit(a.variant)));
-      if (a.confirm) props.push(jEntry("confirm", strLit(a.confirm)));
-      return jEntry(a.name, jObj(props));
+      const props: JsonLiteral["entries"] = [jEntry("label", strLit(a.label, loc))];
+      if (a.icon) props.push(jEntry("icon", strLit(a.icon, loc)));
+      if (a.variant) props.push(jEntry("variant", strLit(a.variant, loc)));
+      if (a.confirm) props.push(jEntry("confirm", strLit(a.confirm, loc)));
+      return jEntry(a.name, jObj(props, loc));
     });
-    entries.push(jEntry("actions", jObj(actionEntries)));
+    entries.push(jEntry("actions", jObj(actionEntries, loc)));
   }
 
-  const body: Statement[] = [{ kind: "return", value: jObj(entries), isYield: false, mode: "value", loc: LOC }];
+  const body: Statement[] = [{ kind: "return", value: jObj(entries, loc), isYield: false, mode: "value", loc }];
 
   return makeFn(entity, `${entity.name}_view`, [], "jsonb", ["stable"], body);
 }
 
-function buildViewSection(section: ViewSection): Expression {
-  const entries: JsonLiteral["entries"] = [jEntry("fields", strArr(section.fields))];
+function buildViewSection(section: ViewSection, loc: Loc = LOC): Expression {
+  const entries: JsonLiteral["entries"] = [jEntry("fields", strArr(section.fields, loc))];
   if (section.stats) {
-    const statsArr = section.stats.map((s) => jObj([jEntry("key", strLit(s.key)), jEntry("label", strLit(s.label))]));
-    entries.push(jEntry("stats", { kind: "array_literal", elements: statsArr, loc: LOC }));
+    const statsArr = section.stats.map((s) =>
+      jObj([jEntry("key", strLit(s.key, loc)), jEntry("label", strLit(s.label, loc))], loc),
+    );
+    entries.push(jEntry("stats", { kind: "array_literal", elements: statsArr, loc }));
   }
   if (section.related) {
     const relArr = section.related.map((r) =>
-      jObj([jEntry("entity", strLit(r.entity)), jEntry("label", strLit(r.label)), jEntry("filter", strLit(r.filter))]),
+      jObj(
+        [
+          jEntry("entity", strLit(r.entity, loc)),
+          jEntry("label", strLit(r.label, loc)),
+          jEntry("filter", strLit(r.filter, loc)),
+        ],
+        loc,
+      ),
     );
-    entries.push(jEntry("related", { kind: "array_literal", elements: relArr, loc: LOC }));
+    entries.push(jEntry("related", { kind: "array_literal", elements: relArr, loc }));
   }
-  return jObj(entries);
+  return jObj(entries, loc);
 }
 
-function buildFormSections(sections: FormSection[]): Expression {
+function buildFormSections(sections: FormSection[], loc: Loc = LOC): Expression {
   const sectionObjs = sections.map((s) => {
-    const fieldObjs = s.fields.map((f) => buildFormFieldObj(f));
-    return jObj([
-      jEntry("label", strLit(s.label)),
-      jEntry("fields", { kind: "array_literal", elements: fieldObjs, loc: LOC }),
-    ]);
+    const fieldObjs = s.fields.map((f) => buildFormFieldObj(f, loc));
+    return jObj(
+      [jEntry("label", strLit(s.label, loc)), jEntry("fields", { kind: "array_literal", elements: fieldObjs, loc })],
+      loc,
+    );
   });
-  return jObj([jEntry("sections", { kind: "array_literal", elements: sectionObjs, loc: LOC })]);
+  return jObj([jEntry("sections", { kind: "array_literal", elements: sectionObjs, loc })], loc);
 }
 
-function buildFormFieldObj(f: FormField): Expression {
+function buildFormFieldObj(f: FormField, loc: Loc = LOC): Expression {
   const entries: JsonLiteral["entries"] = [
-    jEntry("key", strLit(f.key)),
-    jEntry("type", strLit(f.type)),
-    jEntry("label", strLit(f.label)),
+    jEntry("key", strLit(f.key, loc)),
+    jEntry("type", strLit(f.type, loc)),
+    jEntry("label", strLit(f.label, loc)),
   ];
-  if (f.required) entries.push(jEntry("required", { kind: "literal", value: true, type: "boolean", loc: LOC }));
-  return jObj(entries);
+  if (f.required) entries.push(jEntry("required", { kind: "literal", value: true, type: "boolean", loc }));
+  return jObj(entries, loc);
 }
 
 function buildListFunction(entity: PlxEntity): PlxFunction {
+  const loc = entity.loc;
   const strategy = findStrategy(entity, "list.query");
   const t = shortAlias(entity);
   const order = entity.listOrder;
 
   // With strategy: delegate entirely
   if (strategy) {
-    const body: Statement[] = [ret("query", sqlBlock(`SELECT ${strategy.fn}(p_filter)`))];
+    const body: Statement[] = [
+      ret("query", sqlBlock(`SELECT ${strategy.fn}(p_filter)`, undefined, undefined, loc), loc),
+    ];
     return makeFn(
       entity,
       `${entity.name}_list`,
@@ -348,26 +291,26 @@ function buildListFunction(entity: PlxEntity): PlxFunction {
     left: {
       kind: "binary",
       op: "||",
-      left: strLit(`SELECT ${rowExpr} FROM ${entity.table} ${t} WHERE `),
+      left: strLit(`SELECT ${rowExpr} FROM ${entity.table} ${t} WHERE `, loc),
       right: {
         kind: "call",
         name: "pgv.rsql_to_where",
-        args: [ident("p_filter"), strLit(entity.schema), strLit(entity.name)],
-        loc: LOC,
+        args: [ident("p_filter", loc), strLit(entity.schema, loc), strLit(entity.name, loc)],
+        loc,
       },
-      loc: LOC,
+      loc,
     },
-    right: strLit(`${andScope} ORDER BY ${t}.${order}`),
-    loc: LOC,
+    right: strLit(`${andScope} ORDER BY ${t}.${order}`, loc),
+    loc,
   };
 
   const ifStmt: IfStatement = {
     kind: "if",
-    condition: { kind: "binary", op: "=", left: ident("p_filter"), right: nullLit(), loc: LOC },
-    body: [ret("query", sqlBlock(staticSql))],
+    condition: { kind: "binary", op: "=", left: ident("p_filter", loc), right: nullLit(loc), loc },
+    body: [ret("query", sqlBlock(staticSql, undefined, undefined, loc), loc)],
     elsifs: [],
-    elseBody: [ret("execute", dynamicExpr)],
-    loc: LOC,
+    elseBody: [ret("execute", dynamicExpr, loc)],
+    loc,
   };
 
   return makeFn(
@@ -382,6 +325,7 @@ function buildListFunction(entity: PlxEntity): PlxFunction {
 }
 
 function buildReadFunction(entity: PlxEntity): PlxFunction {
+  const loc = entity.loc;
   const strategy = findStrategy(entity, "read.query");
   const readKey = entity.readKey ?? `${shortAlias(entity)}.id = p_id::int`;
   const t = shortAlias(entity);
@@ -395,14 +339,14 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
     : `(SELECT ${rowExpr} FROM ${entity.table} ${t} WHERE ${readKey}${andScope})`;
 
   const stmts: Statement[] = [
-    assign("result", sqlBlock(querySql)),
+    assign("result", sqlBlock(querySql, undefined, undefined, loc), loc),
     // IF result IS NULL THEN RETURN NULL
     {
       kind: "if",
-      condition: { kind: "binary", op: "=", left: ident("result"), right: nullLit(), loc: LOC },
-      body: [ret("value", nullLit())],
+      condition: { kind: "binary", op: "=", left: ident("result", loc), right: nullLit(loc), loc },
+      body: [ret("value", nullLit(loc), loc)],
       elsifs: [],
-      loc: LOC,
+      loc,
     } as IfStatement,
   ];
 
@@ -410,26 +354,33 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
   const hateoasStrategy = findStrategy(entity, "read.hateoas");
   if (hateoasStrategy) {
     stmts.push(
-      ret("value", {
-        kind: "binary",
-        op: "||",
-        left: ident("result"),
-        right: jObj([
-          jEntry("actions", {
-            kind: "call",
-            name: hateoasStrategy.fn,
-            args: [ident("result")],
-            loc: LOC,
-          }),
-        ]),
-        loc: LOC,
-      }),
+      ret(
+        "value",
+        {
+          kind: "binary",
+          op: "||",
+          left: ident("result", loc),
+          right: jObj(
+            [
+              jEntry("actions", {
+                kind: "call",
+                name: hateoasStrategy.fn,
+                args: [ident("result", loc)],
+                loc,
+              }),
+            ],
+            loc,
+          ),
+          loc,
+        },
+        loc,
+      ),
     );
   } else if (entity.states) {
     // State-based: extract status, build CASE with per-state actions
-    stmts.push(assign("status", sqlBlock(`(v_result->>'${entity.states.column}')`)));
-    stmts.push(assign("id", sqlBlock(`(v_result->>'id')::int`)));
-    stmts.push(assign("actions", { kind: "array_literal", elements: [], loc: LOC }));
+    stmts.push(assign("status", sqlBlock(`(v_result->>'${entity.states.column}')`, undefined, undefined, loc), loc));
+    stmts.push(assign("id", sqlBlock(`(v_result->>'id')::int`, undefined, undefined, loc), loc));
+    stmts.push(assign("actions", { kind: "array_literal", elements: [], loc }, loc));
 
     // Group transitions by from-state
     const byState = new Map<string, { name: string; from: string; to: string }[]>();
@@ -459,44 +410,52 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
         actionObjs.push(actionObj(entity, "delete"));
       }
       arms.push({
-        pattern: strLit(state),
-        body: [assign("actions", { kind: "array_literal", elements: actionObjs, loc: LOC } as Expression)],
+        pattern: strLit(state, loc),
+        body: [assign("actions", { kind: "array_literal", elements: actionObjs, loc } as Expression, loc)],
       });
     }
 
     // match status: arms + else: empty actions
     const matchStmt: Statement = {
       kind: "match",
-      subject: ident("status"),
+      subject: ident("status", loc),
       arms,
-      elseBody: [assign("actions", { kind: "array_literal", elements: [], loc: LOC } as Expression)],
-      loc: LOC,
+      elseBody: [assign("actions", { kind: "array_literal", elements: [], loc } as Expression, loc)],
+      loc,
     };
     stmts.push(matchStmt);
 
     stmts.push(
-      ret("value", {
-        kind: "binary",
-        op: "||",
-        left: ident("result"),
-        right: jObj([jEntry("actions", ident("actions"))]),
-        loc: LOC,
-      }),
+      ret(
+        "value",
+        {
+          kind: "binary",
+          op: "||",
+          left: ident("result", loc),
+          right: jObj([jEntry("actions", ident("actions", loc))], loc),
+          loc,
+        },
+        loc,
+      ),
     );
   } else if (entity.actions.length > 0) {
     // Static actions (no state machine)
     const actionArr = entity.actions.map((a) => actionObj(entity, a.name));
     stmts.push(
-      ret("value", {
-        kind: "binary",
-        op: "||",
-        left: ident("result"),
-        right: jObj([jEntry("actions", { kind: "array_literal", elements: actionArr, loc: LOC })]),
-        loc: LOC,
-      }),
+      ret(
+        "value",
+        {
+          kind: "binary",
+          op: "||",
+          left: ident("result", loc),
+          right: jObj([jEntry("actions", { kind: "array_literal", elements: actionArr, loc })], loc),
+          loc,
+        },
+        loc,
+      ),
     );
   } else {
-    stmts.push(ret("value", ident("result")));
+    stmts.push(ret("value", ident("result", loc), loc));
   }
 
   return makeFn(
@@ -510,6 +469,7 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
 }
 
 function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields): PlxFunction {
+  const loc = entity.loc;
   // Exclude trait-injected audit fields (created_at, updated_at) — DB handles via DEFAULT
   const writableFields = resolved.columns.filter((f) => !f.readOnly && !isAuditField(f.name));
   const colNames = writableFields.map((f) => f.name);
@@ -525,7 +485,7 @@ function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
   // create.enrich strategy: call enrichment function on p_row before INSERT
   const enrichStrategy = findStrategy(entity, "create.enrich");
   const enrichStmts: Statement[] = enrichStrategy
-    ? [assign("p_row", { kind: "call", name: enrichStrategy.fn, args: [ident("p_row")], loc: LOC })]
+    ? [assign("p_row", { kind: "call", name: enrichStrategy.fn, args: [ident("p_row", loc)], loc }, loc)]
     : [];
 
   const validateStmts = getHookStatements(entity, "validate_create");
@@ -535,17 +495,21 @@ function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
 
   const stmts: Statement[] = [
     ...buildPayloadValidation(entity, "p_data", { requireFields: true, forbidReadOnly: true }),
-    assign("p_row", {
-      kind: "call",
-      name: "jsonb_populate_record",
-      args: [castExpr(nullLit(), qualifiedIdent(entity.table)), ident("p_data")],
-      loc: LOC,
-    }),
+    assign(
+      "p_row",
+      {
+        kind: "call",
+        name: "jsonb_populate_record",
+        args: [castExpr(nullLit(loc), qualifiedIdent(entity.table, loc), loc), ident("p_data", loc)],
+        loc,
+      },
+      loc,
+    ),
     ...validateStmts,
     ...enrichStmts,
     ...hookStmts,
-    assign("result", sqlBlock(insertSql)),
-    ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"))),
+    assign("result", sqlBlock(insertSql, undefined, undefined, loc), loc),
+    ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"), loc), loc),
   ];
 
   return makeFn(
@@ -559,6 +523,7 @@ function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
 }
 
 function buildUpdateFunction(entity: PlxEntity, resolved: ResolvedEntityFields): PlxFunction {
+  const loc = entity.loc;
   const updatableFields = resolved.columns.filter((f) => !f.readOnly && !f.createOnly && !isAuditField(f.name));
   const setClauses = updatableFields.map((f) => `${f.name} = v_p_row.${f.name}`);
 
@@ -580,18 +545,29 @@ function buildUpdateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
     ...buildPayloadValidation(entity, "p_patch", { requireFields: false, forbidReadOnly: true }),
     assign(
       "current",
-      sqlBlock(`SELECT * FROM ${entity.table} WHERE id = p_id::int`, `${entity.schema}.err_not_found`, entity.table),
+      sqlBlock(
+        `SELECT * FROM ${entity.table} WHERE id = p_id::int`,
+        `${entity.schema}.err_not_found`,
+        entity.table,
+        loc,
+      ),
+      loc,
     ),
-    assign("p_row", {
-      kind: "call",
-      name: "jsonb_populate_record",
-      args: [ident("current"), ident("p_patch")],
-      loc: LOC,
-    }),
+    assign(
+      "p_row",
+      {
+        kind: "call",
+        name: "jsonb_populate_record",
+        args: [ident("current", loc), ident("p_patch", loc)],
+        loc,
+      },
+      loc,
+    ),
+    assign("p_data", ident("p_patch", loc), loc),
     ...validateStmts,
     ...hookStmts,
-    assign("result", sqlBlock(updateSql)),
-    ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"))),
+    assign("result", sqlBlock(updateSql, undefined, undefined, loc), loc),
+    ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"), loc), loc),
   ];
 
   return makeFn(
@@ -608,6 +584,7 @@ function buildUpdateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
 }
 
 function buildDeleteFunction(entity: PlxEntity): PlxFunction {
+  const loc = entity.loc;
   const isSoftDelete = entity.traits.includes("soft_delete");
   let sql: string;
 
@@ -626,7 +603,13 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
     stmts.push(
       assign(
         "current",
-        sqlBlock(`SELECT * FROM ${entity.table} WHERE id = p_id::int`, `${entity.schema}.err_not_found`, entity.table),
+        sqlBlock(
+          `SELECT * FROM ${entity.table} WHERE id = p_id::int`,
+          `${entity.schema}.err_not_found`,
+          entity.table,
+          loc,
+        ),
+        loc,
       ),
     );
   }
@@ -634,18 +617,18 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
     stmts.push(...validateStmts);
   }
   if (guardStrategy) {
-    stmts.push(assign("row", { kind: "call", name: "to_jsonb", args: [ident("current")], loc: LOC }));
+    stmts.push(assign("row", { kind: "call", name: "to_jsonb", args: [ident("current", loc)], loc }, loc));
     // Call guard — it raises if the delete should be blocked
     stmts.push({
       kind: "assign",
       target: "_",
-      value: { kind: "call", name: guardStrategy.fn, args: [ident("row")], loc: LOC },
-      loc: LOC,
+      value: { kind: "call", name: guardStrategy.fn, args: [ident("row", loc)], loc },
+      loc,
     });
   }
 
-  stmts.push(assign("result", sqlBlock(sql)));
-  stmts.push(ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"))));
+  stmts.push(assign("result", sqlBlock(sql, undefined, undefined, loc), loc));
+  stmts.push(ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"), loc), loc));
 
   return makeFn(
     entity,
@@ -658,6 +641,7 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
 }
 
 function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFunction {
+  const loc = entity.loc;
   const states = entity.states;
   if (!states) {
     throw new Error(`transition '${tr.name}' requires entity states`);
@@ -673,29 +657,34 @@ function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFun
     stmts.push(
       assign(
         "row",
-        sqlBlock(`(SELECT ${buildEntityJsonSelect(entity, "t")} FROM ${entity.table} t WHERE t.id = p_id::int)`),
+        sqlBlock(
+          `(SELECT ${buildEntityJsonSelect(entity, "t")} FROM ${entity.table} t WHERE t.id = p_id::int)`,
+          undefined,
+          undefined,
+          loc,
+        ),
+        loc,
       ),
     );
     stmts.push({
       kind: "if",
-      condition: { kind: "binary", op: "=", left: ident("row"), right: nullLit(), loc: LOC },
-      body: [{ kind: "raise", message: `${entity.schema}.err_not_found`, loc: LOC }],
+      condition: { kind: "binary", op: "=", left: ident("row", loc), right: nullLit(loc), loc },
+      body: [{ kind: "raise", message: `${entity.schema}.err_not_found`, loc }],
       elsifs: [],
-      loc: LOC,
+      loc,
     } as Statement);
     // Guard check — raw SQL expression
     stmts.push({
       kind: "if",
       condition: {
-        kind: "binary",
+        kind: "unary",
         op: "NOT",
-        left: { kind: "literal", value: true, type: "boolean", loc: LOC },
-        right: sqlBlock(tr.guard),
-        loc: LOC,
+        expression: sqlBlock(tr.guard, undefined, undefined, loc),
+        loc,
       },
-      body: [{ kind: "raise", message: `${entity.schema}.err_guard_${tr.name}`, loc: LOC }],
+      body: [{ kind: "raise", message: `${entity.schema}.err_guard_${tr.name}`, loc }],
       elsifs: [],
-      loc: LOC,
+      loc,
     } as Statement);
   }
 
@@ -703,8 +692,8 @@ function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFun
   if (tr.body) stmts.push(...tr.body);
 
   // The UPDATE
-  stmts.push(assign("result", sqlBlock(updateSql, `${entity.schema}.err_not_${tr.from}`)));
-  stmts.push(ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"))));
+  stmts.push(assign("result", sqlBlock(updateSql, `${entity.schema}.err_not_${tr.from}`, undefined, loc), loc));
+  stmts.push(ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"), loc), loc));
 
   return makeFn(
     entity,
@@ -718,22 +707,26 @@ function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFun
 
 /** Build a HATEOAS action object: {method: name, uri: entity://name/id/action} */
 function actionObj(entity: PlxEntity, name: string): Expression {
-  return jObj([
-    jEntry("method", strLit(name)),
-    jEntry("uri", {
-      kind: "binary",
-      op: "||",
-      left: {
+  const loc = entity.loc;
+  return jObj(
+    [
+      jEntry("method", strLit(name, loc)),
+      jEntry("uri", {
         kind: "binary",
         op: "||",
-        left: strLit(`${entity.uri}/`),
-        right: ident("p_id"),
-        loc: LOC,
-      },
-      right: strLit(`/${name}`),
-      loc: LOC,
-    }),
-  ]);
+        left: {
+          kind: "binary",
+          op: "||",
+          left: strLit(`${entity.uri}/`, loc),
+          right: ident("p_id", loc),
+          loc,
+        },
+        right: strLit(`/${name}`, loc),
+        loc,
+      }),
+    ],
+    loc,
+  );
 }
 
 // ---------- Helpers ----------
@@ -747,33 +740,19 @@ function makeFn(
   body: Statement[],
   setof = false,
 ): PlxFunction {
+  const loc = entity.loc;
   return {
     kind: "function",
     visibility: entity.visibility,
     schema: entity.schema,
     name,
-    params: params.map((p) => ({ ...p, loc: LOC })),
+    params: params.map((p) => ({ ...p, loc })),
     returnType,
     setof,
     attributes,
     body,
-    loc: entity.loc,
+    loc,
   };
-}
-
-/** Quote default values for DDL: text types need quotes, others (bool, numeric, function calls) don't. */
-function formatDefaultValue(value: string, type: string): string {
-  const lowerType = type.toLowerCase();
-  // Already looks like SQL (function call, cast, keyword)
-  if (value.includes("(") || value.includes("::") || value === "true" || value === "false" || value === "null") {
-    return value;
-  }
-  // Numeric types: emit as-is
-  if (/^(int|integer|bigint|smallint|numeric|decimal|float|double|serial|real)/.test(lowerType)) {
-    return value;
-  }
-  // Text-like types: quote
-  return `'${value.replace(/'/g, "''")}'`;
 }
 
 const AUDIT_FIELDS = new Set(["created_at", "updated_at", "deleted_at"]);
@@ -796,16 +775,18 @@ function buildPayloadValidation(
   payloadName: string,
   options: { requireFields: boolean; forbidReadOnly: boolean },
 ): Statement[] {
+  const loc = entity.loc;
   const stmts: Statement[] = [
     assertStmt(
       {
         kind: "binary",
         op: "=",
-        left: { kind: "call", name: "jsonb_typeof", args: [ident(payloadName)], loc: LOC },
-        right: strLit("object"),
-        loc: LOC,
+        left: { kind: "call", name: "jsonb_typeof", args: [ident(payloadName, loc)], loc },
+        right: strLit("object", loc),
+        loc,
       },
       `${entity.schema}.err_invalid_${entity.name}_payload`,
+      loc,
     ),
   ];
 
@@ -825,8 +806,10 @@ function buildPayloadValidation(
       assertStmt(
         rawExpr(
           `NOT EXISTS (SELECT 1 FROM jsonb_object_keys(${payloadName}) AS k(key) WHERE k.key <> ALL (ARRAY[${knownFields.map((field) => `'${field}'`).join(", ")}]::text[]))`,
+          loc,
         ),
         `${entity.schema}.err_unknown_${entity.name}_field`,
+        loc,
       ),
     );
   }
@@ -837,10 +820,11 @@ function buildPayloadValidation(
         {
           kind: "unary",
           op: "NOT",
-          expression: { kind: "call", name: "jsonb_exists", args: [ident(payloadName), strLit(field)], loc: LOC },
-          loc: LOC,
+          expression: { kind: "call", name: "jsonb_exists", args: [ident(payloadName, loc), strLit(field, loc)], loc },
+          loc,
         },
         `${entity.schema}.err_${field}_readonly`,
+        loc,
       ),
     );
   }
@@ -853,23 +837,24 @@ function buildPayloadValidation(
           {
             kind: "binary",
             op: "AND",
-            left: { kind: "call", name: "jsonb_exists", args: [ident(payloadName), strLit(field.name)], loc: LOC },
+            left: { kind: "call", name: "jsonb_exists", args: [ident(payloadName, loc), strLit(field.name, loc)], loc },
             right: {
               kind: "binary",
               op: "IS NOT NULL",
               left: {
                 kind: "binary",
                 op: "->>",
-                left: ident(payloadName),
-                right: strLit(field.name),
-                loc: LOC,
+                left: ident(payloadName, loc),
+                right: strLit(field.name, loc),
+                loc,
               },
-              right: nullLit(),
-              loc: LOC,
+              right: nullLit(loc),
+              loc,
             },
-            loc: LOC,
+            loc,
           },
           `${entity.schema}.err_${field.name}_required`,
+          loc,
         ),
       );
     }
@@ -952,45 +937,45 @@ function shortAlias(_entity: PlxEntity): string {
   return "t"; // universal alias — safe, no collision risk between entities
 }
 
-// AST builder helpers
-function strLit(value: string): Expression {
-  return { kind: "literal", value, type: "text", loc: LOC };
+// AST builder helpers — accept optional loc to propagate entity source location
+function strLit(value: string, loc: Loc = LOC): Expression {
+  return { kind: "literal", value, type: "text", loc };
 }
-function nullLit(): Expression {
-  return { kind: "literal", value: null, type: "null", loc: LOC };
+function nullLit(loc: Loc = LOC): Expression {
+  return { kind: "literal", value: null, type: "null", loc };
 }
-function ident(name: string): Expression {
-  return { kind: "identifier", name, loc: LOC };
+function ident(name: string, loc: Loc = LOC): Expression {
+  return { kind: "identifier", name, loc };
 }
-function qualifiedIdent(name: string): Expression {
+function qualifiedIdent(name: string, loc: Loc = LOC): Expression {
   const [object, field] = name.split(".");
-  if (!object || !field) return ident(name);
-  return { kind: "field_access", object, field, loc: LOC };
+  if (!object || !field) return ident(name, loc);
+  return { kind: "field_access", object, field, loc };
 }
-function jObj(entries: JsonLiteral["entries"]): JsonLiteral {
-  return { kind: "json_literal", entries, loc: LOC };
+function jObj(entries: JsonLiteral["entries"], loc: Loc = LOC): JsonLiteral {
+  return { kind: "json_literal", entries, loc };
 }
 function jEntry(key: string, value: Expression): JsonLiteral["entries"][number] {
   return { key, value };
 }
-function strArr(items: string[]): Expression {
-  return { kind: "array_literal", elements: items.map(strLit), loc: LOC };
+function strArr(items: string[], loc: Loc = LOC): Expression {
+  return { kind: "array_literal", elements: items.map((s) => strLit(s, loc)), loc };
 }
-function sqlBlock(sql: string, elseRaise?: string, inferredTable?: string): SqlBlockExpr {
-  return { kind: "sql_block", sql, elseRaise, inferredTable, loc: LOC };
+function sqlBlock(sql: string, elseRaise?: string, inferredTable?: string, loc: Loc = LOC): SqlBlockExpr {
+  return { kind: "sql_block", sql, elseRaise, inferredTable, loc };
 }
-function assign(target: string, value: Expression): AssignStatement {
-  return { kind: "assign", target, value, loc: LOC };
+function assign(target: string, value: Expression, loc: Loc = LOC): AssignStatement {
+  return { kind: "assign", target, value, loc };
 }
-function ret(mode: ReturnStatement["mode"], value: Expression): ReturnStatement {
-  return { kind: "return", value, isYield: false, mode, loc: LOC };
+function ret(mode: ReturnStatement["mode"], value: Expression, loc: Loc = LOC): ReturnStatement {
+  return { kind: "return", value, isYield: false, mode, loc };
 }
-function castExpr(left: Expression, right: Expression): Expression {
-  return { kind: "binary", op: "::", left, right, loc: LOC };
+function castExpr(left: Expression, right: Expression, loc: Loc = LOC): Expression {
+  return { kind: "binary", op: "::", left, right, loc };
 }
-function assertStmt(expression: Expression, message: string): Statement {
-  return { kind: "assert", expression, message, loc: LOC };
+function assertStmt(expression: Expression, message: string, loc: Loc = LOC): Statement {
+  return { kind: "assert", expression, message, loc };
 }
-function rawExpr(sql: string): SqlBlockExpr {
-  return { kind: "sql_block", sql, loc: LOC };
+function rawExpr(sql: string, loc: Loc = LOC): SqlBlockExpr {
+  return { kind: "sql_block", sql, loc };
 }

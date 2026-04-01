@@ -127,7 +127,6 @@ const KEYWORDS = new Map<string, TokenType>([
 
 const SQL_STARTERS = new Set(["select", "insert", "update", "delete", "with"]);
 const FOR_IN_RE = /^for\s+(\w+)\s+in\s+(.+)$/i;
-const RETURN_QUERY_RE = /^return\s+(query\s+)(select\b|insert\b|update\b|delete\b|with\b)/i;
 const SUBQUERY_RE = /^\(\s*select\b/i;
 const SQL_CONTINUATION_RE =
   /^(from|where|group\s+by|order\s+by|limit|offset|fetch|having|window|union|intersect|except|join|left\s+join|right\s+join|full\s+join|cross\s+join|inner\s+join|on|returning|set|values)\b/i;
@@ -209,22 +208,6 @@ export function tokenize(source: string, options: { file?: string } = {}): Token
         pushToken(makeToken(file, "NEWLINE", "", lineNum, 0));
         continue;
       }
-    }
-
-    // return query <SQL> — capture SQL passthrough (return execute uses PLX expressions, handled in parser)
-    const returnQueryMatch = lowerTrimmed.match(RETURN_QUERY_RE);
-    if (returnQueryMatch) {
-      pushToken(makeToken(file, "RETURN", "return", lineNum, indent));
-      pushToken(makeToken(file, "IDENT", "query", lineNum, indent + 7));
-      const sqlStart = returnQueryMatch[0].length - (returnQueryMatch[2]?.length ?? 0);
-      const sqlPart = trimmed.slice(sqlStart).trim();
-      const sqlBlock = collectSqlLines(lines, lineIdx + 1, sqlPart, indent);
-      pushToken(
-        makeToken(file, "SQL_BLOCK", sqlBlock.sql, lineNum, indent + sqlStart, sqlBlock.endLine, sqlBlock.endCol),
-      );
-      lineIdx = Math.max(lineIdx, sqlBlock.lastLine);
-      pushToken(makeToken(file, "NEWLINE", "", lineNum, 0));
-      continue;
     }
 
     tokenizeLine(trimmed, lineNum, indent, tokens, lines, lineIdx, pushToken, file);
@@ -410,6 +393,13 @@ function tokenizeLine(
     }
 
     // String literals
+    if (ch === '"' && line[pos + 1] === '"' && line[pos + 2] === '"') {
+      const sqlBlock = readTripleQuotedSql(allLines, lineIdx, baseCol, pos, file);
+      push(makeToken(file, "SQL_BLOCK", sqlBlock.sql, lineNum, col, sqlBlock.endLine, sqlBlock.endCol));
+      for (let i = lineIdx + 1; i <= sqlBlock.lastLine; i++) allLines[i] = "";
+      return;
+    }
+
     if (ch === "'" || ch === '"') {
       const { value, end, isInterp } = readString(line, pos, ch, lineNum);
       push(makeToken(file, isInterp ? "INTERP_STRING" : "STRING", value, lineNum, col, lineNum, baseCol + end));
@@ -520,6 +510,76 @@ function collectSqlLines(
   }
 
   return { sql, lastLine, endLine, endCol };
+}
+
+function readTripleQuotedSql(
+  allLines: string[],
+  lineIdx: number,
+  baseIndent: number,
+  quotePos: number,
+  file?: string,
+): { sql: string; lastLine: number; endLine: number; endCol: number } {
+  const openingLine = allLines[lineIdx] ?? "";
+  const openingContent = openingLine.slice(baseIndent).trimEnd();
+  const trailing = openingContent.slice(quotePos + 3).trim();
+  const lineNum = lineIdx + 1;
+
+  if (trailing !== "") {
+    throw new LexError("triple-quoted SQL opener must terminate the line", lineNum, baseIndent + quotePos + 3, {
+      code: "lex.invalid-sql-block-opener",
+      file,
+      hint: 'Open SQL blocks with """ at the end of the statement line.',
+    });
+  }
+
+  const contentLines: string[] = [];
+  for (let i = lineIdx + 1; i < allLines.length; i++) {
+    const raw = allLines[i] ?? "";
+    const trimmed = raw.trim();
+    const indent = raw.length - raw.trimStart().length;
+
+    if (trimmed === '"""' && indent === baseIndent) {
+      return {
+        sql: dedentSqlBlock(contentLines),
+        lastLine: i,
+        endLine: i + 1,
+        endCol: indent + 3,
+      };
+    }
+
+    contentLines.push(raw);
+  }
+
+  throw new LexError("unterminated triple-quoted SQL block", lineNum, baseIndent + quotePos, {
+    code: "lex.unterminated-sql-block",
+    file,
+    hint: 'Close the SQL block with """ on its own line at the statement indentation level.',
+  });
+}
+
+function dedentSqlBlock(lines: string[]): string {
+  const trimmedLines = [...lines];
+  while (trimmedLines.length > 0 && trimmedLines[0]?.trim() === "") trimmedLines.shift();
+  while (trimmedLines.length > 0 && trimmedLines.at(-1)?.trim() === "") trimmedLines.pop();
+
+  let commonIndent = Number.POSITIVE_INFINITY;
+
+  for (const line of trimmedLines) {
+    if (line.trim() === "") continue;
+    const indent = line.length - line.trimStart().length;
+    commonIndent = Math.min(commonIndent, indent);
+  }
+
+  if (!Number.isFinite(commonIndent)) {
+    return "";
+  }
+
+  return trimmedLines
+    .map((line) => {
+      if (line.trim() === "") return "";
+      return line.slice(Math.min(commonIndent, line.length));
+    })
+    .join("\n");
 }
 
 function readString(

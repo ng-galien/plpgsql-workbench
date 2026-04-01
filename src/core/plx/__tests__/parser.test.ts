@@ -107,6 +107,40 @@ fn quote.read() -> jsonb [cached]:
     ).toMatchObject({ code: "parse.unknown-function-attribute" });
   });
 
+  it("parses triple-quoted SQL in return and assert contexts", () => {
+    const mod = parse(
+      tokenize(`
+fn quote.read(id int) -> jsonb:
+  result := """
+    select jsonb_build_object('id', id)
+  """
+  assert """
+    select result is not null
+  """
+  return """
+    select result
+  """
+`),
+    );
+
+    expect(mod.functions[0]?.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "assign", value: expect.objectContaining({ kind: "sql_block" }) }),
+        expect.objectContaining({ kind: "assert", expression: expect.objectContaining({ kind: "sql_block" }) }),
+        expect.objectContaining({ kind: "return", value: expect.objectContaining({ kind: "sql_block" }) }),
+      ]),
+    );
+  });
+
+  it("rejects legacy return query syntax", () => {
+    expect(
+      parseErrorOf(`
+fn quote.read() -> setof jsonb:
+  return query select to_jsonb(1)
+`),
+    ).toMatchObject({ code: "parse.legacy-return-mode" });
+  });
+
   it("rejects root-only directives and visibility markers inside fragments", () => {
     expect(
       parseErrorOf(

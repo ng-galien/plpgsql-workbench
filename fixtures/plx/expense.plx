@@ -67,9 +67,13 @@ fn expense.category_view() -> jsonb [stable]:
 
 fn expense.category_list(p_filter text? = null) -> setof jsonb [stable]:
   if p_filter = null:
-    return query select to_jsonb(c) from expense.category c order by c.name
+    return """
+      select to_jsonb(c)
+      from expense.category c
+      order by c.name
+    """
   else:
-    return execute 'SELECT to_jsonb(c) FROM expense.category c WHERE ' || pgv.rsql_to_where(p_filter, 'expense', 'category') || ' ORDER BY c.name'
+    raise 'expense.err_dynamic_filter_not_supported'
 
 fn expense.category_read(p_id text) -> jsonb [stable]:
   result := (select to_jsonb(c) from expense.category c where c.id = p_id::int)
@@ -148,7 +152,8 @@ fn expense.expense_report_view() -> jsonb [stable]:
 
 fn expense.expense_report_list(p_filter text? = null) -> setof jsonb [stable]:
   if p_filter = null:
-    return query select to_jsonb(r) || jsonb_build_object(
+    return """
+      select to_jsonb(r) || jsonb_build_object(
         'line_count', coalesce(l.cnt, 0),
         'total_excl_tax', coalesce(l.sum_excl, 0),
         'total_incl_tax', coalesce(l.sum_incl, 0)
@@ -159,8 +164,9 @@ fn expense.expense_report_list(p_filter text? = null) -> setof jsonb [stable]:
         from expense.line where note_id = r.id
       ) l on true
       order by r.updated_at desc
+    """
   else:
-    return execute 'SELECT to_jsonb(r) || jsonb_build_object(''line_count'', COALESCE(l.cnt, 0), ''total_excl_tax'', COALESCE(l.sum_excl, 0), ''total_incl_tax'', COALESCE(l.sum_incl, 0)) FROM expense.expense_report r LEFT JOIN LATERAL (SELECT count(*) as cnt, sum(amount_excl_tax) as sum_excl, sum(amount_incl_tax) as sum_incl FROM expense.line WHERE note_id = r.id) l ON true WHERE ' || pgv.rsql_to_where(p_filter, 'expense', 'expense_report') || ' ORDER BY r.updated_at DESC'
+    raise 'expense.err_dynamic_filter_not_supported'
 
 fn expense.expense_report_read(p_id text) -> jsonb [stable]:
   result := (select to_jsonb(r) || jsonb_build_object(

@@ -15,11 +15,10 @@ entity plxdemo.task uses auditable:
     priority text? default('normal')
     done boolean? default(false)
 
-  validate create:
-    assert coalesce(p_data->>'priority', 'normal') = 'low' or coalesce(p_data->>'priority', 'normal') = 'normal' or coalesce(p_data->>'priority', 'normal') = 'high', plxdemo.err_priority_invalid
-
-  validate update:
-    assert coalesce(p_patch->>'priority', 'normal') = 'low' or coalesce(p_patch->>'priority', 'normal') = 'normal' or coalesce(p_patch->>'priority', 'normal') = 'high', plxdemo.err_priority_invalid
+  validate:
+    priority_valid: """
+      coalesce(p_data->>'priority', 'normal') in ('low', 'normal', 'high')
+    """
 
   view:
     compact: [title, priority, done, rank, note_id]

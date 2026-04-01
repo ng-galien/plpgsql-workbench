@@ -22,7 +22,7 @@ import type {
   StringInterp,
   UnaryExpr,
 } from "./ast.js";
-import { mergeLoc, pointLoc, shiftLoc } from "./ast.js";
+import { mergeLoc, pointLoc, shiftLoc, stripLocPrefix } from "./ast.js";
 import { LexError, type Token, type TokenType, tokenize } from "./lexer.js";
 
 // Hoisted regexes for parseSqlBlock
@@ -303,38 +303,30 @@ export class ParseContext {
       };
     }
 
-    let mode: ReturnMode = "value";
-    if (this.isAt("IDENT") && this.peek().value === "query") {
-      this.advance();
-      // return query execute -> RETURN QUERY EXECUTE
-      if (this.isAt("IDENT") && this.peek().value === "execute") {
-        this.advance();
-        mode = "execute";
-      } else {
-        mode = "query";
-      }
-    } else if (this.isAt("IDENT") && this.peek().value === "execute") {
-      this.advance();
-      mode = "execute";
+    if (this.isAt("IDENT") && (this.peek().value === "query" || this.peek().value === "execute")) {
+      const legacy = this.advance();
+      throw new ParseError(`legacy return mode '${legacy.value}' is not supported in target syntax`, tokenLoc(legacy), {
+        code: "parse.legacy-return-mode",
+        hint: 'Use `return expr` or `return """ ... """` instead.',
+      });
     }
 
-    // SQL block after return query (not execute — execute expects a string expression)
-    if (mode === "query" && this.isAt("SQL_BLOCK")) {
+    if (this.isAt("SQL_BLOCK")) {
       const sqlTok = this.advance();
       this.skipNewlines();
-      const value = { kind: "sql_block", sql: sqlTok.value, loc: tokenLoc(sqlTok) } as SqlBlockExpr;
+      const value = parseSqlBlock(sqlTok);
       return {
         kind: "return",
         value,
         isYield: false,
-        mode,
+        mode: "value",
         loc: mergeLoc(start, value.loc),
       };
     }
 
     const value = this.parseExpression();
     this.skipNewlines();
-    return { kind: "return", value, isYield: false, mode, loc: mergeLoc(start, value.loc) };
+    return { kind: "return", value, isYield: false, mode: "value", loc: mergeLoc(start, value.loc) };
   }
 
   private parseYield(): ReturnStatement {
@@ -391,7 +383,7 @@ export class ParseContext {
 
   private parseAssert(): AssertStatement {
     const start = tokenLoc(this.expect("ASSERT"));
-    const expression = this.parseExpression();
+    const expression = this.isAt("SQL_BLOCK") ? parseSqlBlock(this.advance()) : this.parseExpression();
     let message: string | undefined;
     let end = expression.loc;
     if (this.isAt("COMMA")) {
@@ -662,6 +654,25 @@ export class ParseContext {
 
     return { kind: "string_interp", parts, loc };
   }
+
+  peekBinaryOperator(): BinaryOpInfo | undefined {
+    const tok = this.peek();
+    let offset = 1;
+    let next = this.peekAt(offset);
+    while (next && (next.type === "NEWLINE" || next.type === "INDENT" || next.type === "DEDENT")) {
+      offset++;
+      next = this.peekAt(offset);
+    }
+    return binaryOpInfo(tok, next);
+  }
+
+  advanceBinaryOperator(opInfo: BinaryOpInfo): void {
+    if (this.peek().type === "IDENT" && (opInfo.op === "AND" || opInfo.op === "OR")) {
+      this.advance();
+      return;
+    }
+    this.advance();
+  }
 }
 
 const UNARY_PRECEDENCE = 90;
@@ -804,10 +815,6 @@ function extractRelativeLoc(message: string): Loc | undefined {
   return pointLoc(Number(match[1]), Number(match[2]));
 }
 
-function stripLocPrefix(message: string): string {
-  return message.replace(/^plx:\d+:\d+:\s*/, "");
-}
-
 function shiftRelativeLoc(loc: Loc, baseLoc: Loc): Loc {
   return shiftLoc(loc, baseLoc.line - 1, baseLoc.col);
 }
@@ -891,35 +898,6 @@ function binaryOpInfo(tok: Token, next: Token | undefined): BinaryOpInfo | undef
       return undefined;
   }
 }
-
-declare module "./parse-context.js" {
-  interface ParseContext {
-    peekBinaryOperator(): BinaryOpInfo | undefined;
-    advanceBinaryOperator(opInfo: BinaryOpInfo): void;
-  }
-}
-
-ParseContext.prototype.peekBinaryOperator = function peekBinaryOperator(this: ParseContext): BinaryOpInfo | undefined {
-  const tok = this.peek();
-  let offset = 1;
-  let next = this.peekAt(offset);
-  while (next && (next.type === "NEWLINE" || next.type === "INDENT" || next.type === "DEDENT")) {
-    offset++;
-    next = this.peekAt(offset);
-  }
-  return binaryOpInfo(tok, next);
-};
-
-ParseContext.prototype.advanceBinaryOperator = function advanceBinaryOperator(
-  this: ParseContext,
-  opInfo: BinaryOpInfo,
-): void {
-  if (this.peek().type === "IDENT" && (opInfo.op === "AND" || opInfo.op === "OR")) {
-    this.advance();
-    return;
-  }
-  this.advance();
-};
 
 // ---------- Standalone helpers ----------
 

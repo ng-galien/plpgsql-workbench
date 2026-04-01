@@ -1,5 +1,6 @@
 import type { Expression, Loc, PlxEntity, PlxFunction, PlxModule, PlxTest, PlxTrait, Statement } from "./ast.js";
 import { pointLoc } from "./ast.js";
+import { walkStatements } from "./walker.js";
 
 export interface SemanticIssue {
   code: string;
@@ -356,6 +357,7 @@ function analyzeEntity(
       bindings.set("p_row", declaredType(entity.table));
     } else if (hook.event === "validate_update") {
       bindings.set("p_id", declaredType("text"));
+      bindings.set("p_data", declaredType("jsonb"));
       bindings.set("p_patch", declaredType("jsonb"));
       bindings.set("current", declaredType(entity.table));
       bindings.set("p_row", declaredType(entity.table));
@@ -941,34 +943,14 @@ function isOneOf(kind: TypeKind, allowed: TypeKind[]): boolean {
 
 function collectLocals(stmts: Statement[]): Set<string> {
   const locals = new Set<string>();
-  visitStatements(stmts, (stmt) => {
-    if (stmt.kind === "assign" && stmt.target !== "_") locals.add(stmt.target);
-    if (stmt.kind === "append") locals.add(stmt.target);
-    if (stmt.kind === "for_in") locals.add(stmt.variable);
+  walkStatements(stmts, {
+    onStatement(stmt) {
+      if (stmt.kind === "assign" && stmt.target !== "_") locals.add(stmt.target);
+      if (stmt.kind === "append") locals.add(stmt.target);
+      if (stmt.kind === "for_in") locals.add(stmt.variable);
+    },
   });
   return locals;
-}
-
-function visitStatements(stmts: Statement[], visit: (stmt: Statement) => void): void {
-  for (const stmt of stmts) {
-    visit(stmt);
-    switch (stmt.kind) {
-      case "if":
-        visitStatements(stmt.body, visit);
-        for (const elsif of stmt.elsifs) visitStatements(elsif.body, visit);
-        if (stmt.elseBody) visitStatements(stmt.elseBody, visit);
-        break;
-      case "for_in":
-        visitStatements(stmt.body, visit);
-        break;
-      case "match":
-        for (const arm of stmt.arms) visitStatements(arm.body, visit);
-        if (stmt.elseBody) visitStatements(stmt.elseBody, visit);
-        break;
-      default:
-        break;
-    }
-  }
 }
 
 function checkDuplicates(

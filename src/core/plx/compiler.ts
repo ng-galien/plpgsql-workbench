@@ -1,7 +1,8 @@
 import type { Loc, PlxFunction, PlxModule } from "./ast.js";
-import { pointLoc } from "./ast.js";
+import { pointLoc, stripLocPrefix } from "./ast.js";
 import { type GeneratedLineMap, type GeneratedSourceMap, generateWithSourceMap } from "./codegen.js";
-import { type DdlArtifact, expandEntities } from "./entity-expander.js";
+import type { DdlArtifact } from "./entity-ddl.js";
+import { expandEntities } from "./entity-expander.js";
 import { LexError, tokenize } from "./lexer.js";
 import { ParseError } from "./parse-context.js";
 import { parse } from "./parser.js";
@@ -17,10 +18,12 @@ export interface CompileResult {
   functionCount: number;
   entityCount?: number;
   testCount?: number;
-  /** Internal: validation blocks for compileAndValidate. Cleaned up after validation. */
-  _blocks?: ValidationBlock[];
-  /** Internal: compiled module artifact for composition. */
-  _artifact?: CompiledModuleArtifact;
+}
+
+export interface CompiledBundle {
+  result: CompileResult;
+  artifact: CompiledModuleArtifact;
+  blocks: ValidationBlock[];
 }
 
 export interface CompileError {
@@ -59,7 +62,7 @@ interface ValidationBlock {
   sourceMap: GeneratedSourceMap;
 }
 
-export interface CompiledModuleArtifact {
+interface CompiledModuleArtifact {
   aliases: Map<string, string>;
   ddlArtifacts: DdlArtifact[];
   functions: PlxFunction[];
@@ -91,6 +94,10 @@ export function compile(source: string): CompileResult {
 }
 
 export function compileModule(mod: PlxModule): CompileResult {
+  return compileModuleBundle(mod).result;
+}
+
+export function compileModuleBundle(mod: PlxModule): CompiledBundle {
   const errors: CompileError[] = [];
   const warnings: CompileWarning[] = [];
 
@@ -105,7 +112,7 @@ export function compileModule(mod: PlxModule): CompileResult {
     });
   }
   if (errors.length > 0) {
-    return { sql: "", errors, warnings, functionCount: 0 };
+    return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
   // Expand entities into functions + DDL
@@ -114,7 +121,7 @@ export function compileModule(mod: PlxModule): CompileResult {
     errors.push(createDiagnostic("codegen", "codegen.entity-expansion-failed", err.message, err.loc));
   }
   if (errors.length > 0) {
-    return { sql: "", errors, warnings, functionCount: 0 };
+    return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
   // Expand tests into pgTAP functions
@@ -124,7 +131,7 @@ export function compileModule(mod: PlxModule): CompileResult {
   }
 
   if (errors.length > 0) {
-    return { sql: "", errors, warnings, functionCount: 0 };
+    return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
   // Merge expanded functions with hand-written ones
@@ -175,23 +182,25 @@ export function compileModule(mod: PlxModule): CompileResult {
   }
 
   if (errors.length > 0) {
-    return { sql: "", errors, warnings, functionCount: 0 };
+    return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
   const ddlSql = expandResult.ddlFragments.length > 0 ? expandResult.ddlFragments.join("\n\n") : undefined;
   const testSql = testSqlParts.length > 0 ? testSqlParts.join("\n\n") : undefined;
 
   return {
-    sql: sqlParts.join("\n\n"),
-    ddlSql,
-    testSql,
-    errors: [],
-    warnings,
-    functionCount: allFunctions.length,
-    entityCount: mod.entities.length,
-    testCount: testResult.functions.length,
-    _blocks: validationBlocks,
-    _artifact: {
+    result: {
+      sql: sqlParts.join("\n\n"),
+      ddlSql,
+      testSql,
+      errors: [],
+      warnings,
+      functionCount: allFunctions.length,
+      entityCount: mod.entities.length,
+      testCount: testResult.functions.length,
+    },
+    blocks: validationBlocks,
+    artifact: {
       aliases,
       ddlArtifacts: expandResult.ddlArtifacts,
       functions: allFunctions,
@@ -201,40 +210,71 @@ export function compileModule(mod: PlxModule): CompileResult {
   };
 }
 
-/**
- * Compile with PG parser validation — validates each generated function
- * through @libpg-query/parser to catch SQL syntax errors.
- */
+function emptyBundle(result: CompileResult, mod: PlxModule): CompiledBundle {
+  return {
+    result,
+    blocks: [],
+    artifact: {
+      aliases: new Map(),
+      ddlArtifacts: [],
+      functions: [],
+      module: mod,
+      testFunctions: [],
+    },
+  };
+}
+
 /**
  * Compile with PG parser validation. Uses dynamic import to avoid loading
  * the heavy WASM module (~4GB) when validation is not requested.
  */
 export async function compileAndValidate(source: string): Promise<CompileResult> {
-  const result = compile(source);
-  return await validateCompiledResult(result);
+  const errors: CompileError[] = [];
+  const warnings: CompileWarning[] = [];
+
+  let tokens: ReturnType<typeof tokenize>;
+  try {
+    tokens = tokenize(source);
+  } catch (e: unknown) {
+    errors.push(toCompileError("lex", e, "lex.invalid-token"));
+    return { sql: "", errors, warnings, functionCount: 0 };
+  }
+
+  let mod: ReturnType<typeof parse>;
+  try {
+    mod = parse(tokens);
+  } catch (e: unknown) {
+    errors.push(toCompileError("parse", e, "parse.invalid-syntax"));
+    return { sql: "", errors, warnings, functionCount: 0 };
+  }
+
+  const bundle = compileModuleBundle(mod);
+  return await validateCompiledBundle(bundle);
 }
 
 export async function compileModuleAndValidate(mod: PlxModule): Promise<CompileResult> {
-  const result = compileModule(mod);
-  return await validateCompiledResult(result);
+  const bundle = compileModuleBundle(mod);
+  return await validateCompiledBundle(bundle);
 }
 
-async function validateCompiledResult(result: CompileResult): Promise<CompileResult> {
+export async function validateCompiledBundle(bundle: CompiledBundle): Promise<CompileResult> {
+  const { result } = bundle;
   if (result.errors.length > 0) return result;
 
   const warnings: CompileWarning[] = [...result.warnings];
   const blocks =
-    result._blocks ??
-    (result.sql
-      ? [
-          {
-            sql: result.sql,
-            functionName: "unknown",
-            loc: pointLoc(),
-            sourceMap: { lines: [] },
-          },
-        ]
-      : []);
+    bundle.blocks.length > 0
+      ? bundle.blocks
+      : result.sql
+        ? [
+            {
+              sql: result.sql,
+              functionName: "unknown",
+              loc: pointLoc(),
+              sourceMap: { lines: [] },
+            },
+          ]
+        : [];
 
   let parsePlPgSQLSync: ((query: string) => unknown) | undefined;
   try {
@@ -244,7 +284,6 @@ async function validateCompiledResult(result: CompileResult): Promise<CompileRes
     parsePlPgSQLSync = parser.parsePlPgSQLSync;
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    delete result._blocks;
     return {
       ...result,
       warnings: [
@@ -280,8 +319,6 @@ async function validateCompiledResult(result: CompileResult): Promise<CompileRes
     }
   }
 
-  delete result._blocks;
-  delete result._artifact;
   return { ...result, warnings };
 }
 
@@ -413,8 +450,4 @@ function toLoc(loc: Pick<Loc, "file" | "line" | "col" | "endLine" | "endCol">): 
     endLine: loc.endLine,
     endCol: loc.endCol,
   };
-}
-
-function stripLocPrefix(message: string): string {
-  return message.replace(/^plx:\d+:\d+:\s*/, "");
 }
