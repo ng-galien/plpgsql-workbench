@@ -26,6 +26,10 @@ export function mergeLoc(start: Loc, end: Loc): Loc {
   return spanLoc(start, end);
 }
 
+export function stripLocPrefix(message: string): string {
+  return message.replace(/^plx:\d+:\d+:\s*/, "");
+}
+
 export function shiftLoc(loc: Loc, lineDelta: number, colDelta: number): Loc {
   return {
     file: loc.file,

@@ -12,3 +12,5 @@ export { compose, composeModules } from "./composition.js";
 export type { ModuleContract, ModuleContractResult, ModuleContractSymbol } from "./contract.js";
 export { buildModuleContract, readModuleContract, readModuleContractEntry } from "./contract.js";
 export { buildModuleFromSource, loadPlxModule } from "./module-loader.js";
+export type { AstVisitor } from "./walker.js";
+export { walkExpression, walkStatement, walkStatements } from "./walker.js";

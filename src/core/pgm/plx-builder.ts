@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { type CompileResult, type CompileWarning, compileModule, compileModuleAndValidate } from "../plx/compiler.js";
+import { type CompileWarning, compileModuleAndValidate, compileModuleBundle } from "../plx/compiler.js";
 import { collectCalls, resolveCallTarget } from "../plx/composition.js";
 import { loadPlxModule } from "../plx/module-loader.js";
 import type { ModuleManifest } from "./resolver.js";
@@ -76,9 +76,8 @@ export async function preparePlxModule(
     throw new Error(`PLX build failed for module '${manifest.name}': ${formatted}`);
   }
 
-  // Always compile without validate first to preserve _blocks/_artifact for artifacts.
-  // Then validate separately if requested — validation only adds warnings.
-  const result = compileModule(loaded.module);
+  const bundle = compileModuleBundle(loaded.module);
+  let { result } = bundle;
 
   if (result.errors.length > 0) {
     const formatted = result.errors
@@ -87,17 +86,15 @@ export async function preparePlxModule(
     throw new Error(`PLX build failed for module '${manifest.name}': ${formatted}`);
   }
 
-  // Collect artifacts before validation (which deletes _blocks/_artifact)
   const targets = resolveTargets(manifest);
   const schemaSql = buildSchemaDdl(manifest);
-  const ddlContent = buildGeneratedDdl(manifest, result, schemaSql);
+  const ddlContent = buildGeneratedDdl(bundle, schemaSql);
   const ddlHash = ddlContent ? hashContent(ddlContent) : undefined;
-  const artifacts = collectPreparedArtifacts(result, targets, manifest, schemaSql);
+  const artifacts = collectPreparedArtifacts(bundle, targets, manifest, schemaSql);
 
-  // Validate after artifact collection if requested
+  // Validate if requested — validation only adds warnings
   if (options.validate !== false) {
-    const validated = await compileModuleAndValidate(loaded.module);
-    result.warnings = validated.warnings;
+    result = await compileModuleAndValidate(loaded.module);
   }
 
   return {
@@ -188,13 +185,13 @@ async function writeModuleFile(moduleDir: string, relativePath: string, content:
 }
 
 function collectPreparedArtifacts(
-  result: CompileResult,
+  bundle: ReturnType<typeof compileModuleBundle>,
   targets: ReturnType<typeof resolveTargets>,
   manifest?: ModuleManifest,
   schemaSql?: string,
 ): PlxPreparedArtifact[] {
   const artifacts: PlxPreparedArtifact[] = [];
-  const dependencyMap = collectArtifactDependencies(result);
+  const dependencyMap = collectArtifactDependencies(bundle);
 
   if (schemaSql) {
     artifacts.push({
@@ -208,7 +205,7 @@ function collectPreparedArtifacts(
     });
   }
 
-  for (const ddlArtifact of result._artifact?.ddlArtifacts ?? []) {
+  for (const ddlArtifact of bundle.artifact.ddlArtifacts) {
     artifacts.push({
       key: ddlArtifact.key,
       kind: "ddl",
@@ -220,8 +217,8 @@ function collectPreparedArtifacts(
     });
   }
 
-  const testFunctions = new Set(result._artifact?.testFunctions.map((fn) => `${fn.schema}.${fn.name}`) ?? []);
-  for (const block of result._blocks ?? []) {
+  const testFunctions = new Set(bundle.artifact.testFunctions.map((fn) => `${fn.schema}.${fn.name}`));
+  for (const block of bundle.blocks) {
     const kind = testFunctions.has(block.functionName) ? "test" : "function";
     const key = `${kind}:${block.functionName}`;
     artifacts.push({
@@ -238,10 +235,9 @@ function collectPreparedArtifacts(
   return artifacts;
 }
 
-function collectArtifactDependencies(result: CompileResult): Map<string, string[]> {
+function collectArtifactDependencies(bundle: ReturnType<typeof compileModuleBundle>): Map<string, string[]> {
   const dependencies = new Map<string, string[]>();
-  const artifact = result._artifact;
-  if (!artifact) return dependencies;
+  const { artifact } = bundle;
 
   const aliases = artifact.aliases;
   const functionKeys = new Map<string, string>();
@@ -295,10 +291,10 @@ export function hashContent(content: string): string {
   return crypto.createHash("sha256").update(content.trimEnd()).digest("hex").slice(0, 16);
 }
 
-function buildGeneratedDdl(manifest: ModuleManifest, result: CompileResult, schemaSql?: string): string | undefined {
+function buildGeneratedDdl(bundle: ReturnType<typeof compileModuleBundle>, schemaSql?: string): string | undefined {
   const parts: string[] = [];
   if (schemaSql) parts.push(schemaSql);
-  for (const artifact of result._artifact?.ddlArtifacts ?? []) {
+  for (const artifact of bundle.artifact.ddlArtifacts) {
     parts.push(artifact.sql.trim());
   }
   if (parts.length === 0) return undefined;
