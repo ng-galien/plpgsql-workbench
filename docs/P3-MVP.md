@@ -144,7 +144,39 @@ Current generated signatures are:
 - `entity_list(...) -> setof jsonb`
 - `entity_delete(p_id text) -> jsonb`
 
-Internally, PLX still relies on PostgreSQL row typing through `jsonb_populate_record(...)`.
+Internally, PLX now supports two storage shapes:
+
+- `fields:` for classic row-shaped entities
+- `columns:` + `payload:` for hybrid entities
+
+Example:
+
+```plx
+entity project.task:
+  columns:
+    project_id int ref(project.project)
+    due_date date?
+
+  payload:
+    title text required
+    description text?
+    priority text? default('normal')
+
+  states draft -> active -> done:
+    column: phase
+    activate(draft -> active)
+    complete(active -> done)
+```
+
+Semantics:
+
+- `columns:` compile to real SQL columns
+- `payload:` compiles to validated keys stored in `data jsonb`
+- `ref(schema.entity)` is only valid in `columns:` and compiles to a real `REFERENCES ... (id)` constraint
+- `states ...:` stays relational and compiles to a real state column, defaulting to `status` unless `column:` is provided
+- the public API stays unified as `jsonb`
+
+So the storage split is internal to the compiler. The module and its callers still see one logical entity contract.
 
 ### Validation
 
@@ -165,6 +197,61 @@ The compiler also injects a small structural validation layer automatically:
 
 Then the payload is coerced with `jsonb_populate_record(...)`.
 
+For hybrid `columns:` + `payload:` entities:
+
+- `validate create:` should reason on `p_data`
+- `validate update:` should reason on `p_patch`
+- `p_row` remains a good fit for classic `fields:` / row-shaped entities
+
+That keeps the validation contract explicit instead of hiding storage-specific magic in hook variables.
+
+### Migration Policy
+
+The storage split also changes the migration posture.
+
+Most day-to-day schema evolution should now happen in `payload:`:
+
+- add a field
+- stop writing a field
+- rename with fallback logic in CRUD / validation
+
+Those changes do not require DDL by default.
+
+Structural changes remain explicit and manual:
+
+- new or changed `columns:`
+- new FK
+- new state column / state-machine structure
+- indexes or other relational constraints
+
+So P7 does not need to start as a full auto-migration engine.
+
+The intended policy is:
+
+- `payload:` change -> no automatic DB migration required
+- structural `columns:` / relational change -> manual migration required
+
+Tooling should eventually detect structural drift and point to the need for a migration, but not try to synthesize every migration automatically.
+
+### DDL Apply Graph
+
+The apply graph is no longer a single monolithic `ddl` node.
+
+For PLX entities, the builder now emits a split DDL plan:
+
+- `ddl:schema:<schema>`
+- `ddl:table:<schema.entity>`
+- `ddl:fk:<schema.entity>.<column>`
+- `ddl:grant:<schema.entity>`
+
+This keeps P4 simple while still giving a real dependency graph for:
+
+- table before FK
+- referenced table before FK
+- schema before table
+
+More complex DDL shapes like triggers or multi-pass constraints remain later work, but the apply order is no longer a flat rank-only guess.
+
 ### Explicitly Out of Scope
 
 The following are intentionally not part of P3:
@@ -173,4 +260,41 @@ The following are intentionally not part of P3:
 - `provide` / `inject`
 - provider resolution
 - richer validation DSL than `validate *` + `assert`
+- automatic structural migrations
 - marketplace/package substitution semantics
+
+## Compiler Technical Debt
+
+Identified by full architectural review of `src/core/plx/` (57 tests, ~8000 LOC).
+
+### P1 — CompiledBundle internal type
+
+`_artifact` and `_blocks` leak on `CompileResult` as optional fields, mutated/deleted by `compileAndValidate`. Introduce `CompiledBundle` (internal) wrapping `CompileResult` + internals. Public `compile()` returns `CompileResult` only. `compose()` receives `CompiledBundle[]` directly. Files: compiler.ts, composition.ts, plx-builder.ts.
+
+### P2 — Entity LOC sentinel {0,0}
+
+Every AST node synthesized by entity-expander uses `pointLoc()`. All diagnostics and source maps for entity CRUD show (0,0). Propagate `entity.loc` through builder functions. Files: entity-expander.ts.
+
+### P3 — Shared AST walker
+
+Three independent walkers (composition.ts, semantic.ts, parse-context.ts). Extract `walkStatements` + `walkExpression` to `walker.ts` (~80 lines). Eliminates N-walker divergence on new node kinds. Files: new walker.ts + 3 consumers.
+
+### P4 — as EntityHookEvent cast
+
+`${event}_${action}` cast bypasses TypeScript. Replace with explicit lookup table. ~10 lines. Files: entity-parser.ts.
+
+### P5 — Extract entity DDL to entity-ddl.ts
+
+entity-expander.ts (~1000 lines) is both function builder and DDL generator. DDL strings bypass codegen. Extract to entity-ddl.ts. Files: entity-expander.ts.
+
+### P6 — Deduplicate stripLocPrefix
+
+Duplicated in compiler.ts and parse-context.ts. Move to ast.ts. Files: 3.
+
+### P7 — Remove module augmentation
+
+`peekBinaryOperator`/`advanceBinaryOperator` use prototype augmentation. Convert to class methods. Files: parse-context.ts.
+
+### Not debt — keep as-is
+
+Lexer, AST unions, pipeline entry points, module-loader, test-expander, composition cycle detection.
