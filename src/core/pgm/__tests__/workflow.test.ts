@@ -100,7 +100,7 @@ describe("pgm module workflow", () => {
 
     expect(workflow.prepared.files.map((file) => path.basename(file))).toEqual(["quote.plx", "brand.plx"]);
     expect(workflow.artifacts.map((artifact) => artifact.key)).toEqual([
-      "ddl",
+      "ddl:schema:quote",
       "function:quote.brand",
       "test:quote_ut.test_brand",
     ]);
@@ -176,7 +176,7 @@ describe("pgm module workflow", () => {
     ]);
 
     const diff = diffModuleArtifacts(workflow.artifacts, applied);
-    expect(diff.changed.map((artifact) => artifact.key)).toEqual(["ddl", "test:quote_ut.test_brand"]);
+    expect(diff.changed.map((artifact) => artifact.key)).toEqual(["ddl:schema:quote", "test:quote_ut.test_brand"]);
     expect(diff.unchanged.map((artifact) => artifact.key)).toEqual(["function:quote.brand"]);
     expect(diff.obsolete.map((artifact) => artifact.key)).toEqual(["function:quote.old_brand"]);
   });
@@ -227,12 +227,48 @@ test "total":
 
     expect(ordered.map((artifact) => artifact.key)).toEqual([
       "extensions",
-      "ddl",
+      "ddl:schema:quote",
       "function:quote.lines",
       "function:quote.total",
       "test:quote_ut.test_total",
       "grants",
     ]);
+  });
+
+  it("orders split ddl artifacts so referenced tables exist before foreign keys", async () => {
+    const root = await createWorkspace();
+    await writeDependencyModule(
+      root,
+      "quote",
+      `
+module quote
+
+entity quote.note:
+  fields:
+    title text required
+
+entity quote.task:
+  columns:
+    note_id int? ref(quote.note)
+
+  payload:
+    title text required
+`,
+    );
+
+    const workflow = await prepareModuleWorkflow(root, "quote");
+    const ordered = sortApplyArtifacts(workflow.artifacts);
+    const keys = ordered.map((artifact) => artifact.key);
+
+    expect(keys).toContain("ddl:schema:quote");
+    expect(keys).toContain("ddl:table:quote.note");
+    expect(keys).toContain("ddl:table:quote.task");
+    expect(keys).toContain("ddl:fk:quote.task.note_id");
+    expect(keys.indexOf("ddl:schema:quote")).toBeLessThan(keys.indexOf("ddl:table:quote.note"));
+    expect(keys.indexOf("ddl:schema:quote")).toBeLessThan(keys.indexOf("ddl:table:quote.task"));
+    expect(keys.indexOf("ddl:table:quote.note")).toBeLessThan(keys.indexOf("ddl:fk:quote.task.note_id"));
+    expect(keys.indexOf("ddl:table:quote.task")).toBeLessThan(keys.indexOf("ddl:fk:quote.task.note_id"));
+    expect(keys.indexOf("ddl:fk:quote.task.note_id")).toBeLessThan(keys.indexOf("function:quote.task_create"));
   });
 
   it("fails with an explicit cycle on mutually dependent functions", async () => {

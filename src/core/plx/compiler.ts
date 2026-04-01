@@ -1,7 +1,7 @@
 import type { Loc, PlxFunction, PlxModule } from "./ast.js";
 import { pointLoc } from "./ast.js";
 import { type GeneratedLineMap, type GeneratedSourceMap, generateWithSourceMap } from "./codegen.js";
-import { expandEntities } from "./entity-expander.js";
+import { type DdlArtifact, expandEntities } from "./entity-expander.js";
 import { LexError, tokenize } from "./lexer.js";
 import { ParseError } from "./parse-context.js";
 import { parse } from "./parser.js";
@@ -61,6 +61,7 @@ interface ValidationBlock {
 
 export interface CompiledModuleArtifact {
   aliases: Map<string, string>;
+  ddlArtifacts: DdlArtifact[];
   functions: PlxFunction[];
   module: PlxModule;
   testFunctions: PlxFunction[];
@@ -192,6 +193,7 @@ export function compileModule(mod: PlxModule): CompileResult {
     _blocks: validationBlocks,
     _artifact: {
       aliases,
+      ddlArtifacts: expandResult.ddlArtifacts,
       functions: allFunctions,
       module: mod,
       testFunctions: testResult.functions,

@@ -89,9 +89,10 @@ export async function preparePlxModule(
 
   // Collect artifacts before validation (which deletes _blocks/_artifact)
   const targets = resolveTargets(manifest);
-  const ddlContent = buildGeneratedDdl(manifest, result.ddlSql);
+  const schemaSql = buildSchemaDdl(manifest);
+  const ddlContent = buildGeneratedDdl(manifest, result, schemaSql);
   const ddlHash = ddlContent ? hashContent(ddlContent) : undefined;
-  const artifacts = collectPreparedArtifacts(result, targets, ddlContent, ddlHash);
+  const artifacts = collectPreparedArtifacts(result, targets, manifest, schemaSql);
 
   // Validate after artifact collection if requested
   if (options.validate !== false) {
@@ -189,21 +190,33 @@ async function writeModuleFile(moduleDir: string, relativePath: string, content:
 function collectPreparedArtifacts(
   result: CompileResult,
   targets: ReturnType<typeof resolveTargets>,
-  ddlContent?: string,
-  precomputedDdlHash?: string,
+  manifest?: ModuleManifest,
+  schemaSql?: string,
 ): PlxPreparedArtifact[] {
   const artifacts: PlxPreparedArtifact[] = [];
   const dependencyMap = collectArtifactDependencies(result);
 
-  if (ddlContent) {
+  if (schemaSql) {
     artifacts.push({
-      key: "ddl",
+      key: `ddl:schema:${manifest?.schemas.public ?? "module"}`,
       kind: "ddl",
-      name: targets.ddl ?? "ddl",
+      name: `${manifest?.name ?? "module"}.schemas`,
       file: targets.ddl,
-      content: ddlContent,
-      hash: precomputedDdlHash ?? hashContent(ddlContent),
+      content: schemaSql,
+      hash: hashContent(schemaSql),
       dependsOn: [],
+    });
+  }
+
+  for (const ddlArtifact of result._artifact?.ddlArtifacts ?? []) {
+    artifacts.push({
+      key: ddlArtifact.key,
+      kind: "ddl",
+      name: ddlArtifact.name,
+      file: targets.ddl,
+      content: ddlArtifact.sql,
+      hash: hashContent(ddlArtifact.sql),
+      dependsOn: ddlArtifact.dependsOn,
     });
   }
 
@@ -282,7 +295,18 @@ export function hashContent(content: string): string {
   return crypto.createHash("sha256").update(content.trimEnd()).digest("hex").slice(0, 16);
 }
 
-function buildGeneratedDdl(manifest: ModuleManifest, compilerDdl?: string): string | undefined {
+function buildGeneratedDdl(manifest: ModuleManifest, result: CompileResult, schemaSql?: string): string | undefined {
+  const parts: string[] = [];
+  if (schemaSql) parts.push(schemaSql);
+  for (const artifact of result._artifact?.ddlArtifacts ?? []) {
+    parts.push(artifact.sql.trim());
+  }
+  if (parts.length === 0) return undefined;
+  return parts.join("\n\n");
+}
+
+function buildSchemaDdl(manifest?: ModuleManifest): string | undefined {
+  if (!manifest) return undefined;
   const parts: string[] = [];
   const { public: pub, private: priv, qa } = manifest.schemas;
 
@@ -296,10 +320,6 @@ function buildGeneratedDdl(manifest: ModuleManifest, compilerDdl?: string): stri
   if (qa) {
     parts.push(`CREATE SCHEMA IF NOT EXISTS "${qa.replace(/"/g, '""')}";`);
   }
-  if (compilerDdl?.trim()) {
-    parts.push(compilerDdl.trim());
-  }
-
   if (parts.length === 0) return undefined;
   return parts.join("\n\n");
 }

@@ -254,6 +254,29 @@ function analyzeEntity(
     "Rename or remove the duplicated entity field.",
     errors,
   );
+
+  if (entity.storage === "hybrid") {
+    for (const field of entity.payload) {
+      if (field.ref) {
+        errors.push({
+          code: "semantic.payload-ref-unsupported",
+          hint: "Move relational references to columns:, not payload:.",
+          loc: field.loc,
+          owner: `entity ${entityName}`,
+          message: `payload field '${field.name}' cannot declare ref(${field.ref})`,
+        });
+      }
+      if (field.unique) {
+        errors.push({
+          code: "semantic.payload-unique-unsupported",
+          hint: "Move unique fields to columns or keep the entity in row storage.",
+          loc: field.loc,
+          owner: `entity ${entityName}`,
+          message: `payload field '${field.name}' cannot be unique in columns + payload storage`,
+        });
+      }
+    }
+  }
   checkDuplicates(
     entity.actions.map((action) => ({ loc: entity.loc, name: action.name })),
     `entity ${entityName}`,

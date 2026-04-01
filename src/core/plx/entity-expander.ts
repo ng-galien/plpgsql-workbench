@@ -28,6 +28,7 @@ const LOC: Loc = pointLoc();
 export interface ExpandResult {
   functions: PlxFunction[];
   ddlFragments: string[];
+  ddlArtifacts: DdlArtifact[];
   errors: ExpandError[];
 }
 
@@ -37,17 +38,31 @@ export interface ExpandError {
   entityName: string;
 }
 
+interface ResolvedEntityFields {
+  all: EntityField[];
+  columns: EntityField[];
+  payload: EntityField[];
+}
+
+export interface DdlArtifact {
+  key: string;
+  name: string;
+  sql: string;
+  dependsOn: string[];
+}
+
 export function expandEntities(mod: PlxModule): ExpandResult {
   const traitRegistry = new Map<string, PlxTrait>();
   for (const t of mod.traits) traitRegistry.set(t.name, t);
 
   const functions: PlxFunction[] = [];
   const ddlFragments: string[] = [];
+  const ddlArtifacts: DdlArtifact[] = [];
   const errors: ExpandError[] = [];
 
   for (const entity of mod.entities) {
     // Resolve traits
-    const resolvedFields = resolveTraitFields(entity, traitRegistry, errors);
+    const resolvedFields = resolveEntityFields(entity, traitRegistry, errors);
 
     try {
       functions.push(buildViewFunction(entity));
@@ -62,7 +77,9 @@ export function expandEntities(mod: PlxModule): ExpandResult {
           functions.push(buildTransitionFunction(entity, tr));
         }
       }
-      ddlFragments.push(generateDDL(entity, resolvedFields));
+      const entityDdl = generateDDL(entity, resolvedFields);
+      ddlArtifacts.push(...entityDdl.artifacts);
+      ddlFragments.push(...entityDdl.artifacts.map((artifact) => artifact.sql));
     } catch (e: unknown) {
       errors.push({
         loc: entity.loc,
@@ -72,12 +89,16 @@ export function expandEntities(mod: PlxModule): ExpandResult {
     }
   }
 
-  return { functions, ddlFragments, errors };
+  return { functions, ddlFragments, ddlArtifacts, errors };
 }
 
 // ---------- Trait resolution ----------
 
-function resolveTraitFields(entity: PlxEntity, registry: Map<string, PlxTrait>, errors: ExpandError[]): EntityField[] {
+function resolveEntityFields(
+  entity: PlxEntity,
+  registry: Map<string, PlxTrait>,
+  errors: ExpandError[],
+): ResolvedEntityFields {
   const traitFields: EntityField[] = [];
   for (const traitName of entity.traits) {
     const trait = registry.get(traitName);
@@ -103,7 +124,20 @@ function resolveTraitFields(entity: PlxEntity, registry: Map<string, PlxTrait>, 
       traitFields.push({ ...f, required: false, unique: false, createOnly: false, readOnly: false });
     }
   }
-  return [...entity.fields, ...traitFields];
+
+  if (entity.storage === "hybrid") {
+    return {
+      columns: [...entity.columns, ...traitFields],
+      payload: [...entity.payload],
+      all: [...entity.columns, ...entity.payload, ...traitFields],
+    };
+  }
+
+  return {
+    columns: [...entity.fields, ...traitFields],
+    payload: [],
+    all: [...entity.fields, ...traitFields],
+  };
 }
 
 /** Returns a WHERE fragment from traits (e.g., soft_delete → "deleted_at IS NULL") */
@@ -127,18 +161,19 @@ function fieldDef(name: string, type: string, nullable: boolean, defaultValue?: 
     unique: false,
     createOnly: false,
     readOnly: false,
+    ref: undefined,
     loc: LOC,
   };
 }
 
 // ---------- DDL generation ----------
 
-function generateDDL(entity: PlxEntity, allFields: EntityField[]): string {
+function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): { artifacts: DdlArtifact[] } {
   const lines: string[] = [];
   lines.push(`CREATE TABLE IF NOT EXISTS ${entity.table} (`);
   lines.push("  id serial PRIMARY KEY,");
 
-  for (const f of allFields) {
+  for (const f of resolved.columns) {
     let col = `  ${f.name} ${f.type}`;
     if (!f.nullable) col += " NOT NULL";
     if (f.unique) col += " UNIQUE";
@@ -153,9 +188,13 @@ function generateDDL(entity: PlxEntity, allFields: EntityField[]): string {
     const vals = states.values.map((v) => `'${v}'`).join(", ");
     // Add state column CHECK if not already in fields
     // Only add if status is not already in fields
-    if (!allFields.some((f) => f.name === states.column)) {
+    if (!resolved.columns.some((f) => f.name === states.column)) {
       lines.push(`  ${states.column} text NOT NULL DEFAULT '${states.initial}' CHECK (${states.column} IN (${vals})),`);
     }
+  }
+
+  if (entity.storage === "hybrid") {
+    lines.push("  data jsonb NOT NULL DEFAULT '{}'::jsonb,");
   }
 
   // Remove trailing comma from last line
@@ -163,11 +202,37 @@ function generateDDL(entity: PlxEntity, allFields: EntityField[]): string {
   lines[lines.length - 1] = lastLine.replace(/,$/, "");
 
   lines.push(");");
-  lines.push("");
-  lines.push(`GRANT USAGE ON SCHEMA ${entity.schema} TO anon;`);
-  lines.push(`GRANT SELECT ON TABLE ${entity.table} TO anon;`);
 
-  return lines.join("\n");
+  const artifacts: DdlArtifact[] = [
+    {
+      key: `ddl:table:${entity.table}`,
+      name: entity.table,
+      sql: lines.join("\n"),
+      dependsOn: [`ddl:schema:${entity.schema}`],
+    },
+  ];
+
+  for (const field of resolved.columns) {
+    if (!field.ref) continue;
+    const constraintName = `${entity.name}_${field.name}_fkey`;
+    artifacts.push({
+      key: `ddl:fk:${entity.table}.${field.name}`,
+      name: `${entity.table}.${field.name}`,
+      sql:
+        `ALTER TABLE ${entity.table} DROP CONSTRAINT IF EXISTS ${constraintName};\n` +
+        `ALTER TABLE ${entity.table} ADD CONSTRAINT ${constraintName} FOREIGN KEY (${field.name}) REFERENCES ${field.ref}(id);`,
+      dependsOn: [`ddl:table:${entity.table}`, `ddl:table:${field.ref}`],
+    });
+  }
+
+  artifacts.push({
+    key: `ddl:grant:${entity.table}`,
+    name: `${entity.table}.grant`,
+    sql: `GRANT USAGE ON SCHEMA ${entity.schema} TO anon;\nGRANT SELECT ON TABLE ${entity.table} TO anon;`,
+    dependsOn: [`ddl:table:${entity.table}`],
+  });
+
+  return { artifacts };
 }
 
 // ---------- Function builders ----------
@@ -274,15 +339,16 @@ function buildListFunction(entity: PlxEntity): PlxFunction {
   const scope = defaultScope(entity, t);
   const whereScope = scope ? ` WHERE ${scope}` : "";
   const andScope = scope ? ` AND ${scope}` : "";
+  const rowExpr = buildEntityJsonSelect(entity, t);
 
-  const staticSql = `SELECT to_jsonb(${t}) FROM ${entity.table} ${t}${whereScope} ORDER BY ${t}.${order}`;
+  const staticSql = `SELECT ${rowExpr} FROM ${entity.table} ${t}${whereScope} ORDER BY ${t}.${order}`;
   const dynamicExpr: Expression = {
     kind: "binary",
     op: "||",
     left: {
       kind: "binary",
       op: "||",
-      left: strLit(`SELECT to_jsonb(${t}) FROM ${entity.table} ${t} WHERE `),
+      left: strLit(`SELECT ${rowExpr} FROM ${entity.table} ${t} WHERE `),
       right: {
         kind: "call",
         name: "pgv.rsql_to_where",
@@ -323,9 +389,10 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
   // Query part (with soft_delete scope if applicable)
   const scope = defaultScope(entity, t);
   const andScope = scope ? ` AND ${scope}` : "";
+  const rowExpr = buildEntityJsonSelect(entity, t);
   const querySql = strategy
     ? `(SELECT ${strategy.fn}(p_id))`
-    : `(SELECT to_jsonb(${t}) FROM ${entity.table} ${t} WHERE ${readKey}${andScope})`;
+    : `(SELECT ${rowExpr} FROM ${entity.table} ${t} WHERE ${readKey}${andScope})`;
 
   const stmts: Statement[] = [
     assign("result", sqlBlock(querySql)),
@@ -360,7 +427,7 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
     );
   } else if (entity.states) {
     // State-based: extract status, build CASE with per-state actions
-    stmts.push(assign("status", sqlBlock(`(v_result->>'status')`)));
+    stmts.push(assign("status", sqlBlock(`(v_result->>'${entity.states.column}')`)));
     stmts.push(assign("id", sqlBlock(`(v_result->>'id')::int`)));
     stmts.push(assign("actions", { kind: "array_literal", elements: [], loc: LOC }));
 
@@ -442,17 +509,18 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
   );
 }
 
-function buildCreateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFunction {
+function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields): PlxFunction {
   // Exclude trait-injected audit fields (created_at, updated_at) — DB handles via DEFAULT
-  const writableFields = allFields.filter((f) => !f.readOnly && !isAuditField(f.name));
-  const colNames = writableFields.map((f) => f.name).join(", ");
-  const colValues = writableFields
-    .map((f) =>
-      f.defaultValue
-        ? `COALESCE(v_p_row.${f.name}, ${formatDefaultValue(f.defaultValue, f.type)})`
-        : `v_p_row.${f.name}`,
-    )
-    .join(", ");
+  const writableFields = resolved.columns.filter((f) => !f.readOnly && !isAuditField(f.name));
+  const colNames = writableFields.map((f) => f.name);
+  const colValues = writableFields.map((f) =>
+    f.defaultValue ? `COALESCE(v_p_row.${f.name}, ${formatDefaultValue(f.defaultValue, f.type)})` : `v_p_row.${f.name}`,
+  );
+
+  if (entity.storage === "hybrid") {
+    colNames.push("data");
+    colValues.push(buildCreatePayloadSql(entity, resolved.payload, "p_data"));
+  }
 
   // create.enrich strategy: call enrichment function on p_row before INSERT
   const enrichStrategy = findStrategy(entity, "create.enrich");
@@ -463,7 +531,7 @@ function buildCreateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
   const validateStmts = getHookStatements(entity, "validate_create");
   const hookStmts = getHookStatements(entity, "before_create");
 
-  const insertSql = `INSERT INTO ${entity.table} (${colNames})\n    VALUES (${colValues})\n    RETURNING *`;
+  const insertSql = `INSERT INTO ${entity.table} (${colNames.join(", ")})\n    VALUES (${colValues.join(", ")})\n    RETURNING *`;
 
   const stmts: Statement[] = [
     ...buildPayloadValidation(entity, "p_data", { requireFields: true, forbidReadOnly: true }),
@@ -477,7 +545,7 @@ function buildCreateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
     ...enrichStmts,
     ...hookStmts,
     assign("result", sqlBlock(insertSql)),
-    ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }),
+    ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"))),
   ];
 
   return makeFn(
@@ -490,9 +558,13 @@ function buildCreateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
   );
 }
 
-function buildUpdateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFunction {
-  const updatableFields = allFields.filter((f) => !f.readOnly && !f.createOnly && !isAuditField(f.name));
+function buildUpdateFunction(entity: PlxEntity, resolved: ResolvedEntityFields): PlxFunction {
+  const updatableFields = resolved.columns.filter((f) => !f.readOnly && !f.createOnly && !isAuditField(f.name));
   const setClauses = updatableFields.map((f) => `${f.name} = v_p_row.${f.name}`);
+
+  if (entity.storage === "hybrid") {
+    setClauses.push(`data = ${buildUpdatePayloadSql(entity, resolved.payload, "p_patch", "v_current.data")}`);
+  }
 
   // Auditable: always set updated_at = now()
   if (entity.traits.includes("auditable")) {
@@ -519,7 +591,7 @@ function buildUpdateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
     ...validateStmts,
     ...hookStmts,
     assign("result", sqlBlock(updateSql)),
-    ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }),
+    ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"))),
   ];
 
   return makeFn(
@@ -573,7 +645,7 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
   }
 
   stmts.push(assign("result", sqlBlock(sql)));
-  stmts.push(ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }));
+  stmts.push(ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"))));
 
   return makeFn(
     entity,
@@ -598,7 +670,12 @@ function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFun
   // Optional guard
   if (tr.guard) {
     // Fetch row first for guard evaluation
-    stmts.push(assign("row", sqlBlock(`(SELECT to_jsonb(t) FROM ${entity.table} t WHERE t.id = p_id::int)`)));
+    stmts.push(
+      assign(
+        "row",
+        sqlBlock(`(SELECT ${buildEntityJsonSelect(entity, "t")} FROM ${entity.table} t WHERE t.id = p_id::int)`),
+      ),
+    );
     stmts.push({
       kind: "if",
       condition: { kind: "binary", op: "=", left: ident("row"), right: nullLit(), loc: LOC },
@@ -627,7 +704,7 @@ function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFun
 
   // The UPDATE
   stmts.push(assign("result", sqlBlock(updateSql, `${entity.schema}.err_not_${tr.from}`)));
-  stmts.push(ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }));
+  stmts.push(ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"))));
 
   return makeFn(
     entity,
@@ -801,10 +878,74 @@ function buildPayloadValidation(
   return stmts;
 }
 
+function buildEntityJsonSelect(entity: PlxEntity, alias: string): string {
+  if (entity.storage === "row") return `to_jsonb(${alias})`;
+
+  const technicalEntries = [`'id', ${alias}.id`];
+  for (const field of entity.columns) {
+    technicalEntries.push(`'${field.name}', ${alias}.${field.name}`);
+  }
+  if (entity.states && !entity.columns.some((field) => field.name === entity.states?.column)) {
+    technicalEntries.push(`'${entity.states.column}', ${alias}.${entity.states.column}`);
+  }
+  if (entity.traits.includes("auditable")) {
+    technicalEntries.push(`'created_at', ${alias}.created_at`);
+    technicalEntries.push(`'updated_at', ${alias}.updated_at`);
+  }
+  if (entity.traits.includes("soft_delete")) {
+    technicalEntries.push(`'deleted_at', ${alias}.deleted_at`);
+  }
+
+  return `jsonb_build_object(${technicalEntries.join(", ")}) || jsonb_strip_nulls(COALESCE(${alias}.data, '{}'::jsonb))`;
+}
+
+function buildCreatePayloadSql(entity: PlxEntity, payloadFields: EntityField[], payloadName: string): string {
+  if (entity.storage !== "hybrid" || payloadFields.length === 0) {
+    return `'{}'::jsonb`;
+  }
+
+  return `jsonb_strip_nulls(jsonb_build_object(${payloadFields
+    .flatMap((field) => [
+      `'${field.name}'`,
+      field.defaultValue
+        ? `COALESCE(${payloadName}->'${field.name}', ${toJsonValueSql(field.defaultValue, field.type)})`
+        : `${payloadName}->'${field.name}'`,
+    ])
+    .join(", ")}))`;
+}
+
+function buildUpdatePayloadSql(
+  entity: PlxEntity,
+  payloadFields: EntityField[],
+  patchName: string,
+  currentDataExpr: string,
+): string {
+  if (entity.storage !== "hybrid" || payloadFields.length === 0) {
+    return currentDataExpr;
+  }
+
+  const removedKeys = `array_remove(ARRAY[${payloadFields
+    .map(
+      (field) =>
+        `CASE WHEN ${patchName} ? '${field.name}' AND ${patchName}->'${field.name}' = 'null'::jsonb THEN '${field.name}' ELSE NULL END`,
+    )
+    .join(", ")}], NULL)`;
+  const pieces = payloadFields.map(
+    (field) =>
+      `CASE WHEN ${patchName} ? '${field.name}' AND ${patchName}->'${field.name}' <> 'null'::jsonb THEN jsonb_build_object('${field.name}', ${patchName}->'${field.name}') ELSE '{}'::jsonb END`,
+  );
+  return `(${currentDataExpr} - ${removedKeys}) || ${pieces.join(" || ")}`;
+}
+
+function toJsonValueSql(value: string, type: string): string {
+  return `to_jsonb(${formatDefaultValue(value, type)}::${type})`;
+}
+
 function stateGuardWhere(entity: PlxEntity): string {
   if (!entity.updateStates || entity.updateStates.length === 0) return "";
   const states = entity.updateStates.map((s) => `'${s}'`).join(", ");
-  return entity.updateStates.length === 1 ? ` AND status = ${states}` : ` AND status IN (${states})`;
+  const column = entity.states?.column ?? "status";
+  return entity.updateStates.length === 1 ? ` AND ${column} = ${states}` : ` AND ${column} IN (${states})`;
 }
 
 function shortAlias(_entity: PlxEntity): string {

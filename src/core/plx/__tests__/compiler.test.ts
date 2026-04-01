@@ -103,6 +103,68 @@ entity demo.task:
     expect(result.sql).toContain("jsonb_populate_record(v_current, p_patch)");
   });
 
+  it("supports columns + payload entities with hybrid storage", () => {
+    const source = `
+entity demo.task:
+  columns:
+    rank int? default(0)
+
+  payload:
+    title text required
+    done boolean? default(false)
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.ddlSql).toContain("data jsonb NOT NULL DEFAULT '{}'::jsonb");
+    expect(result.ddlSql).toContain("rank int DEFAULT 0");
+    expect(result.sql).toContain("INSERT INTO demo.task (rank, data)");
+    expect(result.sql).toContain("jsonb_strip_nulls(jsonb_build_object('title'");
+    expect(result.sql).toContain("data = (v_current.data - array_remove(ARRAY[");
+    expect(result.sql).toContain("jsonb_build_object('id', v_result.id, 'rank', v_result.rank)");
+  });
+
+  it("generates foreign key constraints for ref(...) columns", () => {
+    const source = `
+entity demo.note:
+  fields:
+    title text required
+
+entity demo.task:
+  columns:
+    note_id int? ref(demo.note)
+
+  payload:
+    title text required
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.ddlSql).toContain("CREATE TABLE IF NOT EXISTS demo.note");
+    expect(result.ddlSql).toContain("CREATE TABLE IF NOT EXISTS demo.task");
+    expect(result.ddlSql).toContain(
+      "ALTER TABLE demo.task ADD CONSTRAINT task_note_id_fkey FOREIGN KEY (note_id) REFERENCES demo.note(id);",
+    );
+  });
+
+  it("uses custom state columns in generated entity SQL", () => {
+    const source = `
+entity demo.task:
+  fields:
+    title text required
+
+  update_states: [draft]
+
+  states draft -> active:
+    column: phase
+    activate(draft -> active)
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.ddlSql).toContain("phase text NOT NULL DEFAULT 'draft' CHECK (phase IN ('draft', 'active'))");
+    expect(result.sql).toContain("v_result->>'phase'");
+    expect(result.sql).toContain("WHERE id = p_id::int AND phase = 'draft'");
+    expect(result.sql).toContain("SET phase = 'active'");
+  });
+
   it("compiles mixed functions and tests", () => {
     const source = `
 fn expense.helper() -> int:

@@ -113,6 +113,9 @@ export interface PlxEntity {
   icon?: string;
   label: string; // i18n key
   traits: string[];
+  storage: "row" | "hybrid";
+  columns: EntityField[];
+  payload: EntityField[];
   fields: EntityField[];
   states?: StateBlock;
   updateStates?: string[]; // restrict update to these states
@@ -130,6 +133,7 @@ export interface EntityField extends FieldDef {
   unique: boolean;
   createOnly: boolean;
   readOnly: boolean;
+  ref?: string;
   viewType?: string; // "date", "currency", "status", "textarea"
   label?: string; // i18n key override
 }

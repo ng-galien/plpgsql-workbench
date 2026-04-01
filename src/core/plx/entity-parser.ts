@@ -54,6 +54,8 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
   let listOrder = "id";
   let readKey: string | undefined;
   const fields: EntityField[] = [];
+  const columns: EntityField[] = [];
+  const payload: EntityField[] = [];
   let states: StateBlock | undefined;
   let updateStates: string[] | undefined;
   let view: ViewBlock = { compact: [] };
@@ -91,15 +93,16 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
       ctx.advance();
       ctx.expect("COLON");
       readKey = ctx.expect("STRING").value;
-    } else if (kw === "fields") {
+    } else if (kw === "fields" || kw === "columns" || kw === "payload") {
       ctx.advance();
       ctx.expect("COLON");
       ctx.skipNewlines();
       ctx.expect("INDENT");
+      const target = kw === "columns" ? columns : kw === "payload" ? payload : fields;
       while (!ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
         ctx.skipNewlines();
         if (ctx.isAt("DEDENT")) break;
-        fields.push(parseEntityField(ctx));
+        target.push(parseEntityField(ctx));
         ctx.skipNewlines();
       }
       ctx.expect("DEDENT");
@@ -151,6 +154,11 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
   }
 
   const end = ctx.expect("DEDENT");
+  if (fields.length > 0 && (columns.length > 0 || payload.length > 0)) {
+    throw new ParseError("entity cannot mix fields: with columns:/payload:", start);
+  }
+  const hybrid = payload.length > 0;
+  const rowFields = columns.length > 0 ? columns : fields;
 
   return {
     kind: "entity",
@@ -162,7 +170,10 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
     icon,
     label,
     traits,
-    fields,
+    storage: hybrid ? "hybrid" : "row",
+    columns: hybrid ? columns : rowFields,
+    payload: hybrid ? payload : [],
+    fields: hybrid ? [...columns, ...payload] : rowFields,
     states,
     updateStates,
     view,
@@ -188,6 +199,7 @@ function parseEntityField(ctx: ParseContext): EntityField {
   let createOnly = false;
   let readOnly = false;
   let defaultValue: string | undefined;
+  let ref: string | undefined;
 
   // Parse modifiers: required, unique, create_only, read_only, default(...)
   while (ctx.isAt("IDENT") || ctx.isAt("QUESTION")) {
@@ -224,12 +236,17 @@ function parseEntityField(ctx: ParseContext): EntityField {
         expr += (expr ? " " : "") + t.value;
       }
       defaultValue = expr;
+    } else if (mod === "ref") {
+      ctx.advance();
+      ctx.expect("LPAREN");
+      ref = ctx.parseQualifiedName();
+      ctx.expect("RPAREN");
     } else {
       break;
     }
   }
 
-  return { name, type, nullable, required, unique, createOnly, readOnly, defaultValue, loc };
+  return { name, type, nullable, required, unique, createOnly, readOnly, defaultValue, ref, loc };
 }
 
 function parseStateBlock(ctx: ParseContext): StateBlock {
@@ -248,10 +265,19 @@ function parseStateBlock(ctx: ParseContext): StateBlock {
   ctx.skipNewlines();
   ctx.expect("INDENT");
 
+  let column = "status";
   const transitions: StateTransition[] = [];
   while (!ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
     ctx.skipNewlines();
     if (ctx.isAt("DEDENT")) break;
+
+    if (ctx.peek().value === "column") {
+      ctx.advance();
+      ctx.expect("COLON");
+      column = ctx.expect("IDENT").value;
+      ctx.skipNewlines();
+      continue;
+    }
 
     const trLoc = ctx.loc();
     const trName = ctx.expect("IDENT").value;
@@ -298,7 +324,7 @@ function parseStateBlock(ctx: ParseContext): StateBlock {
   const end = ctx.expect("DEDENT");
   const initial = values[0] ?? "";
 
-  return { column: "status", initial, values, transitions, loc: mergeLoc(start, end) };
+  return { column, initial, values, transitions, loc: mergeLoc(start, end) };
 }
 
 function parseViewBlock(ctx: ParseContext): ViewBlock {
