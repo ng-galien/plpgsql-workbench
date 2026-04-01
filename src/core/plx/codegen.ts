@@ -91,23 +91,27 @@ export function generate(fn: PlxFunction, aliases?: Map<string, string>): string
 export function generateWithSourceMap(
   fn: PlxFunction,
   aliases?: Map<string, string>,
+  returnTypes?: Map<string, string>,
 ): { sql: string; sourceMap: GeneratedSourceMap } {
-  return new CodegenContext(fn, aliases).emit();
+  return new CodegenContext(fn, aliases, returnTypes).emit();
 }
 
 class CodegenContext {
   private vars = new Map<string, VarInfo>();
   private paramNames: Set<string>;
   private aliases: Map<string, string>;
+  private returnTypes: Map<string, string>;
   private lines: EmittedLine[] = [];
   private indent = 1;
 
   constructor(
     private fn: PlxFunction,
     aliases?: Map<string, string>,
+    returnTypes?: Map<string, string>,
   ) {
     this.paramNames = new Set(fn.params.map((p) => p.name));
     this.aliases = aliases ?? new Map();
+    this.returnTypes = returnTypes ?? new Map();
     this.collectVars(fn.body);
   }
 
@@ -218,6 +222,9 @@ class CodegenContext {
     if (value.kind === "string_interp") return { plName, type: "text", isRow: false };
     if (value.kind === "call") {
       const fn = value.name.toLowerCase();
+      const targetName = this.aliases.get(value.name) ?? value.name;
+      const declaredReturn = this.returnTypes.get(targetName);
+      if (declaredReturn) return this.varInfoForType(plName, declaredReturn);
       if (fn === "count" || fn === "sum") return { plName, type: "bigint", isRow: false };
       if (fn === "now" || fn === "clock_timestamp") return { plName, type: "timestamptz", isRow: false };
       if (fn === "format" || fn === "concat" || fn === "upper" || fn === "lower" || fn === "trim") {
@@ -235,6 +242,22 @@ class CodegenContext {
       if (value.type === "boolean") return { plName, type: "boolean", init: String(value.value), isRow: false };
     }
     return { plName, type: "jsonb", isRow: false };
+  }
+
+  private varInfoForType(plName: string, typeName: string): VarInfo {
+    const lowered = typeName.toLowerCase();
+    if (lowered === "jsonb" || lowered === "json") return { plName, type: "jsonb", isRow: false };
+    if (lowered === "text") return { plName, type: "text", isRow: false };
+    if (lowered === "boolean") return { plName, type: "boolean", isRow: false };
+    if (lowered === "int" || lowered === "integer" || lowered === "smallint")
+      return { plName, type: "integer", isRow: false };
+    if (lowered === "bigint") return { plName, type: "bigint", isRow: false };
+    if (lowered === "numeric" || lowered === "decimal" || lowered === "real" || lowered === "double precision") {
+      return { plName, type: lowered, isRow: false };
+    }
+    if (lowered === "void") return { plName, type: "jsonb", isRow: false };
+    if (typeName.includes(".")) return { plName, type: typeName, isRow: true };
+    return { plName, type: "record", isRow: false };
   }
 
   // ---------- Statement emission ----------
@@ -274,6 +297,14 @@ class CodegenContext {
   private emitAssert(stmt: AssertStatement): void {
     const msg = stmt.message ?? `assert line ${stmt.loc.line}`;
     const escaped = sqlEscape(msg);
+    if (!this.isPgTapFunction()) {
+      this.lineFromParts(["IF NOT (", this.emitExprMap(stmt.expression), ") THEN"], stmt.loc);
+      this.indent++;
+      this.line(`RAISE EXCEPTION USING ERRCODE = 'P0400', MESSAGE = 'Bad Request', DETAIL = '${escaped}';`, stmt.loc);
+      this.indent--;
+      this.line("END IF;", stmt.loc);
+      return;
+    }
     if (stmt.expression.kind === "binary" && stmt.expression.op === "=") {
       const left = this.emitExprMap(stmt.expression.left);
       const right = this.emitExprMap(stmt.expression.right);
@@ -285,6 +316,10 @@ class CodegenContext {
     } else {
       this.lineFromParts(["RETURN NEXT ok(", this.emitExprMap(stmt.expression), `, '${escaped}');`], stmt.loc);
     }
+  }
+
+  private isPgTapFunction(): boolean {
+    return this.fn.setof && this.fn.returnType === "text";
   }
 
   private emitAssign(stmt: AssignStatement): void {

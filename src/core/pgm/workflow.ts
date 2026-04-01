@@ -406,12 +406,21 @@ async function applyFunctionArtifact(client: DbClient, artifact: ModuleWorkflowA
     throw new Error(`invalid function artifact name '${artifact.name}'`);
   }
 
-  const beforeCount = await countFunctionOverloads(client, schema, name);
+  const beforeSignatures = await listFunctionIdentityArgs(client, schema, name);
   await client.query(artifact.content);
-  const afterCount = await countFunctionOverloads(client, schema, name);
-  if (afterCount > 1 && afterCount > beforeCount) {
+  let afterSignatures = await listFunctionIdentityArgs(client, schema, name);
+  let replacementWarning: string | undefined;
+  if (afterSignatures.length > 1 && afterSignatures.length > beforeSignatures.length) {
+    const added = afterSignatures.filter((signature) => !beforeSignatures.includes(signature));
+    if (beforeSignatures.length === 1 && added.length === 1) {
+      await dropFunctionByIdentityArgs(client, schema, name, beforeSignatures[0] ?? "");
+      afterSignatures = await listFunctionIdentityArgs(client, schema, name);
+      replacementWarning = `replaced signature ${schema}.${name}(${beforeSignatures[0] ?? ""}) -> (${added[0] ?? ""})`;
+    }
+  }
+  if (afterSignatures.length > 1) {
     throw new Error(
-      `overload interdit: ${schema}.${name} had ${beforeCount} signature(s), apply would leave ${afterCount} total`,
+      `overload interdit: ${schema}.${name} had ${beforeSignatures.length} signature(s), apply would leave ${afterSignatures.length} total`,
     );
   }
 
@@ -448,25 +457,40 @@ async function applyFunctionArtifact(client: DbClient, artifact: ModuleWorkflowA
     }
 
     const warning = check.rows.find((row) => row.level !== "error");
-    if (!warning) return undefined;
-    return `plpgsql_check ${schema}.${name} line ${warning.lineno}: ${warning.message}`;
+    if (!warning) return replacementWarning;
+    const checkWarning = `plpgsql_check ${schema}.${name} line ${warning.lineno}: ${warning.message}`;
+    return replacementWarning ? `${replacementWarning}; ${checkWarning}` : checkWarning;
   } catch (error: unknown) {
     await client.query("ROLLBACK TO SAVEPOINT module_plpgsql_check").catch(() => {});
     const code = (error as { code?: string }).code;
-    if (code === "42883" || code === "0A000") return undefined;
+    if (code === "42883" || code === "0A000") return replacementWarning;
     throw error;
   }
 }
 
-async function countFunctionOverloads(client: DbClient, schema: string, name: string): Promise<number> {
-  const { rows } = await client.query<{ count: string }>(
-    `SELECT count(*)::text
+async function listFunctionIdentityArgs(client: DbClient, schema: string, name: string): Promise<string[]> {
+  const { rows } = await client.query<{ identity_args: string }>(
+    `SELECT pg_get_function_identity_arguments(p.oid) AS identity_args
        FROM pg_proc p
        JOIN pg_namespace n ON n.oid = p.pronamespace
-      WHERE n.nspname = $1 AND p.proname = $2`,
+      WHERE n.nspname = $1 AND p.proname = $2
+      ORDER BY p.oid`,
     [schema, name],
   );
-  return parseInt(rows[0]?.count ?? "0", 10);
+  return rows.map((row) => row.identity_args);
+}
+
+async function dropFunctionByIdentityArgs(
+  client: DbClient,
+  schema: string,
+  name: string,
+  identityArgs: string,
+): Promise<void> {
+  const dropSql =
+    identityArgs.trim().length > 0
+      ? `DROP FUNCTION IF EXISTS ${qi(schema)}.${qi(name)}(${identityArgs})`
+      : `DROP FUNCTION IF EXISTS ${qi(schema)}.${qi(name)}()`;
+  await client.query(dropSql);
 }
 
 function sortApplyArtifacts(artifacts: ModuleWorkflowArtifact[]): ModuleWorkflowArtifact[] {

@@ -20,6 +20,7 @@ import type {
 } from "./ast.js";
 import { mergeLoc } from "./ast.js";
 import type { ParseContext } from "./parse-context.js";
+import { ParseError } from "./parse-context.js";
 
 export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntity {
   const start = ctx.loc();
@@ -140,7 +141,7 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
         ctx.skipNewlines();
       }
       ctx.expect("DEDENT");
-    } else if (kw === "before" || kw === "after") {
+    } else if (kw === "before" || kw === "after" || kw === "validate") {
       hooks.push(parseEntityHook(ctx));
     } else {
       // Unknown key — skip line
@@ -554,13 +555,25 @@ function parseStrategyDecl(ctx: ParseContext): StrategyDecl {
 
 function parseEntityHook(ctx: ParseContext): EntityHook {
   const loc = ctx.loc();
-  const event = ctx.advance().value; // "before" or "after"
-  const action = ctx.expect("IDENT").value; // "create", "update"
+  const event = ctx.advance().value; // "before", "after", "validate"
+  const action = ctx.expect("IDENT").value; // "create", "update", "delete"
+  if (!["create", "update", "delete"].includes(action)) {
+    throw new ParseError(`unsupported entity hook action '${action}'`, ctx.loc(), {
+      code: "parse.invalid-entity-hook-action",
+      hint: "Use create, update, or delete after before/after/validate.",
+    });
+  }
+  if ((event === "after" || event === "before") && action === "delete") {
+    throw new ParseError(`${event} delete hooks are not supported`, ctx.loc(), {
+      code: "parse.invalid-entity-hook-action",
+      hint: "Use validate delete instead.",
+    });
+  }
   const hookEvent = `${event}_${action}` as EntityHookEvent;
 
   // Optional params: (p_row)
   const params: string[] = [];
-  if (ctx.isAt("LPAREN")) {
+  if (event !== "validate" && ctx.isAt("LPAREN")) {
     ctx.advance();
     while (!ctx.isAt("RPAREN") && !ctx.isAt("EOF")) {
       params.push(ctx.expect("IDENT").value);

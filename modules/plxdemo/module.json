@@ -1,0 +1,32 @@
+{
+  "name": "plxdemo",
+  "version": "0.1.0",
+  "description": "",
+  "schemas": {
+    "public": "plxdemo",
+    "private": null,
+    "qa": "plxdemo_qa"
+  },
+  "dependencies": [
+    "pgv"
+  ],
+  "extensions": [],
+  "sql": [
+    "build/plxdemo.ddl.sql",
+    "build/plxdemo.func.sql",
+    "build/plxdemo_ut.func.sql"
+  ],
+  "assets": {
+    "frontend": [],
+    "scripts": [],
+    "styles": []
+  },
+  "grants": {
+    "anon": [
+      "plxdemo"
+    ]
+  },
+  "plx": {
+    "entry": "src/plxdemo.plx"
+  }
+}

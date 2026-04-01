@@ -328,13 +328,25 @@ function analyzeEntity(
 
   for (const hook of entity.hooks) {
     const bindings = new Map<string, TypeInfo>();
+    if (hook.event === "validate_create") {
+      bindings.set("p_data", declaredType("jsonb"));
+      bindings.set("p_row", declaredType(entity.table));
+    } else if (hook.event === "validate_update") {
+      bindings.set("p_id", declaredType("text"));
+      bindings.set("p_patch", declaredType("jsonb"));
+      bindings.set("current", declaredType(entity.table));
+      bindings.set("p_row", declaredType(entity.table));
+    } else if (hook.event === "validate_delete") {
+      bindings.set("p_id", declaredType("text"));
+      bindings.set("current", declaredType(entity.table));
+    }
     for (const paramName of hook.params) bindings.set(paramName, { kind: "unknown", raw: "unknown" });
     const ctx: AnalysisContext = {
       bindings,
       errors,
       importAliases,
       importTargets,
-      knownNames: new Set<string>([...hook.params, ...collectLocals(hook.body)]),
+      knownNames: new Set<string>([...bindings.keys(), ...hook.params, ...collectLocals(hook.body)]),
       owner: `entity ${entityName} ${hook.event}`,
       paramNames: new Set(hook.params),
       returnType: { kind: "unknown", raw: "unknown" },

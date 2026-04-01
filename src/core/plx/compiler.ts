@@ -134,12 +134,16 @@ export function compileModule(mod: PlxModule): CompileResult {
   for (const imp of mod.imports) {
     aliases.set(imp.alias, imp.original);
   }
+  const returnTypes = new Map<string, string>();
+  for (const fn of [...allFunctions, ...testResult.functions]) {
+    returnTypes.set(`${fn.schema}.${fn.name}`, fn.returnType);
+  }
 
   const sqlParts: string[] = [];
   const validationBlocks: ValidationBlock[] = [];
   for (const fn of allFunctions) {
     try {
-      const generated = generateWithSourceMap(fn, aliases);
+      const generated = generateWithSourceMap(fn, aliases, returnTypes);
       sqlParts.push(generated.sql);
       validationBlocks.push({
         sql: generated.sql,
@@ -156,7 +160,7 @@ export function compileModule(mod: PlxModule): CompileResult {
   const testSqlParts: string[] = [];
   for (const fn of testResult.functions) {
     try {
-      const generated = generateWithSourceMap(fn, aliases);
+      const generated = generateWithSourceMap(fn, aliases, returnTypes);
       testSqlParts.push(generated.sql);
       validationBlocks.push({
         sql: generated.sql,

@@ -1,21 +1,21 @@
 -- expense.spec.plx — Test category CRUD lifecycle
 
 test "category crud lifecycle":
-  c := expense.category_create(row('Test', '601'))
+  c := expense.category_create({name: 'Test', accounting_code: '601'})
   assert c->>'name' = 'Test'
 
-  r := expense.category_read((c->>'id')::int)
+  r := expense.category_read(c->>'id')
   assert r->>'name' = 'Test'
   assert r->>'actions' != 'null'
 
-  u := expense.category_update(row((c->>'id')::int, 'Updated', '601'))
+  u := expense.category_update(c->>'id', {name: 'Updated'})
   assert u->>'name' = 'Updated'
 
-  d := expense.category_delete((c->>'id')::int)
+  d := expense.category_delete(c->>'id')
   assert d->>'name' = 'Updated'
 
 test "category list":
-  expense.category_create(row('Alpha', '701'))
-  expense.category_create(row('Beta', '702'))
-  n := count(expense.category_list())
+  expense.category_create({name: 'Alpha', accounting_code: '701'})
+  expense.category_create({name: 'Beta', accounting_code: '702'})
+  n := select count(*) from expense.category_list()
   assert n >= 2

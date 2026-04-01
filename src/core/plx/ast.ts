@@ -201,7 +201,14 @@ export interface StrategyDecl {
   loc: Loc;
 }
 
-export type EntityHookEvent = "before_create" | "after_create" | "before_update" | "after_update";
+export type EntityHookEvent =
+  | "before_create"
+  | "after_create"
+  | "before_update"
+  | "after_update"
+  | "validate_create"
+  | "validate_update"
+  | "validate_delete";
 
 export interface EntityHook {
   event: EntityHookEvent;

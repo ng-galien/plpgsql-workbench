@@ -41,6 +41,19 @@ test "boolean check":
     expect(result.testSql).toContain("RETURN NEXT ok(");
   });
 
+  it("emits runtime assertions in regular functions", () => {
+    const source = `
+fn demo.validate_payload(p_data jsonb) -> void:
+  assert jsonb_typeof(p_data) = 'object', demo.err_invalid_payload
+  return
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("IF NOT (jsonb_typeof(p_data) = 'object') THEN");
+    expect(result.sql).toContain("ERRCODE = 'P0400'");
+    expect(result.sql).not.toContain("RETURN NEXT ok(");
+  });
+
   it("infers schema from first qualified call", () => {
     const source = `
 test "schema inference":
@@ -74,6 +87,20 @@ fn expense.get_total(p_id int) -> numeric:
     expect(result.functionCount).toBe(1);
     expect(result.testCount).toBe(0);
     expect(result.testSql).toBeUndefined();
+  });
+
+  it("generates public entity CRUD with jsonb payloads", () => {
+    const source = `
+entity demo.task:
+  fields:
+    title text required
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("FUNCTION demo.task_create(p_data jsonb)");
+    expect(result.sql).toContain("FUNCTION demo.task_update(p_id text, p_patch jsonb)");
+    expect(result.sql).toContain("jsonb_populate_record(NULL::demo.task, p_data)");
+    expect(result.sql).toContain("jsonb_populate_record(v_current, p_patch)");
   });
 
   it("compiles mixed functions and tests", () => {

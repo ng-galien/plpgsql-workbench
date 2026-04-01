@@ -142,7 +142,7 @@ function generateDDL(entity: PlxEntity, allFields: EntityField[]): string {
     let col = `  ${f.name} ${f.type}`;
     if (!f.nullable) col += " NOT NULL";
     if (f.unique) col += " UNIQUE";
-    if (f.defaultValue) col += ` DEFAULT ${f.defaultValue}`;
+    if (f.defaultValue) col += ` DEFAULT ${formatDefaultValue(f.defaultValue, f.type)}`;
     col += ",";
     lines.push(col);
   }
@@ -444,11 +444,15 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
 
 function buildCreateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFunction {
   // Exclude trait-injected audit fields (created_at, updated_at) — DB handles via DEFAULT
-  const writableFields = allFields.filter(
-    (f) => !f.readOnly && f.name !== "created_at" && f.name !== "updated_at" && f.name !== "deleted_at",
-  );
+  const writableFields = allFields.filter((f) => !f.readOnly && !isAuditField(f.name));
   const colNames = writableFields.map((f) => f.name).join(", ");
-  const colValues = writableFields.map((f) => `p_row.${f.name}`).join(", ");
+  const colValues = writableFields
+    .map((f) =>
+      f.defaultValue
+        ? `COALESCE(v_p_row.${f.name}, ${formatDefaultValue(f.defaultValue, f.type)})`
+        : `v_p_row.${f.name}`,
+    )
+    .join(", ");
 
   // create.enrich strategy: call enrichment function on p_row before INSERT
   const enrichStrategy = findStrategy(entity, "create.enrich");
@@ -456,12 +460,20 @@ function buildCreateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
     ? [assign("p_row", { kind: "call", name: enrichStrategy.fn, args: [ident("p_row")], loc: LOC })]
     : [];
 
-  // Inject hook body before INSERT
+  const validateStmts = getHookStatements(entity, "validate_create");
   const hookStmts = getHookStatements(entity, "before_create");
 
   const insertSql = `INSERT INTO ${entity.table} (${colNames})\n    VALUES (${colValues})\n    RETURNING *`;
 
   const stmts: Statement[] = [
+    ...buildPayloadValidation(entity, "p_data", { requireFields: true, forbidReadOnly: true }),
+    assign("p_row", {
+      kind: "call",
+      name: "jsonb_populate_record",
+      args: [castExpr(nullLit(), qualifiedIdent(entity.table)), ident("p_data")],
+      loc: LOC,
+    }),
+    ...validateStmts,
     ...enrichStmts,
     ...hookStmts,
     assign("result", sqlBlock(insertSql)),
@@ -471,7 +483,7 @@ function buildCreateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
   return makeFn(
     entity,
     `${entity.name}_create`,
-    [{ name: "p_row", type: entity.table, nullable: false }],
+    [{ name: "p_data", type: "jsonb", nullable: false }],
     "jsonb",
     ["definer"],
     stmts,
@@ -479,22 +491,32 @@ function buildCreateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
 }
 
 function buildUpdateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFunction {
-  const updatableFields = allFields.filter(
-    (f) =>
-      !f.readOnly && !f.createOnly && f.name !== "created_at" && f.name !== "updated_at" && f.name !== "deleted_at",
-  );
-  const setClauses = updatableFields.map((f) => `${f.name} = COALESCE(p_row.${f.name}, ${f.name})`);
+  const updatableFields = allFields.filter((f) => !f.readOnly && !f.createOnly && !isAuditField(f.name));
+  const setClauses = updatableFields.map((f) => `${f.name} = v_p_row.${f.name}`);
 
   // Auditable: always set updated_at = now()
   if (entity.traits.includes("auditable")) {
     setClauses.push("updated_at = now()");
   }
 
-  const whereClause = `id = p_row.id${stateGuardWhere(entity)}`;
+  const whereClause = `id = p_id::int${stateGuardWhere(entity)}`;
   const updateSql = `UPDATE ${entity.table} SET\n    ${setClauses.join(",\n    ")}\n    WHERE ${whereClause}\n    RETURNING *`;
 
+  const validateStmts = getHookStatements(entity, "validate_update");
   const hookStmts = getHookStatements(entity, "before_update");
   const stmts: Statement[] = [
+    ...buildPayloadValidation(entity, "p_patch", { requireFields: false, forbidReadOnly: true }),
+    assign(
+      "current",
+      sqlBlock(`SELECT * FROM ${entity.table} WHERE id = p_id::int`, `${entity.schema}.err_not_found`, entity.table),
+    ),
+    assign("p_row", {
+      kind: "call",
+      name: "jsonb_populate_record",
+      args: [ident("current"), ident("p_patch")],
+      loc: LOC,
+    }),
+    ...validateStmts,
     ...hookStmts,
     assign("result", sqlBlock(updateSql)),
     ret("value", { kind: "call", name: "to_jsonb", args: [ident("result")], loc: LOC }),
@@ -503,7 +525,10 @@ function buildUpdateFunction(entity: PlxEntity, allFields: EntityField[]): PlxFu
   return makeFn(
     entity,
     `${entity.name}_update`,
-    [{ name: "p_row", type: entity.table, nullable: false }],
+    [
+      { name: "p_id", type: "text", nullable: false },
+      { name: "p_patch", type: "jsonb", nullable: false },
+    ],
     "jsonb",
     ["definer"],
     stmts,
@@ -521,18 +546,23 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
   }
 
   const stmts: Statement[] = [];
+  const validateStmts = getHookStatements(entity, "validate_delete");
 
   // delete.guard strategy: fetch row, call guard (raises if invalid)
   const guardStrategy = findStrategy(entity, "delete.guard");
+  if (guardStrategy || validateStmts.length > 0) {
+    stmts.push(
+      assign(
+        "current",
+        sqlBlock(`SELECT * FROM ${entity.table} WHERE id = p_id::int`, `${entity.schema}.err_not_found`, entity.table),
+      ),
+    );
+  }
+  if (validateStmts.length > 0) {
+    stmts.push(...validateStmts);
+  }
   if (guardStrategy) {
-    stmts.push(assign("row", sqlBlock(`(SELECT to_jsonb(t) FROM ${entity.table} t WHERE t.id = p_id::int)`)));
-    stmts.push({
-      kind: "if",
-      condition: { kind: "binary", op: "=", left: ident("row"), right: nullLit(), loc: LOC },
-      body: [{ kind: "raise", message: `${entity.schema}.err_not_found`, loc: LOC }],
-      elsifs: [],
-      loc: LOC,
-    } as Statement);
+    stmts.push(assign("row", { kind: "call", name: "to_jsonb", args: [ident("current")], loc: LOC }));
     // Call guard — it raises if the delete should be blocked
     stmts.push({
       kind: "assign",
@@ -654,6 +684,27 @@ function makeFn(
   };
 }
 
+/** Quote default values for DDL: text types need quotes, others (bool, numeric, function calls) don't. */
+function formatDefaultValue(value: string, type: string): string {
+  const lowerType = type.toLowerCase();
+  // Already looks like SQL (function call, cast, keyword)
+  if (value.includes("(") || value.includes("::") || value === "true" || value === "false" || value === "null") {
+    return value;
+  }
+  // Numeric types: emit as-is
+  if (/^(int|integer|bigint|smallint|numeric|decimal|float|double|serial|real)/.test(lowerType)) {
+    return value;
+  }
+  // Text-like types: quote
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+const AUDIT_FIELDS = new Set(["created_at", "updated_at", "deleted_at"]);
+
+function isAuditField(name: string): boolean {
+  return AUDIT_FIELDS.has(name);
+}
+
 function findStrategy(entity: PlxEntity, slot: string): StrategyDecl | undefined {
   return entity.strategies.find((s) => s.slot === slot);
 }
@@ -661,6 +712,93 @@ function findStrategy(entity: PlxEntity, slot: string): StrategyDecl | undefined
 function getHookStatements(entity: PlxEntity, event: EntityHook["event"]): Statement[] {
   const hook = entity.hooks.find((h) => h.event === event);
   return hook ? hook.body : [];
+}
+
+function buildPayloadValidation(
+  entity: PlxEntity,
+  payloadName: string,
+  options: { requireFields: boolean; forbidReadOnly: boolean },
+): Statement[] {
+  const stmts: Statement[] = [
+    assertStmt(
+      {
+        kind: "binary",
+        op: "=",
+        left: { kind: "call", name: "jsonb_typeof", args: [ident(payloadName)], loc: LOC },
+        right: strLit("object"),
+        loc: LOC,
+      },
+      `${entity.schema}.err_invalid_${entity.name}_payload`,
+    ),
+  ];
+
+  const writableFields = new Set(entity.fields.map((field) => field.name));
+  const forbiddenFields = new Set<string>(["id"]);
+  if (options.forbidReadOnly) {
+    for (const field of entity.fields) {
+      if (field.readOnly || isAuditField(field.name)) {
+        forbiddenFields.add(field.name);
+      }
+    }
+  }
+
+  const knownFields = [...writableFields];
+  if (knownFields.length > 0) {
+    stmts.push(
+      assertStmt(
+        rawExpr(
+          `NOT EXISTS (SELECT 1 FROM jsonb_object_keys(${payloadName}) AS k(key) WHERE k.key <> ALL (ARRAY[${knownFields.map((field) => `'${field}'`).join(", ")}]::text[]))`,
+        ),
+        `${entity.schema}.err_unknown_${entity.name}_field`,
+      ),
+    );
+  }
+
+  for (const field of forbiddenFields) {
+    stmts.push(
+      assertStmt(
+        {
+          kind: "unary",
+          op: "NOT",
+          expression: { kind: "call", name: "jsonb_exists", args: [ident(payloadName), strLit(field)], loc: LOC },
+          loc: LOC,
+        },
+        `${entity.schema}.err_${field}_readonly`,
+      ),
+    );
+  }
+
+  if (options.requireFields) {
+    for (const field of entity.fields) {
+      if (!field.required) continue;
+      stmts.push(
+        assertStmt(
+          {
+            kind: "binary",
+            op: "AND",
+            left: { kind: "call", name: "jsonb_exists", args: [ident(payloadName), strLit(field.name)], loc: LOC },
+            right: {
+              kind: "binary",
+              op: "IS NOT NULL",
+              left: {
+                kind: "binary",
+                op: "->>",
+                left: ident(payloadName),
+                right: strLit(field.name),
+                loc: LOC,
+              },
+              right: nullLit(),
+              loc: LOC,
+            },
+            loc: LOC,
+          },
+          `${entity.schema}.err_${field.name}_required`,
+        ),
+      );
+    }
+  }
+
+  return stmts;
 }
 
 function stateGuardWhere(entity: PlxEntity): string {
@@ -683,6 +821,11 @@ function nullLit(): Expression {
 function ident(name: string): Expression {
   return { kind: "identifier", name, loc: LOC };
 }
+function qualifiedIdent(name: string): Expression {
+  const [object, field] = name.split(".");
+  if (!object || !field) return ident(name);
+  return { kind: "field_access", object, field, loc: LOC };
+}
 function jObj(entries: JsonLiteral["entries"]): JsonLiteral {
   return { kind: "json_literal", entries, loc: LOC };
 }
@@ -692,12 +835,21 @@ function jEntry(key: string, value: Expression): JsonLiteral["entries"][number] 
 function strArr(items: string[]): Expression {
   return { kind: "array_literal", elements: items.map(strLit), loc: LOC };
 }
-function sqlBlock(sql: string, elseRaise?: string): SqlBlockExpr {
-  return { kind: "sql_block", sql, elseRaise, loc: LOC };
+function sqlBlock(sql: string, elseRaise?: string, inferredTable?: string): SqlBlockExpr {
+  return { kind: "sql_block", sql, elseRaise, inferredTable, loc: LOC };
 }
 function assign(target: string, value: Expression): AssignStatement {
   return { kind: "assign", target, value, loc: LOC };
 }
 function ret(mode: ReturnStatement["mode"], value: Expression): ReturnStatement {
   return { kind: "return", value, isYield: false, mode, loc: LOC };
+}
+function castExpr(left: Expression, right: Expression): Expression {
+  return { kind: "binary", op: "::", left, right, loc: LOC };
+}
+function assertStmt(expression: Expression, message: string): Statement {
+  return { kind: "assert", expression, message, loc: LOC };
+}
+function rawExpr(sql: string): SqlBlockExpr {
+  return { kind: "sql_block", sql, loc: LOC };
 }

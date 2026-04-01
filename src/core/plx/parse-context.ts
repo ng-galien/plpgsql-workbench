@@ -396,9 +396,8 @@ export class ParseContext {
     let end = expression.loc;
     if (this.isAt("COMMA")) {
       this.advance();
-      const messageTok = this.expect("STRING");
-      message = messageTok.value;
-      end = tokenLoc(messageTok);
+      message = this.parseQualifiedValue();
+      end = this.loc();
     }
     this.skipNewlines();
     return { kind: "assert", expression, message, loc: mergeLoc(start, end) };

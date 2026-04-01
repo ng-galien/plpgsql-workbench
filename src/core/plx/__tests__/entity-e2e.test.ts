@@ -82,13 +82,17 @@ describe("PLX entity E2E", () => {
       }
     }
 
-    // CREATE — insert directly to get ID, then use the generated functions
+    // CREATE
     const {
-      rows: [inserted],
-    } = await pool.query("INSERT INTO expense.category (name, accounting_code) VALUES ('Test', '601') RETURNING *");
-    expect(inserted).toHaveProperty("name", "Test");
-    if (!inserted) throw new Error("expected inserted row");
-    const id = inserted.id;
+      rows: [created],
+    } = await pool.query<Record<string, unknown>>(
+      `SELECT expense.category_create('{"name":"Test","accounting_code":"601"}'::jsonb) as r`,
+    );
+    if (!created) throw new Error("expected created row");
+    const cr = created.r as Record<string, unknown>;
+    expect(cr).toHaveProperty("name", "Test");
+    const id = cr.id;
+    expect(id).toBeTruthy();
 
     // READ
     const {
@@ -103,13 +107,28 @@ describe("PLX entity E2E", () => {
     const { rows: listRows } = await pool.query("SELECT * FROM expense.category_list()");
     expect(listRows.length).toBeGreaterThanOrEqual(1);
 
+    // UPDATE
+    const {
+      rows: [updated],
+    } = await pool.query<Record<string, unknown>>(
+      `SELECT expense.category_update('${id}', '{"name":"Updated"}'::jsonb) as r`,
+    );
+    if (!updated) throw new Error("expected updated row");
+    const ur = updated.r as Record<string, unknown>;
+    expect(ur).toHaveProperty("name", "Updated");
+
+    // VALIDATION
+    await expect(
+      pool.query(`SELECT expense.category_create('{"name":"Blocked","accounting_code":"999"}'::jsonb)`),
+    ).rejects.toMatchObject({ detail: "expense.err_reserved_accounting_code" });
+
     // DELETE
     const {
       rows: [deleted],
     } = await pool.query<Record<string, unknown>>(`SELECT expense.category_delete('${id}') as r`);
     if (!deleted) throw new Error("expected deleted row");
     const dr = deleted.r as Record<string, unknown>;
-    expect(dr).toHaveProperty("name", "Test");
+    expect(dr).toHaveProperty("name", "Updated");
   });
 });
 
