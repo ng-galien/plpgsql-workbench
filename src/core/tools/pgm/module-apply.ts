@@ -10,6 +10,7 @@ import {
   type PreparedModuleWorkflow,
   prepareModuleWorkflow,
   readAppliedArtifacts,
+  sortApplyArtifacts,
 } from "../../pgm/workflow.js";
 import { formatTestReport, type TestReport } from "../plpgsql/test.js";
 
@@ -75,7 +76,15 @@ export function createPgmModuleApplyTool({
         } catch {
           tracking = "error";
         }
-        return text(formatApplyPlan(workflow.manifest.name, tracking, diff));
+        try {
+          const plan = sortApplyArtifacts(diff.changed);
+          return text(formatApplyPlan(workflow.manifest.name, tracking, diff, plan));
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          return text(
+            `problem: ${message}\nwhere: pgm_module_apply.ordering\nfix_hint: break the artifact dependency cycle before applying the module`,
+          );
+        }
       }
 
       return await withClient(async (client) => {
@@ -94,6 +103,7 @@ function formatApplyPlan(
     unchanged: { kind: string; name: string }[];
     obsolete: { kind: string; name: string }[];
   },
+  plan: { kind: string; name: string }[],
 ): string {
   const body: string[] = [];
   body.push(`module: ${moduleName}`);
@@ -104,11 +114,11 @@ function formatApplyPlan(
   body.push(`obsolete: ${diff.obsolete.length}`);
   body.push("");
   body.push("plan:");
-  if (diff.changed.length === 0) {
+  if (plan.length === 0) {
     body.push("  - no changes");
   } else {
-    for (const artifact of diff.changed.slice(0, 20)) body.push(`  - apply ${artifact.kind} ${artifact.name}`);
-    if (diff.changed.length > 20) body.push(`  - ... +${diff.changed.length - 20} more`);
+    for (const artifact of plan.slice(0, 20)) body.push(`  - apply ${artifact.kind} ${artifact.name}`);
+    if (plan.length > 20) body.push(`  - ... +${plan.length - 20} more`);
   }
   if (diff.obsolete.length > 0) {
     body.push("");
@@ -130,6 +140,7 @@ function formatApplyExecution(
   result: {
     ok: boolean;
     diff: { changed: { kind: string; name: string }[]; unchanged: { kind: string; name: string }[] };
+    plan: { kind: string; name: string }[];
     results: { action: "applied" | "unchanged"; kind: string; name: string; warning?: string }[];
     warnings: string[];
     obsolete: { kind: string; name: string }[];
@@ -161,9 +172,13 @@ function formatApplyExecution(
     if (result.failure.fixHint) body.push(`fix_hint: ${result.failure.fixHint}`);
   } else {
     body.push("results:");
-    for (const item of result.results.filter((entry) => entry.action === "applied")) {
+    for (const item of result.plan) {
+      const applied = result.results.find(
+        (entry) => entry.action === "applied" && entry.kind === item.kind && entry.name === item.name,
+      );
+      if (!applied) continue;
       body.push(`  - applied ${item.kind} ${item.name}`);
-      if (item.warning) body.push(`    warning: ${item.warning}`);
+      if (applied.warning) body.push(`    warning: ${applied.warning}`);
     }
     if (result.results.every((entry) => entry.action !== "applied")) {
       body.push("  - no changes");

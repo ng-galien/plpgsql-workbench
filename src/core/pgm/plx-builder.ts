@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { type CompileResult, type CompileWarning, compileModule, compileModuleAndValidate } from "../plx/compiler.js";
+import { collectCalls, resolveCallTarget } from "../plx/composition.js";
 import { loadPlxModule } from "../plx/module-loader.js";
 import type { ModuleManifest } from "./resolver.js";
 
@@ -17,6 +18,7 @@ export interface PlxPreparedArtifact {
   file?: string;
   content: string;
   hash: string;
+  dependsOn: string[];
 }
 
 export interface PreparedPlxModule {
@@ -191,6 +193,7 @@ function collectPreparedArtifacts(
   precomputedDdlHash?: string,
 ): PlxPreparedArtifact[] {
   const artifacts: PlxPreparedArtifact[] = [];
+  const dependencyMap = collectArtifactDependencies(result);
 
   if (ddlContent) {
     artifacts.push({
@@ -200,23 +203,79 @@ function collectPreparedArtifacts(
       file: targets.ddl,
       content: ddlContent,
       hash: precomputedDdlHash ?? hashContent(ddlContent),
+      dependsOn: [],
     });
   }
 
   const testFunctions = new Set(result._artifact?.testFunctions.map((fn) => `${fn.schema}.${fn.name}`) ?? []);
   for (const block of result._blocks ?? []) {
     const kind = testFunctions.has(block.functionName) ? "test" : "function";
+    const key = `${kind}:${block.functionName}`;
     artifacts.push({
-      key: `${kind}:${block.functionName}`,
+      key,
       kind,
       name: block.functionName,
       file: kind === "test" ? targets.test : targets.func,
       content: block.sql,
       hash: hashContent(block.sql),
+      dependsOn: dependencyMap.get(key) ?? [],
     });
   }
 
   return artifacts;
+}
+
+function collectArtifactDependencies(result: CompileResult): Map<string, string[]> {
+  const dependencies = new Map<string, string[]>();
+  const artifact = result._artifact;
+  if (!artifact) return dependencies;
+
+  const aliases = artifact.aliases;
+  const functionKeys = new Map<string, string>();
+  const bareFunctionKeys = new Map<string, string | null>();
+
+  for (const fn of artifact.functions) {
+    const qualifiedName = `${fn.schema}.${fn.name}`;
+    const artifactKey = `function:${qualifiedName}`;
+    functionKeys.set(qualifiedName, artifactKey);
+
+    const existing = bareFunctionKeys.get(fn.name);
+    if (existing === undefined) bareFunctionKeys.set(fn.name, artifactKey);
+    else if (existing !== artifactKey) bareFunctionKeys.set(fn.name, null);
+  }
+
+  const resolveLocalFunctionKey = (targetName: string, currentSchema: string): string | undefined => {
+    const resolved = resolveCallTarget(targetName, aliases);
+    if (resolved.includes(".")) return functionKeys.get(resolved);
+
+    const local = functionKeys.get(`${currentSchema}.${resolved}`);
+    if (local) return local;
+
+    const bare = bareFunctionKeys.get(resolved);
+    return bare && bare !== null ? bare : undefined;
+  };
+
+  for (const fn of artifact.functions) {
+    const artifactKey = `function:${fn.schema}.${fn.name}`;
+    const dependsOn = new Set<string>();
+    for (const call of collectCalls(fn.body)) {
+      const dependencyKey = resolveLocalFunctionKey(call.name, fn.schema);
+      if (dependencyKey && dependencyKey !== artifactKey) dependsOn.add(dependencyKey);
+    }
+    dependencies.set(artifactKey, [...dependsOn].sort());
+  }
+
+  for (const fn of artifact.testFunctions) {
+    const artifactKey = `test:${fn.schema}.${fn.name}`;
+    const dependsOn = new Set<string>();
+    for (const call of collectCalls(fn.body)) {
+      const dependencyKey = resolveLocalFunctionKey(call.name, fn.schema);
+      if (dependencyKey) dependsOn.add(dependencyKey);
+    }
+    dependencies.set(artifactKey, [...dependsOn].sort());
+  }
+
+  return dependencies;
 }
 
 export function hashContent(content: string): string {

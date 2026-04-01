@@ -8,6 +8,7 @@ import {
   type PreparedModuleWorkflow,
   prepareModuleWorkflow,
   readAppliedArtifacts,
+  sortApplyArtifacts,
 } from "../../pgm/workflow.js";
 
 export function createPgmModuleStatusTool({
@@ -40,9 +41,17 @@ export function createPgmModuleStatusTool({
       }
 
       let tracking = "unavailable";
-      let applyStatus = "unknown";
-      let changed: string[] = [];
+      let applyStatus = "untracked";
+      let changed: string[] = workflow.artifacts.map((artifact) => `${artifact.kind} ${artifact.name}`);
       let obsolete: string[] = [];
+      let plan: string[] = [];
+      let planProblem: string | undefined;
+      try {
+        plan = sortApplyArtifacts(workflow.artifacts).map((artifact) => `${artifact.kind} ${artifact.name}`);
+      } catch (error: unknown) {
+        planProblem = error instanceof Error ? error.message : String(error);
+        applyStatus = "blocked";
+      }
       try {
         const dbState = await withClient(async (client) => {
           return await readAppliedArtifacts(client, workflow.manifest.name);
@@ -52,7 +61,18 @@ export function createPgmModuleStatusTool({
           const diff = diffModuleArtifacts(workflow.artifacts, dbState.states);
           changed = diff.changed.map((artifact) => `${artifact.kind} ${artifact.name}`);
           obsolete = diff.obsolete.map((artifact) => `${artifact.kind} ${artifact.name}`);
-          applyStatus = obsolete.length > 0 ? "drift" : changed.length > 0 ? "stale" : "in_sync";
+          try {
+            plan = sortApplyArtifacts(diff.changed).map((artifact) => `${artifact.kind} ${artifact.name}`);
+          } catch (error: unknown) {
+            planProblem = error instanceof Error ? error.message : String(error);
+          }
+          applyStatus = planProblem
+            ? "blocked"
+            : obsolete.length > 0
+              ? "drift"
+              : changed.length > 0
+                ? "stale"
+                : "in_sync";
         }
       } catch {
         tracking = "error";
@@ -102,6 +122,13 @@ export function createPgmModuleStatusTool({
       if (obsolete.length > 0) {
         for (const item of obsolete.slice(0, 10)) body.push(`    - ${item}`);
         if (obsolete.length > 10) body.push(`    - ... +${obsolete.length - 10} more`);
+      }
+      if (planProblem) {
+        body.push(`  plan_error: ${planProblem}`);
+      } else if (plan.length > 0) {
+        body.push("  plan:");
+        for (const item of plan.slice(0, 10)) body.push(`    - ${item}`);
+        if (plan.length > 10) body.push(`    - ... +${plan.length - 10} more`);
       }
 
       if (workflow.prepared.warnings.length > 0) {

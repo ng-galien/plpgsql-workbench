@@ -381,7 +381,7 @@ export async function composeModules(
   return { errors, modules: moduleResults, warnings };
 }
 
-function collectCalls(stmts: Statement[]): Array<{ loc: Loc; name: string }> {
+export function collectCalls(stmts: Statement[]): Array<{ loc: Loc; name: string }> {
   const calls: Array<{ loc: Loc; name: string }> = [];
   for (const stmt of stmts) visitStatement(stmt, calls);
   return calls;
@@ -472,7 +472,7 @@ function visitExpression(expr: Expression, calls: Array<{ loc: Loc; name: string
   }
 }
 
-function resolveCallTarget(name: string, aliases: Map<string, string>): string {
+export function resolveCallTarget(name: string, aliases: Map<string, string>): string {
   const root = name.split(".")[0] ?? name;
   return aliases.get(root) ?? name;
 }

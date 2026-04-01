@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildPlxModule } from "../plx-builder.js";
-import { diffModuleArtifacts, prepareModuleWorkflow, syncModuleBuildFiles } from "../workflow.js";
+import { diffModuleArtifacts, prepareModuleWorkflow, sortApplyArtifacts, syncModuleBuildFiles } from "../workflow.js";
 
 const tmpRoots: string[] = [];
 
@@ -59,6 +59,32 @@ test "brand":
 `,
     "utf-8",
   );
+}
+
+async function writeDependencyModule(root: string, name: string, source: string): Promise<void> {
+  const moduleDir = path.join(root, "modules", name);
+  await fs.mkdir(path.join(moduleDir, "src"), { recursive: true });
+  await fs.writeFile(
+    path.join(moduleDir, "module.json"),
+    `${JSON.stringify(
+      {
+        name,
+        version: "0.1.0",
+        description: "Dependency demo",
+        schemas: { public: name, private: null },
+        dependencies: [],
+        extensions: ["pgcrypto"],
+        sql: [`build/${name}.ddl.sql`, `build/${name}.func.sql`, `build/${name}_ut.func.sql`],
+        assets: {},
+        grants: { anon: [name] },
+        plx: { entry: `src/${name}.plx` },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf-8",
+  );
+  await fs.writeFile(path.join(moduleDir, "src", `${name}.plx`), `${source.trim()}\n`, "utf-8");
 }
 
 afterEach(async () => {
@@ -175,5 +201,59 @@ describe("pgm module workflow", () => {
     await expect(
       fs.readFile(path.join(root, "modules", "quote", "build", "quote_ut.func.sql"), "utf-8"),
     ).resolves.toContain("quote_ut.test_brand");
+  });
+
+  it("orders apply artifacts by dependency graph instead of plain kind rank", async () => {
+    const root = await createWorkspace();
+    await writeDependencyModule(
+      root,
+      "quote",
+      `
+module quote
+
+fn quote.lines() -> int [stable]:
+  return 1
+
+fn quote.total() -> int [stable]:
+  return quote.lines()
+
+test "total":
+  assert quote.total() = 1
+`,
+    );
+
+    const workflow = await prepareModuleWorkflow(root, "quote");
+    const ordered = sortApplyArtifacts(workflow.artifacts);
+
+    expect(ordered.map((artifact) => artifact.key)).toEqual([
+      "extensions",
+      "ddl",
+      "function:quote.lines",
+      "function:quote.total",
+      "test:quote_ut.test_total",
+      "grants",
+    ]);
+  });
+
+  it("fails with an explicit cycle on mutually dependent functions", async () => {
+    const root = await createWorkspace();
+    await writeDependencyModule(
+      root,
+      "quote",
+      `
+module quote
+
+fn quote.alpha() -> int [stable]:
+  return quote.beta()
+
+fn quote.beta() -> int [stable]:
+  return quote.alpha()
+`,
+    );
+
+    const workflow = await prepareModuleWorkflow(root, "quote");
+    expect(() => sortApplyArtifacts(workflow.artifacts)).toThrow(
+      "artifact dependency cycle detected: function quote.alpha -> function quote.beta -> function quote.alpha",
+    );
   });
 });

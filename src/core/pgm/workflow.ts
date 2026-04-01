@@ -14,6 +14,7 @@ export interface ModuleWorkflowArtifact {
   file?: string;
   content: string;
   hash: string;
+  dependsOn: string[];
 }
 
 export interface ModuleBuildFileStatus {
@@ -66,6 +67,7 @@ export interface ModuleApplyArtifactResult {
 export interface ModuleApplyExecutionResult {
   ok: boolean;
   diff: ModuleArtifactDiff;
+  plan: ModuleWorkflowArtifact[];
   results: ModuleApplyArtifactResult[];
   warnings: string[];
   obsolete: AppliedArtifactState[];
@@ -176,6 +178,7 @@ export async function applyModuleIncremental(
     return {
       ok: true,
       diff,
+      plan: [],
       obsolete: diff.obsolete,
       buildFiles,
       results: diff.unchanged.map((artifact) => ({
@@ -188,7 +191,21 @@ export async function applyModuleIncremental(
     };
   }
 
-  const ordered = sortApplyArtifacts(diff.changed);
+  let ordered: ModuleWorkflowArtifact[];
+  try {
+    ordered = sortApplyArtifacts(diff.changed);
+  } catch (error: unknown) {
+    return {
+      ok: false,
+      diff,
+      plan: [],
+      obsolete: diff.obsolete,
+      buildFiles,
+      results: [],
+      warnings: diff.obsolete.map((state) => `obsolete tracked artifact: ${state.kind} ${state.name}`),
+      failure: toApplyFailure(error, "pgm_module_apply.ordering"),
+    };
+  }
   const results: ModuleApplyArtifactResult[] = [];
   const warnings: string[] = [];
 
@@ -237,6 +254,7 @@ export async function applyModuleIncremental(
       return {
         ok: false,
         diff,
+        plan: ordered,
         obsolete: diff.obsolete,
         buildFiles,
         results,
@@ -257,6 +275,7 @@ export async function applyModuleIncremental(
     return {
       ok: true,
       diff,
+      plan: ordered,
       obsolete: diff.obsolete,
       buildFiles,
       results: [
@@ -280,6 +299,7 @@ export async function applyModuleIncremental(
     return {
       ok: false,
       diff,
+      plan: ordered,
       obsolete: diff.obsolete,
       buildFiles,
       results,
@@ -359,6 +379,7 @@ function buildManifestArtifacts(manifest: ModuleManifest): ModuleWorkflowArtifac
       name: `${manifest.name}.extensions`,
       content,
       hash: hashContent(content),
+      dependsOn: [],
     });
   }
 
@@ -378,6 +399,7 @@ function buildManifestArtifacts(manifest: ModuleManifest): ModuleWorkflowArtifac
       name: `${manifest.name}.grants`,
       content,
       hash: hashContent(content),
+      dependsOn: [],
     });
   }
 
@@ -493,7 +515,141 @@ async function dropFunctionByIdentityArgs(
   await client.query(dropSql);
 }
 
-function sortApplyArtifacts(artifacts: ModuleWorkflowArtifact[]): ModuleWorkflowArtifact[] {
+export function sortApplyArtifacts(artifacts: ModuleWorkflowArtifact[]): ModuleWorkflowArtifact[] {
+  if (artifacts.length <= 1) return [...artifacts];
+
+  const byKey = new Map(artifacts.map((artifact) => [artifact.key, artifact]));
+  const outgoing = new Map<string, Set<string>>();
+  const indegree = new Map<string, number>();
+
+  for (const artifact of artifacts) {
+    outgoing.set(artifact.key, new Set());
+    indegree.set(artifact.key, 0);
+  }
+
+  for (const artifact of artifacts) {
+    for (const dependencyKey of resolveArtifactDependencies(artifact, byKey)) {
+      const targets = outgoing.get(dependencyKey);
+      if (!targets || targets.has(artifact.key)) continue;
+      targets.add(artifact.key);
+      indegree.set(artifact.key, (indegree.get(artifact.key) ?? 0) + 1);
+    }
+  }
+
+  const ready = artifacts.filter((artifact) => (indegree.get(artifact.key) ?? 0) === 0).sort(compareArtifacts);
+  const ordered: ModuleWorkflowArtifact[] = [];
+
+  while (ready.length > 0) {
+    const next = ready.shift();
+    if (!next) break;
+    ordered.push(next);
+
+    for (const dependentKey of outgoing.get(next.key) ?? []) {
+      const remaining = (indegree.get(dependentKey) ?? 0) - 1;
+      indegree.set(dependentKey, remaining);
+      if (remaining === 0) {
+        const dependent = byKey.get(dependentKey);
+        if (dependent) {
+          ready.push(dependent);
+          ready.sort(compareArtifacts);
+        }
+      }
+    }
+  }
+
+  if (ordered.length === artifacts.length) return ordered;
+
+  const cycle = findArtifactCycle(artifacts, byKey);
+  const rendered = cycle.map((artifact) => `${artifact.kind} ${artifact.name}`).join(" -> ");
+  throw new Error(
+    `artifact dependency cycle detected: ${rendered}. Break the cycle or split the module so artifacts can be applied deterministically.`,
+  );
+}
+
+function resolveArtifactDependencies(
+  artifact: ModuleWorkflowArtifact,
+  artifactsByKey: Map<string, ModuleWorkflowArtifact>,
+): string[] {
+  const dependencies = new Set(artifact.dependsOn.filter((key) => artifactsByKey.has(key)));
+  const extensions = [...artifactsByKey.values()].filter((candidate) => candidate.kind === "extension");
+  const ddl = [...artifactsByKey.values()].filter((candidate) => candidate.kind === "ddl");
+  const functions = [...artifactsByKey.values()].filter((candidate) => candidate.kind === "function");
+
+  switch (artifact.kind) {
+    case "extension":
+      break;
+    case "ddl":
+      for (const candidate of extensions) dependencies.add(candidate.key);
+      break;
+    case "function":
+      for (const candidate of extensions) dependencies.add(candidate.key);
+      for (const candidate of ddl) dependencies.add(candidate.key);
+      break;
+    case "test":
+      for (const candidate of extensions) dependencies.add(candidate.key);
+      for (const candidate of ddl) dependencies.add(candidate.key);
+      for (const candidate of functions) dependencies.add(candidate.key);
+      break;
+    case "grant":
+      for (const candidate of artifactsByKey.values()) {
+        if (candidate.key !== artifact.key) dependencies.add(candidate.key);
+      }
+      break;
+  }
+
+  dependencies.delete(artifact.key);
+  return [...dependencies];
+}
+
+function findArtifactCycle(
+  artifacts: ModuleWorkflowArtifact[],
+  artifactsByKey: Map<string, ModuleWorkflowArtifact>,
+): ModuleWorkflowArtifact[] {
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const stack: string[] = [];
+
+  const visit = (key: string): ModuleWorkflowArtifact[] | null => {
+    if (visiting.has(key)) {
+      const start = stack.indexOf(key);
+      const cycleKeys = start >= 0 ? [...stack.slice(start), key] : [key, key];
+      return cycleKeys
+        .map((cycleKey) => artifactsByKey.get(cycleKey))
+        .filter((artifact): artifact is ModuleWorkflowArtifact => Boolean(artifact));
+    }
+    if (visited.has(key)) return null;
+
+    visiting.add(key);
+    stack.push(key);
+
+    const artifact = artifactsByKey.get(key);
+    if (artifact) {
+      for (const dependencyKey of resolveArtifactDependencies(artifact, artifactsByKey)) {
+        const cycle = visit(dependencyKey);
+        if (cycle) return cycle;
+      }
+    }
+
+    stack.pop();
+    visiting.delete(key);
+    visited.add(key);
+    return null;
+  };
+
+  for (const artifact of artifacts.sort(compareArtifacts)) {
+    const cycle = visit(artifact.key);
+    if (cycle) return cycle;
+  }
+
+  return artifacts.sort(compareArtifacts);
+}
+
+function compareArtifacts(left: ModuleWorkflowArtifact, right: ModuleWorkflowArtifact): number {
+  const delta = rankArtifactKind(left.kind) - rankArtifactKind(right.kind);
+  return delta !== 0 ? delta : left.name.localeCompare(right.name);
+}
+
+function rankArtifactKind(kind: ModuleWorkflowArtifactKind): number {
   const rank: Record<ModuleWorkflowArtifactKind, number> = {
     extension: 0,
     ddl: 1,
@@ -501,17 +657,18 @@ function sortApplyArtifacts(artifacts: ModuleWorkflowArtifact[]): ModuleWorkflow
     test: 3,
     grant: 4,
   };
-  return [...artifacts].sort((left, right) => {
-    const delta = rank[left.kind] - rank[right.kind];
-    return delta !== 0 ? delta : left.name.localeCompare(right.name);
-  });
+  return rank[kind];
 }
 
-function toApplyFailure(error: unknown): ModuleApplyFailure {
+function toApplyFailure(error: unknown, where = "pgm_module_apply"): ModuleApplyFailure {
   const message = error instanceof Error ? error.message : String(error);
   return {
     problem: message,
-    where: "pgm_module_apply",
+    where,
+    fixHint:
+      where === "pgm_module_apply.ordering"
+        ? "Break the artifact dependency cycle or split the module so artifacts can be applied in a deterministic order."
+        : undefined,
   };
 }
 
