@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { compose } from "../composition.js";
+import { compose, composeModules } from "../composition.js";
+import { tokenize } from "../lexer.js";
+import { parse } from "../parser.js";
 
 describe("PLX composition", () => {
   it("accepts exported cross-module calls with declared dependencies", async () => {
@@ -204,5 +206,77 @@ export fn quote.estimate_read(id int) -> jsonb:
     );
 
     expect(result.errors).toEqual([]);
+  });
+
+  it("returns parse diagnostics instead of throwing on invalid input", async () => {
+    await expect(
+      compose(
+        [
+          {
+            file: "bad.plx",
+            source: `fn demo.bad( -> int:`,
+          },
+        ],
+        { validate: false },
+      ),
+    ).resolves.toMatchObject({
+      errors: [expect.objectContaining({ code: "parse.unexpected-token", file: "bad.plx" })],
+      modules: [
+        expect.objectContaining({
+          file: "bad.plx",
+          moduleName: null,
+          functionCount: 0,
+          errors: [expect.objectContaining({ code: "parse.unexpected-token" })],
+        }),
+      ],
+    });
+  });
+
+  it("returns lex diagnostics instead of throwing on invalid input", async () => {
+    await expect(
+      compose(
+        [
+          {
+            file: "bad-lex.plx",
+            source: `fn demo.bad() -> int:
+  return $`,
+          },
+        ],
+        { validate: false },
+      ),
+    ).resolves.toMatchObject({
+      errors: [expect.objectContaining({ code: "lex.unexpected-character", file: "bad-lex.plx" })],
+      modules: [
+        expect.objectContaining({
+          file: "bad-lex.plx",
+          moduleName: null,
+          functionCount: 0,
+          errors: [expect.objectContaining({ code: "lex.unexpected-character" })],
+        }),
+      ],
+    });
+  });
+
+  it("reports missing module declarations in composeModules", async () => {
+    const result = await composeModules(
+      [
+        {
+          file: "quote.plx",
+          module: parse(
+            tokenize(
+              `
+export fn quote.estimate_read(id int) -> jsonb:
+  return {id}
+`,
+            ),
+          ),
+        },
+      ],
+      { validate: false },
+    );
+
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "module.missing-declaration" })]),
+    );
   });
 });

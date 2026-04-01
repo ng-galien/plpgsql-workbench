@@ -76,6 +76,35 @@ test "no schema":
     expect(result.errors[0]?.message).toContain("cannot infer schema");
   });
 
+  it("returns lex diagnostics on invalid characters", () => {
+    const result = compile(`
+fn demo.bad() -> int:
+  return $
+`);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          phase: "lex",
+          code: "lex.unexpected-character",
+        }),
+      ]),
+    );
+  });
+
+  it("returns parse diagnostics on invalid syntax", () => {
+    const result = compile(`
+fn demo.bad( -> int:
+`);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          phase: "parse",
+          code: "parse.unexpected-token",
+        }),
+      ]),
+    );
+  });
+
   it("does not break existing function compilation", () => {
     const source = `
 fn expense.get_total(p_id int) -> numeric:
@@ -165,6 +194,22 @@ entity demo.task:
     expect(result.sql).toContain("SET phase = 'active'");
   });
 
+  it("emits unary NOT for transition guards", () => {
+    const source = `
+entity demo.task:
+  fields:
+    title text required
+
+  states draft -> active:
+    activate(draft -> active):
+      guard: title = 'x'
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("IF NOT title = 'x' THEN");
+    expect(result.sql).not.toContain("IF true NOT");
+  });
+
   it("compiles mixed functions and tests", () => {
     const source = `
 fn expense.helper() -> int:
@@ -236,6 +281,35 @@ fn demo.bad() -> void:
           functionName: "demo.bad",
           line: 3,
           col: 2,
+        }),
+      ]),
+    );
+  });
+
+  it("returns lex diagnostics before validation", async () => {
+    const result = await compileAndValidate(`
+fn demo.bad() -> int:
+  return $
+`);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          phase: "lex",
+          code: "lex.unexpected-character",
+        }),
+      ]),
+    );
+  });
+
+  it("returns parse diagnostics before validation", async () => {
+    const result = await compileAndValidate(`
+fn demo.bad( -> int:
+`);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          phase: "parse",
+          code: "parse.unexpected-token",
         }),
       ]),
     );
