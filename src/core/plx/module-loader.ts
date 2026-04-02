@@ -121,6 +121,7 @@ function mergeModule(root: PlxModule, fragments: PlxModule[]): PlxModule {
     traits: [...root.traits, ...fragments.flatMap((fragment) => fragment.traits)],
     entities: [...root.entities, ...fragments.flatMap((fragment) => fragment.entities)],
     functions: [...root.functions, ...fragments.flatMap((fragment) => fragment.functions)],
+    subscriptions: [...root.subscriptions, ...fragments.flatMap((fragment) => fragment.subscriptions)],
     tests: [...root.tests, ...fragments.flatMap((fragment) => fragment.tests)],
   };
 }
@@ -129,7 +130,10 @@ function applyDeclaredExports(module: PlxModule): CompileError[] {
   if (module.exports.length === 0) return [];
 
   for (const fn of module.functions) fn.visibility = "internal";
-  for (const entity of module.entities) entity.visibility = "internal";
+  for (const entity of module.entities) {
+    entity.visibility = "internal";
+    for (const event of entity.events) event.visibility = "internal";
+  }
 
   const functions = new Map<string, PlxFunction>();
   const entities = new Map<string, PlxEntity>();
@@ -170,7 +174,10 @@ function applyDeclaredExports(module: PlxModule): CompileError[] {
     }
 
     if (fn) fn.visibility = "export";
-    if (entity) entity.visibility = "export";
+    if (entity) {
+      entity.visibility = "export";
+      for (const event of entity.events) event.visibility = "export";
+    }
   }
 
   return errors;

@@ -1,6 +1,22 @@
-import type { Expression, Loc, PlxEntity, PlxFunction, PlxModule, PlxTest, PlxTrait, Statement } from "./ast.js";
-import { pointLoc } from "./ast.js";
+import type {
+  Expression,
+  Loc,
+  PlxEntity,
+  PlxFunction,
+  PlxModule,
+  PlxSubscription,
+  PlxTest,
+  PlxTrait,
+  Statement,
+} from "./ast.js";
+import { CHANGE_HANDLER_PARAMS, pointLoc } from "./ast.js";
 import { walkStatements } from "./walker.js";
+
+interface EventAnalysisOptions {
+  allowedEvents?: Map<string, PlxEntity["events"][number]>;
+}
+
+const NO_EVENT_OPTIONS: EventAnalysisOptions = {};
 
 export interface SemanticIssue {
   code: string;
@@ -116,6 +132,10 @@ export function analyzeModule(mod: PlxModule): SemanticResult {
 
   for (const entity of mod.entities) {
     analyzeEntity(entity, importAliases, importTargets, usedImports, errors, warnings);
+  }
+
+  for (const subscription of mod.subscriptions) {
+    analyzeSubscription(subscription, importAliases, importTargets, usedImports, errors, warnings);
   }
 
   for (const imp of mod.imports) {
@@ -294,6 +314,22 @@ function analyzeEntity(
     "Keep only one strategy implementation per slot.",
     errors,
   );
+  checkDuplicates(
+    entity.events.map((event) => ({ loc: event.loc, name: event.name })),
+    `entity ${entityName}`,
+    "event",
+    "semantic.duplicate-entity-event",
+    "Keep only one event declaration per entity event name.",
+    errors,
+  );
+  checkDuplicates(
+    entity.changeHandlers.map((handler) => ({ loc: handler.loc, name: handler.operation })),
+    `entity ${entityName}`,
+    "change hook",
+    "semantic.duplicate-entity-change-hook",
+    "Keep only one handler per entity lifecycle operation.",
+    errors,
+  );
 
   if (entity.states) {
     const stateSet = new Set(entity.states.values);
@@ -380,15 +416,100 @@ function analyzeEntity(
     };
     analyzeStatements(hook.body, ctx);
   }
-}
 
-function analyzeStatements(stmts: Statement[], ctx: AnalysisContext): void {
-  for (const stmt of stmts) {
-    analyzeStatement(stmt, ctx);
+  const eventIndex = new Map(entity.events.map((event) => [event.name, event]));
+  for (const handler of entity.changeHandlers) {
+    const bindings = new Map<string, TypeInfo>();
+    const expectedParams = CHANGE_HANDLER_PARAMS.get(handler.operation) ?? [];
+    if (handler.params.length !== expectedParams.length) {
+      errors.push({
+        code: "semantic.invalid-entity-change-hook-params",
+        hint: `Use ${handler.operation}(${expectedParams.join(", ")}) for this hook.`,
+        loc: handler.loc,
+        owner: `entity ${entityName}`,
+        message: `${handler.operation} hook expects ${expectedParams.length} parameter(s)`,
+      });
+      continue;
+    }
+    for (let i = 0; i < expectedParams.length; i++) {
+      const expected = expectedParams[i] ?? "";
+      if (handler.params[i] !== expected) {
+        errors.push({
+          code: "semantic.invalid-entity-change-hook-params",
+          hint: `Use ${handler.operation}(${expectedParams.join(", ")}) for this hook.`,
+          loc: handler.loc,
+          owner: `entity ${entityName}`,
+          message: `${handler.operation} hook parameter ${i + 1} must be '${expected}'`,
+        });
+      }
+      bindings.set(expected, declaredType(entity.table));
+    }
+
+    const ctx: AnalysisContext = {
+      bindings,
+      errors,
+      importAliases,
+      importTargets,
+      knownNames: new Set<string>([...bindings.keys(), ...collectLocals(handler.body)]),
+      owner: `entity ${entityName} ${handler.operation}`,
+      paramNames: new Set(expectedParams),
+      returnType: { kind: "unknown", raw: "unknown" },
+      usedImports,
+      warnings,
+    };
+    analyzeStatements(handler.body, ctx, { allowedEvents: eventIndex });
   }
 }
 
-function analyzeStatement(stmt: Statement, ctx: AnalysisContext): void {
+function analyzeSubscription(
+  subscription: PlxSubscription,
+  importAliases: Map<string, Loc>,
+  importTargets: Map<string, string>,
+  usedImports: Set<string>,
+  errors: SemanticIssue[],
+  warnings: SemanticWarning[],
+): void {
+  checkDuplicates(
+    subscription.params.map((param) => ({ loc: subscription.loc, name: param })),
+    `subscription ${subscription.sourceSchema}.${subscription.sourceEntity}.${subscription.event}`,
+    "parameter",
+    "semantic.duplicate-subscription-parameter",
+    "Each subscription parameter name must be unique.",
+    errors,
+  );
+
+  const bindings = new Map<string, TypeInfo>();
+  for (const param of subscription.params) bindings.set(param, { kind: "unknown", raw: "unknown" });
+  const ctx: AnalysisContext = {
+    bindings,
+    errors,
+    importAliases,
+    importTargets,
+    knownNames: new Set<string>([...bindings.keys(), ...collectLocals(subscription.body)]),
+    owner: `subscription ${subscription.sourceSchema}.${subscription.sourceEntity}.${subscription.event}`,
+    paramNames: new Set(subscription.params),
+    returnType: { kind: "unknown", raw: "unknown" },
+    usedImports,
+    warnings,
+  };
+  analyzeStatements(subscription.body, ctx);
+}
+
+function analyzeStatements(
+  stmts: Statement[],
+  ctx: AnalysisContext,
+  options: EventAnalysisOptions = NO_EVENT_OPTIONS,
+): void {
+  for (const stmt of stmts) {
+    analyzeStatement(stmt, ctx, options);
+  }
+}
+
+function analyzeStatement(
+  stmt: Statement,
+  ctx: AnalysisContext,
+  options: EventAnalysisOptions = NO_EVENT_OPTIONS,
+): void {
   switch (stmt.kind) {
     case "assign": {
       if (stmt.target !== "_") {
@@ -447,7 +568,7 @@ function analyzeStatement(stmt: Statement, ctx: AnalysisContext): void {
         "Use a boolean expression in the if condition.",
         ctx,
       );
-      analyzeStatements(stmt.body, nestedContext(stmt.body, ctx));
+      analyzeStatements(stmt.body, nestedContext(stmt.body, ctx), options);
       for (const elsif of stmt.elsifs) {
         expectBooleanLike(
           elsif.condition,
@@ -456,16 +577,16 @@ function analyzeStatement(stmt: Statement, ctx: AnalysisContext): void {
           "Use a boolean expression in the elsif condition.",
           ctx,
         );
-        analyzeStatements(elsif.body, nestedContext(elsif.body, ctx));
+        analyzeStatements(elsif.body, nestedContext(elsif.body, ctx), options);
       }
-      if (stmt.elseBody) analyzeStatements(stmt.elseBody, nestedContext(stmt.elseBody, ctx));
+      if (stmt.elseBody) analyzeStatements(stmt.elseBody, nestedContext(stmt.elseBody, ctx), options);
       return;
     }
     case "for_in": {
       const nested = nestedContext(stmt.body, ctx);
       nested.bindings.set(stmt.variable, declaredType("record"));
       nested.knownNames.add(stmt.variable);
-      analyzeStatements(stmt.body, nested);
+      analyzeStatements(stmt.body, nested, options);
       return;
     }
     case "return": {
@@ -512,9 +633,9 @@ function analyzeStatement(stmt: Statement, ctx: AnalysisContext): void {
             message: `match pattern '${patternType.raw}' may not be compatible with subject type '${subjectType.raw}'`,
           });
         }
-        analyzeStatements(arm.body, nestedContext(arm.body, ctx));
+        analyzeStatements(arm.body, nestedContext(arm.body, ctx), options);
       }
-      if (stmt.elseBody) analyzeStatements(stmt.elseBody, nestedContext(stmt.elseBody, ctx));
+      if (stmt.elseBody) analyzeStatements(stmt.elseBody, nestedContext(stmt.elseBody, ctx), options);
       return;
     }
     case "sql_statement":
@@ -529,6 +650,40 @@ function analyzeStatement(stmt: Statement, ctx: AnalysisContext): void {
         ctx,
       );
       return;
+    case "emit": {
+      if (!options.allowedEvents) {
+        ctx.errors.push({
+          code: "semantic.emit-outside-entity-change-hook",
+          hint: "Use emit only inside entity on insert/update/delete hooks.",
+          loc: stmt.loc,
+          owner: ctx.owner,
+          message: "emit is only allowed inside entity change hooks",
+        });
+        return;
+      }
+      const event = options.allowedEvents.get(stmt.eventName);
+      if (!event) {
+        ctx.errors.push({
+          code: "semantic.unknown-entity-event",
+          hint: "Declare the event on the entity before emitting it.",
+          loc: stmt.loc,
+          owner: ctx.owner,
+          message: `unknown entity event '${stmt.eventName}'`,
+        });
+        return;
+      }
+      if (stmt.args.length !== event.params.length) {
+        ctx.errors.push({
+          code: "semantic.emit-argument-count",
+          hint: `Emit ${event.name} with ${event.params.length} argument(s).`,
+          loc: stmt.loc,
+          owner: ctx.owner,
+          message: `event '${event.name}' expects ${event.params.length} argument(s)`,
+        });
+      }
+      for (const arg of stmt.args) inferExpressionType(arg, ctx);
+      return;
+    }
   }
 }
 

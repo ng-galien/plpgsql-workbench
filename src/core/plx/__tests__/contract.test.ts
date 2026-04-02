@@ -33,6 +33,8 @@ internal fn quote.helper() -> text:
 entity quote.task:
   fields:
     title text required
+
+  event accepted(task_id int, status text)
 `);
     if (!loaded.module) throw new Error("expected module");
 
@@ -40,12 +42,35 @@ entity quote.task:
     expect(contract.moduleName).toBe("quote");
     expect(contract.depends).toEqual(["crm", "pgv"]);
     expect(contract.exports).toEqual([
-      expect.objectContaining({ kind: "function", schema: "quote", name: "read", visibility: "export" }),
+      expect.objectContaining({
+        kind: "function",
+        schema: "quote",
+        name: "read",
+        visibility: "export",
+        params: [],
+        returnType: "jsonb",
+        setof: false,
+      }),
     ]);
     expect(contract.internals).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "function", schema: "quote", name: "helper", visibility: "internal" }),
+        expect.objectContaining({
+          kind: "function",
+          schema: "quote",
+          name: "helper",
+          visibility: "internal",
+          params: [],
+          returnType: "text",
+          setof: false,
+        }),
         expect.objectContaining({ kind: "entity", schema: "quote", name: "task", visibility: "internal" }),
+        expect.objectContaining({
+          kind: "event",
+          schema: "quote",
+          name: "task.accepted",
+          visibility: "internal",
+          params: expect.arrayContaining([expect.objectContaining({ name: "task_id", type: "int" })]),
+        }),
       ]),
     );
     expect(contract.spans.module).toBeDefined();

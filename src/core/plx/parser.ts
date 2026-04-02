@@ -10,6 +10,7 @@ import type {
   PlxEntity,
   PlxFunction,
   PlxModule,
+  PlxSubscription,
   PlxTest,
   PlxTrait,
   Visibility,
@@ -18,6 +19,7 @@ import { mergeLoc, pointLoc } from "./ast.js";
 import { parseEntity } from "./entity-parser.js";
 import type { Token } from "./lexer.js";
 import { ParseContext, ParseError } from "./parse-context.js";
+import { parseCommaSeparated } from "./parser-helpers.js";
 import { sqlEscape } from "./util.js";
 
 const VALID_FUNC_ATTRS = new Set(["stable", "immutable", "volatile", "definer", "strict"]);
@@ -62,6 +64,7 @@ function parseProgram(ctx: ParseContext, options: ParseOptions): PlxModule {
 
   const traits: PlxTrait[] = [];
   const entities: PlxEntity[] = [];
+  const subscriptions: PlxSubscription[] = [];
   const tests: PlxTest[] = [];
 
   while (!ctx.isAt("EOF")) {
@@ -99,6 +102,18 @@ function parseProgram(ctx: ParseContext, options: ParseOptions): PlxModule {
       throw fragmentDirectiveError(ctx);
     }
 
+    if (isSubscriptionDecl(ctx)) {
+      if (!moduleName) {
+        throw new ParseError("event subscriptions require a preceding module declaration", ctx.loc(), {
+          code: "parse.subscription-without-module",
+          hint: "Declare `module <name>` before subscribing to cross-module events.",
+        });
+      }
+      subscriptions.push(parseSubscription(ctx));
+      ctx.skipNewlines();
+      continue;
+    }
+
     const visibility = parseTopLevelVisibility(ctx, kind === "fragment" || moduleName ? "internal" : "export", kind);
 
     if (ctx.isAt("TRAIT")) {
@@ -124,7 +139,19 @@ function parseProgram(ctx: ParseContext, options: ParseOptions): PlxModule {
     }
     ctx.skipNewlines();
   }
-  return { name: moduleName, moduleLoc, depends, exports, includes, imports, traits, entities, functions, tests };
+  return {
+    name: moduleName,
+    moduleLoc,
+    depends,
+    exports,
+    includes,
+    imports,
+    traits,
+    entities,
+    functions,
+    subscriptions,
+    tests,
+  };
 }
 
 /** import original as alias */
@@ -186,6 +213,10 @@ function isExportDeclaration(ctx: ParseContext): boolean {
 
 function isFragmentForbiddenDirective(ctx: ParseContext): boolean {
   return ctx.isAt("MODULE") || ctx.isAt("DEPENDS") || ctx.isAt("INCLUDE") || isExportDeclaration(ctx);
+}
+
+function isSubscriptionDecl(ctx: ParseContext): boolean {
+  return ctx.isAt("IDENT") && ctx.peek().value === "on" && ctx.peekAt(1)?.type === "IDENT";
 }
 
 function fragmentDirectiveError(ctx: ParseContext): ParseError {
@@ -368,16 +399,39 @@ function parseFunction(ctx: ParseContext, visibility: Visibility): PlxFunction {
   };
 }
 
-function parseParams(ctx: ParseContext): Param[] {
-  const params: Param[] = [];
-  if (ctx.isAt("RPAREN")) return params;
+function parseSubscription(ctx: ParseContext): PlxSubscription {
+  const start = ctx.loc();
+  ctx.expect("IDENT"); // on
+  const sourceSchema = ctx.expect("IDENT").value;
+  ctx.expect("DOT");
+  const sourceEntity = ctx.expect("IDENT").value;
+  ctx.expect("DOT");
+  const event = ctx.expect("IDENT").value;
+  ctx.expect("LPAREN");
+  const params = parseNameList(ctx);
+  ctx.expect("RPAREN");
+  ctx.expect("COLON");
+  ctx.skipNewlines();
+  ctx.expect("INDENT");
+  const body = ctx.parseBlock();
+  const end = ctx.expect("DEDENT");
+  return {
+    kind: "subscription",
+    sourceSchema,
+    sourceEntity,
+    event,
+    params,
+    body,
+    loc: mergeLoc(start, end),
+  };
+}
 
-  params.push(parseParam(ctx));
-  while (ctx.isAt("COMMA")) {
-    ctx.advance();
-    params.push(parseParam(ctx));
-  }
-  return params;
+function parseNameList(ctx: ParseContext): string[] {
+  return parseCommaSeparated(ctx, "RPAREN", () => ctx.expect("IDENT").value);
+}
+
+function parseParams(ctx: ParseContext): Param[] {
+  return parseCommaSeparated(ctx, "RPAREN", () => parseParam(ctx));
 }
 
 function parseParam(ctx: ParseContext): Param {

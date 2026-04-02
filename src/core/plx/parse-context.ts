@@ -6,6 +6,7 @@ import type {
   AssertStatement,
   AssignStatement,
   CaseExpr,
+  EmitStatement,
   Expression,
   ForInStatement,
   GroupExpr,
@@ -184,6 +185,7 @@ export class ParseContext {
     if (tok.type === "SQL_BLOCK") return this.parseSqlStatement();
 
     if (tok.type === "IDENT") {
+      if (tok.value === "emit") return this.parseEmit();
       const next = this.peekAt(1);
       if (next?.type === "ASSIGN") return this.parseAssign();
       if (next?.type === "APPEND") return this.parseAppend();
@@ -192,6 +194,27 @@ export class ParseContext {
     const expr = this.parseExpression();
     this.skipNewlines();
     return { kind: "assign", target: "_", value: expr, loc: expr.loc } as AssignStatement;
+  }
+
+  private parseEmit(): EmitStatement {
+    const start = tokenLoc(this.expect("IDENT"));
+    let eventName = this.expect("IDENT").value;
+    while (this.isAt("DOT")) {
+      this.advance();
+      eventName += `.${this.expect("IDENT").value}`;
+    }
+    this.expect("LPAREN");
+    const args: Expression[] = [];
+    if (!this.isAt("RPAREN")) {
+      args.push(this.parseExpression());
+      while (this.isAt("COMMA")) {
+        this.advance();
+        args.push(this.parseExpression());
+      }
+    }
+    const end = tokenLoc(this.expect("RPAREN"));
+    this.skipNewlines();
+    return { kind: "emit", eventName, args, loc: mergeLoc(start, end) };
   }
 
   private parseAssign(): AssignStatement {

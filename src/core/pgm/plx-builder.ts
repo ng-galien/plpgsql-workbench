@@ -3,8 +3,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { type CompileWarning, compileModuleAndValidate, compileModuleBundle } from "../plx/compiler.js";
 import { collectCalls, resolveCallTarget } from "../plx/composition.js";
+import type { ModuleContract } from "../plx/contract.js";
 import { loadPlxModule } from "../plx/module-loader.js";
-import type { ModuleManifest } from "./resolver.js";
+import { loadManifest, type ModuleManifest } from "./resolver.js";
 
 export interface PlxBuildResult {
   files: string[];
@@ -76,7 +77,8 @@ export async function preparePlxModule(
     throw new Error(`PLX build failed for module '${manifest.name}': ${formatted}`);
   }
 
-  const bundle = compileModuleBundle(loaded.module);
+  const dependencyContracts = await loadDependencyContracts(modulesDir, manifest);
+  const bundle = compileModuleBundle(loaded.module, { dependencyContracts });
   let { result } = bundle;
 
   if (result.errors.length > 0) {
@@ -94,7 +96,7 @@ export async function preparePlxModule(
 
   // Validate if requested — validation only adds warnings
   if (options.validate !== false) {
-    result = await compileModuleAndValidate(loaded.module);
+    result = await compileModuleAndValidate(loaded.module, { dependencyContracts });
   }
 
   return {
@@ -110,6 +112,18 @@ export async function preparePlxModule(
     },
     artifacts,
   };
+}
+
+async function loadDependencyContracts(
+  modulesDir: string,
+  manifest: ModuleManifest,
+): Promise<Map<string, ModuleContract>> {
+  const contracts = new Map<string, ModuleContract>();
+  for (const dep of manifest.dependencies) {
+    const dependency = await loadManifest(modulesDir, dep);
+    if (dependency.plxContract) contracts.set(dep, dependency.plxContract);
+  }
+  return contracts;
 }
 
 export async function writePreparedBuildFiles(

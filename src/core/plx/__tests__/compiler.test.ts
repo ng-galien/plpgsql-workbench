@@ -250,6 +250,44 @@ entity demo.task:
     expect(result.sql).toContain("v_p_data := p_patch;");
   });
 
+  it("generates transactional outbox SQL for entity events and subscriptions", () => {
+    const source = `
+module purchase
+
+entity purchase.receipt:
+  fields:
+    supplier_id int
+    status text
+
+  event received(receipt_id int, supplier_id int)
+
+  on update(new, old):
+    if old.status = 'draft' and new.status = 'received':
+      emit received(new.id, new.supplier_id)
+
+on purchase.receipt.received(receipt_id, supplier_id):
+  purchase.handle_receipt(receipt_id, supplier_id)
+
+fn purchase.handle_receipt(receipt_id int, supplier_id int) -> void:
+  return
+`;
+    const result = compile(source);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.ddlSql).toContain("CREATE TABLE IF NOT EXISTS purchase._event_outbox");
+    expect(result.ddlSql).toContain("CREATE TABLE IF NOT EXISTS purchase._event_subscription");
+    expect(result.ddlSql).toContain("CREATE TABLE IF NOT EXISTS purchase._event_delivery");
+    expect(result.ddlSql).toContain("CREATE OR REPLACE FUNCTION purchase._emit_event(");
+    expect(result.ddlSql).toContain("CREATE OR REPLACE FUNCTION purchase._dispatch_event()");
+    expect(result.ddlSql).toContain("CREATE OR REPLACE FUNCTION purchase.receipt_event_trigger()");
+    expect(result.ddlSql).toContain("INSERT INTO purchase._event_subscription");
+    expect(result.ddlSql).toContain("purchase.receipt.received");
+    expect(result.sql).toContain("CREATE OR REPLACE FUNCTION purchase.receipt_on_update");
+    expect(result.sql).toContain("PERFORM purchase._emit_event('purchase.receipt.received'");
+    expect(result.sql).toContain("CREATE OR REPLACE FUNCTION purchase.on_purchase_receipt_received_1");
+    expect(result.sql).toContain("PERFORM purchase.handle_receipt(receipt_id, supplier_id);");
+  });
+
   it("compiles mixed functions and tests", () => {
     const source = `
 fn expense.helper() -> int:

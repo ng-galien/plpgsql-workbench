@@ -59,28 +59,8 @@ describe("PLX entity E2E", () => {
     expect(result.functionCount).toBe(6);
     expect(result.ddlSql).toBeDefined();
 
-    // Bootstrap roles + schema
-    await pool.query(
-      "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon; END IF; END $$",
-    );
-    await pool.query("CREATE SCHEMA IF NOT EXISTS expense");
-    const ddlSql = result.ddlSql;
-    expect(ddlSql).toBeDefined();
-    if (!ddlSql) throw new Error("expected generated DDL");
-    await pool.query(ddlSql);
-
-    // Deploy all functions — every single one must succeed
-    const fnBlocks = result.sql.split(/(?=CREATE OR REPLACE FUNCTION)/).filter((s) => s.trim());
-    expect(fnBlocks).toHaveLength(6);
-    for (const block of fnBlocks) {
-      const name = block.match(/FUNCTION\s+(\S+)\(/)?.[1] ?? "unknown";
-      try {
-        await pool.query(block);
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        throw new Error(`Deploy ${name} failed: ${msg}`);
-      }
-    }
+    await bootstrapSchema(pool, "expense");
+    await deployCompiledSql(pool, result, 6);
 
     // CREATE
     const {
@@ -130,7 +110,135 @@ describe("PLX entity E2E", () => {
     const dr = deleted.r as Record<string, unknown>;
     expect(dr).toHaveProperty("name", "Updated");
   });
+
+  it("writes emitted entity events to the transactional outbox", async () => {
+    const source = `
+module purchase
+
+entity purchase.receipt:
+  fields:
+    supplier_id int
+    status text
+
+  event received(receipt_id int, supplier_id int)
+
+  on update(new, old):
+    if old.status = 'draft' and new.status = 'received':
+      emit received(new.id, new.supplier_id)
+
+fn purchase.record_receipt(receipt_id int, supplier_id int) -> void:
+  """
+    insert into purchase.receipt_projection (receipt_id, supplier_id)
+    values (receipt_id, supplier_id)
+  """
+  return
+
+on purchase.receipt.received(receipt_id, supplier_id):
+  purchase.record_receipt(receipt_id, supplier_id)
+`;
+    const result = compile(source);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.ddlSql).toContain("purchase._event_outbox");
+
+    await bootstrapSchema(pool, "purchase");
+    await deployDdl(pool, result);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS purchase.receipt_projection (
+        receipt_id int PRIMARY KEY,
+        supplier_id int NOT NULL
+      )
+    `);
+    await deployFunctions(pool, result, 9);
+
+    const {
+      rows: [created],
+    } = await pool.query<Record<string, unknown>>(
+      `SELECT purchase.receipt_create('{"supplier_id":42,"status":"draft"}'::jsonb) as r`,
+    );
+    if (!created) throw new Error("expected created row");
+    const receipt = created.r as Record<string, unknown>;
+    const id = String(receipt.id);
+
+    await pool.query(`SELECT purchase.receipt_update($1, '{"status":"received"}'::jsonb)`, [id]);
+
+    const { rows } = await pool.query<{
+      aggregate_id: string | null;
+      aggregate_type: string;
+      correlation_id: string;
+      event_name: string;
+      metadata: Record<string, unknown>;
+      payload: Record<string, unknown>;
+    }>(`
+      SELECT event_name, aggregate_type, aggregate_id, payload, metadata, correlation_id
+      FROM purchase._event_outbox
+      ORDER BY id
+    `);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      event_name: "purchase.receipt.received",
+      aggregate_type: "purchase.receipt",
+      aggregate_id: id,
+      payload: { receipt_id: Number(id), supplier_id: 42 },
+      metadata: { operation: "update", entity: "purchase.receipt" },
+    });
+    expect(rows[0]?.correlation_id).toMatch(/^\d+$/);
+
+    const { rows: consumedRows } = await pool.query<{ receipt_id: number; supplier_id: number }>(`
+      SELECT receipt_id, supplier_id
+      FROM purchase.receipt_projection
+    `);
+    expect(consumedRows).toEqual([{ receipt_id: Number(id), supplier_id: 42 }]);
+
+    const { rows: deliveries } = await pool.query<{ consumer_key: string }>(`
+      SELECT consumer_key
+      FROM purchase._event_delivery
+    `);
+    expect(deliveries).toEqual([{ consumer_key: "purchase.on_purchase_receipt_received_1" }]);
+  });
 });
+
+async function bootstrapSchema(pool: pg.Pool, schema: string): Promise<void> {
+  await pool.query(
+    "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon; END IF; END $$",
+  );
+  await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+}
+
+async function deployCompiledSql(
+  pool: pg.Pool,
+  result: ReturnType<typeof compile>,
+  expectedFunctions: number,
+): Promise<void> {
+  await deployDdl(pool, result);
+  await deployFunctions(pool, result, expectedFunctions);
+}
+
+async function deployDdl(pool: pg.Pool, result: ReturnType<typeof compile>): Promise<void> {
+  const ddlSql = result.ddlSql;
+  expect(ddlSql).toBeDefined();
+  if (!ddlSql) throw new Error("expected generated DDL");
+  await pool.query(ddlSql);
+}
+
+async function deployFunctions(
+  pool: pg.Pool,
+  result: ReturnType<typeof compile>,
+  expectedFunctions: number,
+): Promise<void> {
+  const fnBlocks = result.sql.split(/(?=CREATE OR REPLACE FUNCTION)/).filter((s) => s.trim());
+  expect(fnBlocks).toHaveLength(expectedFunctions);
+  for (const block of fnBlocks) {
+    const name = block.match(/FUNCTION\s+(\S+)\(/)?.[1] ?? "unknown";
+    try {
+      await pool.query(block);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`Deploy ${name} failed: ${msg}`);
+    }
+  }
+}
 
 async function isLocalImage(name: string): Promise<boolean> {
   try {

@@ -20,6 +20,21 @@ import type {
   ViewSection,
 } from "./ast.js";
 import { pointLoc } from "./ast.js";
+import {
+  assertStmt as buildAssertStmt,
+  assignStmt as buildAssignStmt,
+  castExpr as buildCastExpr,
+  jsonObj as buildJsonObj,
+  returnStmt as buildReturnStmt,
+  sqlBlock as buildSqlBlock,
+  identifierExpr,
+  jsonEntry,
+  nullLiteral,
+  qualifiedIdentifierExpr,
+  rawSqlExpr,
+  textArray,
+  textLiteral,
+} from "./ast-builders.js";
 import { type DdlArtifact, generateDDL, type ResolvedEntityFields } from "./entity-ddl.js";
 import { formatDefaultValue } from "./entity-sql.js";
 
@@ -934,43 +949,41 @@ function shortAlias(_entity: PlxEntity): string {
 
 // AST builder helpers — accept optional loc to propagate entity source location
 function strLit(value: string, loc: Loc = LOC): Expression {
-  return { kind: "literal", value, type: "text", loc };
+  return textLiteral(value, loc);
 }
 function nullLit(loc: Loc = LOC): Expression {
-  return { kind: "literal", value: null, type: "null", loc };
+  return nullLiteral(loc);
 }
 function ident(name: string, loc: Loc = LOC): Expression {
-  return { kind: "identifier", name, loc };
+  return identifierExpr(name, loc);
 }
 function qualifiedIdent(name: string, loc: Loc = LOC): Expression {
-  const [object, field] = name.split(".");
-  if (!object || !field) return ident(name, loc);
-  return { kind: "field_access", object, field, loc };
+  return qualifiedIdentifierExpr(name, loc);
 }
 function jObj(entries: JsonLiteral["entries"], loc: Loc = LOC): JsonLiteral {
-  return { kind: "json_literal", entries, loc };
+  return buildJsonObj(entries, loc);
 }
 function jEntry(key: string, value: Expression): JsonLiteral["entries"][number] {
-  return { key, value };
+  return jsonEntry(key, value);
 }
 function strArr(items: string[], loc: Loc = LOC): Expression {
-  return { kind: "array_literal", elements: items.map((s) => strLit(s, loc)), loc };
+  return textArray(items, loc);
 }
 function sqlBlock(sql: string, elseRaise?: string, inferredTable?: string, loc: Loc = LOC): SqlBlockExpr {
-  return { kind: "sql_block", sql, elseRaise, inferredTable, loc };
+  return buildSqlBlock(sql, elseRaise, inferredTable, loc);
 }
 function assign(target: string, value: Expression, loc: Loc = LOC): AssignStatement {
-  return { kind: "assign", target, value, loc };
+  return buildAssignStmt(target, value, loc);
 }
 function ret(mode: ReturnStatement["mode"], value: Expression, loc: Loc = LOC): ReturnStatement {
-  return { kind: "return", value, isYield: false, mode, loc };
+  return buildReturnStmt(mode, value, loc);
 }
 function castExpr(left: Expression, right: Expression, loc: Loc = LOC): Expression {
-  return { kind: "binary", op: "::", left, right, loc };
+  return buildCastExpr(left, right, loc);
 }
 function assertStmt(expression: Expression, message: string, loc: Loc = LOC): Statement {
-  return { kind: "assert", expression, message, loc };
+  return buildAssertStmt(expression, message, loc);
 }
 function rawExpr(sql: string, loc: Loc = LOC): SqlBlockExpr {
-  return { kind: "sql_block", sql, loc };
+  return rawSqlExpr(sql, loc);
 }

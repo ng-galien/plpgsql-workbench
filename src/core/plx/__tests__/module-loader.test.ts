@@ -77,6 +77,57 @@ test "brand":
     expect(result.testSql).toContain("quote_ut.test_brand");
   });
 
+  it("propagates root entity exports to entity events", async () => {
+    const root = await createTmpDir();
+    const entry = path.join(root, "quote.plx");
+
+    await fs.writeFile(
+      entry,
+      `
+module quote
+
+include "./brand.plx"
+
+export quote.brand
+`,
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(root, "brand.plx"),
+      `
+entity quote.brand:
+  fields:
+    label text required
+
+  event published(brand_id int)
+`,
+      "utf-8",
+    );
+
+    const loaded = await loadPlxModule(entry);
+    expect(loaded.errors).toEqual([]);
+    const mod = loaded.module;
+    if (!mod) throw new Error("expected loaded module");
+
+    const contract = buildModuleContract(mod);
+    expect(contract.exports).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "entity",
+          schema: "quote",
+          name: "brand",
+          visibility: "export",
+        }),
+        expect.objectContaining({
+          kind: "event",
+          schema: "quote",
+          name: "brand.published",
+          visibility: "export",
+        }),
+      ]),
+    );
+  });
+
   it("errors when the module root exports an unknown symbol", async () => {
     const root = await createTmpDir();
     const entry = path.join(root, "quote.plx");

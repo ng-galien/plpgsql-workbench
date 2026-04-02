@@ -1,13 +1,16 @@
-import type { Loc, PlxModule, Visibility } from "./ast.js";
+import type { Loc, Param, PlxModule, Visibility } from "./ast.js";
 import { pointLoc } from "./ast.js";
 import type { CompileError } from "./compiler.js";
 import { createDiagnostic } from "./compiler.js";
 import { buildModuleFromSource, loadPlxModule } from "./module-loader.js";
 
 export interface ModuleContractSymbol {
-  kind: "entity" | "function";
+  kind: "entity" | "event" | "function";
   name: string;
+  params?: Param[];
+  returnType?: string;
   schema: string;
+  setof?: boolean;
   visibility: Visibility;
 }
 
@@ -43,7 +46,10 @@ export function buildModuleContract(mod: PlxModule): ModuleContract {
     ...mod.functions.map((fn) => ({
       kind: "function" as const,
       name: fn.name,
+      params: fn.params,
+      returnType: fn.returnType,
       schema: fn.schema,
+      setof: fn.setof,
       visibility: fn.visibility,
     })),
     ...mod.entities.map((entity) => ({
@@ -52,6 +58,15 @@ export function buildModuleContract(mod: PlxModule): ModuleContract {
       schema: entity.schema,
       visibility: entity.visibility,
     })),
+    ...mod.entities.flatMap((entity) =>
+      entity.events.map((event) => ({
+        kind: "event" as const,
+        name: `${entity.name}.${event.name}`,
+        params: event.params,
+        schema: entity.schema,
+        visibility: event.visibility,
+      })),
+    ),
   ];
 
   return {

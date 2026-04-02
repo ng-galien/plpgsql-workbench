@@ -132,6 +132,64 @@ fn quote.read(id int) -> jsonb:
     );
   });
 
+  it("parses entity events, lifecycle hooks, emit statements and subscriptions", () => {
+    const mod = parse(
+      tokenize(`
+module purchase
+depends stock
+
+entity purchase.receipt:
+  fields:
+    supplier_id int
+    status text
+
+  event received(receipt_id int, supplier_id int)
+
+  on update(new, old):
+    if old.status = 'draft' and new.status = 'received':
+      emit received(new.id, new.supplier_id)
+
+on purchase.receipt.received(receipt_id, supplier_id):
+  stock.create_movement(receipt_id, supplier_id)
+`),
+    );
+
+    expect(mod.entities[0]?.events).toEqual([
+      expect.objectContaining({
+        name: "received",
+        params: [
+          expect.objectContaining({ name: "receipt_id", type: "int" }),
+          expect.objectContaining({ name: "supplier_id", type: "int" }),
+        ],
+      }),
+    ]);
+    expect(mod.entities[0]?.changeHandlers).toEqual([
+      expect.objectContaining({
+        operation: "update",
+        params: ["new", "old"],
+        body: [
+          expect.objectContaining({
+            kind: "if",
+            body: [
+              expect.objectContaining({
+                kind: "emit",
+                eventName: "received",
+              }),
+            ],
+          }),
+        ],
+      }),
+    ]);
+    expect(mod.subscriptions).toEqual([
+      expect.objectContaining({
+        sourceSchema: "purchase",
+        sourceEntity: "receipt",
+        event: "received",
+        params: ["receipt_id", "supplier_id"],
+      }),
+    ]);
+  });
+
   it("rejects legacy return query syntax", () => {
     expect(
       parseErrorOf(`

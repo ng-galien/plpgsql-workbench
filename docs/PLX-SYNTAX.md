@@ -151,6 +151,48 @@ trait soft_delete:
   default_scope: 'deleted_at is null'
 ```
 
+### Events
+
+PLX events model cross-module reactions without hard-coding consumers in the producer. The producer owns the internal lifecycle hooks. Consumers only see named business events with typed payloads.
+
+```plx
+module purchase
+depends pgv
+
+export entity purchase.receipt:
+  fields:
+    supplier_id int
+    status text
+    cancel_reason text?
+
+  event received(receipt_id int, supplier_id int)
+  event cancelled(receipt_id int, reason text?)
+
+  on update(new, old):
+    if old.status = 'draft' and new.status = 'received':
+      emit received(new.id, new.supplier_id)
+
+    if old.status != 'cancelled' and new.status = 'cancelled':
+      emit cancelled(new.id, new.cancel_reason)
+```
+
+```plx
+module stock
+depends purchase
+
+on purchase.receipt.received(receipt_id, supplier_id):
+  stock.create_movement(receipt_id, supplier_id)
+```
+
+Rules:
+
+- `event ...` declares a typed contract on an entity.
+- `on insert(new)`, `on update(new, old)`, `on delete(old)` are internal entity hooks only.
+- `emit ...` is only valid inside those entity lifecycle hooks.
+- `on schema.entity.event(...)` declares a module-level subscription.
+- Cross-module subscriptions require `depends producer_module`.
+- The compiler lowers this to a transactional PostgreSQL outbox: entity trigger -> outbox row -> dispatcher trigger -> subscribed handlers.
+
 ## Layer 3 — Imperative (fn, test)
 
 Python-like bodies with SQL passthrough.

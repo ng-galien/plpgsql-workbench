@@ -2,6 +2,9 @@
 
 import type {
   ActionDef,
+  EntityChangeHandler,
+  EntityChangeOperation,
+  EntityEvent,
   EntityField,
   EntityHook,
   EntityHookEvent,
@@ -21,6 +24,7 @@ import type {
 import { mergeLoc } from "./ast.js";
 import type { ParseContext } from "./parse-context.js";
 import { ParseError, parseSqlBlock } from "./parse-context.js";
+import { parseCommaSeparated } from "./parser-helpers.js";
 
 export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntity {
   const start = ctx.loc();
@@ -56,12 +60,14 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
   const fields: EntityField[] = [];
   const columns: EntityField[] = [];
   const payload: EntityField[] = [];
+  const events: EntityEvent[] = [];
   let states: StateBlock | undefined;
   let updateStates: string[] | undefined;
   let view: ViewBlock = { compact: [] };
   const actions: ActionDef[] = [];
   const strategies: StrategyDecl[] = [];
   const hooks: EntityHook[] = [];
+  const changeHandlers: EntityChangeHandler[] = [];
 
   while (!ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
     ctx.skipNewlines();
@@ -132,6 +138,8 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
         ctx.skipNewlines();
       }
       ctx.expect("DEDENT");
+    } else if (kw === "event") {
+      events.push(parseEntityEvent(ctx, visibility));
     } else if (kw === "strategies") {
       ctx.advance();
       ctx.expect("COLON");
@@ -144,6 +152,8 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
         ctx.skipNewlines();
       }
       ctx.expect("DEDENT");
+    } else if (kw === "on") {
+      changeHandlers.push(parseEntityChangeHandler(ctx));
     } else if (kw === "before" || kw === "after") {
       hooks.push(parseEntityHook(ctx));
     } else if (kw === "validate") {
@@ -179,9 +189,11 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
     states,
     updateStates,
     view,
+    events,
     actions,
     strategies,
     hooks,
+    changeHandlers,
     listOrder,
     readKey,
     loc: mergeLoc(start, end),
@@ -584,6 +596,61 @@ function parseStrategyDecl(ctx: ParseContext): StrategyDecl {
   ctx.expect("COLON");
   const fn = ctx.parseQualifiedName();
   return { slot, fn, loc };
+}
+
+function parseEntityEvent(ctx: ParseContext, visibility: Visibility): EntityEvent {
+  const loc = ctx.loc();
+  ctx.expect("IDENT"); // event
+  const name = ctx.expect("IDENT").value;
+  ctx.expect("LPAREN");
+  const params = parseEventParams(ctx);
+  ctx.expect("RPAREN");
+  return { name, params, visibility, loc };
+}
+
+function parseEventParams(ctx: ParseContext): EntityEvent["params"] {
+  return parseCommaSeparated(ctx, "RPAREN", () => parseEventParam(ctx));
+}
+
+function parseEventParam(ctx: ParseContext): EntityEvent["params"][number] {
+  const loc = ctx.loc();
+  const name = ctx.expect("IDENT").value;
+  const type = ctx.parseQualifiedName();
+  let nullable = false;
+  if (ctx.isAt("QUESTION")) {
+    ctx.advance();
+    nullable = true;
+  }
+  return { name, type, nullable, loc };
+}
+
+function parseEntityChangeHandler(ctx: ParseContext): EntityChangeHandler {
+  const start = ctx.loc();
+  ctx.expect("IDENT"); // on
+  const rawOp = ctx.expect("IDENT").value;
+  if (rawOp !== "insert" && rawOp !== "update" && rawOp !== "delete") {
+    throw new ParseError(`unsupported entity change hook '${rawOp}'`, start, {
+      code: "parse.invalid-entity-change-hook",
+      hint: "Use `on insert`, `on update`, or `on delete` inside entity declarations.",
+    });
+  }
+  const op: EntityChangeOperation = rawOp;
+  ctx.expect("LPAREN");
+  const params: string[] = [];
+  if (!ctx.isAt("RPAREN")) {
+    params.push(ctx.expect("IDENT").value);
+    while (ctx.isAt("COMMA")) {
+      ctx.advance();
+      params.push(ctx.expect("IDENT").value);
+    }
+  }
+  ctx.expect("RPAREN");
+  ctx.expect("COLON");
+  ctx.skipNewlines();
+  ctx.expect("INDENT");
+  const body = ctx.parseBlock();
+  const end = ctx.expect("DEDENT");
+  return { operation: op, params, body, loc: mergeLoc(start, end) };
 }
 
 function parseValidateBlock(ctx: ParseContext): EntityHook[] {

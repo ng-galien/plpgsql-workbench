@@ -1,8 +1,10 @@
 import type { Loc, PlxFunction, PlxModule } from "./ast.js";
 import { pointLoc, stripLocPrefix } from "./ast.js";
 import { type GeneratedLineMap, type GeneratedSourceMap, generateWithSourceMap } from "./codegen.js";
+import type { ModuleContract } from "./contract.js";
 import type { DdlArtifact } from "./entity-ddl.js";
 import { expandEntities } from "./entity-expander.js";
+import { expandEvents } from "./event-expander.js";
 import { LexError, tokenize } from "./lexer.js";
 import { ParseError } from "./parse-context.js";
 import { parse } from "./parser.js";
@@ -70,6 +72,10 @@ interface CompiledModuleArtifact {
   testFunctions: PlxFunction[];
 }
 
+export interface CompileModuleOptions {
+  dependencyContracts?: Map<string, ModuleContract>;
+}
+
 export function compile(source: string): CompileResult {
   const errors: CompileError[] = [];
   const warnings: CompileWarning[] = [];
@@ -97,7 +103,7 @@ export function compileModule(mod: PlxModule): CompileResult {
   return compileModuleBundle(mod).result;
 }
 
-export function compileModuleBundle(mod: PlxModule): CompiledBundle {
+export function compileModuleBundle(mod: PlxModule, options: CompileModuleOptions = {}): CompiledBundle {
   const errors: CompileError[] = [];
   const warnings: CompileWarning[] = [];
 
@@ -124,6 +130,14 @@ export function compileModuleBundle(mod: PlxModule): CompiledBundle {
     return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
+  const eventResult = expandEvents(mod, { dependencyContracts: options.dependencyContracts });
+  for (const err of eventResult.errors) {
+    errors.push(createDiagnostic("codegen", "codegen.event-expansion-failed", err.message, err.loc));
+  }
+  if (errors.length > 0) {
+    return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
+  }
+
   // Expand tests into pgTAP functions
   const testResult = expandTests(mod.tests);
   for (const err of testResult.errors) {
@@ -135,7 +149,7 @@ export function compileModuleBundle(mod: PlxModule): CompiledBundle {
   }
 
   // Merge expanded functions with hand-written ones
-  const allFunctions = [...mod.functions, ...expandResult.functions];
+  const allFunctions = [...mod.functions, ...expandResult.functions, ...eventResult.functions];
 
   // Build alias map from imports
   const aliases = new Map<string, string>();
@@ -185,7 +199,8 @@ export function compileModuleBundle(mod: PlxModule): CompiledBundle {
     return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
-  const ddlSql = expandResult.ddlFragments.length > 0 ? expandResult.ddlFragments.join("\n\n") : undefined;
+  const ddlFragments = [...expandResult.ddlFragments, ...eventResult.ddlFragments];
+  const ddlSql = ddlFragments.length > 0 ? ddlFragments.join("\n\n") : undefined;
   const testSql = testSqlParts.length > 0 ? testSqlParts.join("\n\n") : undefined;
 
   return {
@@ -202,7 +217,7 @@ export function compileModuleBundle(mod: PlxModule): CompiledBundle {
     blocks: validationBlocks,
     artifact: {
       aliases,
-      ddlArtifacts: expandResult.ddlArtifacts,
+      ddlArtifacts: [...expandResult.ddlArtifacts, ...eventResult.ddlArtifacts],
       functions: allFunctions,
       module: mod,
       testFunctions: testResult.functions,
@@ -252,8 +267,11 @@ export async function compileAndValidate(source: string): Promise<CompileResult>
   return await validateCompiledBundle(bundle);
 }
 
-export async function compileModuleAndValidate(mod: PlxModule): Promise<CompileResult> {
-  const bundle = compileModuleBundle(mod);
+export async function compileModuleAndValidate(
+  mod: PlxModule,
+  options: CompileModuleOptions = {},
+): Promise<CompileResult> {
+  const bundle = compileModuleBundle(mod, options);
   return await validateCompiledBundle(bundle);
 }
 

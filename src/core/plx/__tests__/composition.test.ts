@@ -103,6 +103,37 @@ export fn quote.estimate_read(id int) -> jsonb:
     );
   });
 
+  it("errors when a cross-module call breaks exported function arity", async () => {
+    const result = await compose(
+      [
+        {
+          file: "crm.plx",
+          source: `
+module crm
+
+export fn crm.client_read(id int, locale text) -> jsonb:
+  return {id, locale}
+`,
+        },
+        {
+          file: "quote.plx",
+          source: `
+module quote
+depends crm
+
+export fn quote.estimate_read(id int) -> jsonb:
+  return crm.client_read(id)
+`,
+        },
+      ],
+      { validate: false },
+    );
+
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "module.call-arity-mismatch" })]),
+    );
+  });
+
   it("errors on unknown exports and duplicate modules", async () => {
     const result = await compose(
       [
@@ -206,6 +237,186 @@ export fn quote.estimate_read(id int) -> jsonb:
     );
 
     expect(result.errors).toEqual([]);
+  });
+
+  it("accepts exported cross-module event subscriptions with declared dependencies", async () => {
+    const result = await compose(
+      [
+        {
+          file: "pgv.plx",
+          source: `
+module pgv
+
+export fn pgv.rsql_to_where(p_filter text, p_schema text, p_entity text) -> text [stable]:
+  return 'true'
+`,
+        },
+        {
+          file: "purchase.plx",
+          source: `
+module purchase
+depends pgv
+
+export entity purchase.receipt:
+  fields:
+    status text
+
+  event received(receipt_id int)
+
+  on update(new, old):
+    if old.status = 'draft' and new.status = 'received':
+      emit received(new.id)
+`,
+        },
+        {
+          file: "stock.plx",
+          source: `
+module stock
+depends purchase
+
+export fn stock.create_movement(receipt_id int) -> void:
+  return
+
+on purchase.receipt.received(receipt_id):
+  stock.create_movement(receipt_id)
+`,
+        },
+      ],
+      { validate: false },
+    );
+
+    expect(result.errors).toEqual([]);
+  });
+
+  it("errors when a subscription skips depends", async () => {
+    const result = await compose(
+      [
+        {
+          file: "pgv.plx",
+          source: `
+module pgv
+
+export fn pgv.rsql_to_where(p_filter text, p_schema text, p_entity text) -> text [stable]:
+  return 'true'
+`,
+        },
+        {
+          file: "purchase.plx",
+          source: `
+module purchase
+depends pgv
+
+export entity purchase.receipt:
+  fields:
+    status text
+
+  event received(receipt_id int)
+`,
+        },
+        {
+          file: "stock.plx",
+          source: `
+module stock
+
+on purchase.receipt.received(receipt_id):
+  seen := receipt_id
+`,
+        },
+      ],
+      { validate: false },
+    );
+
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "module.missing-dependency" })]),
+    );
+  });
+
+  it("errors when subscribing to an internal event from another module", async () => {
+    const result = await compose(
+      [
+        {
+          file: "pgv.plx",
+          source: `
+module pgv
+
+export fn pgv.rsql_to_where(p_filter text, p_schema text, p_entity text) -> text [stable]:
+  return 'true'
+`,
+        },
+        {
+          file: "purchase.plx",
+          source: `
+module purchase
+depends pgv
+
+internal entity purchase.receipt:
+  fields:
+    status text
+
+  event received(receipt_id int)
+`,
+        },
+        {
+          file: "stock.plx",
+          source: `
+module stock
+depends purchase
+
+on purchase.receipt.received(receipt_id):
+  seen := receipt_id
+`,
+        },
+      ],
+      { validate: false },
+    );
+
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "module.private-symbol-access" })]),
+    );
+  });
+
+  it("errors when a subscription breaks exported event arity", async () => {
+    const result = await compose(
+      [
+        {
+          file: "pgv.plx",
+          source: `
+module pgv
+
+export fn pgv.rsql_to_where(p_filter text, p_schema text, p_entity text) -> text [stable]:
+  return 'true'
+`,
+        },
+        {
+          file: "purchase.plx",
+          source: `
+module purchase
+depends pgv
+
+export entity purchase.receipt:
+  fields:
+    status text
+
+  event received(receipt_id int, supplier_id int)
+`,
+        },
+        {
+          file: "stock.plx",
+          source: `
+module stock
+depends purchase
+
+on purchase.receipt.received(receipt_id):
+  seen := receipt_id
+`,
+        },
+      ],
+      { validate: false },
+    );
+
+    expect(result.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "module.subscription-arity-mismatch" })]),
+    );
   });
 
   it("returns parse diagnostics instead of throwing on invalid input", async () => {

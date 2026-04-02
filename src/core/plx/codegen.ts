@@ -291,6 +291,8 @@ class CodegenContext {
       case "assert":
         this.emitAssert(stmt);
         break;
+      case "emit":
+        throw new Error("emit statements must be lowered before code generation");
     }
   }
 

@@ -1,4 +1,4 @@
-import type { Loc, PlxModule, Statement, Visibility } from "./ast.js";
+import type { CallExpr, Loc, PlxModule, Statement } from "./ast.js";
 import { pointLoc } from "./ast.js";
 import {
   type CompiledBundle,
@@ -9,6 +9,7 @@ import {
   createDiagnostic,
   validateCompiledBundle,
 } from "./compiler.js";
+import { buildModuleContract, type ModuleContractSymbol } from "./contract.js";
 import { LexError, tokenize } from "./lexer.js";
 import { ParseError } from "./parse-context.js";
 import { parse } from "./parser.js";
@@ -45,7 +46,7 @@ interface CompiledModuleRecord {
   depends: Set<string>;
   file: string;
   moduleName: string;
-  symbols: Map<string, Visibility>;
+  symbols: Map<string, ModuleContractSymbol>;
 }
 
 interface CompiledEntry {
@@ -170,10 +171,9 @@ function analyzeComposition(compiled: CompiledEntry[], errors: CompileError[]): 
       continue;
     }
 
-    const symbols = new Map<string, Visibility>();
-    for (const fn of entry.artifact.functions) {
-      if (fn.schema === moduleName) symbols.set(fn.name, fn.visibility);
-    }
+    const contract = buildModuleContract(entry.artifact.module);
+    const symbols = new Map<string, ModuleContractSymbol>();
+    for (const symbol of [...contract.exports, ...contract.internals]) symbols.set(symbol.name, symbol);
 
     registry.set(moduleName, {
       artifact: entry.artifact,
@@ -217,65 +217,172 @@ function analyzeComposition(compiled: CompiledEntry[], errors: CompileError[]): 
   for (const record of registry.values()) {
     for (const fn of record.artifact.functions) {
       for (const call of collectCalls(fn.body)) {
-        const targetName = resolveCallTarget(call.name, record.artifact.aliases);
-        if (!targetName.includes(".")) continue;
+        analyzeCrossModuleReference(
+          record,
+          registry,
+          call,
+          resolveCallTarget(call.name, record.artifact.aliases),
+          errors,
+        );
+      }
+    }
 
-        const [targetModule, targetFunction] = splitQualifiedCall(targetName);
-        if (!targetModule || !targetFunction || targetModule === record.moduleName) continue;
+    for (const entity of record.artifact.module.entities) {
+      for (const handler of entity.changeHandlers) {
+        for (const call of collectCalls(handler.body)) {
+          analyzeCrossModuleReference(
+            record,
+            registry,
+            call,
+            resolveCallTarget(call.name, record.artifact.aliases),
+            errors,
+          );
+        }
+      }
+    }
 
-        if (!record.depends.has(targetModule)) {
+    for (const subscription of record.artifact.module.subscriptions) {
+      const targetName = `${subscription.sourceSchema}.${subscription.sourceEntity}.${subscription.event}`;
+      const targetSymbol = `${subscription.sourceEntity}.${subscription.event}`;
+      if (subscription.sourceSchema !== record.moduleName) {
+        if (!record.depends.has(subscription.sourceSchema)) {
           errors.push(
             createDiagnostic(
               "semantic",
               "module.missing-dependency",
-              `module '${record.moduleName}' calls '${targetName}' without depending on '${targetModule}'`,
-              call.loc,
-              `Add '${targetModule}' to depends or stop calling '${targetName}'.`,
+              `module '${record.moduleName}' subscribes to '${targetName}' without depending on '${subscription.sourceSchema}'`,
+              subscription.loc,
+              `Add '${subscription.sourceSchema}' to depends or remove the subscription.`,
             ),
           );
           continue;
         }
+      }
 
-        const targetRecord = registry.get(targetModule);
-        if (!targetRecord) continue;
-
-        const visibility = targetRecord.symbols.get(targetFunction);
-        if (!visibility) {
+      const targetRecord = registry.get(subscription.sourceSchema);
+      if (targetRecord) {
+        const symbol = targetRecord.symbols.get(targetSymbol);
+        if (!symbol || symbol.kind !== "event") {
           errors.push(
             createDiagnostic(
               "semantic",
               "module.unknown-export",
-              `module '${record.moduleName}' calls unknown export '${targetName}'`,
-              call.loc,
-              `Export '${targetFunction}' from module '${targetModule}' or fix the call target.`,
+              `module '${record.moduleName}' subscribes to unknown event '${targetName}'`,
+              subscription.loc,
+              `Declare event '${targetSymbol}' in module '${subscription.sourceSchema}'.`,
             ),
           );
-          continue;
-        }
-
-        if (visibility === "internal") {
+        } else if (symbol.visibility === "internal" && subscription.sourceSchema !== record.moduleName) {
           errors.push(
             createDiagnostic(
               "semantic",
               "module.private-symbol-access",
-              `module '${record.moduleName}' cannot access internal symbol '${targetName}'`,
-              call.loc,
-              `Mark '${targetName}' as export or keep the call inside module '${targetModule}'.`,
+              `module '${record.moduleName}' cannot subscribe to internal event '${targetName}'`,
+              subscription.loc,
+              `Export '${targetName}' or keep the subscription inside module '${subscription.sourceSchema}'.`,
+            ),
+          );
+        } else if (symbol.params && symbol.params.length !== subscription.params.length) {
+          errors.push(
+            createDiagnostic(
+              "semantic",
+              "module.subscription-arity-mismatch",
+              `subscription '${targetName}' expects ${symbol.params.length} parameter(s), got ${subscription.params.length}`,
+              subscription.loc,
+              `Update the subscription to accept ${symbol.params.length} parameter(s).`,
             ),
           );
         }
+      }
+
+      for (const call of collectCalls(subscription.body)) {
+        analyzeCrossModuleReference(
+          record,
+          registry,
+          call,
+          resolveCallTarget(call.name, record.artifact.aliases),
+          errors,
+        );
       }
     }
   }
 }
 
+function analyzeCrossModuleReference(
+  record: CompiledModuleRecord,
+  registry: Map<string, CompiledModuleRecord>,
+  call: { args: CallExpr["args"]; loc: Loc; name: string },
+  targetName: string,
+  errors: CompileError[],
+): void {
+  if (!targetName.includes(".")) return;
+
+  const [targetModule, targetFunction] = splitQualifiedCall(targetName);
+  if (!targetModule || !targetFunction || targetModule === record.moduleName) return;
+
+  if (!record.depends.has(targetModule)) {
+    errors.push(
+      createDiagnostic(
+        "semantic",
+        "module.missing-dependency",
+        `module '${record.moduleName}' calls '${targetName}' without depending on '${targetModule}'`,
+        call.loc,
+        `Add '${targetModule}' to depends or stop calling '${targetName}'.`,
+      ),
+    );
+    return;
+  }
+
+  const targetRecord = registry.get(targetModule);
+  if (!targetRecord) return;
+
+  const symbol = targetRecord.symbols.get(targetFunction);
+  if (!symbol || symbol.kind !== "function") {
+    errors.push(
+      createDiagnostic(
+        "semantic",
+        "module.unknown-export",
+        `module '${record.moduleName}' calls unknown export '${targetName}'`,
+        call.loc,
+        `Export '${targetFunction}' from module '${targetModule}' or fix the call target.`,
+      ),
+    );
+    return;
+  }
+
+  if (symbol.visibility === "internal") {
+    errors.push(
+      createDiagnostic(
+        "semantic",
+        "module.private-symbol-access",
+        `module '${record.moduleName}' cannot access internal symbol '${targetName}'`,
+        call.loc,
+        `Mark '${targetName}' as export or keep the call inside module '${targetModule}'.`,
+      ),
+    );
+    return;
+  }
+
+  if (symbol.params && symbol.params.length !== call.args.length) {
+    errors.push(
+      createDiagnostic(
+        "semantic",
+        "module.call-arity-mismatch",
+        `call to '${targetName}' expects ${symbol.params.length} argument(s), got ${call.args.length}`,
+        call.loc,
+        `Update the call to pass ${symbol.params.length} argument(s).`,
+      ),
+    );
+  }
+}
+
 // ---------- Utilities ----------
 
-export function collectCalls(stmts: Statement[]): Array<{ loc: Loc; name: string }> {
-  const calls: Array<{ loc: Loc; name: string }> = [];
+export function collectCalls(stmts: Statement[]): Array<{ args: CallExpr["args"]; loc: Loc; name: string }> {
+  const calls: Array<{ args: CallExpr["args"]; loc: Loc; name: string }> = [];
   walkStatements(stmts, {
     onExpression(expr) {
-      if (expr.kind === "call") calls.push({ loc: expr.loc, name: expr.name });
+      if (expr.kind === "call") calls.push({ args: expr.args, loc: expr.loc, name: expr.name });
     },
   });
   return calls;

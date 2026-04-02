@@ -75,6 +75,7 @@ export interface PlxModule {
   traits: PlxTrait[];
   entities: PlxEntity[];
   functions: PlxFunction[];
+  subscriptions: PlxSubscription[];
   tests: PlxTest[];
 }
 
@@ -124,9 +125,11 @@ export interface PlxEntity {
   states?: StateBlock;
   updateStates?: string[]; // restrict update to these states
   view: ViewBlock;
+  events: EntityEvent[];
   actions: ActionDef[];
   strategies: StrategyDecl[];
   hooks: EntityHook[];
+  changeHandlers: EntityChangeHandler[];
   listOrder: string; // ORDER BY fragment, default "id"
   readKey?: string; // WHERE fragment, default "t.id = p_id::int"
   loc: Loc;
@@ -209,6 +212,28 @@ export interface StrategyDecl {
   loc: Loc;
 }
 
+export interface EntityEvent {
+  name: string;
+  params: Param[];
+  visibility: Visibility;
+  loc: Loc;
+}
+
+export type EntityChangeOperation = "insert" | "update" | "delete";
+
+export const CHANGE_HANDLER_PARAMS: ReadonlyMap<EntityChangeOperation, readonly string[]> = new Map([
+  ["insert", ["new"]],
+  ["update", ["new", "old"]],
+  ["delete", ["old"]],
+]);
+
+export interface EntityChangeHandler {
+  operation: EntityChangeOperation;
+  params: string[];
+  body: Statement[];
+  loc: Loc;
+}
+
 export type EntityHookEvent =
   | "before_create"
   | "after_create"
@@ -247,6 +272,16 @@ export interface PlxTest {
   loc: Loc;
 }
 
+export interface PlxSubscription {
+  kind: "subscription";
+  sourceSchema: string;
+  sourceEntity: string;
+  event: string;
+  params: string[];
+  body: Statement[];
+  loc: Loc;
+}
+
 export interface Param {
   name: string;
   type: string;
@@ -266,7 +301,8 @@ export type Statement =
   | MatchStatement
   | SqlStatement
   | AppendStatement
-  | AssertStatement;
+  | AssertStatement
+  | EmitStatement;
 
 export interface AssertStatement {
   kind: "assert";
@@ -333,6 +369,13 @@ export interface AppendStatement {
   kind: "append";
   target: string;
   value: Expression;
+  loc: Loc;
+}
+
+export interface EmitStatement {
+  kind: "emit";
+  eventName: string;
+  args: Expression[];
   loc: Loc;
 }
 

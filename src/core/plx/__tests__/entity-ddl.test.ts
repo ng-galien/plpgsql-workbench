@@ -62,9 +62,11 @@ describe("entity DDL generation", () => {
         loc: LOC,
       },
       view: { compact: ["title"] },
+      events: [],
       actions: [],
       strategies: [],
       hooks: [],
+      changeHandlers: [],
       listOrder: "id",
       loc: LOC,
     };

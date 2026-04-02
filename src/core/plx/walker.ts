@@ -27,6 +27,9 @@ export function walkStatement(stmt: Statement, visitor: AstVisitor): void {
     case "assert":
       walkExpression(stmt.expression, visitor);
       return;
+    case "emit":
+      for (const arg of stmt.args) walkExpression(arg, visitor);
+      return;
     case "if":
       walkExpression(stmt.condition, visitor);
       walkStatements(stmt.body, visitor);
