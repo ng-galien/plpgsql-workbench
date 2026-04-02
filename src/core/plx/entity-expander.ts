@@ -20,9 +20,10 @@ import type {
   ViewSection,
 } from "./ast.js";
 import { pointLoc } from "./ast.js";
-import { type DdlArtifact, formatDefaultValue, generateDDL } from "./entity-ddl.js";
+import { type DdlArtifact, generateDDL, type ResolvedEntityFields } from "./entity-ddl.js";
+import { formatDefaultValue } from "./entity-sql.js";
 
-export type { DdlArtifact } from "./entity-ddl.js";
+export type { DdlArtifact, ResolvedEntityFields } from "./entity-ddl.js";
 
 const LOC: Loc = pointLoc();
 
@@ -39,12 +40,6 @@ export interface ExpandError {
   loc: Loc;
   message: string;
   entityName: string;
-}
-
-export interface ResolvedEntityFields {
-  all: EntityField[];
-  columns: EntityField[];
-  payload: EntityField[];
 }
 
 export function expandEntities(mod: PlxModule): ExpandResult {
@@ -478,7 +473,7 @@ function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
   );
 
   if (entity.storage === "hybrid") {
-    colNames.push("data");
+    colNames.push("payload");
     colValues.push(buildCreatePayloadSql(entity, resolved.payload, "p_data"));
   }
 
@@ -528,7 +523,7 @@ function buildUpdateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
   const setClauses = updatableFields.map((f) => `${f.name} = v_p_row.${f.name}`);
 
   if (entity.storage === "hybrid") {
-    setClauses.push(`data = ${buildUpdatePayloadSql(entity, resolved.payload, "p_patch", "v_current.data")}`);
+    setClauses.push(`payload = ${buildUpdatePayloadSql(entity, resolved.payload, "p_patch", "v_current.payload")}`);
   }
 
   // Auditable: always set updated_at = now()
@@ -881,7 +876,7 @@ function buildEntityJsonSelect(entity: PlxEntity, alias: string): string {
     technicalEntries.push(`'deleted_at', ${alias}.deleted_at`);
   }
 
-  return `jsonb_build_object(${technicalEntries.join(", ")}) || jsonb_strip_nulls(COALESCE(${alias}.data, '{}'::jsonb))`;
+  return `jsonb_build_object(${technicalEntries.join(", ")}) || jsonb_strip_nulls(COALESCE(${alias}.payload, '{}'::jsonb))`;
 }
 
 function buildCreatePayloadSql(entity: PlxEntity, payloadFields: EntityField[], payloadName: string): string {

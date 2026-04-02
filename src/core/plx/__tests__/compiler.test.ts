@@ -144,11 +144,11 @@ entity demo.task:
 `;
     const result = compile(source);
     expect(result.errors).toHaveLength(0);
-    expect(result.ddlSql).toContain("data jsonb NOT NULL DEFAULT '{}'::jsonb");
+    expect(result.ddlSql).toContain("payload jsonb NOT NULL DEFAULT '{}'::jsonb");
     expect(result.ddlSql).toContain("rank int DEFAULT 0");
-    expect(result.sql).toContain("INSERT INTO demo.task (rank, data)");
+    expect(result.sql).toContain("INSERT INTO demo.task (rank, payload)");
     expect(result.sql).toContain("jsonb_strip_nulls(jsonb_build_object('title'");
-    expect(result.sql).toContain("data = (v_current.data - array_remove(ARRAY[");
+    expect(result.sql).toContain("payload = (v_current.payload - array_remove(ARRAY[");
     expect(result.sql).toContain("jsonb_build_object('id', v_result.id, 'rank', v_result.rank)");
   });
 

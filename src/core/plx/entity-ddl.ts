@@ -1,5 +1,5 @@
-import type { PlxEntity } from "./ast.js";
-import type { ResolvedEntityFields } from "./entity-expander.js";
+import type { EntityField, PlxEntity } from "./ast.js";
+import { formatDefaultValue } from "./entity-sql.js";
 
 // ---------- Public types ----------
 
@@ -8,6 +8,12 @@ export interface DdlArtifact {
   name: string;
   sql: string;
   dependsOn: string[];
+}
+
+export interface ResolvedEntityFields {
+  all: EntityField[];
+  columns: EntityField[];
+  payload: EntityField[];
 }
 
 // ---------- DDL generation ----------
@@ -38,7 +44,7 @@ export function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): 
   }
 
   if (entity.storage === "hybrid") {
-    lines.push("  data jsonb NOT NULL DEFAULT '{}'::jsonb,");
+    lines.push("  payload jsonb NOT NULL DEFAULT '{}'::jsonb,");
   }
 
   // Remove trailing comma from last line
@@ -77,19 +83,4 @@ export function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): 
   });
 
   return { artifacts };
-}
-
-/** Quote default values for DDL: text types need quotes, others (bool, numeric, function calls) don't. */
-export function formatDefaultValue(value: string, type: string): string {
-  const lowerType = type.toLowerCase();
-  // Already looks like SQL (function call, cast, keyword)
-  if (value.includes("(") || value.includes("::") || value === "true" || value === "false" || value === "null") {
-    return value;
-  }
-  // Numeric types: emit as-is
-  if (/^(int|integer|bigint|smallint|numeric|decimal|float|double|serial|real)/.test(lowerType)) {
-    return value;
-  }
-  // Text-like types: quote
-  return `'${value.replace(/'/g, "''")}'`;
 }
