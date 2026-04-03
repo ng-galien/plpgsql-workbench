@@ -18,22 +18,48 @@ interface TapResult {
   description: string;
   have?: string;
   want?: string;
+  sqlstate?: string;
+  error?: string;
+  context?: string[];
 }
 
 function parseTap(rows: { runtests: string }[]): TestReport {
   const results: TapResult[] = [];
   let current: TapResult | null = null;
+  let pendingFailure: Pick<TapResult, "sqlstate" | "error" | "context"> | null = null;
 
   const lines: string[] = [];
   for (const row of rows) lines.push(...row.runtests.split("\n"));
 
   for (const line of lines) {
+    const diedMatch = line.match(/#\s+Test died:\s+([A-Z0-9]+):\s+(.+)/);
+    if (diedMatch) {
+      pendingFailure = {
+        sqlstate: diedMatch[1],
+        error: diedMatch[2],
+        context: [],
+      };
+      continue;
+    }
+    const contextHeader = line.match(/#\s+CONTEXT:\s*$/);
+    if (contextHeader && pendingFailure) {
+      pendingFailure.context ??= [];
+      continue;
+    }
+    const contextLine = line.match(/#\s{6,}(.+)/);
+    if (contextLine && pendingFailure?.context) {
+      const contextEntry = contextLine[1];
+      if (contextEntry) pendingFailure.context.push(contextEntry);
+      continue;
+    }
+
     const tapMatch = line.match(/^\s*(not )?ok \d+ - (.+)$/);
     if (tapMatch) {
       if (current) results.push(current);
       const description = tapMatch[2];
       if (!description) continue;
-      current = { ok: !tapMatch[1], description };
+      current = { ok: !tapMatch[1], description, ...pendingFailure };
+      pendingFailure = null;
       continue;
     }
 
@@ -68,6 +94,13 @@ export function formatTestReport(report: TestReport): string {
       parts.push(`  ✓ ${r.description}`);
     } else {
       parts.push(`  ✗ ${r.description}`);
+      if (r.sqlstate || r.error) {
+        parts.push(`    error: ${[r.sqlstate, r.error].filter(Boolean).join(": ")}`);
+      }
+      if (r.context && r.context.length > 0) {
+        parts.push("    context:");
+        for (const line of r.context) parts.push(`      ${line}`);
+      }
       if (r.have !== undefined) parts.push(`    have: ${r.have}`);
       if (r.want !== undefined) parts.push(`    want: ${r.want}`);
     }

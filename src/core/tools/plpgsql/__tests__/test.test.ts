@@ -42,11 +42,14 @@ class FakeClient implements DbClient {
       return {
         rows: [
           { runtests: "# Subtest: demo_ut.test_health()" },
+          { runtests: "    # Test died: P0001: demo.err_boom" },
+          { runtests: "    #         CONTEXT:" },
+          { runtests: "    #             PL/pgSQL function test_health() line 7 at assignment" },
           { runtests: "not ok 1 - demo_ut.test_health" },
           { runtests: '# Failed test 1: "demo_ut.test_health"' },
           { runtests: "1..1" },
         ] as T[],
-        rowCount: 4,
+        rowCount: 6,
       };
     }
 
@@ -63,5 +66,8 @@ describe("plpgsql test runner", () => {
     expect(report?.failed).toBe(1);
     expect(report?.total).toBe(1);
     expect(report?.results[0]?.description).toBe("demo_ut.test_health");
+    expect(report?.results[0]?.sqlstate).toBe("P0001");
+    expect(report?.results[0]?.error).toBe("demo.err_boom");
+    expect(report?.results[0]?.context).toEqual(["PL/pgSQL function test_health() line 7 at assignment"]);
   });
 });
