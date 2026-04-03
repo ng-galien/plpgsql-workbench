@@ -4,11 +4,13 @@ CREATE SCHEMA IF NOT EXISTS "plxdemo_ut";
 
 CREATE OR REPLACE FUNCTION plxdemo.authorize(p_permission text) RETURNS void
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = plxdemo, pg_catalog, pg_temp AS $$
+DECLARE
+  v_perms text := current_setting('app.permissions', true);
 BEGIN
-  IF current_setting('app.permissions', true) IS NULL THEN
+  IF v_perms IS NULL THEN
     RAISE EXCEPTION 'forbidden: no permissions configured';
   END IF;
-  IF NOT p_permission = ANY(string_to_array(current_setting('app.permissions', true), ',')) THEN
+  IF NOT p_permission = ANY(string_to_array(v_perms, ',')) THEN
     RAISE EXCEPTION 'forbidden: % denied', p_permission;
   END IF;
 END;
