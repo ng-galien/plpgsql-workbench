@@ -204,6 +204,7 @@ async function bootstrapSchema(pool: pg.Pool, schema: string): Promise<void> {
     "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon; END IF; END $$",
   );
   await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
+  await pool.query("SELECT set_config('app.tenant_id', 'test', false)");
 }
 
 async function deployCompiledSql(

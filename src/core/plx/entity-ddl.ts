@@ -22,6 +22,7 @@ export function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): 
   const lines: string[] = [];
   lines.push(`CREATE TABLE IF NOT EXISTS ${entity.table} (`);
   lines.push("  id serial PRIMARY KEY,");
+  lines.push("  tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id'),");
 
   for (const f of resolved.columns) {
     let col = `  ${f.name} ${f.type}`;
@@ -68,9 +69,8 @@ export function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): 
     artifacts.push({
       key: `ddl:fk:${entity.table}.${field.name}`,
       name: `${entity.table}.${field.name}`,
-      sql:
-        `ALTER TABLE ${entity.table} DROP CONSTRAINT IF EXISTS ${constraintName};\n` +
-        `ALTER TABLE ${entity.table} ADD CONSTRAINT ${constraintName} FOREIGN KEY (${field.name}) REFERENCES ${field.ref}(id);`,
+      sql: `ALTER TABLE ${entity.table} DROP CONSTRAINT IF EXISTS ${constraintName};
+ALTER TABLE ${entity.table} ADD CONSTRAINT ${constraintName} FOREIGN KEY (${field.name}) REFERENCES ${field.ref}(id);`,
       dependsOn: [`ddl:table:${entity.table}`, `ddl:table:${field.ref}`],
     });
   }
@@ -78,7 +78,26 @@ export function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): 
   artifacts.push({
     key: `ddl:grant:${entity.table}`,
     name: `${entity.table}.grant`,
-    sql: `GRANT USAGE ON SCHEMA ${entity.schema} TO anon;\nGRANT SELECT ON TABLE ${entity.table} TO anon;`,
+    sql: `GRANT USAGE ON SCHEMA ${entity.schema} TO anon;
+GRANT SELECT ON TABLE ${entity.table} TO anon;`,
+    dependsOn: [`ddl:table:${entity.table}`],
+  });
+
+  artifacts.push({
+    key: `ddl:index:${entity.table}.tenant_id`,
+    name: `${entity.table}.tenant_id_idx`,
+    sql: `CREATE INDEX IF NOT EXISTS idx_${entity.name}_tenant ON ${entity.table}(tenant_id);`,
+    dependsOn: [`ddl:table:${entity.table}`],
+  });
+
+  artifacts.push({
+    key: `ddl:rls:${entity.table}`,
+    name: `${entity.table}.rls`,
+    sql: `ALTER TABLE ${entity.table} ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON ${entity.table};
+CREATE POLICY tenant_isolation ON ${entity.table}
+  USING (tenant_id = current_setting('app.tenant_id'))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id'));`,
     dependsOn: [`ddl:table:${entity.table}`],
   });
 

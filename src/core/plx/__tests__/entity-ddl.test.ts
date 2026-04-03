@@ -82,6 +82,7 @@ describe("entity DDL generation", () => {
       .join("\n\n");
 
     expect(sql).toContain("CREATE TABLE IF NOT EXISTS demo.task");
+    expect(sql).toContain("tenant_id text NOT NULL DEFAULT current_setting('app.tenant_id')");
     expect(sql).toContain("rank int DEFAULT 0");
     expect(sql).toContain("phase text NOT NULL DEFAULT 'draft' CHECK (phase IN ('draft', 'active'))");
     expect(sql).toContain("payload jsonb NOT NULL DEFAULT '{}'::jsonb");
@@ -89,6 +90,11 @@ describe("entity DDL generation", () => {
       "ALTER TABLE demo.task ADD CONSTRAINT task_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES demo.user(id);",
     );
     expect(sql).toContain("GRANT USAGE ON SCHEMA demo TO anon;");
+    expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_task_tenant ON demo.task(tenant_id)");
+    expect(sql).toContain("ALTER TABLE demo.task ENABLE ROW LEVEL SECURITY");
+    expect(sql).toContain("CREATE POLICY tenant_isolation ON demo.task");
+    expect(sql).toContain("USING (tenant_id = current_setting('app.tenant_id'))");
+    expect(sql).toContain("WITH CHECK (tenant_id = current_setting('app.tenant_id'))");
   });
 
   it("formats SQL default values according to column type", () => {
