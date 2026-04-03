@@ -42,6 +42,10 @@ export function walkStatement(stmt: Statement, visitor: AstVisitor): void {
     case "for_in":
       walkStatements(stmt.body, visitor);
       return;
+    case "try_catch":
+      walkStatements(stmt.body, visitor);
+      walkStatements(stmt.catchBody, visitor);
+      return;
     case "match":
       walkExpression(stmt.subject, visitor);
       for (const arm of stmt.arms) {

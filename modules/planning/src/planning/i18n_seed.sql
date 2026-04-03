@@ -3,6 +3,39 @@ CREATE OR REPLACE FUNCTION planning.i18n_seed()
  LANGUAGE plpgsql
 AS $function$
 BEGIN
+  -- Delete stale French keys from pre-rename era
+  DELETE FROM pgv.i18n WHERE lang = 'fr' AND key IN (
+    'planning.btn_affecter', 'planning.btn_ajouter_intervenant', 'planning.btn_enregistrer',
+    'planning.btn_filtrer', 'planning.btn_gerer_equipe', 'planning.btn_modifier',
+    'planning.btn_nouvel_evenement', 'planning.btn_nouvel_intervenant', 'planning.btn_retirer',
+    'planning.btn_supprimer',
+    'planning.col_chantier', 'planning.col_couleur', 'planning.col_evenement',
+    'planning.col_evt_actifs', 'planning.col_intervenant', 'planning.col_intervenants',
+    'planning.col_lieu', 'planning.col_nom', 'planning.col_statut', 'planning.col_telephone',
+    'planning.confirm_delete_evenement', 'planning.confirm_delete_intervenant',
+    'planning.empty_equipe', 'planning.empty_first_intervenant', 'planning.empty_no_affectation',
+    'planning.empty_no_evenement', 'planning.empty_no_evt_venir', 'planning.empty_no_intervenant',
+    'planning.err_evenement_not_found', 'planning.err_intervenant_not_found',
+    'planning.err_nom_required', 'planning.err_titre_required',
+    'planning.field_actif', 'planning.field_ajoute_le', 'planning.field_chantier',
+    'planning.field_couleur', 'planning.field_date_debut', 'planning.field_date_fin',
+    'planning.field_heure_debut', 'planning.field_heure_fin', 'planning.field_lieu',
+    'planning.field_nom', 'planning.field_telephone', 'planning.field_titre',
+    'planning.filter_a_partir_du', 'planning.filter_actifs', 'planning.filter_inactifs',
+    'planning.filter_recherche_nom', 'planning.filter_recherche_titre',
+    'planning.filter_statut', 'planning.filter_tous',
+    'planning.nav_equipe', 'planning.nav_evenements',
+    'planning.stat_affectations_semaine', 'planning.stat_evenements_semaine',
+    'planning.stat_intervenants',
+    'planning.statut_actif', 'planning.statut_inactif',
+    'planning.title_equipe_affectee', 'planning.title_evenements_venir', 'planning.title_semaine_du',
+    'planning.toast_affectation_not_found', 'planning.toast_affecte', 'planning.toast_desaffecte',
+    'planning.toast_evenement_deleted', 'planning.toast_evenement_saved',
+    'planning.toast_intervenant_deleted', 'planning.toast_intervenant_saved',
+    'planning.type_autre', 'planning.type_chantier', 'planning.type_conge',
+    'planning.type_livraison', 'planning.type_reunion'
+  );
+
   INSERT INTO pgv.i18n (lang, key, value) VALUES
     -- Brand / Navigation
     ('fr', 'planning.brand', 'Planning'),

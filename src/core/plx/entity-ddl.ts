@@ -1,5 +1,6 @@
 import type { EntityField, PlxEntity } from "./ast.js";
 import { formatDefaultValue } from "./entity-sql.js";
+import { sqlEscape } from "./util.js";
 
 // ---------- Public types ----------
 
@@ -36,11 +37,13 @@ export function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): 
   // State column CHECK constraint
   const states = entity.states;
   if (states) {
-    const vals = states.values.map((v) => `'${v}'`).join(", ");
+    const vals = states.values.map((v) => `'${sqlEscape(v)}'`).join(", ");
     // Add state column CHECK if not already in fields
     // Only add if status is not already in fields
     if (!resolved.columns.some((f) => f.name === states.column)) {
-      lines.push(`  ${states.column} text NOT NULL DEFAULT '${states.initial}' CHECK (${states.column} IN (${vals})),`);
+      lines.push(
+        `  ${states.column} text NOT NULL DEFAULT '${sqlEscape(states.initial)}' CHECK (${states.column} IN (${vals})),`,
+      );
     }
   }
 
@@ -78,9 +81,15 @@ ALTER TABLE ${entity.table} ADD CONSTRAINT ${constraintName} FOREIGN KEY (${fiel
   artifacts.push({
     key: `ddl:grant:${entity.table}`,
     name: `${entity.table}.grant`,
-    sql: `GRANT USAGE ON SCHEMA ${entity.schema} TO anon;
-GRANT SELECT ON TABLE ${entity.table} TO anon;`,
+    sql: `GRANT USAGE ON SCHEMA ${entity.schema} TO anon;`,
     dependsOn: [`ddl:table:${entity.table}`],
+  });
+
+  artifacts.push({
+    key: `ddl:revoke:${entity.table}`,
+    name: `${entity.table}.revoke`,
+    sql: `REVOKE INSERT, UPDATE, DELETE ON TABLE ${entity.table} FROM anon;`,
+    dependsOn: [`ddl:grant:${entity.table}`],
   });
 
   artifacts.push({
@@ -94,10 +103,11 @@ GRANT SELECT ON TABLE ${entity.table} TO anon;`,
     key: `ddl:rls:${entity.table}`,
     name: `${entity.table}.rls`,
     sql: `ALTER TABLE ${entity.table} ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ${entity.table} FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON ${entity.table};
-CREATE POLICY tenant_isolation ON ${entity.table}
-  USING (tenant_id = current_setting('app.tenant_id'))
-  WITH CHECK (tenant_id = current_setting('app.tenant_id'));`,
+CREATE POLICY tenant_isolation ON ${entity.table} FOR ALL TO anon, authenticated
+  USING (tenant_id = (SELECT current_setting('app.tenant_id')))
+  WITH CHECK (tenant_id = (SELECT current_setting('app.tenant_id')));`,
     dependsOn: [`ddl:table:${entity.table}`],
   });
 

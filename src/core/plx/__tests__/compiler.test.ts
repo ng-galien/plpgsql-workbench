@@ -63,6 +63,7 @@ test "schema inference":
     const result = compile(source);
     expect(result.errors).toHaveLength(0);
     expect(result.testSql).toContain("crm_ut.test_schema_inference");
+    expect(result.ddlSql).toContain('CREATE SCHEMA IF NOT EXISTS "crm_ut";');
   });
 
   it("errors when no qualified call found", () => {
@@ -126,10 +127,11 @@ entity demo.task:
 `;
     const result = compile(source);
     expect(result.errors).toHaveLength(0);
-    expect(result.sql).toContain("FUNCTION demo.task_create(p_data jsonb)");
-    expect(result.sql).toContain("FUNCTION demo.task_update(p_id text, p_patch jsonb)");
-    expect(result.sql).toContain("jsonb_populate_record(NULL::demo.task, p_data)");
-    expect(result.sql).toContain("jsonb_populate_record(v_current, p_patch)");
+    expect(result.ddlSql).toContain('CREATE SCHEMA IF NOT EXISTS "demo";');
+    expect(result.sql).toContain("FUNCTION demo.task_create(p_input jsonb)");
+    expect(result.sql).toContain("FUNCTION demo.task_update(p_id text, p_input jsonb)");
+    expect(result.sql).toContain("jsonb_populate_record(NULL::demo.task, p_input)");
+    expect(result.sql).toContain("jsonb_populate_record(v_current, p_input)");
   });
 
   it("supports columns + payload entities with hybrid storage", () => {
@@ -150,6 +152,21 @@ entity demo.task:
     expect(result.sql).toContain("jsonb_strip_nulls(jsonb_build_object('title'");
     expect(result.sql).toContain("payload = (v_current.payload - array_remove(ARRAY[");
     expect(result.sql).toContain("jsonb_build_object('id', v_result.id, 'rank', v_result.rank)");
+  });
+
+  it("hardens SECURITY DEFINER functions with a fixed search_path", () => {
+    const source = `
+entity demo.task:
+  fields:
+    title text required
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.ddlSql).toContain(
+      "LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = demo, pg_catalog, pg_temp AS $$",
+    );
+    expect(result.sql).toContain("SECURITY DEFINER");
+    expect(result.sql).toContain("SET search_path = demo, pg_catalog, pg_temp");
   });
 
   it("generates foreign key constraints for ref(...) columns", () => {
@@ -208,7 +225,7 @@ entity demo.task:
 `;
     const result = compile(source);
     expect(result.errors).toHaveLength(0);
-    expect(result.sql).toContain("IF NOT title = 'x' THEN");
+    expect(result.sql).toContain("IF NOT (title = 'x') THEN");
     expect(result.sql).not.toContain("IF true NOT");
   });
 
@@ -238,16 +255,17 @@ entity demo.task:
     title text required
 
   validate:
-    title_present: coalesce(p_data->>'title', '') != ''
+    title_present: coalesce(p_input->>'title', '') != ''
     title_not_blank: """
-      coalesce(p_data->>'title', '') != ''
+      coalesce(p_input->>'title', '') != ''
     """
 `;
     const result = compile(source);
     expect(result.errors).toHaveLength(0);
     expect(result.sql).toContain("title_present");
     expect(result.sql).toContain("title_not_blank");
-    expect(result.sql).toContain("v_p_data := p_patch;");
+    expect(result.sql).not.toContain("v_p_data := p_patch;");
+    expect(result.sql).toContain("coalesce(p_input->>'title', '') != ''");
   });
 
   it("generates transactional outbox SQL for entity events and subscriptions", () => {
@@ -582,5 +600,70 @@ fn demo.query(name text) -> setof text:
         }),
       ]),
     );
+  });
+
+  it("compiles IS NULL and IS NOT NULL expressions", () => {
+    const source = `
+fn demo.check(p_val text) -> text:
+  if p_val is null:
+    return 'null'
+  if p_val is not null:
+    return 'present'
+  return 'unknown'
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("IF p_val IS NULL THEN");
+    expect(result.sql).toContain("IF p_val IS NOT NULL THEN");
+  });
+
+  it("compiles try/catch to BEGIN/EXCEPTION WHEN OTHERS", () => {
+    const source = `
+fn demo.safe(p_id int) -> boolean:
+  ok := false
+  try:
+    demo.risky(p_id)
+    ok := true
+  catch:
+    ok := false
+  return ok
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("BEGIN");
+    expect(result.sql).toContain("PERFORM demo.risky(p_id);");
+    expect(result.sql).toContain("EXCEPTION WHEN OTHERS THEN");
+    expect(result.sql).toContain("END;");
+  });
+
+  it("compiles try/catch in test blocks", () => {
+    const source = `
+test "catches error":
+  ok := false
+  try:
+    demo.will_fail()
+  catch:
+    ok := true
+  assert ok = true
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("BEGIN");
+    expect(result.testSql).toContain("EXCEPTION WHEN OTHERS THEN");
+    expect(result.testSql).toContain("END;");
+    expect(result.testSql).toContain("RETURN NEXT is(");
+  });
+
+  it("compiles IS NULL in test assert to pgTAP is()", () => {
+    const source = `
+test "null assert":
+  r := demo.get_value()
+  assert r is null
+  assert r is not null
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("RETURN NEXT is(v_r, NULL,");
+    expect(result.testSql).toContain("RETURN NEXT ok(v_r IS NOT NULL,");
   });
 });

@@ -21,6 +21,7 @@ import type {
   SqlStatement,
   Statement,
   StringInterp,
+  TryCatchStatement,
   UnaryExpr,
 } from "./ast.js";
 import { mergeLoc, pointLoc, shiftLoc, stripLocPrefix } from "./ast.js";
@@ -185,6 +186,7 @@ export class ParseContext {
     if (tok.type === "SQL_BLOCK") return this.parseSqlStatement();
 
     if (tok.type === "IDENT") {
+      if (tok.value === "try") return this.parseTryCatch();
       if (tok.value === "emit") return this.parseEmit();
       const next = this.peekAt(1);
       if (next?.type === "ASSIGN") return this.parseAssign();
@@ -312,6 +314,34 @@ export class ParseContext {
     return { kind: "for_in", variable, query: parts.join(" "), body, loc: mergeLoc(start, end) };
   }
 
+  private parseTryCatch(): TryCatchStatement {
+    const start = tokenLoc(this.expect("IDENT")); // consume "try"
+    this.expect("COLON");
+    this.skipNewlines();
+    this.expect("INDENT");
+    const body = this.parseBlock();
+    this.expect("DEDENT");
+    this.skipNewlines();
+
+    // Expect "catch:"
+    const catchTok = this.peek();
+    if (catchTok.type !== "IDENT" || catchTok.value !== "catch") {
+      throw new ParseError("expected 'catch' after try block", tokenLoc(catchTok), {
+        code: "parse.expected-catch",
+        hint: "A try block must be followed by a catch block.",
+      });
+    }
+    this.advance();
+    this.expect("COLON");
+    this.skipNewlines();
+    this.expect("INDENT");
+    const catchBody = this.parseBlock();
+    const end = tokenLoc(this.expect("DEDENT"));
+    this.skipNewlines();
+
+    return { kind: "try_catch", body, catchBody, loc: mergeLoc(start, end) };
+  }
+
   private parseReturn(): ReturnStatement {
     const start = tokenLoc(this.expect("RETURN"));
 
@@ -432,6 +462,22 @@ export class ParseContext {
 
     while (true) {
       this.skipInlineExprWs();
+
+      // Postfix: IS NULL / IS NOT NULL
+      const isNull = this.peekIsNull();
+      if (isNull && 30 >= minPrecedence) {
+        for (let i = 0; i < isNull.tokens; i++) this.advance();
+        const nullLit: Expression = { kind: "literal", value: null, type: "null", loc: left.loc };
+        left = {
+          kind: "binary",
+          op: isNull.negated ? "IS NOT NULL" : "IS NULL",
+          left,
+          right: nullLit,
+          loc: left.loc,
+        };
+        continue;
+      }
+
       const opInfo = this.peekBinaryOperator();
       if (!opInfo || opInfo.precedence < minPrecedence) break;
 
@@ -442,6 +488,22 @@ export class ParseContext {
     }
 
     return left;
+  }
+
+  /** Peek for `is null` (2 tokens) or `is not null` (3 tokens). */
+  private peekIsNull(): { negated: boolean; tokens: number } | undefined {
+    const tok = this.peek();
+    if (tok.type !== "IDENT" || tok.value !== "is") return undefined;
+    const t1 = this.peekAt(1);
+    if (!t1) return undefined;
+    // is null
+    if (t1.type === "IDENT" && t1.value === "null") return { negated: false, tokens: 2 };
+    // is not null
+    if (t1.type === "NOT") {
+      const t2 = this.peekAt(2);
+      if (t2 && t2.type === "IDENT" && t2.value === "null") return { negated: true, tokens: 3 };
+    }
+    return undefined;
   }
 
   private parsePrefix(): Expression {

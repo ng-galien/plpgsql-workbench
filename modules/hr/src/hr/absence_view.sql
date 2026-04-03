@@ -11,16 +11,16 @@ BEGIN
 
     'template', jsonb_build_object(
       'compact', jsonb_build_object(
-        'fields', jsonb_build_array('employee_name', 'type_label', 'nb_jours', 'statut')
+        'fields', jsonb_build_array('employee_name', 'type_label', 'day_count', 'status')
       ),
       'standard', jsonb_build_object(
-        'fields', jsonb_build_array('employee_name', 'type_label', 'date_debut', 'date_fin', 'nb_jours', 'motif', 'statut'),
+        'fields', jsonb_build_array('employee_name', 'type_label', 'start_date', 'end_date', 'day_count', 'reason', 'status'),
         'related', jsonb_build_array(
           jsonb_build_object('entity', 'hr://employee', 'label', 'hr.rel_employee', 'filter', 'id={employee_id}')
         )
       ),
       'expanded', jsonb_build_object(
-        'fields', jsonb_build_array('employee_name', 'type_label', 'date_debut', 'date_fin', 'nb_jours', 'motif', 'statut', 'created_at'),
+        'fields', jsonb_build_array('employee_name', 'type_label', 'start_date', 'end_date', 'day_count', 'reason', 'status', 'created_at'),
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'balance_remaining', 'label', 'hr.stat_balance_remaining')
         ),
@@ -32,11 +32,11 @@ BEGIN
         'sections', jsonb_build_array(
           jsonb_build_object('label', 'hr.section_absence', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'employee_id', 'type', 'combobox', 'label', 'hr.field_employee', 'source', 'hr://employee', 'display', 'display_name', 'required', true),
-            jsonb_build_object('key', 'type_absence', 'type', 'select', 'label', 'hr.field_type_absence', 'options', 'hr.absence_type_options', 'required', true),
-            jsonb_build_object('key', 'date_debut', 'type', 'date', 'label', 'hr.field_date_debut', 'required', true),
-            jsonb_build_object('key', 'date_fin', 'type', 'date', 'label', 'hr.field_date_fin_absence', 'required', true),
-            jsonb_build_object('key', 'nb_jours', 'type', 'number', 'label', 'hr.field_nb_jours', 'required', true),
-            jsonb_build_object('key', 'motif', 'type', 'text', 'label', 'hr.field_motif')
+            jsonb_build_object('key', 'leave_type', 'type', 'select', 'label', 'hr.field_absence_type', 'options', 'hr.absence_type_options', 'required', true),
+            jsonb_build_object('key', 'start_date', 'type', 'date', 'label', 'hr.field_start_date', 'required', true),
+            jsonb_build_object('key', 'end_date', 'type', 'date', 'label', 'hr.field_end_date_absence', 'required', true),
+            jsonb_build_object('key', 'day_count', 'type', 'number', 'label', 'hr.field_day_count', 'required', true),
+            jsonb_build_object('key', 'reason', 'type', 'text', 'label', 'hr.field_reason')
           ))
         )
       )

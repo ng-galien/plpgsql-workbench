@@ -8,6 +8,7 @@ entity plxdemo.task uses auditable:
   columns:
     rank int? default(0)
     note_id int? ref(plxdemo.note)
+    project_id int? ref(plxdemo.project)
 
   payload:
     title text required
@@ -17,13 +18,13 @@ entity plxdemo.task uses auditable:
 
   validate:
     priority_valid: """
-      coalesce(p_data->>'priority', 'normal') in ('low', 'normal', 'high')
+      coalesce(p_input->>'priority', 'normal') in ('low', 'normal', 'high')
     """
 
   view:
     compact: [title, priority, done, rank, note_id]
-    standard: [title, description, priority, done, rank, note_id]
-    expanded: [title, description, priority, done, rank, note_id, created_at, updated_at]
+    standard: [title, description, priority, done, rank, note_id, project_id]
+    expanded: [title, description, priority, done, rank, note_id, project_id, created_at, updated_at]
     form:
       'plxdemo.section_task':
         {key: title, type: text, label: plxdemo.field_title, required: true}

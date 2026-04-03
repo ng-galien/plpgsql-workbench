@@ -150,6 +150,12 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
 
   // Merge expanded functions with hand-written ones
   const allFunctions = [...mod.functions, ...expandResult.functions, ...eventResult.functions];
+  const schemaArtifacts = buildSchemaArtifacts(
+    allFunctions,
+    testResult.functions,
+    expandResult.ddlArtifacts,
+    eventResult.ddlArtifacts,
+  );
 
   // Build alias map from imports
   const aliases = new Map<string, string>();
@@ -199,7 +205,8 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
     return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
-  const ddlFragments = [...expandResult.ddlFragments, ...eventResult.ddlFragments];
+  const ddlArtifacts = [...schemaArtifacts, ...expandResult.ddlArtifacts, ...eventResult.ddlArtifacts];
+  const ddlFragments = ddlArtifacts.map((artifact) => artifact.sql);
   const ddlSql = ddlFragments.length > 0 ? ddlFragments.join("\n\n") : undefined;
   const testSql = testSqlParts.length > 0 ? testSqlParts.join("\n\n") : undefined;
 
@@ -217,12 +224,40 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
     blocks: validationBlocks,
     artifact: {
       aliases,
-      ddlArtifacts: [...expandResult.ddlArtifacts, ...eventResult.ddlArtifacts],
+      ddlArtifacts,
       functions: allFunctions,
       module: mod,
       testFunctions: testResult.functions,
     },
   };
+}
+
+function buildSchemaArtifacts(
+  functions: readonly PlxFunction[],
+  testFunctions: readonly PlxFunction[],
+  ...ddlSources: ReadonlyArray<readonly DdlArtifact[]>
+): DdlArtifact[] {
+  const schemas = new Set<string>();
+
+  for (const fn of functions) {
+    if (fn.schema) schemas.add(fn.schema);
+  }
+  for (const fn of testFunctions) {
+    if (fn.schema) schemas.add(fn.schema);
+  }
+  for (const artifacts of ddlSources) {
+    for (const artifact of artifacts) {
+      const match = artifact.key.match(/^ddl:schema:(.+)$/);
+      if (match?.[1]) schemas.add(match[1]);
+    }
+  }
+
+  return [...schemas].sort().map((schema) => ({
+    key: `ddl:schema:${schema}`,
+    name: `${schema}.schema`,
+    sql: `CREATE SCHEMA IF NOT EXISTS "${schema.replace(/"/g, '""')}";`,
+    dependsOn: [],
+  }));
 }
 
 function emptyBundle(result: CompileResult, mod: PlxModule): CompiledBundle {

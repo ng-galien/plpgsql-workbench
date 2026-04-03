@@ -14,7 +14,9 @@ import type { DbClient } from "../connection.js";
 import type { ToolPack, WithClient } from "../container.js";
 import { buildModuleRegistry } from "../pgm/registry.js";
 import { createPgmModuleApplyTool } from "../tools/pgm/module-apply.js";
+import { createPlxModuleDropTool } from "../tools/pgm/module-drop.js";
 import { createPgmModuleStatusTool } from "../tools/pgm/module-status.js";
+import { createPlxModuleTestTool } from "../tools/pgm/module-test.js";
 import { createAlterTool } from "../tools/plpgsql/alter.js";
 import { createBroadcastTool } from "../tools/plpgsql/broadcast.js";
 import { createCoverageTool } from "../tools/plpgsql/coverage.js";
@@ -40,6 +42,43 @@ import { createSearchTool } from "../tools/plpgsql/search.js";
 import { createTestTool, formatTestReport, runTests } from "../tools/plpgsql/test.js";
 import { createVisualTool } from "../tools/plpgsql/visual.js";
 
+type PoolLogger = Pick<Console, "error">;
+type PgPoolLike = Pick<Pool, "connect" | "on">;
+type PgPoolClientLike = DbClient & {
+  release: (destroy?: boolean) => void;
+  on: (event: "error", listener: (error: Error) => void) => void;
+  removeListener?: (event: "error", listener: (error: Error) => void) => void;
+};
+
+export function attachPoolErrorHandler(pool: Pool, logger: PoolLogger = console): Pool {
+  pool.on("error", (error: Error) => {
+    logger.error("[plpgsql] Unexpected idle PostgreSQL client error", error);
+  });
+  return pool;
+}
+
+export function createWithClient(pool: PgPoolLike, logger: PoolLogger = console, tenantId = "dev"): WithClient {
+  const fn: WithClient = async <T>(cb: (client: DbClient) => Promise<T>): Promise<T> => {
+    const client = (await pool.connect()) as PgPoolClientLike;
+    let broken = false;
+    const onClientError = (error: Error) => {
+      broken = true;
+      logger.error("[plpgsql] PostgreSQL client error during tool execution", error);
+    };
+
+    client.on("error", onClientError);
+    try {
+      await client.query("SELECT set_config('app.tenant_id', $1, false)", [tenantId]);
+      return await cb(client);
+    } finally {
+      client.removeListener?.("error", onClientError);
+      await client.query("ROLLBACK").catch(() => {});
+      client.release(broken);
+    }
+  };
+  return fn;
+}
+
 export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record<string, unknown>) => {
   const connectionString =
     (config.connectionString as string) ??
@@ -50,23 +89,12 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
   container.register({
     // --- Infrastructure ---
 
-    pool: asFunction(() => new Pool({ connectionString, max: 5 }))
+    pool: asFunction(() => attachPoolErrorHandler(new Pool({ connectionString, max: 5 })))
       .singleton()
       .disposer((pool: Pool) => pool.end()),
 
     withClient: asFunction(({ pool }: { pool: Pool }) => {
-      const fn: WithClient = async <T>(cb: (client: DbClient) => Promise<T>): Promise<T> => {
-        const client = await pool.connect();
-        try {
-          await client.query("SELECT set_config('app.tenant_id', 'dev', false)");
-          return await cb(client);
-        } finally {
-          // Clean up any aborted transaction before returning to pool
-          await client.query("ROLLBACK").catch(() => {});
-          client.release();
-        }
-      };
-      return fn;
+      return createWithClient(pool);
     }).singleton(),
 
     // --- Shared services (used across tools via injection) ---
@@ -110,6 +138,8 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
     packTool: asFunction(createPackTool).singleton(),
     pgmModuleStatusTool: asFunction(createPgmModuleStatusTool).singleton(),
     pgmModuleApplyTool: asFunction(createPgmModuleApplyTool).singleton(),
+    plxModuleDropTool: asFunction(createPlxModuleDropTool).singleton(),
+    plxModuleTestTool: asFunction(createPlxModuleTestTool).singleton(),
     funcDelTool: asFunction(createFuncDelTool).singleton(),
     funcRenameTool: asFunction(createFuncRenameTool).singleton(),
     funcBulkDelTool: asFunction(createFuncBulkDelTool).singleton(),

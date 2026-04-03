@@ -389,12 +389,11 @@ function analyzeEntity(
   for (const hook of entity.hooks) {
     const bindings = new Map<string, TypeInfo>();
     if (hook.event === "validate_create") {
-      bindings.set("p_data", declaredType("jsonb"));
+      bindings.set("p_input", declaredType("jsonb"));
       bindings.set("p_row", declaredType(entity.table));
     } else if (hook.event === "validate_update") {
       bindings.set("p_id", declaredType("text"));
-      bindings.set("p_data", declaredType("jsonb"));
-      bindings.set("p_patch", declaredType("jsonb"));
+      bindings.set("p_input", declaredType("jsonb"));
       bindings.set("current", declaredType(entity.table));
       bindings.set("p_row", declaredType(entity.table));
     } else if (hook.event === "validate_delete") {
@@ -684,6 +683,11 @@ function analyzeStatement(
       for (const arg of stmt.args) inferExpressionType(arg, ctx);
       return;
     }
+    case "try_catch": {
+      analyzeStatements(stmt.body, nestedContext(stmt.body, ctx), options);
+      analyzeStatements(stmt.catchBody, nestedContext(stmt.catchBody, ctx), options);
+      return;
+    }
   }
 }
 
@@ -843,6 +847,7 @@ function inferBinaryType(expr: Extract<Expression, { kind: "binary" }>, ctx: Ana
     case "<":
     case ">=":
     case "<=":
+    case "IS NULL":
     case "IS NOT NULL":
       return declaredType("boolean");
     case "+":

@@ -1,11 +1,12 @@
 CREATE OR REPLACE FUNCTION stock.warehouse_view()
  RETURNS jsonb
  LANGUAGE sql
+ STABLE
 AS $function$
-  SELECT jsonb_build_object(
+SELECT jsonb_build_object(
     'uri', 'stock://warehouse',
     'icon', '🏭',
-    'label', 'stock.entity_depot',
+    'label', 'stock.entity_warehouse',
 
     'template', jsonb_build_object(
       'compact', jsonb_build_object(
@@ -32,11 +33,11 @@ AS $function$
       'form', jsonb_build_object(
         'sections', jsonb_build_array(
           jsonb_build_object('label', 'stock.section_identity', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'name', 'type', 'text', 'label', 'stock.field_nom', 'required', true),
-            jsonb_build_object('key', 'type', 'type', 'select', 'label', 'stock.field_type', 'required', true, 'options', 'stock.depot_type_options')
+            jsonb_build_object('key', 'name', 'type', 'text', 'label', 'stock.field_name', 'required', true),
+            jsonb_build_object('key', 'type', 'type', 'select', 'label', 'stock.field_type', 'required', true, 'options', 'stock.warehouse_type_options')
           )),
           jsonb_build_object('label', 'stock.section_location', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'address', 'type', 'text', 'label', 'stock.field_adresse')
+            jsonb_build_object('key', 'address', 'type', 'text', 'label', 'stock.field_address')
           ))
         )
       )

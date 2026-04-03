@@ -20,7 +20,7 @@ export function createPgmModuleStatusTool({
 }): ToolHandler {
   return {
     metadata: {
-      name: "pgm_module_status",
+      name: "plx_status",
       description:
         "Inspect a PLX-first module for agent work.\n" +
         "Returns entrypoint, fragments, public contract, build freshness, and incremental apply state in LMNAV.",
@@ -37,7 +37,7 @@ export function createPgmModuleStatusTool({
         workflow = await prepareModuleWorkflow(registry.workspaceRoot, moduleName);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
-        return text(`problem: ${message}\nwhere: pgm_module_status\nfix_hint: verify the module name and plx.entry`);
+        return text(`problem: ${message}\nwhere: plx_status\nfix_hint: verify the module name and plx.entry`);
       }
 
       let tracking = "unavailable";
@@ -144,9 +144,9 @@ export function createPgmModuleStatusTool({
       }
 
       return text(
-        wrap(`pgm://module/${workflow.manifest.name}`, "full", body.join("\n"), [
-          `pgm_module_apply module:${workflow.manifest.name}`,
-          `pgm_module_apply module:${workflow.manifest.name} apply:true`,
+        wrap(`plx://module/${workflow.manifest.name}`, "full", body.join("\n"), [
+          `plx_apply module:${workflow.manifest.name}`,
+          `plx_apply module:${workflow.manifest.name} apply:true`,
         ]),
       );
     },

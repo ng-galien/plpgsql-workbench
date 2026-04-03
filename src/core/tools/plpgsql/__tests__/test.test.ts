@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { DbClient, QueryResult } from "../../connection.js";
-import { runTests } from "./test.js";
+import type { DbClient, QueryResult } from "../../../connection.js";
+import { runTests } from "../test.js";
 
 class FakeClient implements DbClient {
-  async query<T = any>(sql: string, params?: unknown[]): Promise<QueryResult<T>> {
+  async query<T = unknown>(sql: string, params?: unknown[]): Promise<QueryResult<T>> {
     if (sql.includes("FROM pg_namespace WHERE nspname = $1")) {
       return { rows: [{ exists: true }] as T[], rowCount: 1 };
     }
@@ -13,8 +13,26 @@ class FakeClient implements DbClient {
     if (sql.includes("SELECT now() != statement_timestamp() AS in_tx")) {
       return { rows: [{ in_tx: false }] as T[], rowCount: 1 };
     }
-    if (sql.startsWith("BEGIN") || sql.startsWith("ROLLBACK") || sql.startsWith("SET LOCAL search_path")) {
+    if (
+      sql.startsWith("BEGIN") ||
+      sql.startsWith("ROLLBACK") ||
+      sql.startsWith("SET LOCAL search_path") ||
+      sql.startsWith("SET LOCAL app.tenant_id") ||
+      sql.startsWith("SET LOCAL app.permissions")
+    ) {
       return { rows: [], rowCount: 0 };
+    }
+    if (sql.includes("FROM pg_proc p") && sql.includes("WHERE n.nspname = $1") && !sql.includes("p.proname ~ $2")) {
+      expect(params).toEqual(["demo"]);
+      return {
+        rows: [
+          { proname: "note_create" },
+          { proname: "note_read" },
+          { proname: "note_update" },
+          { proname: "note_delete" },
+        ] as T[],
+        rowCount: 4,
+      };
     }
     if (sql.includes("WHERE n.nspname = $1 AND p.proname ~ $2")) {
       expect(params).toEqual(["demo_ut", "^test_"]);
@@ -37,7 +55,7 @@ class FakeClient implements DbClient {
 }
 
 describe("plpgsql test runner", () => {
-  it("parses top-level TAP failures returned by runtests()", async () => {
+  it("parses top-level TAP failures returned by runtests() and injects default test context", async () => {
     const report = await runTests(new FakeClient(), "demo_ut");
 
     expect(report).not.toBeNull();

@@ -138,8 +138,8 @@ Generated entity CRUD is now public `jsonb`, not public table-composite input.
 
 Current generated signatures are:
 
-- `entity_create(p_data jsonb) -> jsonb`
-- `entity_update(p_id text, p_patch jsonb) -> jsonb`
+- `entity_create(p_input jsonb) -> jsonb`
+- `entity_update(p_id text, p_input jsonb) -> jsonb`
 - `entity_read(p_id text) -> jsonb`
 - `entity_list(...) -> setof jsonb`
 - `entity_delete(p_id text) -> jsonb`
@@ -199,8 +199,8 @@ Then the payload is coerced with `jsonb_populate_record(...)`.
 
 For hybrid `columns:` + `payload:` entities:
 
-- `validate create:` should reason on `p_data`
-- `validate update:` should reason on `p_patch`
+- `validate create:` should reason on `p_input`
+- `validate update:` should reason on `p_input`
 - `p_row` remains a good fit for classic `fields:` / row-shaped entities
 
 That keeps the validation contract explicit instead of hiding storage-specific magic in hook variables.

@@ -43,10 +43,10 @@ entity crm.client uses auditable:
     status text default('active')
 
   validate:
-    name_present: coalesce(p_data->>'name', '') != ''
+    name_present: coalesce(p_input->>'name', '') != ''
     email_format: """
-      coalesce(p_data->>'email', '') = ''
-      or p_data->>'email' ~ '^[^@]+@[^@]+\.[^@]+$'
+      coalesce(p_input->>'email', '') = ''
+      or p_input->>'email' ~ '^[^@]+@[^@]+\.[^@]+$'
     """
 
   states active -> archived:
@@ -99,14 +99,14 @@ entity project.task:
     tags text[]?
 
   validate:
-    title_present: coalesce(p_data->>'title', '') != ''
+    title_present: coalesce(p_input->>'title', '') != ''
     priority_valid: """
-      coalesce(p_data->>'priority', 'normal') in ('low', 'normal', 'high', 'urgent')
+      coalesce(p_input->>'priority', 'normal') in ('low', 'normal', 'high', 'urgent')
     """
     project_exists: """
       exists(
         select 1 from project.project
-        where id = (p_data->>'project_id')::int
+        where id = (p_input->>'project_id')::int
       )
     """
 
@@ -379,7 +379,7 @@ validate:
   product_active: """
     exists(
       select 1 from catalog.product
-      where id = (p_data->>'product_id')::int
+      where id = (p_input->>'product_id')::int
       and active = true
     )
   """
@@ -399,7 +399,7 @@ Rules:
 - Variables are resolved by PL/pgSQL at runtime (not by PLX)
 - Inline one-liner SQL after `:=` remains valid: `x := select count(*) from t`
 - A bare `""" ... """` block in a function or test body is executed as a SQL statement
-- `validate:` is create-time validation in the target syntax; rules evaluate against `p_data`
+- `validate:` is create/update-time validation in the target syntax; rules evaluate against `p_input`
 
 | Context | Inline (one line) | Multi-line |
 |---------|-------------------|------------|

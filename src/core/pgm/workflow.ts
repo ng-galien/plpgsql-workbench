@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DbClient } from "../connection.js";
-import type { TestReport } from "../tools/plpgsql/test.js";
 import { hashContent, type PreparedPlxModule, preparePlxModule, writePreparedBuildFiles } from "./plx-builder.js";
 import { loadManifest, type ModuleManifest } from "./resolver.js";
 
@@ -52,6 +51,7 @@ export interface PreparedModuleWorkflow {
 
 export interface ModuleApplyFailure {
   problem: string;
+  stage: string;
   where: string;
   fixHint?: string;
 }
@@ -66,14 +66,13 @@ export interface ModuleApplyArtifactResult {
 
 export interface ModuleApplyExecutionResult {
   ok: boolean;
+  transaction: "not_started" | "committed" | "rolled_back";
   diff: ModuleArtifactDiff;
   plan: ModuleWorkflowArtifact[];
   results: ModuleApplyArtifactResult[];
   warnings: string[];
   obsolete: AppliedArtifactState[];
   buildFiles: string[];
-  testSchema?: string;
-  testReport?: TestReport | null;
   failure?: ModuleApplyFailure;
 }
 
@@ -167,7 +166,6 @@ export async function readAppliedArtifacts(
 export async function applyModuleIncremental(
   client: DbClient,
   workflow: PreparedModuleWorkflow,
-  runTests: (client: DbClient, testSchema: string, pattern?: string) => Promise<TestReport | null>,
 ): Promise<ModuleApplyExecutionResult> {
   const buildFiles = await syncModuleBuildFiles(workflow);
   await ensureApplyTrackingTable(client);
@@ -177,6 +175,7 @@ export async function applyModuleIncremental(
   if (diff.changed.length === 0) {
     return {
       ok: true,
+      transaction: "not_started",
       diff,
       plan: [],
       obsolete: diff.obsolete,
@@ -197,13 +196,14 @@ export async function applyModuleIncremental(
   } catch (error: unknown) {
     return {
       ok: false,
+      transaction: "not_started",
       diff,
       plan: [],
       obsolete: diff.obsolete,
       buildFiles,
       results: [],
       warnings: diff.obsolete.map((state) => `obsolete tracked artifact: ${state.kind} ${state.name}`),
-      failure: toApplyFailure(error, "pgm_module_apply.ordering"),
+      failure: toApplyFailure(error, "plx_apply.ordering"),
     };
   }
   const results: ModuleApplyArtifactResult[] = [];
@@ -247,33 +247,12 @@ export async function applyModuleIncremental(
       );
     }
 
-    const testSchema = workflow.manifest.schemas.public ? `${workflow.manifest.schemas.public}_ut` : undefined;
-    const testReport = testSchema ? await runTests(client, testSchema) : null;
-    if (testReport && testReport.failed > 0) {
-      await client.query("ROLLBACK");
-      return {
-        ok: false,
-        diff,
-        plan: ordered,
-        obsolete: diff.obsolete,
-        buildFiles,
-        results,
-        warnings,
-        testSchema,
-        testReport,
-        failure: {
-          problem: `${testReport.failed} module test(s) failed`,
-          where: testSchema ?? `${workflow.manifest.name}_ut`,
-          fixHint: `Fix failing pgTAP tests in ${testSchema} before retrying apply.`,
-        },
-      };
-    }
-
     await client.query("COMMIT");
     await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
 
     return {
       ok: true,
+      transaction: "committed",
       diff,
       plan: ordered,
       obsolete: diff.obsolete,
@@ -291,13 +270,12 @@ export async function applyModuleIncremental(
         ...warnings,
         ...diff.obsolete.map((state) => `obsolete tracked artifact: ${state.kind} ${state.name}`),
       ],
-      testSchema,
-      testReport,
     };
   } catch (error: unknown) {
     await client.query("ROLLBACK").catch(() => {});
     return {
       ok: false,
+      transaction: "rolled_back",
       diff,
       plan: ordered,
       obsolete: diff.obsolete,
@@ -445,49 +423,7 @@ async function applyFunctionArtifact(client: DbClient, artifact: ModuleWorkflowA
       `overload interdit: ${schema}.${name} had ${beforeSignatures.length} signature(s), apply would leave ${afterSignatures.length} total`,
     );
   }
-
-  const { rows: langRows } = await client.query<{ lang: string }>(
-    `SELECT l.lanname AS lang
-       FROM pg_proc p
-       JOIN pg_namespace n ON n.oid = p.pronamespace
-       JOIN pg_language l ON l.oid = p.prolang
-      WHERE n.nspname = $1 AND p.proname = $2
-      ORDER BY p.oid
-      LIMIT 1`,
-    [schema, name],
-  );
-  if (langRows[0]?.lang !== "plpgsql") return undefined;
-
-  try {
-    await client.query("SAVEPOINT module_plpgsql_check");
-    const check = await client.query<{
-      lineno: number;
-      message: string;
-      hint: string | null;
-      level: string;
-      statement: string | null;
-    }>(`SELECT lineno, message, hint, level, statement FROM plpgsql_check_function_tb($1)`, [`${schema}.${name}`]);
-    await client.query("RELEASE SAVEPOINT module_plpgsql_check");
-
-    const errors = check.rows.filter((row) => row.level === "error");
-    if (errors.length > 0) {
-      const first = errors[0];
-      if (!first) throw new Error(`plpgsql_check returned an empty error set for ${schema}.${name}`);
-      const statement = first.statement ? ` statement: ${first.statement}` : "";
-      const hint = first.hint ? ` fix_hint: ${first.hint}` : "";
-      throw new Error(`plpgsql_check ${schema}.${name} line ${first.lineno}: ${first.message}${statement}${hint}`);
-    }
-
-    const warning = check.rows.find((row) => row.level !== "error");
-    if (!warning) return replacementWarning;
-    const checkWarning = `plpgsql_check ${schema}.${name} line ${warning.lineno}: ${warning.message}`;
-    return replacementWarning ? `${replacementWarning}; ${checkWarning}` : checkWarning;
-  } catch (error: unknown) {
-    await client.query("ROLLBACK TO SAVEPOINT module_plpgsql_check").catch(() => {});
-    const code = (error as { code?: string }).code;
-    if (code === "42883" || code === "0A000") return replacementWarning;
-    throw error;
-  }
+  return replacementWarning;
 }
 
 async function listFunctionIdentityArgs(client: DbClient, schema: string, name: string): Promise<string[]> {
@@ -660,13 +596,14 @@ function rankArtifactKind(kind: ModuleWorkflowArtifactKind): number {
   return rank[kind];
 }
 
-function toApplyFailure(error: unknown, where = "pgm_module_apply"): ModuleApplyFailure {
+function toApplyFailure(error: unknown, where = "plx_apply"): ModuleApplyFailure {
   const message = error instanceof Error ? error.message : String(error);
   return {
     problem: message,
+    stage: where.replace(/^plx_apply\.?/, "") || "apply",
     where,
     fixHint:
-      where === "pgm_module_apply.ordering"
+      where === "plx_apply.ordering"
         ? "Break the artifact dependency cycle or split the module so artifacts can be applied in a deterministic order."
         : undefined,
   };

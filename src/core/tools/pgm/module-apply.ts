@@ -12,27 +12,21 @@ import {
   readAppliedArtifacts,
   sortApplyArtifacts,
 } from "../../pgm/workflow.js";
-import { formatTestReport, type TestReport } from "../plpgsql/test.js";
 
 export function createPgmModuleApplyTool({
   withClient,
   moduleRegistry,
-  runTests,
 }: {
   withClient: WithClient;
   moduleRegistry: Promise<ModuleRegistry>;
-  runTests: (
-    client: import("../../connection.js").DbClient,
-    testSchema: string,
-    pattern?: string,
-  ) => Promise<TestReport | null>;
 }): ToolHandler {
   return {
     metadata: {
-      name: "pgm_module_apply",
+      name: "plx_apply",
       description:
         "Plan or apply a PLX-first module incrementally.\n" +
-        "Builds the full module, then applies only changed artifacts (DDL, functions, tests, grants/extensions).\n" +
+        "Builds the full module, then applies only changed artifacts (DDL, functions, generated test functions, grants/extensions).\n" +
+        "Does not run module tests; use pg_test explicitly after apply.\n" +
         "Dry-run by default. Set apply:true to execute.",
       schema: z.object({
         module: z.string().describe("Module name. Ex: quote"),
@@ -51,7 +45,7 @@ export function createPgmModuleApplyTool({
         workflow = await prepareModuleWorkflow(registry.workspaceRoot, moduleName, { validate });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
-        return text(`problem: ${message}\nwhere: pgm_module_apply\nfix_hint: verify the module name and plx.entry`);
+        return text(`problem: ${message}\nwhere: plx_apply\nfix_hint: verify the module name and plx.entry`);
       }
 
       if (!apply) {
@@ -82,13 +76,13 @@ export function createPgmModuleApplyTool({
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
           return text(
-            `problem: ${message}\nwhere: pgm_module_apply.ordering\nfix_hint: break the artifact dependency cycle before applying the module`,
+            `problem: ${message}\nwhere: plx_apply.ordering\nfix_hint: break the artifact dependency cycle before applying the module`,
           );
         }
       }
 
       return await withClient(async (client) => {
-        const result = await applyModuleIncremental(client, workflow, runTests);
+        const result = await applyModuleIncremental(client, workflow);
         return text(formatApplyExecution(workflow.manifest.name, result));
       });
     },
@@ -129,9 +123,9 @@ function formatApplyPlan(
     if (diff.obsolete.length > 20) body.push(`  - ... +${diff.obsolete.length - 20} more`);
   }
 
-  return wrap(`pgm://module/${moduleName}/apply`, "full", body.join("\n"), [
-    `pgm_module_apply module:${moduleName} apply:true`,
-    `pgm_module_status module:${moduleName}`,
+  return wrap(`plx://module/${moduleName}/apply`, "full", body.join("\n"), [
+    `plx_apply module:${moduleName} apply:true`,
+    `plx_status module:${moduleName}`,
   ]);
 }
 
@@ -139,21 +133,21 @@ function formatApplyExecution(
   moduleName: string,
   result: {
     ok: boolean;
+    transaction: "not_started" | "committed" | "rolled_back";
     diff: { changed: { kind: string; name: string }[]; unchanged: { kind: string; name: string }[] };
     plan: { kind: string; name: string }[];
     results: { action: "applied" | "unchanged"; kind: string; name: string; warning?: string }[];
     warnings: string[];
     obsolete: { kind: string; name: string }[];
     buildFiles: string[];
-    testSchema?: string;
-    testReport?: TestReport | null;
-    failure?: { problem: string; where: string; fixHint?: string };
+    failure?: { problem: string; stage: string; where: string; fixHint?: string };
   },
 ): string {
   const body: string[] = [];
   body.push(`module: ${moduleName}`);
   body.push("mode: apply");
   body.push(`ok: ${result.ok ? "true" : "false"}`);
+  body.push(`transaction: ${result.transaction}`);
   body.push(`applied: ${result.results.filter((item) => item.action === "applied").length}`);
   body.push(`unchanged: ${result.results.filter((item) => item.action === "unchanged").length}`);
   body.push(`obsolete: ${result.obsolete.length}`);
@@ -168,6 +162,7 @@ function formatApplyExecution(
 
   if (result.failure) {
     body.push(`problem: ${result.failure.problem}`);
+    body.push(`failure_stage: ${result.failure.stage}`);
     body.push(`where: ${result.failure.where}`);
     if (result.failure.fixHint) body.push(`fix_hint: ${result.failure.fixHint}`);
   } else {
@@ -185,17 +180,6 @@ function formatApplyExecution(
     }
   }
 
-  if (result.testSchema) {
-    body.push("");
-    body.push(`tests: ${result.testSchema}`);
-    if (result.testReport) {
-      const firstLine = formatTestReport(result.testReport).split("\n")[0] ?? "no tests";
-      body.push(`  summary: ${firstLine}`);
-    } else {
-      body.push("  summary: no tests");
-    }
-  }
-
   if (result.warnings.length > 0) {
     body.push("");
     body.push("warnings:");
@@ -203,8 +187,8 @@ function formatApplyExecution(
     if (result.warnings.length > 20) body.push(`  - ... +${result.warnings.length - 20} more`);
   }
 
-  return wrap(`pgm://module/${moduleName}/apply`, "full", body.join("\n"), [
-    `pgm_module_status module:${moduleName}`,
-    ...(result.ok ? [] : [`pgm_module_apply module:${moduleName} apply:true`]),
+  return wrap(`plx://module/${moduleName}/apply`, "full", body.join("\n"), [
+    `plx_status module:${moduleName}`,
+    ...(result.ok ? [] : [`plx_apply module:${moduleName} apply:true`]),
   ]);
 }

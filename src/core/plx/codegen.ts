@@ -24,6 +24,7 @@ import type {
   SqlStatement,
   Statement,
   StringInterp,
+  TryCatchStatement,
   UnaryExpr,
 } from "./ast.js";
 import { sqlEscape } from "./util.js";
@@ -132,7 +133,10 @@ class CodegenContext {
     const attrs = this.fn.attributes;
     if (attrs.includes("stable")) attrParts.push("STABLE");
     else if (attrs.includes("immutable")) attrParts.push("IMMUTABLE");
-    if (attrs.includes("definer")) attrParts.push("SECURITY DEFINER");
+    if (attrs.includes("definer")) {
+      attrParts.push("SECURITY DEFINER");
+      attrParts.push(`SET search_path = ${this.fn.schema}, pg_catalog, pg_temp`);
+    }
     if (attrs.includes("strict")) attrParts.push("STRICT");
 
     const langAndAttrs = [`RETURNS ${returns}`, "LANGUAGE plpgsql", ...attrParts].join("\n ");
@@ -192,6 +196,10 @@ class CodegenContext {
         }
         this.collectVars(stmt.body);
       }
+      if (stmt.kind === "try_catch") {
+        this.collectVars(stmt.body);
+        this.collectVars(stmt.catchBody);
+      }
       if (stmt.kind === "match") {
         for (const arm of stmt.arms) this.collectVars(arm.body);
         if (stmt.elseBody) this.collectVars(stmt.elseBody);
@@ -207,6 +215,7 @@ class CodegenContext {
       let sql = value.sql.toLowerCase().trim();
       if (sql.startsWith("(") && sql.endsWith(")")) sql = sql.slice(1, -1).trim();
       if (value.inferredTable) return { plName, type: value.inferredTable, isRow: true };
+      if (value.inferredType) return this.varInfoForType(plName, value.inferredType);
       if (INFER_COUNT_RE.test(sql)) return { plName, type: "bigint", isRow: false };
       if (INFER_JSONB_RE.test(sql)) return { plName, type: "jsonb", isRow: false };
       if (INFER_INT_RE.test(sql)) return { plName, type: "integer", isRow: false };
@@ -293,7 +302,22 @@ class CodegenContext {
         break;
       case "emit":
         throw new Error("emit statements must be lowered before code generation");
+      case "try_catch":
+        this.emitTryCatch(stmt);
+        break;
     }
+  }
+
+  private emitTryCatch(stmt: TryCatchStatement): void {
+    this.line("BEGIN", stmt.loc);
+    this.indent++;
+    for (const s of stmt.body) this.emitStatement(s);
+    this.indent--;
+    this.line("EXCEPTION WHEN OTHERS THEN", stmt.loc);
+    this.indent++;
+    for (const s of stmt.catchBody) this.emitStatement(s);
+    this.indent--;
+    this.line("END;", stmt.loc);
   }
 
   private emitAssert(stmt: AssertStatement): void {
@@ -311,6 +335,9 @@ class CodegenContext {
       const left = this.emitAssertExpr(stmt.expression.left);
       const right = this.emitAssertExpr(stmt.expression.right);
       this.lineFromParts(["RETURN NEXT is(", left, ", ", right, `, '${escaped}');`], stmt.loc);
+    } else if (stmt.expression.kind === "binary" && stmt.expression.op === "IS NULL") {
+      const left = this.emitAssertExpr(stmt.expression.left);
+      this.lineFromParts(["RETURN NEXT is(", left, ", NULL, ", `'${escaped}');`], stmt.loc);
     } else if (stmt.expression.kind === "binary" && stmt.expression.op === "!=") {
       const left = this.emitAssertExpr(stmt.expression.left);
       const right = this.emitAssertExpr(stmt.expression.right);
@@ -606,37 +633,24 @@ class CodegenContext {
     return withContainerSegment(concatMapped([unary.op, expression]), unary.loc);
   }
 
+  private emitIsNullCheck(expr: Expression, side: "left" | "right", negated: boolean, loc: Loc): MappedText {
+    return withContainerSegment(
+      concatMapped([this.emitNestedExpr(expr, 30, side, "left"), negated ? " IS NOT NULL" : " IS NULL"]),
+      loc,
+    );
+  }
+
   private emitBinary(bin: BinaryExpr): MappedText {
-    if (bin.op === "IS NOT NULL") {
-      return withContainerSegment(
-        concatMapped([this.emitNestedExpr(bin.left, 30, "left", "left"), " IS NOT NULL"]),
-        bin.loc,
-      );
-    }
+    if (bin.op === "IS NULL") return this.emitIsNullCheck(bin.left, "left", false, bin.loc);
+    if (bin.op === "IS NOT NULL") return this.emitIsNullCheck(bin.left, "left", true, bin.loc);
     // x = null → x IS NULL, x != null → x IS NOT NULL (SQL three-valued logic)
     if (isNullExpr(bin.right)) {
-      if (bin.op === "=")
-        return withContainerSegment(
-          concatMapped([this.emitNestedExpr(bin.left, 30, "left", "left"), " IS NULL"]),
-          bin.loc,
-        );
-      if (bin.op === "!=")
-        return withContainerSegment(
-          concatMapped([this.emitNestedExpr(bin.left, 30, "left", "left"), " IS NOT NULL"]),
-          bin.loc,
-        );
+      if (bin.op === "=") return this.emitIsNullCheck(bin.left, "left", false, bin.loc);
+      if (bin.op === "!=") return this.emitIsNullCheck(bin.left, "left", true, bin.loc);
     }
     if (isNullExpr(bin.left)) {
-      if (bin.op === "=")
-        return withContainerSegment(
-          concatMapped([this.emitNestedExpr(bin.right, 30, "right", "left"), " IS NULL"]),
-          bin.loc,
-        );
-      if (bin.op === "!=")
-        return withContainerSegment(
-          concatMapped([this.emitNestedExpr(bin.right, 30, "right", "left"), " IS NOT NULL"]),
-          bin.loc,
-        );
+      if (bin.op === "=") return this.emitIsNullCheck(bin.right, "right", false, bin.loc);
+      if (bin.op === "!=") return this.emitIsNullCheck(bin.right, "right", true, bin.loc);
     }
     const { precedence, assoc } = binaryPrecedence(bin.op);
     const left = this.emitNestedExpr(bin.left, precedence, "left", assoc);
@@ -744,6 +758,7 @@ function binaryPrecedence(op: string): { precedence: number; assoc: Assoc } {
     case "<":
     case ">=":
     case "<=":
+    case "IS NULL":
     case "IS NOT NULL":
       return { precedence: 30, assoc: "left" };
     case "||":

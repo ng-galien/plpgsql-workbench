@@ -302,7 +302,15 @@ export type Statement =
   | SqlStatement
   | AppendStatement
   | AssertStatement
-  | EmitStatement;
+  | EmitStatement
+  | TryCatchStatement;
+
+export interface TryCatchStatement {
+  kind: "try_catch";
+  body: Statement[];
+  catchBody: Statement[];
+  loc: Loc;
+}
 
 export interface AssertStatement {
   kind: "assert";
@@ -404,6 +412,7 @@ export interface CaseExpr {
 }
 
 export type BinaryOp =
+  | "IS NULL"
   | "IS NOT NULL"
   | "AND"
   | "OR"
@@ -429,6 +438,7 @@ export interface SqlBlockExpr {
   sql: string;
   elseRaise?: string;
   inferredTable?: string;
+  inferredType?: string;
   loc: Loc;
 }
 

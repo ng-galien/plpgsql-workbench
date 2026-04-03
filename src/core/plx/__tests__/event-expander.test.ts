@@ -114,7 +114,9 @@ export entity purchase.receipt:
       {
         ...consumer,
         subscriptions:
-          consumer.subscriptions.length > 0 ? [{ ...consumer.subscriptions[0], params: ["receipt_id"] }] : [],
+          consumer.subscriptions.length > 0
+            ? ([{ ...consumer.subscriptions[0], params: ["receipt_id"] }] as typeof consumer.subscriptions)
+            : [],
       },
       { dependencyContracts: contracts },
     );

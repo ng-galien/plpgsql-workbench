@@ -76,6 +76,8 @@ function findQualifiedCall(stmt: Statement): string | undefined {
       );
     case "for_in":
       return inferSchema(stmt.body);
+    case "try_catch":
+      return inferSchema(stmt.body) ?? inferSchema(stmt.catchBody);
     case "return":
       return findQualifiedCallInExpr(stmt.value);
     default:

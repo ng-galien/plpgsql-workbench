@@ -47,7 +47,13 @@ program
         process.stdout.write(`${allSql}\n`);
       } else {
         const outPath = opts.output ?? file.replace(/\.plx$/, ".sql");
-        const separated = opts.split || Boolean(opts.ddlOutput) || Boolean(opts.testOutput);
+        // Auto-split when entities produce DDL or tests produce a separate file
+        const separated =
+          opts.split ||
+          Boolean(opts.ddlOutput) ||
+          Boolean(opts.testOutput) ||
+          Boolean(result.ddlSql) ||
+          Boolean(result.testSql);
         const written: string[] = [];
 
         if (separated) {
@@ -182,6 +188,11 @@ async function loadModuleOrExit(
 }
 
 function deriveArtifactPath(baseOutput: string, kind: "ddl" | "test"): string {
+  // module.func.sql → module.ddl.sql / module_ut.func.sql
+  if (baseOutput.endsWith(".func.sql")) {
+    const base = baseOutput.replace(/\.func\.sql$/, "");
+    return kind === "ddl" ? `${base}.ddl.sql` : `${base}_ut.func.sql`;
+  }
   return baseOutput.endsWith(".sql") ? baseOutput.replace(/\.sql$/, `.${kind}.sql`) : `${baseOutput}.${kind}.sql`;
 }
 

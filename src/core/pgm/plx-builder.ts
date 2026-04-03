@@ -89,10 +89,10 @@ export async function preparePlxModule(
   }
 
   const targets = resolveTargets(manifest);
-  const schemaSql = buildSchemaDdl(manifest);
-  const ddlContent = buildGeneratedDdl(bundle, schemaSql);
+  const extraSchemaArtifacts = buildSupplementalSchemaArtifacts(bundle, manifest);
+  const ddlContent = buildGeneratedDdl(bundle, extraSchemaArtifacts);
   const ddlHash = ddlContent ? hashContent(ddlContent) : undefined;
-  const artifacts = collectPreparedArtifacts(bundle, targets, manifest, schemaSql);
+  const artifacts = collectPreparedArtifacts(bundle, targets, extraSchemaArtifacts);
 
   // Validate if requested — validation only adds warnings
   if (options.validate !== false) {
@@ -201,23 +201,10 @@ async function writeModuleFile(moduleDir: string, relativePath: string, content:
 function collectPreparedArtifacts(
   bundle: ReturnType<typeof compileModuleBundle>,
   targets: ReturnType<typeof resolveTargets>,
-  manifest?: ModuleManifest,
-  schemaSql?: string,
+  extraDdlArtifacts: PlxPreparedArtifact[] = [],
 ): PlxPreparedArtifact[] {
-  const artifacts: PlxPreparedArtifact[] = [];
+  const artifacts: PlxPreparedArtifact[] = [...extraDdlArtifacts];
   const dependencyMap = collectArtifactDependencies(bundle);
-
-  if (schemaSql) {
-    artifacts.push({
-      key: `ddl:schema:${manifest?.schemas.public ?? "module"}`,
-      kind: "ddl",
-      name: `${manifest?.name ?? "module"}.schemas`,
-      file: targets.ddl,
-      content: schemaSql,
-      hash: hashContent(schemaSql),
-      dependsOn: [],
-    });
-  }
 
   for (const ddlArtifact of bundle.artifact.ddlArtifacts) {
     artifacts.push({
@@ -305,33 +292,41 @@ export function hashContent(content: string): string {
   return crypto.createHash("sha256").update(content.trimEnd()).digest("hex").slice(0, 16);
 }
 
-function buildGeneratedDdl(bundle: ReturnType<typeof compileModuleBundle>, schemaSql?: string): string | undefined {
+function buildGeneratedDdl(
+  bundle: ReturnType<typeof compileModuleBundle>,
+  extraDdlArtifacts: ReadonlyArray<Pick<PlxPreparedArtifact, "content">> = [],
+): string | undefined {
   const parts: string[] = [];
-  if (schemaSql) parts.push(schemaSql);
   for (const artifact of bundle.artifact.ddlArtifacts) {
     parts.push(artifact.sql.trim());
+  }
+  for (const artifact of extraDdlArtifacts) {
+    parts.push(artifact.content.trim());
   }
   if (parts.length === 0) return undefined;
   return parts.join("\n\n");
 }
 
-function buildSchemaDdl(manifest?: ModuleManifest): string | undefined {
-  if (!manifest) return undefined;
-  const parts: string[] = [];
-  const { public: pub, private: priv, qa } = manifest.schemas;
+function buildSupplementalSchemaArtifacts(
+  bundle: ReturnType<typeof compileModuleBundle>,
+  manifest: ModuleManifest,
+): PlxPreparedArtifact[] {
+  const existing = new Set(bundle.artifact.ddlArtifacts.map((artifact) => artifact.key));
+  const targets = resolveTargets(manifest);
+  const schemas = [manifest.schemas.private, manifest.schemas.qa].filter((value): value is string => Boolean(value));
 
-  if (pub) {
-    parts.push(`CREATE SCHEMA IF NOT EXISTS "${pub.replace(/"/g, '""')}";`);
-    parts.push(`CREATE SCHEMA IF NOT EXISTS "${`${pub}_ut`.replace(/"/g, '""')}";`);
-  }
-  if (priv) {
-    parts.push(`CREATE SCHEMA IF NOT EXISTS "${priv.replace(/"/g, '""')}";`);
-  }
-  if (qa) {
-    parts.push(`CREATE SCHEMA IF NOT EXISTS "${qa.replace(/"/g, '""')}";`);
-  }
-  if (parts.length === 0) return undefined;
-  return parts.join("\n\n");
+  return schemas
+    .filter((schema) => !existing.has(`ddl:schema:${schema}`))
+    .sort()
+    .map((schema) => ({
+      key: `ddl:schema:${schema}`,
+      kind: "ddl" as const,
+      name: `${schema}.schema`,
+      file: targets.ddl,
+      content: `CREATE SCHEMA IF NOT EXISTS "${schema.replace(/"/g, '""')}";`,
+      hash: hashContent(`CREATE SCHEMA IF NOT EXISTS "${schema.replace(/"/g, '""')}";`),
+      dependsOn: [],
+    }));
 }
 
 function formatWarning(warning: CompileWarning): string {

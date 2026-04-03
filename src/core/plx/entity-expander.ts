@@ -37,6 +37,7 @@ import {
 } from "./ast-builders.js";
 import { type DdlArtifact, generateDDL, type ResolvedEntityFields } from "./entity-ddl.js";
 import { formatDefaultValue } from "./entity-sql.js";
+import { sqlEscape } from "./util.js";
 
 export type { DdlArtifact, ResolvedEntityFields } from "./entity-ddl.js";
 
@@ -65,12 +66,20 @@ export function expandEntities(mod: PlxModule): ExpandResult {
   const ddlFragments: string[] = [];
   const ddlArtifacts: DdlArtifact[] = [];
   const errors: ExpandError[] = [];
+  const schemasWithEntities = new Set<string>();
 
   for (const entity of mod.entities) {
     // Resolve traits
     const resolvedFields = resolveEntityFields(entity, traitRegistry, errors);
 
     try {
+      if (!schemasWithEntities.has(entity.schema)) {
+        schemasWithEntities.add(entity.schema);
+        const authArtifact = buildAuthorizeArtifact(entity.schema);
+        ddlArtifacts.push(authArtifact);
+        ddlFragments.push(authArtifact.sql);
+      }
+
       functions.push(buildViewFunction(entity));
       functions.push(buildListFunction(entity));
       functions.push(buildReadFunction(entity));
@@ -96,6 +105,27 @@ export function expandEntities(mod: PlxModule): ExpandResult {
   }
 
   return { functions, ddlFragments, ddlArtifacts, errors };
+}
+
+function buildAuthorizeArtifact(schema: string): DdlArtifact {
+  return {
+    key: `ddl:authorize-fn:${schema}`,
+    name: `${schema}.authorize`,
+    dependsOn: [`ddl:schema:${schema}`],
+    sql: `CREATE OR REPLACE FUNCTION ${schema}.authorize(p_permission text) RETURNS void
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ${schema}, pg_catalog, pg_temp AS $$
+DECLARE
+  v_perms text := current_setting('app.permissions', true);
+BEGIN
+  IF v_perms IS NULL THEN
+    RAISE EXCEPTION 'forbidden: no permissions configured';
+  END IF;
+  IF NOT p_permission = ANY(string_to_array(v_perms, ',')) THEN
+    RAISE EXCEPTION 'forbidden: % denied', p_permission;
+  END IF;
+END;
+$$;`,
+  };
 }
 
 // ---------- Trait resolution ----------
@@ -155,6 +185,19 @@ function defaultScope(entity: PlxEntity, alias: string): string {
   // Custom traits with defaultScope
   // (handled when trait registry is fully wired)
   return scopes.length > 0 ? scopes.join(" AND ") : "";
+}
+
+const TENANT_WHERE = "tenant_id = (SELECT current_setting('app.tenant_id'))";
+
+function tenantScope(alias: string): string {
+  return `${alias}.${TENANT_WHERE}`;
+}
+
+function accessScope(entity: PlxEntity, alias: string): string {
+  const scopes = [tenantScope(alias)];
+  const logicalScope = defaultScope(entity, alias);
+  if (logicalScope) scopes.push(logicalScope);
+  return scopes.join(" AND ");
 }
 
 function fieldDef(name: string, type: string, nullable: boolean, defaultValue?: string, loc: Loc = LOC): EntityField {
@@ -275,6 +318,8 @@ function buildListFunction(entity: PlxEntity): PlxFunction {
   // With strategy: delegate entirely
   if (strategy) {
     const body: Statement[] = [
+      tenantContextGuard(entity),
+      authorizeGuard(entity, "read"),
       ret("query", sqlBlock(`SELECT ${strategy.fn}(p_filter)`, undefined, undefined, loc), loc),
     ];
     return makeFn(
@@ -282,14 +327,14 @@ function buildListFunction(entity: PlxEntity): PlxFunction {
       `${entity.name}_list`,
       [{ name: "p_filter", type: "text", nullable: true, defaultValue: "NULL::text" }],
       "jsonb",
-      ["stable"],
+      ["stable", "definer"],
       body,
       true,
     );
   }
 
   // Default: IF p_filter IS NULL → static, ELSE → dynamic
-  const scope = defaultScope(entity, t);
+  const scope = accessScope(entity, t);
   const whereScope = scope ? ` WHERE ${scope}` : "";
   const andScope = scope ? ` AND ${scope}` : "";
   const rowExpr = buildEntityJsonSelect(entity, t);
@@ -328,8 +373,8 @@ function buildListFunction(entity: PlxEntity): PlxFunction {
     `${entity.name}_list`,
     [{ name: "p_filter", type: "text", nullable: true, defaultValue: "NULL::text" }],
     "jsonb",
-    ["stable"],
-    [ifStmt],
+    ["stable", "definer"],
+    [tenantContextGuard(entity), authorizeGuard(entity, "read"), ifStmt],
     true,
   );
 }
@@ -341,7 +386,7 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
   const t = shortAlias(entity);
 
   // Query part (with soft_delete scope if applicable)
-  const scope = defaultScope(entity, t);
+  const scope = accessScope(entity, t);
   const andScope = scope ? ` AND ${scope}` : "";
   const rowExpr = buildEntityJsonSelect(entity, t);
   const querySql = strategy
@@ -349,6 +394,8 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
     : `(SELECT ${rowExpr} FROM ${entity.table} ${t} WHERE ${readKey}${andScope})`;
 
   const stmts: Statement[] = [
+    tenantContextGuard(entity),
+    authorizeGuard(entity, "read"),
     assign("result", sqlBlock(querySql, undefined, undefined, loc), loc),
     // IF result IS NULL THEN RETURN NULL
     {
@@ -388,8 +435,9 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
     );
   } else if (entity.states) {
     // State-based: extract status, build CASE with per-state actions
-    stmts.push(assign("status", sqlBlock(`(v_result->>'${entity.states.column}')`, undefined, undefined, loc), loc));
-    stmts.push(assign("id", sqlBlock(`(v_result->>'id')::int`, undefined, undefined, loc), loc));
+    stmts.push(
+      assign("status", sqlBlock(`(v_result->>'${entity.states.column}')`, undefined, undefined, "text", loc), loc),
+    );
     stmts.push(assign("actions", { kind: "array_literal", elements: [], loc }, loc));
 
     // Group transitions by from-state
@@ -473,7 +521,7 @@ function buildReadFunction(entity: PlxEntity): PlxFunction {
     `${entity.name}_read`,
     [{ name: "p_id", type: "text", nullable: false }],
     "jsonb",
-    ["stable"],
+    ["stable", "definer"],
     stmts,
   );
 }
@@ -489,7 +537,7 @@ function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
 
   if (entity.storage === "hybrid") {
     colNames.push("payload");
-    colValues.push(buildCreatePayloadSql(entity, resolved.payload, "p_data"));
+    colValues.push(buildCreatePayloadSql(entity, resolved.payload, "p_input"));
   }
 
   // create.enrich strategy: call enrichment function on p_row before INSERT
@@ -504,13 +552,15 @@ function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
   const insertSql = `INSERT INTO ${entity.table} (${colNames.join(", ")})\n    VALUES (${colValues.join(", ")})\n    RETURNING *`;
 
   const stmts: Statement[] = [
-    ...buildPayloadValidation(entity, "p_data", { requireFields: true, forbidReadOnly: true }),
+    tenantContextGuard(entity),
+    authorizeGuard(entity, "create"),
+    ...buildPayloadValidation(entity, "p_input", { requireFields: true, forbidReadOnly: true }),
     assign(
       "p_row",
       {
         kind: "call",
         name: "jsonb_populate_record",
-        args: [castExpr(nullLit(loc), qualifiedIdent(entity.table, loc), loc), ident("p_data", loc)],
+        args: [castExpr(nullLit(loc), qualifiedIdent(entity.table, loc), loc), ident("p_input", loc)],
         loc,
       },
       loc,
@@ -525,7 +575,7 @@ function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
   return makeFn(
     entity,
     `${entity.name}_create`,
-    [{ name: "p_data", type: "jsonb", nullable: false }],
+    [{ name: "p_input", type: "jsonb", nullable: false }],
     "jsonb",
     ["definer"],
     stmts,
@@ -538,7 +588,7 @@ function buildUpdateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
   const setClauses = updatableFields.map((f) => `${f.name} = v_p_row.${f.name}`);
 
   if (entity.storage === "hybrid") {
-    setClauses.push(`payload = ${buildUpdatePayloadSql(entity, resolved.payload, "p_patch", "v_current.payload")}`);
+    setClauses.push(`payload = ${buildUpdatePayloadSql(entity, resolved.payload, "p_input", "v_current.payload")}`);
   }
 
   // Auditable: always set updated_at = now()
@@ -546,17 +596,19 @@ function buildUpdateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
     setClauses.push("updated_at = now()");
   }
 
-  const whereClause = `id = p_id::int${stateGuardWhere(entity)}`;
+  const whereClause = `id = p_id::int${stateGuardWhere(entity)} AND ${TENANT_WHERE}`;
   const updateSql = `UPDATE ${entity.table} SET\n    ${setClauses.join(",\n    ")}\n    WHERE ${whereClause}\n    RETURNING *`;
 
   const validateStmts = getHookStatements(entity, "validate_update");
   const hookStmts = getHookStatements(entity, "before_update");
   const stmts: Statement[] = [
-    ...buildPayloadValidation(entity, "p_patch", { requireFields: false, forbidReadOnly: true }),
+    tenantContextGuard(entity),
+    authorizeGuard(entity, "modify"),
+    ...buildPayloadValidation(entity, "p_input", { requireFields: false, forbidReadOnly: true }),
     assign(
       "current",
       sqlBlock(
-        `SELECT * FROM ${entity.table} WHERE id = p_id::int`,
+        `SELECT * FROM ${entity.table} WHERE id = p_id::int AND ${TENANT_WHERE}`,
         `${entity.schema}.err_not_found`,
         entity.table,
         loc,
@@ -568,12 +620,11 @@ function buildUpdateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
       {
         kind: "call",
         name: "jsonb_populate_record",
-        args: [ident("current", loc), ident("p_patch", loc)],
+        args: [ident("current", loc), ident("p_input", loc)],
         loc,
       },
       loc,
     ),
-    assign("p_data", ident("p_patch", loc), loc),
     ...validateStmts,
     ...hookStmts,
     assign("result", sqlBlock(updateSql, undefined, undefined, loc), loc),
@@ -585,7 +636,7 @@ function buildUpdateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
     `${entity.name}_update`,
     [
       { name: "p_id", type: "text", nullable: false },
-      { name: "p_patch", type: "jsonb", nullable: false },
+      { name: "p_input", type: "jsonb", nullable: false },
     ],
     "jsonb",
     ["definer"],
@@ -599,12 +650,12 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
   let sql: string;
 
   if (isSoftDelete) {
-    sql = `UPDATE ${entity.table} SET deleted_at = now() WHERE id = p_id::int AND deleted_at IS NULL RETURNING *`;
+    sql = `UPDATE ${entity.table} SET deleted_at = now() WHERE id = p_id::int AND ${TENANT_WHERE} AND deleted_at IS NULL RETURNING *`;
   } else {
-    sql = `DELETE FROM ${entity.table} WHERE id = p_id::int${stateGuardWhere(entity)} RETURNING *`;
+    sql = `DELETE FROM ${entity.table} WHERE id = p_id::int${stateGuardWhere(entity)} AND ${TENANT_WHERE} RETURNING *`;
   }
 
-  const stmts: Statement[] = [];
+  const stmts: Statement[] = [tenantContextGuard(entity), authorizeGuard(entity, "delete")];
   const validateStmts = getHookStatements(entity, "validate_delete");
 
   // delete.guard strategy: fetch row, call guard (raises if invalid)
@@ -614,7 +665,7 @@ function buildDeleteFunction(entity: PlxEntity): PlxFunction {
       assign(
         "current",
         sqlBlock(
-          `SELECT * FROM ${entity.table} WHERE id = p_id::int`,
+          `SELECT * FROM ${entity.table} WHERE id = p_id::int AND ${TENANT_WHERE}`,
           `${entity.schema}.err_not_found`,
           entity.table,
           loc,
@@ -657,9 +708,9 @@ function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFun
     throw new Error(`transition '${tr.name}' requires entity states`);
   }
   const col = states.column;
-  const updateSql = `UPDATE ${entity.table} SET ${col} = '${tr.to}' WHERE id = p_id::int AND ${col} = '${tr.from}' RETURNING *`;
+  const updateSql = `UPDATE ${entity.table} SET ${col} = '${sqlEscape(tr.to)}' WHERE id = p_id::int AND ${TENANT_WHERE} AND ${col} = '${sqlEscape(tr.from)}' RETURNING *`;
 
-  const stmts: Statement[] = [];
+  const stmts: Statement[] = [tenantContextGuard(entity), authorizeGuard(entity, tr.name)];
 
   // Optional guard
   if (tr.guard) {
@@ -668,7 +719,7 @@ function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFun
       assign(
         "row",
         sqlBlock(
-          `(SELECT ${buildEntityJsonSelect(entity, "t")} FROM ${entity.table} t WHERE t.id = p_id::int)`,
+          `(SELECT ${buildEntityJsonSelect(entity, "t")} FROM ${entity.table} t WHERE t.id = p_id::int AND ${tenantScope("t")})`,
           undefined,
           undefined,
           loc,
@@ -689,7 +740,7 @@ function buildTransitionFunction(entity: PlxEntity, tr: StateTransition): PlxFun
       condition: {
         kind: "unary",
         op: "NOT",
-        expression: sqlBlock(tr.guard, undefined, undefined, loc),
+        expression: { kind: "group", expression: sqlBlock(tr.guard, undefined, undefined, loc), loc },
         loc,
       },
       body: [{ kind: "raise", message: `${entity.schema}.err_guard_${tr.name}`, loc }],
@@ -938,7 +989,7 @@ function toJsonValueSql(value: string, type: string): string {
 
 function stateGuardWhere(entity: PlxEntity): string {
   if (!entity.updateStates || entity.updateStates.length === 0) return "";
-  const states = entity.updateStates.map((s) => `'${s}'`).join(", ");
+  const states = entity.updateStates.map((s) => `'${sqlEscape(s)}'`).join(", ");
   const column = entity.states?.column ?? "status";
   return entity.updateStates.length === 1 ? ` AND ${column} = ${states}` : ` AND ${column} IN (${states})`;
 }
@@ -969,8 +1020,14 @@ function jEntry(key: string, value: Expression): JsonLiteral["entries"][number] 
 function strArr(items: string[], loc: Loc = LOC): Expression {
   return textArray(items, loc);
 }
-function sqlBlock(sql: string, elseRaise?: string, inferredTable?: string, loc: Loc = LOC): SqlBlockExpr {
-  return buildSqlBlock(sql, elseRaise, inferredTable, loc);
+function sqlBlock(
+  sql: string,
+  elseRaise?: string,
+  inferredTable?: string,
+  inferredTypeOrLoc?: string | Loc,
+  loc: Loc = LOC,
+): SqlBlockExpr {
+  return buildSqlBlock(sql, elseRaise, inferredTable, inferredTypeOrLoc, loc);
 }
 function assign(target: string, value: Expression, loc: Loc = LOC): AssignStatement {
   return buildAssignStmt(target, value, loc);
@@ -986,4 +1043,20 @@ function assertStmt(expression: Expression, message: string, loc: Loc = LOC): St
 }
 function rawExpr(sql: string, loc: Loc = LOC): SqlBlockExpr {
   return rawSqlExpr(sql, loc);
+}
+
+function authorizeGuard(entity: PlxEntity, action: string): Statement {
+  return {
+    kind: "sql_statement",
+    sql: `PERFORM ${entity.schema}.authorize('${sqlEscape(`${entity.schema}.${entity.name}.${action}`)}')`,
+    loc: entity.loc,
+  };
+}
+
+function tenantContextGuard(entity: PlxEntity): Statement {
+  return {
+    kind: "sql_statement",
+    sql: `IF NULLIF(current_setting('app.tenant_id', true), '') IS NULL THEN RAISE EXCEPTION 'forbidden: no tenant context'; END IF`,
+    loc: entity.loc,
+  };
 }

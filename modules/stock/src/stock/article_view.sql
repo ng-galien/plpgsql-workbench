@@ -1,8 +1,9 @@
 CREATE OR REPLACE FUNCTION stock.article_view()
  RETURNS jsonb
  LANGUAGE sql
+ STABLE
 AS $function$
-  SELECT jsonb_build_object(
+SELECT jsonb_build_object(
     'uri', 'stock://article',
     'icon', '📦',
     'label', 'stock.entity_article',
@@ -16,10 +17,10 @@ AS $function$
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'current_stock', 'label', 'stock.stat_stock_total'),
           jsonb_build_object('key', 'wap', 'label', 'stock.stat_pmp'),
-          jsonb_build_object('key', 'min_threshold', 'label', 'stock.stat_seuil_mini')
+          jsonb_build_object('key', 'min_threshold', 'label', 'stock.stat_min_threshold')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'crm://client', 'label', 'stock.rel_fournisseur', 'filter', 'id={supplier_id}')
+          jsonb_build_object('entity', 'crm://client', 'label', 'stock.rel_supplier', 'filter', 'id={supplier_id}')
         )
       ),
       'expanded', jsonb_build_object(
@@ -27,10 +28,10 @@ AS $function$
         'stats', jsonb_build_array(
           jsonb_build_object('key', 'current_stock', 'label', 'stock.stat_stock_total'),
           jsonb_build_object('key', 'wap', 'label', 'stock.stat_pmp'),
-          jsonb_build_object('key', 'min_threshold', 'label', 'stock.stat_seuil_mini')
+          jsonb_build_object('key', 'min_threshold', 'label', 'stock.stat_min_threshold')
         ),
         'related', jsonb_build_array(
-          jsonb_build_object('entity', 'crm://client', 'label', 'stock.rel_fournisseur', 'filter', 'id={supplier_id}'),
+          jsonb_build_object('entity', 'crm://client', 'label', 'stock.rel_supplier', 'filter', 'id={supplier_id}'),
           jsonb_build_object('entity', 'catalog://article', 'label', 'stock.rel_catalog', 'filter', 'id={catalog_article_id}')
         )
       ),
@@ -38,17 +39,17 @@ AS $function$
         'sections', jsonb_build_array(
           jsonb_build_object('label', 'stock.section_identity', 'fields', jsonb_build_array(
             jsonb_build_object('key', 'reference', 'type', 'text', 'label', 'stock.field_reference', 'required', true),
-            jsonb_build_object('key', 'description', 'type', 'text', 'label', 'stock.field_designation', 'required', true),
-            jsonb_build_object('key', 'category', 'type', 'select', 'label', 'stock.field_categorie', 'required', true, 'options', 'stock.categorie_options'),
-            jsonb_build_object('key', 'unit', 'type', 'select', 'label', 'stock.field_unite', 'required', true, 'options', 'stock.unite_options')
+            jsonb_build_object('key', 'description', 'type', 'text', 'label', 'stock.field_description', 'required', true),
+            jsonb_build_object('key', 'category', 'type', 'select', 'label', 'stock.field_category', 'required', true, 'options', 'stock.category_options'),
+            jsonb_build_object('key', 'unit', 'type', 'select', 'label', 'stock.field_unit', 'required', true, 'options', 'stock.unit_options')
           )),
           jsonb_build_object('label', 'stock.section_pricing', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'purchase_price', 'type', 'number', 'label', 'stock.field_prix_achat'),
-            jsonb_build_object('key', 'min_threshold', 'type', 'number', 'label', 'stock.field_seuil_mini')
+            jsonb_build_object('key', 'purchase_price', 'type', 'number', 'label', 'stock.field_purchase_price'),
+            jsonb_build_object('key', 'min_threshold', 'type', 'number', 'label', 'stock.field_min_threshold')
           )),
           jsonb_build_object('label', 'stock.section_links', 'fields', jsonb_build_array(
-            jsonb_build_object('key', 'supplier_id', 'type', 'combobox', 'label', 'stock.field_fournisseur', 'source', 'crm://client', 'display', 'name', 'filter', 'type=company;active=true'),
-            jsonb_build_object('key', 'catalog_article_id', 'type', 'combobox', 'label', 'stock.field_article_catalog', 'source', 'catalog://article', 'display', 'description'),
+            jsonb_build_object('key', 'supplier_id', 'type', 'combobox', 'label', 'stock.field_supplier', 'source', 'crm://client', 'display', 'name', 'filter', 'type=company;active=true'),
+            jsonb_build_object('key', 'catalog_article_id', 'type', 'combobox', 'label', 'stock.field_catalog_article', 'source', 'catalog://article', 'display', 'description'),
             jsonb_build_object('key', 'notes', 'type', 'textarea', 'label', 'stock.field_notes')
           ))
         )

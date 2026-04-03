@@ -12,6 +12,32 @@ const FIXTURES = path.resolve(__dirname, "../../../../fixtures/plx");
 describe("PLX entity E2E", () => {
   let container: StartedTestContainer;
   let pool: pg.Pool;
+  const expenseContext = {
+    permissions: [
+      "expense.category.read",
+      "expense.category.create",
+      "expense.category.modify",
+      "expense.category.delete",
+    ],
+    tenantId: "test",
+  } as const;
+  const expenseCreateOnlyContext = {
+    permissions: ["expense.category.create"],
+    tenantId: "test",
+  } as const;
+  const expenseOtherTenantContext = {
+    permissions: [
+      "expense.category.read",
+      "expense.category.create",
+      "expense.category.modify",
+      "expense.category.delete",
+    ],
+    tenantId: "other",
+  } as const;
+  const purchaseContext = {
+    permissions: ["purchase.receipt.read", "purchase.receipt.create", "purchase.receipt.modify"],
+    tenantId: "test",
+  } as const;
 
   beforeAll(async () => {
     // Use pg-workbench (local, has pgTAP) if available, fallback to postgres:17
@@ -27,6 +53,7 @@ describe("PLX entity E2E", () => {
 
     pool = new pg.Pool({
       host: container.getHost(),
+      max: 1,
       port: container.getMappedPort(5432),
       user: "postgres",
       password: "postgres",
@@ -45,6 +72,10 @@ describe("PLX entity E2E", () => {
       }
     }
     if (!ready) throw new Error("PostgreSQL did not start in time");
+
+    // Create Supabase-like roles referenced by generated RLS policies
+    await pool.query("CREATE ROLE anon NOLOGIN");
+    await pool.query("CREATE ROLE authenticated NOLOGIN");
   }, 120_000);
 
   afterAll(async () => {
@@ -59,13 +90,15 @@ describe("PLX entity E2E", () => {
     expect(result.functionCount).toBe(6);
     expect(result.ddlSql).toBeDefined();
 
-    await bootstrapSchema(pool, "expense");
+    await bootstrapSchema(pool);
     await deployCompiledSql(pool, result, 6);
 
     // CREATE
     const {
       rows: [created],
-    } = await pool.query<Record<string, unknown>>(
+    } = await queryWithContext<Record<string, unknown>>(
+      pool,
+      expenseContext,
       `SELECT expense.category_create('{"name":"Test","accounting_code":"601"}'::jsonb) as r`,
     );
     if (!created) throw new Error("expected created row");
@@ -77,20 +110,52 @@ describe("PLX entity E2E", () => {
     // READ
     const {
       rows: [readRow],
-    } = await pool.query<Record<string, unknown>>(`SELECT expense.category_read('${id}') as r`);
+    } = await queryWithContext<Record<string, unknown>>(
+      pool,
+      expenseContext,
+      `SELECT expense.category_read('${id}') as r`,
+    );
     if (!readRow) throw new Error("expected read row");
     const rr = readRow.r as Record<string, unknown>;
     expect(rr).toHaveProperty("name", "Test");
     expect(rr).toHaveProperty("actions");
 
+    await expect(
+      queryWithContext(pool, expenseCreateOnlyContext, `SELECT expense.category_read('${id}') as r`),
+    ).rejects.toMatchObject({ message: expect.stringContaining("expense.category.read denied") });
+
+    await pool.query("RESET app.tenant_id");
+    await pool.query("SELECT set_config('app.permissions', $1, false)", [expenseContext.permissions.join(",")]);
+    await expect(pool.query(`SELECT expense.category_read('${id}') as r`)).rejects.toMatchObject({
+      message: expect.stringContaining("forbidden: no tenant context"),
+    });
+
+    const {
+      rows: [otherTenantRead],
+    } = await queryWithContext<Record<string, unknown>>(
+      pool,
+      expenseOtherTenantContext,
+      `SELECT expense.category_read('${id}') as r`,
+    );
+    expect(otherTenantRead?.r).toBeNull();
+
     // LIST
-    const { rows: listRows } = await pool.query("SELECT * FROM expense.category_list()");
+    const { rows: listRows } = await queryWithContext(pool, expenseContext, "SELECT * FROM expense.category_list()");
     expect(listRows.length).toBeGreaterThanOrEqual(1);
+
+    const { rows: otherTenantRows } = await queryWithContext(
+      pool,
+      expenseOtherTenantContext,
+      "SELECT * FROM expense.category_list()",
+    );
+    expect(otherTenantRows).toHaveLength(0);
 
     // UPDATE
     const {
       rows: [updated],
-    } = await pool.query<Record<string, unknown>>(
+    } = await queryWithContext<Record<string, unknown>>(
+      pool,
+      expenseContext,
       `SELECT expense.category_update('${id}', '{"name":"Updated"}'::jsonb) as r`,
     );
     if (!updated) throw new Error("expected updated row");
@@ -99,13 +164,21 @@ describe("PLX entity E2E", () => {
 
     // VALIDATION
     await expect(
-      pool.query(`SELECT expense.category_create('{"name":"Blocked","accounting_code":"999"}'::jsonb)`),
+      queryWithContext(
+        pool,
+        expenseContext,
+        `SELECT expense.category_create('{"name":"Blocked","accounting_code":"999"}'::jsonb)`,
+      ),
     ).rejects.toMatchObject({ detail: "reserved_accounting_code" });
 
     // DELETE
     const {
       rows: [deleted],
-    } = await pool.query<Record<string, unknown>>(`SELECT expense.category_delete('${id}') as r`);
+    } = await queryWithContext<Record<string, unknown>>(
+      pool,
+      expenseContext,
+      `SELECT expense.category_delete('${id}') as r`,
+    );
     if (!deleted) throw new Error("expected deleted row");
     const dr = deleted.r as Record<string, unknown>;
     expect(dr).toHaveProperty("name", "Updated");
@@ -141,7 +214,7 @@ on purchase.receipt.received(receipt_id, supplier_id):
     expect(result.errors).toHaveLength(0);
     expect(result.ddlSql).toContain("purchase._event_outbox");
 
-    await bootstrapSchema(pool, "purchase");
+    await bootstrapSchema(pool);
     await deployDdl(pool, result);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS purchase.receipt_projection (
@@ -153,14 +226,21 @@ on purchase.receipt.received(receipt_id, supplier_id):
 
     const {
       rows: [created],
-    } = await pool.query<Record<string, unknown>>(
+    } = await queryWithContext<Record<string, unknown>>(
+      pool,
+      purchaseContext,
       `SELECT purchase.receipt_create('{"supplier_id":42,"status":"draft"}'::jsonb) as r`,
     );
     if (!created) throw new Error("expected created row");
     const receipt = created.r as Record<string, unknown>;
     const id = String(receipt.id);
 
-    await pool.query(`SELECT purchase.receipt_update($1, '{"status":"received"}'::jsonb)`, [id]);
+    await queryWithContext(
+      pool,
+      purchaseContext,
+      `SELECT purchase.receipt_update($1, '{"status":"received"}'::jsonb)`,
+      [id],
+    );
 
     const { rows } = await pool.query<{
       aggregate_id: string | null;
@@ -197,14 +277,100 @@ on purchase.receipt.received(receipt_id, supplier_id):
     `);
     expect(deliveries).toEqual([{ consumer_key: "purchase.on_purchase_receipt_received_1" }]);
   });
+
+  it("uses p_input consistently in update validation and preserves grouped transition guards", async () => {
+    const source = `
+module demo
+
+entity demo.project:
+  fields:
+    name text required
+    budget numeric?
+    owner text?
+
+  validate:
+    budget_positive: coalesce((p_input->>'budget')::numeric, 0) >= 0
+
+  states draft -> active:
+    activate(draft -> active):
+      guard: coalesce((v_row->>'budget')::numeric, 0) > 0 and v_row->>'owner' is not null
+`;
+    const result = compile(source);
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("coalesce((p_input->>'budget')::numeric, 0) >= 0");
+    expect(result.sql).toContain(
+      "IF NOT (coalesce ( ( v_row ->> 'budget' ) :: numeric , 0 ) > 0 and v_row ->> 'owner' is not null) THEN",
+    );
+
+    await bootstrapSchema(pool);
+    await deployCompiledSql(pool, result, 7);
+
+    const demoContext = {
+      permissions: ["demo.project.read", "demo.project.create", "demo.project.modify", "demo.project.activate"],
+      tenantId: "test",
+    } as const;
+
+    const {
+      rows: [created],
+    } = await queryWithContext<Record<string, unknown>>(
+      pool,
+      demoContext,
+      `SELECT demo.project_create('{"name":"Guarded"}'::jsonb) as r`,
+    );
+    if (!created) throw new Error("expected created project");
+    const project = created.r as Record<string, unknown>;
+    const id = String(project.id);
+
+    await expect(queryWithContext(pool, demoContext, `SELECT demo.project_activate($1)`, [id])).rejects.toMatchObject({
+      message: expect.stringContaining("demo.err_guard_activate"),
+    });
+
+    const {
+      rows: [updated],
+    } = await queryWithContext<Record<string, unknown>>(
+      pool,
+      demoContext,
+      `SELECT demo.project_update($1, '{"budget":5,"owner":"Alice"}'::jsonb) as r`,
+      [id],
+    );
+    expect((updated?.r as Record<string, unknown>)?.budget).toBe(5);
+
+    const {
+      rows: [activated],
+    } = await queryWithContext<Record<string, unknown>>(pool, demoContext, `SELECT demo.project_activate($1) as r`, [
+      id,
+    ]);
+    expect((activated?.r as Record<string, unknown>)?.status).toBe("active");
+
+    await expect(
+      queryWithContext(pool, demoContext, `SELECT demo.project_update($1, '{"budget":-1}'::jsonb) as r`, [id]),
+    ).rejects.toMatchObject({ detail: "budget_positive" });
+  });
 });
 
-async function bootstrapSchema(pool: pg.Pool, schema: string): Promise<void> {
+async function bootstrapSchema(pool: pg.Pool): Promise<void> {
   await pool.query(
     "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon; END IF; END $$",
   );
-  await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
-  await pool.query("SELECT set_config('app.tenant_id', 'test', false)");
+}
+
+async function setSessionContext(
+  pool: pg.Pool,
+  options: { permissions: readonly string[]; tenantId: string },
+): Promise<void> {
+  await pool.query("SELECT set_config('app.tenant_id', $1, false)", [options.tenantId]);
+  await pool.query("SELECT set_config('app.permissions', $1, false)", [options.permissions.join(",")]);
+}
+
+async function queryWithContext<T extends pg.QueryResultRow = pg.QueryResultRow>(
+  pool: pg.Pool,
+  options: { permissions: readonly string[]; tenantId: string },
+  text: string,
+  values?: unknown[],
+): Promise<pg.QueryResult<T>> {
+  await setSessionContext(pool, options);
+  return values ? pool.query<T>(text, values) : pool.query<T>(text);
 }
 
 async function deployCompiledSql(
@@ -220,6 +386,7 @@ async function deployDdl(pool: pg.Pool, result: ReturnType<typeof compile>): Pro
   const ddlSql = result.ddlSql;
   expect(ddlSql).toBeDefined();
   if (!ddlSql) throw new Error("expected generated DDL");
+  expect(ddlSql).toMatch(/CREATE SCHEMA IF NOT EXISTS ".*"/);
   await pool.query(ddlSql);
 }
 

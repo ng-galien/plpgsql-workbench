@@ -46,8 +46,16 @@ export function textArray(items: string[], loc: Loc = LOC): ArrayLiteral {
   return { kind: "array_literal", elements: items.map((item) => textLiteral(item, loc)), loc };
 }
 
-export function sqlBlock(sql: string, elseRaise?: string, inferredTable?: string, loc: Loc = LOC): SqlBlockExpr {
-  return { kind: "sql_block", sql, elseRaise, inferredTable, loc };
+export function sqlBlock(
+  sql: string,
+  elseRaise?: string,
+  inferredTable?: string,
+  inferredTypeOrLoc?: string | Loc,
+  loc: Loc = LOC,
+): SqlBlockExpr {
+  const inferredType = typeof inferredTypeOrLoc === "string" ? inferredTypeOrLoc : undefined;
+  const resolvedLoc = typeof inferredTypeOrLoc === "string" ? loc : (inferredTypeOrLoc ?? loc);
+  return { kind: "sql_block", sql, elseRaise, inferredTable, inferredType, loc: resolvedLoc };
 }
 
 export function assignStmt(target: string, value: Expression, loc: Loc = LOC): AssignStatement {

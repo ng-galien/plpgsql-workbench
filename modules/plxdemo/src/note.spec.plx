@@ -7,8 +7,14 @@ test "note crud lifecycle":
   assert r->>'title' = 'Draft note'
   assert r->>'actions' != 'null'
 
-  u := plxdemo.note_update(c->>'id', {title: 'Updated note'})
+  u := plxdemo.note_update(c->>'id', {title: 'Updated note', pinned: true})
   assert u->>'title' = 'Updated note'
 
   d := plxdemo.note_delete(c->>'id')
   assert d->>'title' = 'Updated note'
+
+test "note soft delete hides from list":
+  c := plxdemo.note_create({title: 'Vanish'})
+  plxdemo.note_delete(c->>'id')
+  r := plxdemo.note_read(c->>'id')
+  assert r is null

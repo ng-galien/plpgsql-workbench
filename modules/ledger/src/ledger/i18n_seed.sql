@@ -10,11 +10,8 @@ BEGIN
     ('fr', 'ledger.nav_entries', 'Écritures'),
     ('fr', 'ledger.nav_accounts', 'Plan comptable'),
     ('fr', 'ledger.nav_balance', 'Balance'),
-    ('fr', 'ledger.nav_exercice', 'Exercice'),
     ('fr', 'ledger.nav_fiscal_year', 'Exercice'),
-    ('fr', 'ledger.nav_tva', 'TVA'),
     ('fr', 'ledger.nav_vat', 'TVA'),
-    ('fr', 'ledger.nav_bilan', 'Bilan'),
     ('fr', 'ledger.nav_balance_sheet', 'Bilan'),
 
     -- Account types
@@ -94,7 +91,6 @@ BEGIN
     ('fr', 'ledger.btn_delete', 'Supprimer'),
     ('fr', 'ledger.btn_delete_short', 'Suppr.'),
     ('fr', 'ledger.btn_balance_check', 'Balance de vérification'),
-    ('fr', 'ledger.btn_bilan_pl', 'Bilan P&L'),
 
     -- Section / Page titles
     ('fr', 'ledger.title_recent_entries', 'Écritures récentes'),
@@ -127,7 +123,7 @@ BEGIN
     -- Error messages (UI-visible)
     ('fr', 'ledger.err_posted_readonly', 'Écriture validée : modification impossible.'),
     ('fr', 'ledger.err_unbalanced_prefix', 'Écriture déséquilibrée : débit'),
-    ('fr', 'ledger.err_duplicate_facture', 'Cette facture a déjà une écriture comptable'),
+    ('fr', 'ledger.err_duplicate_invoice', 'Cette facture a déjà une écriture comptable'),
     ('fr', 'ledger.err_duplicate_expense', 'Cette note de frais a déjà une écriture comptable'),
 
     -- Toast messages
@@ -136,8 +132,7 @@ BEGIN
     ('fr', 'ledger.toast_entry_deleted', 'Écriture supprimée'),
     ('fr', 'ledger.toast_line_added', 'Ligne ajoutée'),
     ('fr', 'ledger.toast_line_deleted', 'Ligne supprimée'),
-    ('fr', 'ledger.toast_exercice_closed', 'Exercice clôturé'),
-    ('fr', 'ledger.toast_entry_from_facture', 'Écriture créée depuis facture'),
+    ('fr', 'ledger.toast_fiscal_year_closed', 'Exercice clôturé'),
     ('fr', 'ledger.toast_entry_from_invoice', 'Écriture créée depuis facture'),
     ('fr', 'ledger.toast_entry_from_expense', 'Écriture NDF créée'),
 
@@ -146,13 +141,13 @@ BEGIN
     ('fr', 'ledger.confirm_delete_draft', 'Supprimer ce brouillon ?'),
     ('fr', 'ledger.confirm_delete_line', 'Supprimer cette ligne ?'),
     ('fr', 'ledger.confirm_delete_account', 'Supprimer ce compte ?'),
-    ('fr', 'ledger.confirm_close_exercice', 'Clôturer définitivement l''exercice'),
+    ('fr', 'ledger.confirm_close_fiscal_year', 'Clôturer définitivement l''exercice'),
     ('fr', 'ledger.confirm_close_suffix', '? Cette action est irréversible.'),
 
-    -- Exercice / Clôture
+    -- Fiscal year
     ('fr', 'ledger.closed_on', 'Clôturé le'),
     ('fr', 'ledger.result_recorded', 'résultat enregistré'),
-    ('fr', 'ledger.btn_close_exercice', 'Clôturer l''exercice'),
+    ('fr', 'ledger.btn_close_fiscal_year', 'Clôturer l''exercice'),
     ('fr', 'ledger.err_already_closed', 'est déjà clôturé'),
     ('fr', 'ledger.err_drafts_remaining', 'écriture(s) brouillon — validez-les avant clôture'),
     ('fr', 'ledger.total_revenue', 'Total produits'),
@@ -163,7 +158,6 @@ BEGIN
     ('fr', 'ledger.entity_account', 'Compte'),
     ('fr', 'ledger.section_entry', 'Écriture'),
     ('fr', 'ledger.section_account', 'Compte'),
-    ('fr', 'ledger.related_facture', 'Facture associée'),
     ('fr', 'ledger.related_invoice', 'Facture associée'),
     ('fr', 'ledger.related_expense_note', 'Note de frais associée')
 

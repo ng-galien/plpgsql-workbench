@@ -477,6 +477,12 @@ function transformStatement(
         variable: renameMap.get(stmt.variable) ?? stmt.variable,
         body: transformStatements(stmt.body, entity, operation, events, errors, renameMap),
       };
+    case "try_catch":
+      return {
+        ...stmt,
+        body: transformStatements(stmt.body, entity, operation, events, errors, renameMap),
+        catchBody: transformStatements(stmt.catchBody, entity, operation, events, errors, renameMap),
+      };
     case "match":
       return {
         ...stmt,

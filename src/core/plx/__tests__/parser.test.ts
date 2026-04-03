@@ -190,6 +190,43 @@ on purchase.receipt.received(receipt_id, supplier_id):
     ]);
   });
 
+  it("parses IS NULL and IS NOT NULL as postfix operators", () => {
+    const mod = parse(
+      tokenize(`
+fn demo.check(p_val text) -> text:
+  if p_val is null:
+    return 'null'
+  if p_val is not null:
+    return 'present'
+  return 'unknown'
+`),
+    );
+
+    const body = mod.functions[0]?.body ?? [];
+    // First if: p_val is null → binary { op: "IS NULL", left: p_val, right: null }
+    const if1 = body[0];
+    expect(if1).toMatchObject({
+      kind: "if",
+      condition: {
+        kind: "binary",
+        op: "IS NULL",
+        left: expect.objectContaining({ kind: "identifier", name: "p_val" }),
+        right: expect.objectContaining({ kind: "literal", value: null }),
+      },
+    });
+    // Second if: p_val is not null → binary { op: "IS NOT NULL", left: p_val, right: null }
+    const if2 = body[1];
+    expect(if2).toMatchObject({
+      kind: "if",
+      condition: {
+        kind: "binary",
+        op: "IS NOT NULL",
+        left: expect.objectContaining({ kind: "identifier", name: "p_val" }),
+        right: expect.objectContaining({ kind: "literal", value: null }),
+      },
+    });
+  });
+
   it("rejects legacy return query syntax", () => {
     expect(
       parseErrorOf(`
@@ -197,6 +234,29 @@ fn quote.read() -> setof jsonb:
   return query select to_jsonb(1)
 `),
     ).toMatchObject({ code: "parse.legacy-return-mode" });
+  });
+
+  it("parses try/catch blocks", () => {
+    const mod = parse(
+      tokenize(`
+fn demo.safe(p_id int) -> boolean:
+  ok := false
+  try:
+    demo.risky_call(p_id)
+    ok := true
+  catch:
+    ok := false
+  return ok
+`),
+    );
+
+    const body = mod.functions[0]?.body ?? [];
+    const tryCatch = body[1]; // after ok := false
+    expect(tryCatch).toMatchObject({
+      kind: "try_catch",
+      body: expect.arrayContaining([expect.objectContaining({ kind: "assign", target: "ok" })]),
+      catchBody: expect.arrayContaining([expect.objectContaining({ kind: "assign", target: "ok" })]),
+    });
   });
 
   it("rejects root-only directives and visibility markers inside fragments", () => {

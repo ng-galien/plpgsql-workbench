@@ -31,7 +31,9 @@ function parseTap(rows: { runtests: string }[]): TestReport {
     const tapMatch = line.match(/^\s*(not )?ok \d+ - (.+)$/);
     if (tapMatch) {
       if (current) results.push(current);
-      current = { ok: !tapMatch[1], description: tapMatch[2]! };
+      const description = tapMatch[2];
+      if (!description) continue;
+      current = { ok: !tapMatch[1], description };
       continue;
     }
 
@@ -79,12 +81,12 @@ export async function runTests(client: DbClient, testSchema: string, pattern?: s
     `SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname = $1) AS exists`,
     [testSchema],
   );
-  if (!schemaCheck[0]!.exists) return null;
+  if (!schemaCheck[0]?.exists) return null;
 
   const { rows: extCheck } = await client.query<{ exists: boolean }>(
     `SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname = 'pgtap') AS exists`,
   );
-  if (!extCheck[0]!.exists) return null;
+  if (!extCheck[0]?.exists) return null;
 
   const sourceSchema = testSchema.replace(/_(ut|it)$/, "");
   const isIntegration = testSchema.endsWith("_it");
@@ -108,6 +110,12 @@ export async function runTests(client: DbClient, testSchema: string, pattern?: s
     await client.query("BEGIN");
   }
   await client.query(`SET LOCAL search_path TO ${qi(testSchema)}, ${qi(sourceSchema)}${extraSchemas}, public`);
+  // PLX module tests run with a deterministic default session context.
+  await client.query(`SET LOCAL app.tenant_id = 'test'`);
+  const permissions = await inferTestPermissions(client, sourceSchema);
+  if (permissions.length > 0) {
+    await client.query(`SET LOCAL app.permissions = ${ql(permissions.join(","))}`);
+  }
   try {
     // Check for test functions that exist in src/ but failed to compile (invisible to pgTAP)
     const { rows: srcFiles } = await client.query<{ proname: string }>(
@@ -157,6 +165,32 @@ export async function runTests(client: DbClient, testSchema: string, pattern?: s
       results: [{ ok: false, description: `test execution error: ${msg}` }],
     };
   }
+}
+
+async function inferTestPermissions(client: DbClient, sourceSchema: string): Promise<string[]> {
+  const { rows } = await client.query<{ proname: string }>(
+    `SELECT p.proname
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = $1
+      ORDER BY p.proname`,
+    [sourceSchema],
+  );
+
+  const permissions = new Set<string>();
+  for (const row of rows) {
+    const name = row.proname;
+    if (name.startsWith("_") || name.startsWith("on_")) continue;
+    const match = name.match(/^([a-z0-9_]+)_(create|read|list|view|update|delete|[a-z0-9_]+)$/);
+    if (!match) continue;
+    const entity = match[1];
+    const action = match[2];
+    if (!entity || !action) continue;
+    const normalized = action === "update" ? "modify" : action === "list" || action === "view" ? "read" : action;
+    permissions.add(`${sourceSchema}.${entity}.${normalized}`);
+  }
+
+  return [...permissions].sort();
 }
 
 // --- Tool factory ---
@@ -209,7 +243,10 @@ export function createTestTool({
             return text("✗ target must be a function URI or schema URI");
           }
         } else {
-          testSchema = schema!;
+          if (!schema) {
+            return text("✗ provide target (function URI) or schema (test schema)");
+          }
+          testSchema = schema;
         }
 
         const report = await runTests(client, testSchema, testPattern);
@@ -218,8 +255,9 @@ export function createTestTool({
         }
 
         if (report.total === 0) {
+          const parsedTarget = target ? PlUri.parse(target) : null;
           const msg = target
-            ? `no test found (expected ${testSchema}.test_${PlUri.parse(target)!.name})`
+            ? `no test found (expected ${testSchema}.test_${parsedTarget?.name ?? "unknown"})`
             : `no tests in ${testSchema}`;
           return text(msg);
         }
