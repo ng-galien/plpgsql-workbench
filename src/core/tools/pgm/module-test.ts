@@ -1,9 +1,10 @@
 import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
-import { text, wrap } from "../../helpers.js";
+import { text } from "../../helpers.js";
 import type { ModuleRegistry } from "../../pgm/registry.js";
 import { loadManifest } from "../../pgm/resolver.js";
+import { formatReadDocument } from "../../tooling/primitives/read.js";
 import { formatTestReport, type TestReport } from "../plpgsql/test.js";
 
 export function createPlxModuleTestTool({
@@ -52,10 +53,10 @@ export function createPlxModuleTestTool({
           return text(`problem: test schema '${testSchema}' not found or pgTAP not installed\nwhere: plx_test`);
         }
         return text(
-          wrap(
-            `plx://module/${moduleName}/test/${suite}`,
-            "full",
-            [
+          formatReadDocument({
+            uri: `plx://module/${moduleName}/test/${suite}`,
+            completeness: "full",
+            body: [
               `module: ${moduleName}`,
               `suite: ${suite}`,
               `schema: ${testSchema}`,
@@ -63,8 +64,8 @@ export function createPlxModuleTestTool({
               "",
               formatTestReport(report),
             ].join("\n"),
-            [`plx_status module:${moduleName}`],
-          ),
+            next: [`plx_status module:${moduleName}`],
+          }),
         );
       });
     },

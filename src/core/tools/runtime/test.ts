@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
-import { text, wrap } from "../../helpers.js";
+import { text } from "../../helpers.js";
 import { type PreparedRuntimeWorkflow, prepareRuntimeWorkflow } from "../../runtime/workflow.js";
+import { formatReadDocument } from "../../tooling/primitives/read.js";
 import { formatTestReport, type TestReport } from "../plpgsql/test.js";
 
 export function createRuntimeTestTool({
@@ -46,12 +47,12 @@ export function createRuntimeTestTool({
           return text(`problem: test schema '${testSchema}' not found or pgTAP not installed\nwhere: runtime_test`);
         }
         return text(
-          wrap(
-            `runtime://${target}/test`,
-            "full",
-            [`target: ${target}`, `schema: ${testSchema}`, "", formatTestReport(report)].join("\n"),
-            [`runtime_status target:${target}`],
-          ),
+          formatReadDocument({
+            uri: `runtime://${target}/test`,
+            completeness: "full",
+            body: [`target: ${target}`, `schema: ${testSchema}`, "", formatTestReport(report)].join("\n"),
+            next: [`runtime_status target:${target}`],
+          }),
         );
       });
     },

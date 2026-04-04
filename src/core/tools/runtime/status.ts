@@ -1,14 +1,10 @@
 import path from "node:path";
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
-import { text, wrap } from "../../helpers.js";
-import {
-  diffRuntimeArtifacts,
-  type PreparedRuntimeWorkflow,
-  prepareRuntimeWorkflow,
-  readAppliedRuntimeArtifacts,
-  sortRuntimeArtifacts,
-} from "../../runtime/workflow.js";
+import { text } from "../../helpers.js";
+import { type PreparedRuntimeWorkflow, prepareRuntimeWorkflow, sortRuntimeArtifacts } from "../../runtime/workflow.js";
+import { diffAppliedArtifacts, readAppliedArtifactStates } from "../../tooling/primitives/applied-artifacts.js";
+import { formatReadDocument } from "../../tooling/primitives/read.js";
 
 export function createRuntimeStatusTool({
   withClient,
@@ -50,10 +46,16 @@ export function createRuntimeStatusTool({
       }
 
       try {
-        const dbState = await withClient((client) => readAppliedRuntimeArtifacts(client, target));
+        const dbState = await withClient((client) =>
+          readAppliedArtifactStates(client, {
+            table: "applied_runtime_artifact",
+            scopeColumn: "runtime_target",
+            scopeValue: target,
+          }),
+        );
         if (dbState.available) {
           tracking = "available";
-          const diff = diffRuntimeArtifacts(workflow.artifacts, dbState.states);
+          const diff = diffAppliedArtifacts(workflow.artifacts, dbState.states);
           changed = diff.changed;
           obsolete = diff.obsolete;
           plan = sortRuntimeArtifacts(diff.changed).map((artifact) => ({ kind: artifact.kind, name: artifact.name }));
@@ -87,10 +89,12 @@ export function createRuntimeStatusTool({
       }
 
       return text(
-        wrap(`runtime://${target}`, "full", body.join("\n"), [
-          `runtime_apply target:${target}`,
-          `runtime_apply target:${target} apply:true`,
-        ]),
+        formatReadDocument({
+          uri: `runtime://${target}`,
+          completeness: "full",
+          body: body.join("\n"),
+          next: [`runtime_apply target:${target}`, `runtime_apply target:${target} apply:true`],
+        }),
       );
     },
   };

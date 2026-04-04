@@ -1,15 +1,11 @@
 import path from "node:path";
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
-import { text, wrap } from "../../helpers.js";
+import { text } from "../../helpers.js";
 import type { ModuleRegistry } from "../../pgm/registry.js";
-import {
-  diffModuleArtifacts,
-  type PreparedModuleWorkflow,
-  prepareModuleWorkflow,
-  readAppliedArtifacts,
-  sortApplyArtifacts,
-} from "../../pgm/workflow.js";
+import { type PreparedModuleWorkflow, prepareModuleWorkflow, sortApplyArtifacts } from "../../pgm/workflow.js";
+import { diffAppliedArtifacts, readAppliedArtifactStates } from "../../tooling/primitives/applied-artifacts.js";
+import { formatReadDocument } from "../../tooling/primitives/read.js";
 
 export function createPgmModuleStatusTool({
   withClient,
@@ -54,11 +50,15 @@ export function createPgmModuleStatusTool({
       }
       try {
         const dbState = await withClient(async (client) => {
-          return await readAppliedArtifacts(client, workflow.manifest.name);
+          return await readAppliedArtifactStates(client, {
+            table: "applied_module_artifact",
+            scopeColumn: "module_name",
+            scopeValue: workflow.manifest.name,
+          });
         });
         if (dbState.available) {
           tracking = "available";
-          const diff = diffModuleArtifacts(workflow.artifacts, dbState.states);
+          const diff = diffAppliedArtifacts(workflow.artifacts, dbState.states);
           changed = diff.changed.map((artifact) => `${artifact.kind} ${artifact.name}`);
           obsolete = diff.obsolete.map((artifact) => `${artifact.kind} ${artifact.name}`);
           try {
@@ -144,10 +144,12 @@ export function createPgmModuleStatusTool({
       }
 
       return text(
-        wrap(`plx://module/${workflow.manifest.name}`, "full", body.join("\n"), [
-          `plx_apply module:${workflow.manifest.name}`,
-          `plx_apply module:${workflow.manifest.name} apply:true`,
-        ]),
+        formatReadDocument({
+          uri: `plx://module/${workflow.manifest.name}`,
+          completeness: "full",
+          body: body.join("\n"),
+          next: [`plx_apply module:${workflow.manifest.name}`, `plx_apply module:${workflow.manifest.name} apply:true`],
+        }),
       );
     },
   };

@@ -108,31 +108,18 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
     runTests: asFunction(() => runTests).singleton(),
     formatTestReport: asFunction(() => formatTestReport).singleton(),
 
-    moduleRegistry: asValue(
-      (() => {
-        // Find workspace root synchronously, then build registry (async)
-        let dir = process.cwd();
-        for (let i = 0; i < 10; i++) {
-          if (fsSync.existsSync(pathMod.join(dir, "modules"))) {
-            return buildModuleRegistry(dir);
-          }
-          dir = pathMod.dirname(dir);
+    ...(() => {
+      // Walk up once to find workspace root (has runtime/ or modules/)
+      let root = process.cwd();
+      for (let i = 0; i < 10; i++) {
+        if (fsSync.existsSync(pathMod.join(root, "modules")) || fsSync.existsSync(pathMod.join(root, "runtime"))) {
+          return { moduleRegistry: asValue(buildModuleRegistry(root)), workspaceRoot: asValue(root) };
         }
-        return buildModuleRegistry(process.cwd());
-      })(),
-    ),
-    workspaceRoot: asValue(
-      (() => {
-        let dir = process.cwd();
-        for (let i = 0; i < 10; i++) {
-          if (fsSync.existsSync(pathMod.join(dir, "runtime")) || fsSync.existsSync(pathMod.join(dir, "modules"))) {
-            return dir;
-          }
-          dir = pathMod.dirname(dir);
-        }
-        return process.cwd();
-      })(),
-    ),
+        root = pathMod.dirname(root);
+      }
+      root = process.cwd();
+      return { moduleRegistry: asValue(buildModuleRegistry(root)), workspaceRoot: asValue(root) };
+    })(),
 
     setFunction: asFunction(createSetFunction).singleton(),
 

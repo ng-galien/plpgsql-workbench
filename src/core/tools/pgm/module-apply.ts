@@ -1,17 +1,17 @@
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
-import { text, wrap } from "../../helpers.js";
+import { text } from "../../helpers.js";
 import type { ModuleRegistry } from "../../pgm/registry.js";
 import {
   type AppliedArtifactState,
   applyModuleIncremental,
-  diffModuleArtifacts,
   type ModuleWorkflowArtifact,
   type PreparedModuleWorkflow,
   prepareModuleWorkflow,
-  readAppliedArtifacts,
   sortApplyArtifacts,
 } from "../../pgm/workflow.js";
+import { diffAppliedArtifacts, readAppliedArtifactStates } from "../../tooling/primitives/applied-artifacts.js";
+import { formatReadDocument } from "../../tooling/primitives/read.js";
 
 export function createPgmModuleApplyTool({
   withClient,
@@ -61,11 +61,15 @@ export function createPgmModuleApplyTool({
         };
         try {
           const dbState = await withClient(async (client) => {
-            return await readAppliedArtifacts(client, workflow.manifest.name);
+            return await readAppliedArtifactStates<AppliedArtifactState["kind"]>(client, {
+              table: "applied_module_artifact",
+              scopeColumn: "module_name",
+              scopeValue: workflow.manifest.name,
+            });
           });
           if (dbState.available) {
             tracking = "available";
-            diff = diffModuleArtifacts(workflow.artifacts, dbState.states);
+            diff = diffAppliedArtifacts(workflow.artifacts, dbState.states as Map<string, AppliedArtifactState>);
           }
         } catch {
           tracking = "error";
@@ -123,10 +127,12 @@ function formatApplyPlan(
     if (diff.obsolete.length > 20) body.push(`  - ... +${diff.obsolete.length - 20} more`);
   }
 
-  return wrap(`plx://module/${moduleName}/apply`, "full", body.join("\n"), [
-    `plx_apply module:${moduleName} apply:true`,
-    `plx_status module:${moduleName}`,
-  ]);
+  return formatReadDocument({
+    uri: `plx://module/${moduleName}/apply`,
+    completeness: "full",
+    body: body.join("\n"),
+    next: [`plx_apply module:${moduleName} apply:true`, `plx_status module:${moduleName}`],
+  });
 }
 
 function formatApplyExecution(
@@ -194,8 +200,10 @@ function formatApplyExecution(
     for (const action of result.postActions) body.push(`  - ${action}`);
   }
 
-  return wrap(`plx://module/${moduleName}/apply`, "full", body.join("\n"), [
-    `plx_status module:${moduleName}`,
-    ...(result.ok ? [] : [`plx_apply module:${moduleName} apply:true`]),
-  ]);
+  return formatReadDocument({
+    uri: `plx://module/${moduleName}/apply`,
+    completeness: "full",
+    body: body.join("\n"),
+    next: [`plx_status module:${moduleName}`, ...(result.ok ? [] : [`plx_apply module:${moduleName} apply:true`])],
+  });
 }

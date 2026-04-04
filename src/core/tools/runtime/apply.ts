@@ -1,14 +1,16 @@
 import { z } from "zod";
 import type { ToolHandler, WithClient } from "../../container.js";
-import { text, wrap } from "../../helpers.js";
+import { text } from "../../helpers.js";
 import {
+  type AppliedRuntimeArtifactState,
   applyRuntimeIncremental,
-  diffRuntimeArtifacts,
   type PreparedRuntimeWorkflow,
   prepareRuntimeWorkflow,
-  readAppliedRuntimeArtifacts,
+  type RuntimeWorkflowArtifact,
   sortRuntimeArtifacts,
 } from "../../runtime/workflow.js";
+import { diffAppliedArtifacts, readAppliedArtifactStates } from "../../tooling/primitives/applied-artifacts.js";
+import { formatReadDocument } from "../../tooling/primitives/read.js";
 
 export function createRuntimeApplyTool({
   withClient,
@@ -42,16 +44,26 @@ export function createRuntimeApplyTool({
 
       if (!apply) {
         let tracking = "unavailable";
-        let diff = {
+        let diff: {
+          changed: RuntimeWorkflowArtifact[];
+          unchanged: RuntimeWorkflowArtifact[];
+          obsolete: AppliedRuntimeArtifactState[];
+        } = {
           changed: workflow.artifacts,
-          unchanged: [] as typeof workflow.artifacts,
-          obsolete: [] as { kind: string; name: string }[],
+          unchanged: [],
+          obsolete: [],
         };
         try {
-          const dbState = await withClient((client) => readAppliedRuntimeArtifacts(client, target));
+          const dbState = await withClient((client) =>
+            readAppliedArtifactStates<AppliedRuntimeArtifactState["kind"]>(client, {
+              table: "applied_runtime_artifact",
+              scopeColumn: "runtime_target",
+              scopeValue: target,
+            }),
+          );
           if (dbState.available) {
             tracking = "available";
-            diff = diffRuntimeArtifacts(workflow.artifacts, dbState.states);
+            diff = diffAppliedArtifacts(workflow.artifacts, dbState.states as Map<string, AppliedRuntimeArtifactState>);
           }
         } catch {
           tracking = "error";
@@ -72,10 +84,12 @@ export function createRuntimeApplyTool({
           if (plan.length > 30) body.push(`  - ... +${plan.length - 30} more`);
         }
         return text(
-          wrap(`runtime://${target}/apply`, "full", body.join("\n"), [
-            `runtime_apply target:${target} apply:true`,
-            `runtime_status target:${target}`,
-          ]),
+          formatReadDocument({
+            uri: `runtime://${target}/apply`,
+            completeness: "full",
+            body: body.join("\n"),
+            next: [`runtime_apply target:${target} apply:true`, `runtime_status target:${target}`],
+          }),
         );
       }
 
@@ -106,10 +120,15 @@ export function createRuntimeApplyTool({
           for (const warning of result.warnings.slice(0, 20)) body.push(`  - ${warning}`);
         }
         return text(
-          wrap(`runtime://${target}/apply`, "full", body.join("\n"), [
-            `runtime_status target:${target}`,
-            ...(result.ok ? [] : [`runtime_apply target:${target} apply:true`]),
-          ]),
+          formatReadDocument({
+            uri: `runtime://${target}/apply`,
+            completeness: "full",
+            body: body.join("\n"),
+            next: [
+              `runtime_status target:${target}`,
+              ...(result.ok ? [] : [`runtime_apply target:${target} apply:true`]),
+            ],
+          }),
         );
       });
     },

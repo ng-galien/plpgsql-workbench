@@ -261,7 +261,7 @@ entity quote.note:
     title text required
 
 entity quote.task:
-  columns:
+  fields:
     note_id int? ref(quote.note)
 
   payload:

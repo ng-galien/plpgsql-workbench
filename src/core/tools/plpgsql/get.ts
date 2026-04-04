@@ -2,111 +2,135 @@ import { z } from "zod";
 import type { DbClient } from "../../connection.js";
 import type { ToolHandler, WithClient } from "../../container.js";
 import { computeContextToken } from "../../context-token.js";
-import { text, wrap } from "../../helpers.js";
+import { text } from "../../helpers.js";
 import { formatCatalog, queryCatalog } from "../../resources/catalog.js";
 import { formatFunction, queryFunction } from "../../resources/function.js";
 import { formatSchema, querySchema } from "../../resources/schema.js";
 import { formatTable, queryTable } from "../../resources/table.js";
 import { formatTrigger, queryTrigger } from "../../resources/trigger.js";
 import { formatType, queryType } from "../../resources/type.js";
+import { formatReadDocument } from "../../tooling/primitives/read.js";
+import { resolvePlpgsqlTarget } from "../../tooling/primitives/target-resolution.js";
 import { PlUri } from "../../uri.js";
 import { resolveDoc, resolveDocIndex } from "../../workbench.js";
 
 // --- Shared service (registered in container, injected into set) ---
 
 export async function resolveUri(uri: string, client: DbClient): Promise<string> {
-  // plpgsql://workbench/doc/* -> documentation
-  const docMatch = uri.match(/^plpgsql:\/\/workbench\/doc\/(.+)$/);
-  if (docMatch) {
-    return await resolveDoc(client, docMatch[1]!);
-  }
-  if (uri === "plpgsql://workbench/doc" || uri === "plpgsql://workbench") {
-    return await resolveDocIndex(client);
-  }
+  const target = resolvePlpgsqlTarget(uri);
 
-  // plpgsql:// -> catalog
-  if (uri === "plpgsql://" || uri === "plpgsql://catalog") {
-    const entries = await queryCatalog(client);
-    const next = entries.map((e) => `pg_get ${PlUri.schema(e.name)}`);
-    return wrap(uri, "full", formatCatalog(entries), next);
-  }
-
-  // plpgsql://schema/kind/* -> batch get all of kind
-  const glob = uri.match(/^plpgsql:\/\/(\w+)\/(\w+)\/\*$/);
-  if (glob) {
-    const [, schema, kind] = glob;
-    const overview = await querySchema(client, schema!);
-    const results: string[] = [];
-
-    if (kind === "function") {
-      for (const f of overview.functions) {
-        const fn = await queryFunction(client, schema!, f.name);
-        if (fn) results.push(formatFunction(fn));
-      }
-    } else if (kind === "table") {
-      for (const t of overview.tables) {
-        const tbl = await queryTable(client, schema!, t.name);
-        if (tbl) results.push(formatTable(tbl));
-      }
-    } else if (kind === "trigger") {
-      for (const tr of overview.triggers) {
-        const trg = await queryTrigger(client, schema!, tr.name);
-        if (trg) results.push(formatTrigger(trg));
-      }
+  switch (target.kind) {
+    case "doc_topic":
+      return await resolveDoc(client, target.topic);
+    case "doc_index":
+      return await resolveDocIndex(client);
+    case "catalog": {
+      const entries = await queryCatalog(client);
+      const next = entries.map((entry) => `pg_get ${PlUri.schema(entry.name)}`);
+      return formatReadDocument({
+        uri: target.uri,
+        completeness: "full",
+        body: formatCatalog(entries),
+        next,
+      });
     }
-    const body = results.length > 0 ? results.join("\n---\n") : `no ${kind}s in ${schema}`;
-    return wrap(uri, "full", body, [`pg_get ${PlUri.schema(schema!)}`]);
-  }
+    case "glob": {
+      const overview = await querySchema(client, target.schema);
+      const results: string[] = [];
 
-  // plpgsql://schema/kind/name -> single resource
-  const parsed = PlUri.parse(uri);
-  if (!parsed) return `✗ invalid URI: ${uri}`;
+      if (target.resourceKind === "function") {
+        for (const resource of overview.functions) {
+          const fn = await queryFunction(client, target.schema, resource.name);
+          if (fn) results.push(formatFunction(fn));
+        }
+      } else if (target.resourceKind === "table") {
+        for (const resource of overview.tables) {
+          const table = await queryTable(client, target.schema, resource.name);
+          if (table) results.push(formatTable(table));
+        }
+      } else if (target.resourceKind === "trigger") {
+        for (const resource of overview.triggers) {
+          const trigger = await queryTrigger(client, target.schema, resource.name);
+          if (trigger) results.push(formatTrigger(trigger));
+        }
+      }
 
-  if (!parsed.kind) {
-    const overview = await querySchema(client, parsed.schema);
-    const next: string[] = [];
-    if (overview.functions.length > 0) next.push(`pg_get ${PlUri.schema(parsed.schema)}/function/*`);
-    if (overview.tables.length > 0) next.push(`pg_get ${PlUri.schema(parsed.schema)}/table/*`);
-    next.push(`pg_search schema:${parsed.schema} name:%pattern%`);
-    return wrap(uri, "full", formatSchema(overview), next);
-  }
-
-  switch (parsed.kind) {
-    case "function": {
-      const fn = await queryFunction(client, parsed.schema, parsed.name!);
-      if (!fn) return `function ${parsed.schema}.${parsed.name} not found`;
-      const token = await computeContextToken(client, parsed.schema, parsed.name!);
+      return formatReadDocument({
+        uri: target.uri,
+        completeness: "full",
+        body: results.length > 0 ? results.join("\n---\n") : `no ${target.resourceKind}s in ${target.schema}`,
+        next: [`pg_get ${PlUri.schema(target.schema)}`],
+      });
+    }
+    case "schema": {
+      const overview = await querySchema(client, target.schema);
       const next: string[] = [];
-      for (const t of fn.tables_used) next.push(`pg_get ${PlUri.table(fn.schema, t.name)}`);
-      for (const c of fn.callers.slice(0, 3)) {
-        const name = c.includes(".") ? c.split(".")[1]! : c;
-        const schema = c.includes(".") ? c.split(".")[0]! : fn.schema;
-        next.push(`pg_get ${PlUri.fn(schema, name)}`);
+      if (overview.functions.length > 0) next.push(`pg_get ${PlUri.schema(target.schema)}/function/*`);
+      if (overview.tables.length > 0) next.push(`pg_get ${PlUri.schema(target.schema)}/table/*`);
+      next.push(`pg_search schema:${target.schema} name:%pattern%`);
+      return formatReadDocument({
+        uri: target.uri,
+        completeness: "full",
+        body: formatSchema(overview),
+        next,
+      });
+    }
+    case "resource":
+      if (target.resourceKind === "function") {
+        const fn = await queryFunction(client, target.schema, target.name);
+        if (!fn) return `function ${target.schema}.${target.name} not found`;
+        const token = await computeContextToken(client, target.schema, target.name);
+        const next: string[] = [];
+        for (const t of fn.tables_used) next.push(`pg_get ${PlUri.table(fn.schema, t.name)}`);
+        for (const c of fn.callers.slice(0, 3)) {
+          const name = c.includes(".") ? c.split(".")[1]! : c;
+          const schema = c.includes(".") ? c.split(".")[0]! : fn.schema;
+          next.push(`pg_get ${PlUri.fn(schema, name)}`);
+        }
+        if (next.length === 0) next.push(`pg_search content:${fn.name}`);
+        const formatted = formatFunction(fn) + (token ? `\n  context_token: ${token}` : "");
+        return formatReadDocument({
+          uri: target.uri,
+          completeness: "full",
+          body: formatted,
+          next,
+        });
       }
-      if (next.length === 0) next.push(`pg_search content:${fn.name}`);
-      const formatted = formatFunction(fn) + (token ? `\n  context_token: ${token}` : "");
-      return wrap(uri, "full", formatted, next);
-    }
-    case "table": {
-      const tbl = await queryTable(client, parsed.schema, parsed.name!);
-      if (!tbl) return `table ${parsed.schema}.${parsed.name} not found`;
-      const next = tbl.used_by.slice(0, 3).map((u) => `pg_get ${PlUri.fn(parsed.schema, u.name)}`);
-      if (next.length === 0) next.push(`pg_search content:${parsed.name}`);
-      return wrap(uri, "full", formatTable(tbl), next);
-    }
-    case "trigger": {
-      const trg = await queryTrigger(client, parsed.schema, parsed.name!);
-      if (!trg) return `trigger ${parsed.schema}.${parsed.name} not found`;
-      return wrap(uri, "full", formatTrigger(trg), [
-        `pg_get ${PlUri.table(parsed.schema, trg.table)}`,
-        `pg_get ${PlUri.fn(parsed.schema, trg.function)}`,
-      ]);
-    }
-    case "type": {
-      const typ = await queryType(client, parsed.schema, parsed.name!);
-      if (!typ) return `type ${parsed.schema}.${parsed.name} not found`;
-      return wrap(uri, "full", formatType(typ), [`pg_search content:${parsed.name}`]);
-    }
+      if (target.resourceKind === "table") {
+        const tbl = await queryTable(client, target.schema, target.name);
+        if (!tbl) return `table ${target.schema}.${target.name} not found`;
+        const next = tbl.used_by.slice(0, 3).map((u) => `pg_get ${PlUri.fn(target.schema, u.name)}`);
+        if (next.length === 0) next.push(`pg_search content:${target.name}`);
+        return formatReadDocument({
+          uri: target.uri,
+          completeness: "full",
+          body: formatTable(tbl),
+          next,
+        });
+      }
+      if (target.resourceKind === "trigger") {
+        const trg = await queryTrigger(client, target.schema, target.name);
+        if (!trg) return `trigger ${target.schema}.${target.name} not found`;
+        return formatReadDocument({
+          uri: target.uri,
+          completeness: "full",
+          body: formatTrigger(trg),
+          next: [`pg_get ${PlUri.table(target.schema, trg.table)}`, `pg_get ${PlUri.fn(target.schema, trg.function)}`],
+        });
+      }
+      if (target.resourceKind === "type") {
+        const typ = await queryType(client, target.schema, target.name);
+        if (!typ) return `type ${target.schema}.${target.name} not found`;
+        return formatReadDocument({
+          uri: target.uri,
+          completeness: "full",
+          body: formatType(typ),
+          next: [`pg_search content:${target.name}`],
+        });
+      }
+      return `✗ invalid URI: ${uri}`;
+    case "invalid":
+      return `✗ ${target.problem}`;
   }
 }
 

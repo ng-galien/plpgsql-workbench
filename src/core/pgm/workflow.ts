@@ -1,6 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DbClient } from "../connection.js";
+import {
+  ensureAppliedArtifactTable,
+  readAppliedArtifactStates,
+  upsertAppliedArtifactState,
+} from "../tooling/primitives/applied-artifacts.js";
+import { notifyPostgrestSchemaReload } from "../tooling/primitives/postgrest.js";
+import { withTransaction } from "../tooling/primitives/transaction.js";
 import { hashContent, type PreparedPlxModule, preparePlxModule, writePreparedBuildFiles } from "./plx-builder.js";
 import { loadManifest, type ModuleManifest } from "./resolver.js";
 
@@ -127,41 +134,12 @@ export async function readAppliedArtifacts(
   client: DbClient,
   moduleName: string,
 ): Promise<{ available: boolean; states: Map<string, AppliedArtifactState> }> {
-  try {
-    const { rows } = await client.query<{
-      artifact_key: string;
-      artifact_kind: ModuleWorkflowArtifactKind;
-      artifact_name: string;
-      artifact_hash: string;
-      artifact_file: string | null;
-      applied_at: string;
-    }>(
-      `SELECT artifact_key, artifact_kind, artifact_name, artifact_hash, artifact_file, applied_at::text
-         FROM workbench.applied_module_artifact
-        WHERE module_name = $1`,
-      [moduleName],
-    );
-
-    const states = new Map<string, AppliedArtifactState>();
-    for (const row of rows) {
-      states.set(row.artifact_key, {
-        key: row.artifact_key,
-        kind: row.artifact_kind,
-        name: row.artifact_name,
-        hash: row.artifact_hash,
-        file: row.artifact_file ?? undefined,
-        appliedAt: row.applied_at,
-      });
-    }
-
-    return { available: true, states };
-  } catch (error: unknown) {
-    const code = (error as { code?: string }).code;
-    if (code === "42P01" || code === "3F000") {
-      return { available: false, states: new Map() };
-    }
-    throw error;
-  }
+  const result = await readAppliedArtifactStates<ModuleWorkflowArtifactKind>(client, {
+    table: "applied_module_artifact",
+    scopeColumn: "module_name",
+    scopeValue: moduleName,
+  });
+  return { available: result.available, states: result.states as Map<string, AppliedArtifactState> };
 }
 
 export async function applyModuleIncremental(
@@ -169,7 +147,10 @@ export async function applyModuleIncremental(
   workflow: PreparedModuleWorkflow,
 ): Promise<ModuleApplyExecutionResult> {
   const buildFiles = await syncModuleBuildFiles(workflow);
-  await ensureApplyTrackingTable(client);
+  await ensureAppliedArtifactTable(client, {
+    table: "applied_module_artifact",
+    scopeColumn: "module_name",
+  });
 
   const applied = await readAppliedArtifacts(client, workflow.manifest.name);
   const diff = diffModuleArtifacts(workflow.artifacts, applied.states);
@@ -213,46 +194,42 @@ export async function applyModuleIncremental(
   const warnings: string[] = [];
   let committedResult: ModuleApplyExecutionResult | undefined;
 
-  await client.query("BEGIN");
   try {
-    for (const artifact of ordered) {
-      if (artifact.kind === "function") {
-        const fnWarning = await applyFunctionArtifact(client, artifact);
-        results.push({
-          key: artifact.key,
-          kind: artifact.kind,
-          name: artifact.name,
-          action: "applied",
-          warning: fnWarning,
-        });
-        if (fnWarning) warnings.push(fnWarning);
-      } else {
-        await client.query(artifact.content);
-        results.push({
-          key: artifact.key,
-          kind: artifact.kind,
-          name: artifact.name,
-          action: "applied",
-        });
+    await withTransaction(client, async () => {
+      for (const artifact of ordered) {
+        if (artifact.kind === "function") {
+          const fnWarning = await applyFunctionArtifact(client, artifact);
+          results.push({
+            key: artifact.key,
+            kind: artifact.kind,
+            name: artifact.name,
+            action: "applied",
+            warning: fnWarning,
+          });
+          if (fnWarning) warnings.push(fnWarning);
+        } else {
+          await client.query(artifact.content);
+          results.push({
+            key: artifact.key,
+            kind: artifact.kind,
+            name: artifact.name,
+            action: "applied",
+          });
+        }
+
+        await upsertAppliedArtifactState(
+          client,
+          {
+            table: "applied_module_artifact",
+            scopeColumn: "module_name",
+            scopeValue: workflow.manifest.name,
+          },
+          artifact,
+          artifact.file,
+        );
       }
-
-      await client.query(
-        `INSERT INTO workbench.applied_module_artifact
-           (module_name, artifact_key, artifact_kind, artifact_name, artifact_file, artifact_hash, applied_at)
-         VALUES ($1, $2, $3, $4, $5, $6, now())
-         ON CONFLICT (module_name, artifact_key)
-         DO UPDATE SET
-           artifact_kind = EXCLUDED.artifact_kind,
-           artifact_name = EXCLUDED.artifact_name,
-           artifact_file = EXCLUDED.artifact_file,
-           artifact_hash = EXCLUDED.artifact_hash,
-           applied_at = now()`,
-        [workflow.manifest.name, artifact.key, artifact.kind, artifact.name, artifact.file ?? null, artifact.hash],
-      );
-    }
-
-    await client.query("COMMIT");
-    await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
+    });
+    await notifyPostgrestSchemaReload(client);
     committedResult = {
       ok: true,
       transaction: "committed",
@@ -276,7 +253,6 @@ export async function applyModuleIncremental(
       ],
     };
   } catch (error: unknown) {
-    await client.query("ROLLBACK").catch(() => {});
     return {
       ok: false,
       transaction: "rolled_back",
@@ -292,8 +268,11 @@ export async function applyModuleIncremental(
   }
 
   // Post-apply runs outside the transaction: a failure here is independent of the apply result.
+  if (!committedResult) {
+    throw new Error("module apply committed without a result payload");
+  }
   const postActions = await runModulePostApply(client, workflow.manifest);
-  return { ...committedResult!, postActions };
+  return { ...committedResult, postActions };
 }
 
 async function runModulePostApply(client: DbClient, manifest: ModuleManifest): Promise<string[]> {
@@ -415,22 +394,6 @@ function buildManifestArtifacts(manifest: ModuleManifest): ModuleWorkflowArtifac
   }
 
   return artifacts;
-}
-
-async function ensureApplyTrackingTable(client: DbClient): Promise<void> {
-  await client.query(`CREATE SCHEMA IF NOT EXISTS workbench`);
-  await client.query(`
-    CREATE TABLE IF NOT EXISTS workbench.applied_module_artifact (
-      module_name text NOT NULL,
-      artifact_key text NOT NULL,
-      artifact_kind text NOT NULL,
-      artifact_name text NOT NULL,
-      artifact_file text,
-      artifact_hash text NOT NULL,
-      applied_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (module_name, artifact_key)
-    )
-  `);
 }
 
 async function applyFunctionArtifact(client: DbClient, artifact: ModuleWorkflowArtifact): Promise<string | undefined> {
