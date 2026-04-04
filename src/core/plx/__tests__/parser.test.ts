@@ -249,6 +249,25 @@ on purchase.receipt.received(receipt_id, supplier_id):
     ]);
   });
 
+  it("parses expose:false on entities", () => {
+    const mod = parse(
+      tokenize(`
+entity demo.line:
+  expose: false
+
+  fields:
+    description text required
+`),
+    );
+
+    expect(mod.entities[0]).toEqual(
+      expect.objectContaining({
+        name: "line",
+        expose: false,
+      }),
+    );
+  });
+
   it("parses view template field objects", () => {
     const mod = parse(
       tokenize(`

@@ -58,6 +58,7 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
   let uri = `${schema}://${name}`;
   let icon: string | undefined;
   let label = `${schema}.entity_${name}`;
+  let expose = true;
   let listOrder = "id";
   let readKey: string | undefined;
   const fields: EntityField[] = [];
@@ -93,6 +94,10 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
       ctx.advance();
       ctx.expect("COLON");
       label = ctx.expect("STRING").value;
+    } else if (kw === "expose") {
+      ctx.advance();
+      ctx.expect("COLON");
+      expose = parseBooleanScalar(ctx);
     } else if (kw === "list_order") {
       ctx.advance();
       ctx.expect("COLON");
@@ -183,6 +188,7 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
   return {
     kind: "entity",
     visibility,
+    expose,
     schema,
     name,
     table,
@@ -206,6 +212,11 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
     readKey,
     loc: mergeLoc(start, end),
   };
+}
+
+function parseBooleanScalar(ctx: ParseContext): boolean {
+  const tok = ctx.expect("BOOLEAN");
+  return tok.value === "true";
 }
 
 // ---------- Entity sub-parsers ----------

@@ -10,6 +10,7 @@ describe("entity DDL generation", () => {
     const entity: PlxEntity = {
       kind: "entity",
       visibility: "export",
+      expose: true,
       schema: "demo",
       name: "task",
       table: "demo.task",

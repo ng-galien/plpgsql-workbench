@@ -126,6 +126,7 @@ export interface TraitHook {
 export interface PlxEntity {
   kind: "entity";
   visibility: Visibility;
+  expose: boolean;
   schema: string;
   name: string; // "category", "expense_report"
   table: string; // "expense.category"

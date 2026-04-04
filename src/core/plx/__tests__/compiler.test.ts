@@ -161,7 +161,8 @@ entity demo.task:
     expect(result.ddlSql).toContain('CREATE SCHEMA IF NOT EXISTS "demo";');
     expect(result.sql).toContain("FUNCTION demo.task_create(p_input jsonb)");
     expect(result.sql).toContain("FUNCTION demo.task_update(p_id text, p_input jsonb)");
-    expect(result.sql).toContain("jsonb_populate_record(NULL::demo.task, p_input)");
+    expect(result.sql).toContain("v_p_row := NULL::demo.task;");
+    expect(result.sql).toContain("jsonb_populate_record(v_p_row, p_input)");
     expect(result.sql).toContain("jsonb_populate_record(v_current, p_input)");
     expect(result.sql).toContain("'entity_type', 'crud'");
     expect(result.sql).toContain("'compact'");
@@ -222,6 +223,55 @@ entity demo.task:
     expect(result.ddlSql).toContain("CREATE TABLE IF NOT EXISTS demo.task");
     expect(result.ddlSql).toContain(
       "ALTER TABLE demo.task ADD CONSTRAINT task_note_id_fkey FOREIGN KEY (note_id) REFERENCES demo.note(id);",
+    );
+  });
+
+  it("supports non-exposed entities without generating public CRUD functions", () => {
+    const source = `
+entity demo.line:
+  expose: false
+
+  fields:
+    description text required
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.ddlSql).toContain("CREATE TABLE IF NOT EXISTS demo.line");
+    expect(result.sql).not.toContain("demo.line_view");
+    expect(result.sql).not.toContain("demo.line_list");
+    expect(result.sql).not.toContain("demo.line_read");
+    expect(result.sql).not.toContain("demo.line_create");
+    expect(result.sql).not.toContain("demo.line_update");
+    expect(result.sql).not.toContain("demo.line_delete");
+  });
+
+  it("runs before create hooks inside generated create functions", () => {
+    const source = `
+fn demo._next_reference() -> text [stable]:
+  return 'NDF-2026-001'
+
+entity demo.report:
+  fields:
+    reference text?
+
+  before create:
+    if p_row.reference is null:
+      p_row := jsonb_populate_record(
+        p_row,
+        {reference: demo._next_reference()}
+      )
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("FUNCTION demo.report_create(p_input jsonb)");
+    expect(result.sql).toContain("v_p_row := NULL::demo.report;");
+    expect(result.sql).toContain("IF v_p_row.reference IS NULL THEN");
+    expect(result.sql).toContain("v_p_row := jsonb_populate_record(");
+    expect(result.sql).toContain("v_p_row, p_input");
+    expect(result.sql).toContain("demo._next_reference()");
+    expect(result.sql).toContain("INSERT INTO demo.report");
+    expect(result.sql.indexOf("IF v_p_row.reference IS NULL THEN")).toBeLessThan(
+      result.sql.indexOf("v_p_row := jsonb_populate_record(v_p_row, p_input);"),
     );
   });
 

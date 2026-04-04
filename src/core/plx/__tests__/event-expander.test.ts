@@ -211,6 +211,7 @@ function makeEntity(schema: string, name: string, overrides: Partial<PlxEntity> 
   return {
     kind: "entity",
     visibility: "internal",
+    expose: true,
     schema,
     name,
     table: `${schema}.${name}`,

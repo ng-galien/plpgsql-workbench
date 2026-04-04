@@ -79,16 +79,18 @@ export function expandEntities(mod: PlxModule): ExpandResult {
         ddlFragments.push(authArtifact.sql);
       }
 
-      functions.push(buildViewFunction(entity));
-      functions.push(buildListFunction(entity));
-      functions.push(buildReadFunction(entity));
-      functions.push(buildCreateFunction(entity, resolvedFields));
-      functions.push(buildUpdateFunction(entity, resolvedFields));
-      functions.push(buildDeleteFunction(entity));
-      // State transition functions
-      if (entity.states) {
-        for (const tr of entity.states.transitions) {
-          functions.push(buildTransitionFunction(entity, tr));
+      if (entity.expose) {
+        functions.push(buildViewFunction(entity));
+        functions.push(buildListFunction(entity));
+        functions.push(buildReadFunction(entity));
+        functions.push(buildCreateFunction(entity, resolvedFields));
+        functions.push(buildUpdateFunction(entity, resolvedFields));
+        functions.push(buildDeleteFunction(entity));
+        // State transition functions
+        if (entity.states) {
+          for (const tr of entity.states.transitions) {
+            functions.push(buildTransitionFunction(entity, tr));
+          }
         }
       }
       const entityDdl = generateDDL(entity, resolvedFields);
@@ -573,19 +575,20 @@ function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
     tenantContextGuard(entity),
     authorizeGuard(entity, "create"),
     ...buildPayloadValidation(entity, "p_input", { requireFields: true, forbidReadOnly: true }),
+    assign("p_row", castExpr(nullLit(loc), qualifiedIdent(entity.table, loc), loc), loc),
+    ...hookStmts,
     assign(
       "p_row",
       {
         kind: "call",
         name: "jsonb_populate_record",
-        args: [castExpr(nullLit(loc), qualifiedIdent(entity.table, loc), loc), ident("p_input", loc)],
+        args: [ident("p_row", loc), ident("p_input", loc)],
         loc,
       },
       loc,
     ),
     ...validateStmts,
     ...enrichStmts,
-    ...hookStmts,
     assign("result", sqlBlock(insertSql, undefined, undefined, loc), loc),
     ret("value", rawExpr(buildEntityJsonSelect(entity, "v_result"), loc), loc),
   ];

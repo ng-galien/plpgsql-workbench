@@ -1,51 +1,13 @@
 import type {
-  SduiFormField as FormField,
+  SduiUiActionNode as SduiActionNode,
+  SduiUiNode as SduiNode,
   SduiViewField as ViewField,
   SduiViewTemplate as ViewTemplate,
 } from "./generated/sdui-contract";
 import { fieldKey } from "./utils";
 
-export interface SduiActionNode {
-  type: "action";
-  label: string;
-  verb: string;
-  uri: string;
-  variant?: string;
-  confirm?: string;
-}
-
+export type { SduiActionNode, SduiNode };
 export type SduiField = ViewField;
-
-export type SduiNode =
-  | { type: "column"; children: SduiNode[] }
-  | { type: "row"; children: SduiNode[] }
-  | { type: "section"; label: string; children: SduiNode[] }
-  | { type: "field"; field: FormField }
-  | { type: "heading"; text: string; level?: number }
-  | { type: "text"; value: string }
-  | { type: "badge"; text: string; variant?: string }
-  | { type: "color"; value: string }
-  | { type: "md"; content: string }
-  | { type: "stat"; value: string; label: string; variant?: string }
-  | { type: "currency"; amount: number; currency?: string }
-  | { type: "workflow"; states: string[]; current: string }
-  | {
-      type: "timeline";
-      events: Array<{ date: string; label: string; variant?: string; icon?: string }>;
-    }
-  | { type: "detail"; source: string; fields: SduiField[] }
-  | {
-      type: "table";
-      source: string;
-      columns: Array<{ key: string; label: string; type?: string; align?: string }>;
-    }
-  | {
-      type: "line_items";
-      source: string;
-      columns: Array<{ key: string; label: string; type?: string; align?: string }>;
-      totals?: Record<string, number | undefined>;
-    }
-  | SduiActionNode;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

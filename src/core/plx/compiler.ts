@@ -134,6 +134,7 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
   }
 
   for (const entity of mod.entities) {
+    if (!entity.expose) continue;
     for (const error of validateViewPayload(buildEntityViewPayload(entity), entity.loc)) {
       errors.push(createDiagnostic("validate", error.code, error.message, error.loc));
     }
