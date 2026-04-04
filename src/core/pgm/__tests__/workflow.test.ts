@@ -8,6 +8,7 @@ import {
   diffModuleArtifacts,
   prepareModuleWorkflow,
   runModuleI18nSeed,
+  runModulePostApplyFile,
   sortApplyArtifacts,
   syncModuleBuildFiles,
 } from "../workflow.js";
@@ -352,5 +353,34 @@ fn quote.beta() -> int [stable]:
         params: ["quote"],
       }),
     );
+  });
+
+  it("runs module post_apply SQL when declared", async () => {
+    const root = await createWorkspace();
+    const moduleDir = path.join(root, "modules", "quote");
+    await fs.mkdir(path.join(moduleDir, "plx"), { recursive: true });
+    await fs.writeFile(path.join(moduleDir, "plx", "post_apply.sql"), "SELECT 42;", "utf-8");
+
+    const queries: Array<{ sql: string; params?: unknown[] }> = [];
+    const client: DbClient = {
+      async query<T = Record<string, unknown>>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        return { rows: [] as T[], rowCount: 0 };
+      },
+    };
+
+    const action = await runModulePostApplyFile(
+      client,
+      {
+        name: "quote",
+        version: "0.1.0",
+        description: "Quote",
+        plx: { entry: "src/quote.plx", post_apply: "plx/post_apply.sql" },
+      },
+      moduleDir,
+    );
+
+    expect(action).toBe("post-applied quote from plx/post_apply.sql");
+    expect(queries).toEqual([{ sql: "SELECT 42;", params: undefined }]);
   });
 });

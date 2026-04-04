@@ -20,7 +20,7 @@ export interface ModuleManifest {
   assets: { frontend?: string[]; scripts?: string[]; styles?: string[] };
   grants: Record<string, string[]>;
   docker?: { image: string; note?: string };
-  plx?: { entry: string };
+  plx?: { entry: string; seed?: string; post_apply?: string };
   plxContract?: ModuleContract;
 }
 

@@ -279,6 +279,8 @@ async function runModulePostApply(client: DbClient, manifest: PlxModuleManifest,
   if (seeded) actions.push(seeded);
   const seedAction = await runModuleSeed(client, manifest, moduleDir);
   if (seedAction) actions.push(seedAction);
+  const postApplyAction = await runModulePostApplyFile(client, manifest, moduleDir);
+  if (postApplyAction) actions.push(postApplyAction);
   return actions;
 }
 
@@ -310,6 +312,20 @@ async function runModuleSeed(
   const content = await fs.readFile(seedPath, "utf-8");
   await client.query(content);
   return `seeded ${manifest.name} from ${seedFile}`;
+}
+
+export async function runModulePostApplyFile(
+  client: DbClient,
+  manifest: PlxModuleManifest,
+  moduleDir: string,
+): Promise<string | undefined> {
+  const postApplyFile = manifest.plx.post_apply;
+  if (!postApplyFile) return undefined;
+
+  const postApplyPath = path.join(moduleDir, postApplyFile);
+  const content = await fs.readFile(postApplyPath, "utf-8");
+  await client.query(content);
+  return `post-applied ${manifest.name} from ${postApplyFile}`;
 }
 
 export async function syncModuleBuildFiles(workflow: PreparedModuleWorkflow): Promise<string[]> {

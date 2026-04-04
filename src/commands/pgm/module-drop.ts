@@ -83,19 +83,6 @@ export function createPlxModuleDropTool({
   };
 }
 
-function ownedSchemas(schemas: { public: string | null; private: string | null; qa?: string | null }): string[] {
-  const values = new Set<string>();
-  if (schemas.public) {
-    values.add(schemas.public);
-    values.add(`${schemas.public}_ut`);
-    values.add(`${schemas.public}_it`);
-    values.add(`${schemas.public}_qa`);
-  }
-  if (schemas.private) values.add(schemas.private);
-  if (schemas.qa) values.add(schemas.qa);
-  return [...values].sort();
-}
-
 async function dropModuleSchemas(
   client: DbClient,
   moduleName: string,
