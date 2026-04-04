@@ -190,6 +190,49 @@ on purchase.receipt.received(receipt_id, supplier_id):
     ]);
   });
 
+  it("rejects unsupported entity change hook names", () => {
+    const error = parseErrorOf(`
+entity demo.task:
+  fields:
+    title text required
+
+  on change(new, old):
+    emit renamed(new.id)
+`);
+    expect(error).toMatchObject({ code: "parse.invalid-entity-change-hook" });
+    expect(error.message).toContain("unsupported entity change hook 'change'");
+  });
+
+  it("rejects before/after delete hooks and accepts validate delete", () => {
+    const beforeDelete = parseErrorOf(`
+entity demo.task:
+  fields:
+    title text required
+
+  before delete:
+    assert true
+`);
+    expect(beforeDelete).toMatchObject({ code: "parse.invalid-entity-hook-action" });
+    expect(beforeDelete.message).toContain("before delete hooks are not supported");
+
+    const mod = parse(
+      tokenize(`
+entity demo.task:
+  fields:
+    title text required
+
+  validate delete:
+    assert true
+`),
+    );
+    expect(mod.entities[0]?.hooks).toEqual([
+      expect.objectContaining({
+        event: "validate_delete",
+        params: [],
+      }),
+    ]);
+  });
+
   it("parses IS NULL and IS NOT NULL as postfix operators", () => {
     const mod = parse(
       tokenize(`

@@ -85,7 +85,7 @@ interface EmittedLine {
   segments: SourceSegment[];
 }
 
-export function generate(fn: PlxFunction, aliases?: Map<string, string>): string {
+function generate(fn: PlxFunction, aliases?: Map<string, string>): string {
   return generateWithSourceMap(fn, aliases).sql;
 }
 

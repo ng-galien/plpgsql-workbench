@@ -6,7 +6,7 @@ import { LexError, tokenize } from "./lexer.js";
 import { ParseError } from "./parse-context.js";
 import { parse } from "./parser.js";
 
-export interface LoadPlxModuleResult {
+interface LoadPlxModuleResult {
   errors: CompileError[];
   files: string[];
   module?: PlxModule;

@@ -4,7 +4,7 @@ import type { DbClient } from "../connection.js";
 import { hashContent, type PreparedPlxModule, preparePlxModule, writePreparedBuildFiles } from "./plx-builder.js";
 import { loadManifest, type ModuleManifest } from "./resolver.js";
 
-export type ModuleWorkflowArtifactKind = "extension" | "ddl" | "function" | "test" | "grant";
+type ModuleWorkflowArtifactKind = "extension" | "ddl" | "function" | "test" | "grant";
 
 export interface ModuleWorkflowArtifact {
   key: string;
@@ -33,7 +33,7 @@ export interface AppliedArtifactState {
   appliedAt: string;
 }
 
-export interface ModuleArtifactDiff {
+interface ModuleArtifactDiff {
   changed: ModuleWorkflowArtifact[];
   unchanged: ModuleWorkflowArtifact[];
   obsolete: AppliedArtifactState[];
@@ -49,14 +49,14 @@ export interface PreparedModuleWorkflow {
   buildFiles: ModuleBuildFileStatus[];
 }
 
-export interface ModuleApplyFailure {
+interface ModuleApplyFailure {
   problem: string;
   stage: string;
   where: string;
   fixHint?: string;
 }
 
-export interface ModuleApplyArtifactResult {
+interface ModuleApplyArtifactResult {
   key: string;
   kind: ModuleWorkflowArtifactKind;
   name: string;
@@ -64,7 +64,7 @@ export interface ModuleApplyArtifactResult {
   warning?: string;
 }
 
-export interface ModuleApplyExecutionResult {
+interface ModuleApplyExecutionResult {
   ok: boolean;
   transaction: "not_started" | "committed" | "rolled_back";
   diff: ModuleArtifactDiff;
@@ -296,7 +296,7 @@ export async function applyModuleIncremental(
   return { ...committedResult!, postActions };
 }
 
-export async function runModulePostApply(client: DbClient, manifest: ModuleManifest): Promise<string[]> {
+async function runModulePostApply(client: DbClient, manifest: ModuleManifest): Promise<string[]> {
   const actions: string[] = [];
   const seeded = await runModuleI18nSeed(client, manifest);
   if (seeded) actions.push(seeded);

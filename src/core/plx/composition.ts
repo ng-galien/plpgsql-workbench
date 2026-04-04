@@ -15,12 +15,12 @@ import { ParseError } from "./parse-context.js";
 import { parse } from "./parser.js";
 import { walkStatements } from "./walker.js";
 
-export interface CompositionInput {
+interface CompositionInput {
   file: string;
   source: string;
 }
 
-export interface CompositionModuleInput {
+interface CompositionModuleInput {
   file: string;
   module: PlxModule;
 }

@@ -73,7 +73,7 @@ interface CompiledModuleArtifact {
   testFunctions: PlxFunction[];
 }
 
-export interface CompileModuleOptions {
+interface CompileModuleOptions {
   dependencyContracts?: Map<string, ModuleContract>;
 }
 

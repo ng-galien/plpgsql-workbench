@@ -1,0 +1,18 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["src/core/plx/compiler.ts"],
+  "project": [
+    "src/core/plx/**/*.ts",
+    "src/core/pgm/plx-builder.ts",
+    "src/core/pgm/workflow.ts",
+    "src/core/tools/pgm/**/*.ts",
+    "src/core/packs/plpgsql.ts"
+  ],
+  "includeEntryExports": true,
+  "rules": {
+    "dependencies": "off",
+    "devDependencies": "off",
+    "unlisted": "off",
+    "binaries": "off"
+  }
+}

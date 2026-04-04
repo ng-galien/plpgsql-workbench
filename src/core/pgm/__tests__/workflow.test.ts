@@ -105,7 +105,7 @@ describe("pgm module workflow", () => {
 
     const workflow = await prepareModuleWorkflow(root, "quote");
 
-    expect(workflow.prepared.files.map((file) => path.basename(file))).toEqual(["quote.plx", "brand.plx"]);
+    expect(workflow.prepared.files.map((file: string) => path.basename(file))).toEqual(["quote.plx", "brand.plx"]);
     expect(workflow.artifacts.map((artifact) => artifact.key)).toEqual([
       "ddl:schema:quote",
       "ddl:schema:quote_ut",

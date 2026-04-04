@@ -12,7 +12,7 @@ export function pointLoc(line = 0, col = 0, file?: string): Loc {
   return { file, line, col, endLine: line, endCol: col };
 }
 
-export function spanLoc(start: Pick<Loc, "file" | "line" | "col">, end: Pick<Loc, "file" | "endLine" | "endCol">): Loc {
+function spanLoc(start: Pick<Loc, "file" | "line" | "col">, end: Pick<Loc, "file" | "endLine" | "endCol">): Loc {
   return {
     file: start.file ?? end.file,
     line: start.line,

@@ -1,10 +1,41 @@
-import { describe, expect, it } from "vitest";
+import * as pgParser from "@libpg-query/parser";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { pointLoc } from "../ast.js";
 import { generateWithSourceMap } from "../codegen.js";
-import { compile, compileAndValidate } from "../compiler.js";
+import { compile, compileAndValidate, compileModule, validateCompiledBundle } from "../compiler.js";
 import { tokenize } from "../lexer.js";
 import { parse } from "../parser.js";
 
+type ValidationBundle = Parameters<typeof validateCompiledBundle>[0];
+
+function makeValidationBundle(
+  result: Partial<ValidationBundle["result"]> = {},
+  blocks: ValidationBundle["blocks"] = [],
+): ValidationBundle {
+  return {
+    result: {
+      sql: "",
+      errors: [],
+      warnings: [],
+      functionCount: 0,
+      ...result,
+    },
+    blocks,
+    artifact: {
+      aliases: new Map(),
+      ddlArtifacts: [],
+      functions: [],
+      module: parse(tokenize("module demo")),
+      testFunctions: [],
+    },
+  };
+}
+
 describe("PLX test compilation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("compiles a basic test block to pgTAP function", () => {
     const source = `
 test "simple call":
@@ -411,6 +442,169 @@ fn demo.bad( -> int:
     );
   });
 
+  it("returns validation warnings when the PG validator is unavailable", async () => {
+    vi.spyOn(pgParser, "loadModule").mockRejectedValueOnce(new Error("validator offline"));
+
+    const result = await validateCompiledBundle(
+      makeValidationBundle({
+        sql: "CREATE OR REPLACE FUNCTION demo.ok() RETURNS void LANGUAGE plpgsql AS $$ BEGIN RETURN; END; $$;",
+        functionCount: 1,
+      }),
+    );
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "validate.validator-unavailable",
+          functionName: "validator",
+          message: "PG validator unavailable: validator offline",
+        }),
+      ]),
+    );
+  });
+
+  it("falls back to a synthetic validation block when only SQL is available", async () => {
+    vi.spyOn(pgParser, "loadModule").mockResolvedValueOnce(undefined);
+    vi.spyOn(pgParser, "parsePlPgSQLSync").mockImplementationOnce(() => {
+      throw new Error('syntax error at or near "broken"');
+    });
+
+    const result = await validateCompiledBundle(
+      makeValidationBundle({
+        sql: "CREATE OR REPLACE FUNCTION demo.bad() RETURNS void LANGUAGE plpgsql AS $$ BEGIN broken; END; $$;",
+        functionCount: 1,
+      }),
+    );
+
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "validate.pg-parse-error",
+          functionName: "unknown",
+          line: 0,
+          col: 0,
+        }),
+      ]),
+    );
+  });
+
+  it("maps PG validation warnings to the best segment on the generated line", async () => {
+    vi.spyOn(pgParser, "loadModule").mockResolvedValueOnce(undefined);
+    vi.spyOn(pgParser, "parsePlPgSQLSync").mockImplementationOnce(() => {
+      throw new Error('syntax error at or near "supplier_id" line 3');
+    });
+
+    const result = await validateCompiledBundle(
+      makeValidationBundle({ sql: "ignored", functionCount: 1 }, [
+        {
+          sql: "ignored",
+          functionName: "demo.bad",
+          loc: pointLoc(2, 2),
+          sourceMap: {
+            lines: [
+              { generatedLine: 1, text: "CREATE FUNCTION ...", loc: pointLoc(1, 0), segments: [] },
+              {
+                generatedLine: 3,
+                text: "PERFORM supplier_id;",
+                loc: pointLoc(10, 2),
+                segments: [{ startCol: 8, endCol: 19, loc: pointLoc(10, 10), text: "supplier_id" }],
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "validate.pg-parse-error",
+          functionName: "demo.bad",
+          line: 10,
+          col: 10,
+        }),
+      ]),
+    );
+  });
+
+  it("maps PG validation warnings by token when no generated line is present", async () => {
+    vi.spyOn(pgParser, "loadModule").mockResolvedValueOnce(undefined);
+    vi.spyOn(pgParser, "parsePlPgSQLSync").mockImplementationOnce(() => {
+      throw new Error('syntax error at or near "jsonb_build_object"');
+    });
+
+    const result = await validateCompiledBundle(
+      makeValidationBundle({ sql: "ignored", functionCount: 1 }, [
+        {
+          sql: "ignored",
+          functionName: "demo.json",
+          loc: pointLoc(3, 2),
+          sourceMap: {
+            lines: [
+              {
+                generatedLine: 7,
+                text: "RETURN jsonb_build_object('id', 1);",
+                loc: pointLoc(30, 2),
+                segments: [{ startCol: 9, endCol: 26, loc: pointLoc(30, 9), text: "jsonb_build_object" }],
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "validate.pg-parse-error",
+          functionName: "demo.json",
+          line: 30,
+          col: 9,
+        }),
+      ]),
+    );
+  });
+
+  it("maps end-of-input PG warnings to the last meaningful source segment", async () => {
+    vi.spyOn(pgParser, "loadModule").mockResolvedValueOnce(undefined);
+    vi.spyOn(pgParser, "parsePlPgSQLSync").mockImplementationOnce(() => {
+      throw new Error("syntax error at end of input");
+    });
+
+    const result = await validateCompiledBundle(
+      makeValidationBundle({ sql: "ignored", functionCount: 1 }, [
+        {
+          sql: "ignored",
+          functionName: "demo.eof",
+          loc: pointLoc(4, 2),
+          sourceMap: {
+            lines: [
+              { generatedLine: 1, text: "BEGIN", loc: pointLoc(40, 2), segments: [] },
+              {
+                generatedLine: 2,
+                text: "RETURN some_call(",
+                loc: pointLoc(41, 2),
+                segments: [{ startCol: 8, endCol: 17, loc: pointLoc(41, 9), text: "some_call" }],
+              },
+            ],
+          },
+        },
+      ]),
+    );
+
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "validate.pg-parse-error",
+          functionName: "demo.eof",
+          line: 41,
+          col: 9,
+        }),
+      ]),
+    );
+  });
+
   it("errors on unknown identifiers", () => {
     const source = `
 fn demo.bad() -> text:
@@ -436,6 +630,25 @@ fn demo.bad(p_id int) -> int:
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.phase).toBe("semantic");
     expect(result.errors[0]?.message).toContain("cannot assign to parameter 'p_id'");
+  });
+
+  it("errors when a local variable shadows an import alias", () => {
+    const source = `
+import jsonb_build_object as obj
+
+fn demo.bad() -> jsonb:
+  obj := 1
+  return obj
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "semantic.shadowed-import-alias",
+          message: "demo.bad: local name 'obj' shadows import alias 'obj'",
+        }),
+      ]),
+    );
   });
 
   it("warns on unused import aliases", () => {
@@ -511,6 +724,74 @@ entity demo.task:
         expect.objectContaining({
           code: "semantic.missing-i18n-translation",
           message: "missing i18n translation 'demo.action_activate' for lang 'fr'",
+        }),
+      ]),
+    );
+  });
+
+  it("errors when emit is used outside entity change hooks", () => {
+    const source = `
+fn demo.bad() -> void:
+  emit received(1)
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "semantic.emit-outside-entity-change-hook",
+          message: "demo.bad: emit is only allowed inside entity change hooks",
+        }),
+      ]),
+    );
+  });
+
+  it("errors when emitted event argument count does not match the contract", () => {
+    const source = `
+entity demo.task:
+  fields:
+    title text required
+
+  event renamed(task_id int, title text)
+
+  on update(new, old):
+    emit renamed(new.id)
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "semantic.emit-argument-count",
+          message: "entity demo.task update: event 'renamed' expects 2 argument(s)",
+        }),
+      ]),
+    );
+  });
+
+  it("errors on duplicate entity events and change hooks", () => {
+    const source = `
+entity demo.task:
+  fields:
+    title text required
+
+  event renamed(task_id int)
+  event renamed(task_id int)
+
+  on update(new, old):
+    emit renamed(new.id)
+
+  on update(newer, older):
+    emit renamed(newer.id)
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "semantic.duplicate-entity-event",
+          message: "entity demo.task: duplicate event 'renamed'",
+        }),
+        expect.objectContaining({
+          code: "semantic.duplicate-entity-change-hook",
+          message: "entity demo.task: duplicate change hook 'update'",
         }),
       ]),
     );
@@ -712,6 +993,61 @@ test "catches error":
     expect(result.testSql).toContain("EXCEPTION WHEN OTHERS THEN");
     expect(result.testSql).toContain("END;");
     expect(result.testSql).toContain("RETURN NEXT is(");
+  });
+
+  it("infers test schema from qualified calls inside nested control flow", () => {
+    const source = `
+test "nested schema inference":
+  if true:
+    for item in [1]:
+      try:
+        crm.client_read(item)
+      catch:
+        fallback := 1
+  assert true
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("crm_ut.test_nested_schema_inference");
+  });
+
+  it("infers test schema from unary/grouped assert expressions", () => {
+    const source = `
+test "grouped unary schema inference":
+  assert not (crm.client_exists(1))
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("crm_ut.test_grouped_unary_schema_inference");
+  });
+
+  it("infers test schema from return statements", () => {
+    const source = `
+test "return schema inference":
+  return crm.client_read(1)
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("crm_ut.test_return_schema_inference");
+  });
+
+  it("errors when i18n is declared without a module name", () => {
+    const mod = parse(tokenize(""));
+    mod.depends.push({ name: "pgv", loc: pointLoc(1, 0) });
+    mod.i18n.push({
+      lang: "fr",
+      loc: pointLoc(1, 0),
+      entries: [{ key: "demo.title", value: "Titre", loc: pointLoc(2, 2) }],
+    });
+    const result = compileModule(mod);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "codegen.i18n-missing-module",
+          message: "i18n blocks require a module declaration",
+        }),
+      ]),
+    );
   });
 
   it("compiles IS NULL in test assert to pgTAP is()", () => {

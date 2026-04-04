@@ -157,7 +157,12 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
     } else if (kw === "before" || kw === "after") {
       hooks.push(parseEntityHook(ctx));
     } else if (kw === "validate") {
-      hooks.push(...parseValidateBlock(ctx));
+      const next = ctx.peekAt(1);
+      if (next?.type === "IDENT") {
+        hooks.push(parseEntityHook(ctx));
+      } else {
+        hooks.push(...parseValidateBlock(ctx));
+      }
     } else {
       // Unknown key — skip line
       ctx.advance();

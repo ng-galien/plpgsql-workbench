@@ -24,7 +24,7 @@ export interface ModuleContract {
   };
 }
 
-export interface ModuleContractResult {
+interface ModuleContractResult {
   contract?: ModuleContract;
   errors: CompileError[];
 }

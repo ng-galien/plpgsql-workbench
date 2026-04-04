@@ -13,18 +13,18 @@ import type { ModuleContract } from "./contract.js";
 import type { DdlArtifact } from "./entity-ddl.js";
 import { sqlEscape } from "./util.js";
 
-export interface EventExpandOptions {
+interface EventExpandOptions {
   dependencyContracts?: Map<string, ModuleContract>;
 }
 
-export interface EventExpandResult {
+interface EventExpandResult {
   ddlArtifacts: DdlArtifact[];
   ddlFragments: string[];
   errors: EventExpandError[];
   functions: PlxFunction[];
 }
 
-export interface EventExpandError {
+interface EventExpandError {
   entityName?: string;
   loc: Loc;
   message: string;

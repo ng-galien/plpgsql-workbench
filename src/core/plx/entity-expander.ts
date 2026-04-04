@@ -39,20 +39,18 @@ import { type DdlArtifact, generateDDL, type ResolvedEntityFields } from "./enti
 import { formatDefaultValue } from "./entity-sql.js";
 import { sqlEscape } from "./util.js";
 
-export type { DdlArtifact, ResolvedEntityFields } from "./entity-ddl.js";
-
 const LOC: Loc = pointLoc();
 
 // ---------- Public API ----------
 
-export interface ExpandResult {
+interface ExpandResult {
   functions: PlxFunction[];
   ddlFragments: string[];
   ddlArtifacts: DdlArtifact[];
   errors: ExpandError[];
 }
 
-export interface ExpandError {
+interface ExpandError {
   loc: Loc;
   message: string;
   entityName: string;

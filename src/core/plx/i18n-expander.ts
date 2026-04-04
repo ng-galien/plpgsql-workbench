@@ -5,7 +5,7 @@ import { createDiagnostic } from "./compiler.js";
 import type { DdlArtifact } from "./entity-ddl.js";
 import { sqlEscape } from "./util.js";
 
-export interface I18nExpandResult {
+interface I18nExpandResult {
   artifacts: DdlArtifact[];
   errors: CompileError[];
 }

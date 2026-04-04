@@ -2,12 +2,12 @@
 
 import type { Expression, Loc, PlxFunction, PlxTest, Statement } from "./ast.js";
 
-export interface TestExpandResult {
+interface TestExpandResult {
   functions: PlxFunction[];
   errors: TestExpandError[];
 }
 
-export interface TestExpandError {
+interface TestExpandError {
   loc: Loc;
   message: string;
 }

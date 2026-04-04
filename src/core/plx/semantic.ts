@@ -20,7 +20,7 @@ interface EventAnalysisOptions {
 
 const NO_EVENT_OPTIONS: EventAnalysisOptions = {};
 
-export interface SemanticIssue {
+interface SemanticIssue {
   code: string;
   hint?: string;
   loc: Loc;
@@ -28,7 +28,7 @@ export interface SemanticIssue {
   owner: string;
 }
 
-export interface SemanticWarning {
+interface SemanticWarning {
   code: string;
   hint?: string;
   loc: Loc;
@@ -36,7 +36,7 @@ export interface SemanticWarning {
   owner: string;
 }
 
-export interface SemanticResult {
+interface SemanticResult {
   errors: SemanticIssue[];
   warnings: SemanticWarning[];
 }
@@ -1247,6 +1247,6 @@ function checkShadowing(name: string, loc: Loc, ctx: AnalysisContext): void {
   });
 }
 
-export function inferredLoc(stmts: Statement[]): Loc {
+function inferredLoc(stmts: Statement[]): Loc {
   return stmts[0]?.loc ?? pointLoc();
 }

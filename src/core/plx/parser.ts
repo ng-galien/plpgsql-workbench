@@ -24,7 +24,7 @@ import { sqlEscape } from "./util.js";
 
 const VALID_FUNC_ATTRS = new Set(["stable", "immutable", "volatile", "definer", "strict"]);
 
-export interface ParseOptions {
+interface ParseOptions {
   kind?: "module" | "fragment";
 }
 

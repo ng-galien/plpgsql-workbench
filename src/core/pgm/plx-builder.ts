@@ -7,12 +7,12 @@ import type { ModuleContract } from "../plx/contract.js";
 import { loadPlxModule } from "../plx/module-loader.js";
 import { loadManifest, type ModuleManifest } from "./resolver.js";
 
-export interface PlxBuildResult {
+interface PlxBuildResult {
   files: string[];
   warnings: string[];
 }
 
-export interface PlxPreparedArtifact {
+interface PlxPreparedArtifact {
   key: string;
   kind: "ddl" | "function" | "test";
   name: string;

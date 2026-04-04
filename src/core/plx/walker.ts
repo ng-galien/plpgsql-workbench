@@ -7,7 +7,7 @@
 
 import type { Expression, Statement } from "./ast.js";
 
-export interface AstVisitor {
+interface AstVisitor {
   onStatement?: (stmt: Statement) => void;
   onExpression?: (expr: Expression) => void;
 }
@@ -16,7 +16,7 @@ export function walkStatements(stmts: Statement[], visitor: AstVisitor): void {
   for (const stmt of stmts) walkStatement(stmt, visitor);
 }
 
-export function walkStatement(stmt: Statement, visitor: AstVisitor): void {
+function walkStatement(stmt: Statement, visitor: AstVisitor): void {
   if (visitor.onStatement) visitor.onStatement(stmt);
 
   switch (stmt.kind) {
@@ -63,7 +63,7 @@ export function walkStatement(stmt: Statement, visitor: AstVisitor): void {
   }
 }
 
-export function walkExpression(expr: Expression, visitor: AstVisitor): void {
+function walkExpression(expr: Expression, visitor: AstVisitor): void {
   if (visitor.onExpression) visitor.onExpression(expr);
 
   switch (expr.kind) {
