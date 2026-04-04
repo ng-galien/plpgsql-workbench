@@ -5,7 +5,7 @@
   "schemas": {
     "public": "pgv",
     "private": null,
-    "qa": "pgv_qa"
+    "qa": null
   },
   "dependencies": [],
   "extensions": [
@@ -15,22 +15,16 @@
   ],
   "sql": [
     "build/pgv.ddl.sql",
-    "build/pgv_qa.ddl.sql",
     "build/pgv.func.sql",
-    "build/pgv_qa.func.sql",
     "build/pgv_ut.func.sql"
   ],
   "assets": {
-    "frontend": [
-      "frontend/index.html",
-      "frontend/pgview.css"
-    ]
+    "frontend": []
   },
   "grants": {
     "anon": [
       "pgv",
-      "pgv_ut",
-      "pgv_qa"
+      "pgv_ut"
     ]
   }
 }
