@@ -5,24 +5,24 @@ entity hr.employee uses auditable:
   list_order: 'last_name, first_name'
 
   fields:
-    employee_code text?
+    employee_code text default('')
     last_name text required
     first_name text required
     email text?
     phone text?
     birth_date date?
-    gender text?
-    nationality text?
-    position text?
-    qualification text?
-    department text?
+    gender text default('')
+    nationality text default('')
+    position text default('')
+    qualification text default('')
+    department text default('')
     contract_type text default('cdi')
     hire_date date required
     end_date date?
     gross_salary numeric?
     weekly_hours numeric default(35)
     status text default('active')
-    notes text?
+    notes text default('')
 
   validate:
     gender_valid: """

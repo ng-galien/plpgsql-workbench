@@ -44,25 +44,7 @@ fn hr.employee_activate(p_id text) -> jsonb [definer]:
   result := select to_jsonb(e) from hr.employee e where id = p_id::int
   return result
 
--- Leave request reject/cancel (branches hors state machine)
-
-fn hr.leave_request_reject(p_id text) -> jsonb [definer]:
-  """
-    update hr.leave_request set status = 'rejected'
-    where id = p_id::int and status = 'pending'
-      and tenant_id = current_setting('app.tenant_id', true)
-  """
-  result := select to_jsonb(r) from hr.leave_request r where id = p_id::int
-  return result
-
-fn hr.leave_request_cancel(p_id text) -> jsonb [definer]:
-  """
-    update hr.leave_request set status = 'cancelled'
-    where id = p_id::int and status = 'pending'
-      and tenant_id = current_setting('app.tenant_id', true)
-  """
-  result := select to_jsonb(r) from hr.leave_request r where id = p_id::int
-  return result
+-- Leave reject/cancel are now handled by the state machine
 
 -- Employee read strategy (enriched with stats)
 

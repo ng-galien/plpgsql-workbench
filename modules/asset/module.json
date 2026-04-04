@@ -2,6 +2,6 @@
   "name": "asset",
   "version": "0.1.0",
   "description": "Asset management — images, metadata, classification, FTS search",
-  "plx": { "entry": "plx/asset.plx", "seed": "plx/seed.sql", "post_apply": "plx/post_apply.sql" },
+  "plx": { "entry": "plx/asset.plx", "seed": "plx/seed.sql" },
   "grants": { "anon": ["asset"] }
 }

@@ -26,8 +26,19 @@ entity catalog.article uses auditable:
       coalesce((p_input->>'vat_rate')::numeric, 20) in (0, 2.1, 5.5, 10, 20)
     """
 
+  indexes:
+    name_fts:
+      using: gin
+      on: [to_tsvector('french', coalesce(name, ''))]
+    barcode:
+      on: [barcode]
+      where: barcode IS NOT NULL
+    active:
+      on: [active]
+
   strategies:
     read.query: catalog._article_read_query
+    read.hateoas: catalog._article_hateoas
     list.query: catalog._article_list_query
 
   view:

@@ -8,7 +8,7 @@ entity hr.timesheet:
     employee_id int required ref(hr.employee)
     work_date date required
     hours numeric required
-    description text?
+    description text default('')
 
   validate:
     hours_range: """

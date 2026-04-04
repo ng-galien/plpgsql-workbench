@@ -13,3 +13,10 @@ entity expense.line:
     vat numeric default(0)
     receipt text?
     km numeric?
+
+  generated:
+    amount_incl_tax numeric(12,2): amount_excl_tax + vat
+
+  indexes:
+    line_date:
+      on: [expense_date]

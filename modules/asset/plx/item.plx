@@ -62,6 +62,22 @@ entity asset.asset uses auditable:
         {key: season, type: select, label: asset.field_season, options: asset.season_options}
         {key: orientation, type: select, label: asset.field_orientation, options: asset.orientation_options}
 
+  generated:
+    search_vec tsvector: """
+      setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
+      setweight(to_tsvector('simple', coalesce(description, '')), 'B')
+    """
+
+  indexes:
+    search:
+      using: gin
+      on: [search_vec]
+    status:
+      on: [tenant_id, status]
+    tags:
+      using: gin
+      on: [tags]
+
   actions:
     classify: {label: asset.action_classify, variant: primary}
     edit:     {label: asset.action_edit}

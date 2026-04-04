@@ -8,3 +8,7 @@ entity catalog.pricing_tier:
     article_id int required ref(catalog.article)
     min_qty numeric required
     unit_price numeric required
+
+  indexes:
+    by_article_qty:
+      on: [article_id, min_qty]

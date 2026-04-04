@@ -21,10 +21,17 @@ entity expense.expense_report:
       (p_input->>'end_date')::date >= (p_input->>'start_date')::date
     """
 
-  states draft -> submitted -> validated -> reimbursed:
+  states draft -> submitted -> validated -> reimbursed -> rejected:
     submit(draft -> submitted)
     validate(submitted -> validated)
+    reject(submitted -> rejected)
     reimburse(validated -> reimbursed)
+
+  indexes:
+    report_status:
+      on: [status]
+    report_author:
+      on: [author]
 
   view:
     compact: [reference, author, status]

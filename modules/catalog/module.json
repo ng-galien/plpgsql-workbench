@@ -2,6 +2,6 @@
   "name": "catalog",
   "version": "0.2.0",
   "description": "Product/Service catalog — articles, categories, suppliers, pricing tiers",
-  "plx": { "entry": "plx/catalog.plx", "seed": "plx/seed.sql", "post_apply": "plx/post_apply.sql" },
+  "plx": { "entry": "plx/catalog.plx", "seed": "plx/seed.sql" },
   "grants": { "anon": ["catalog"] }
 }

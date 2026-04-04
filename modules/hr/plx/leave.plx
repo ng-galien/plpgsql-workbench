@@ -10,7 +10,7 @@ entity hr.leave_request uses auditable:
     start_date date required
     end_date date required
     day_count numeric default(1)
-    reason text?
+    reason text default('')
     status text default('pending')
 
   validate:
@@ -21,8 +21,10 @@ entity hr.leave_request uses auditable:
       (p_input->>'end_date')::date >= (p_input->>'start_date')::date
     """
 
-  states pending -> approved:
+  states pending -> approved -> rejected -> cancelled:
     approve(pending -> approved)
+    reject(pending -> rejected)
+    cancel(pending -> cancelled)
 
   strategies:
     read.query: hr._leave_read_query

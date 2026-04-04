@@ -58,6 +58,9 @@ fn asset.search(p_params jsonb?) -> jsonb [stable]:
     with params as (
       select
         nullif(trim(coalesce(p_params->>'p_status', '')), '') as status,
+        case when p_params ? 'p_tags' and p_params->>'p_tags' is not null
+          then array(select jsonb_array_elements_text(p_params->'p_tags'))
+          else null end as tags,
         nullif(trim(coalesce(p_params->>'q', '')), '') as q,
         nullif(trim(coalesce(p_params->>'p_mime', '')), '') as mime,
         coalesce((p_params->>'_offset')::int, 0) as off,
@@ -70,6 +73,7 @@ fn asset.search(p_params jsonb?) -> jsonb [stable]:
              a.created_at, a.classified_at
       from asset.asset a, params p
       where (p.status is null or a.status = p.status)
+        and (p.tags is null or a.tags && p.tags)
         and (p.q is null or a.search_vec @@ plainto_tsquery('simple', p.q))
         and (p.mime is null or a.mime_type ilike p.mime || '%')
       order by a.created_at desc

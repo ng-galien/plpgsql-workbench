@@ -100,6 +100,39 @@ fn catalog._category_hateoas(p_result jsonb) -> jsonb [stable]:
     end
   """
 
+fn catalog._article_hateoas(p_result jsonb) -> jsonb [stable]:
+  return """
+    select case
+      when (p_result->>'active')::boolean then jsonb_build_array(
+        jsonb_build_object('method', 'edit', 'uri', 'catalog://article/' || (p_result->>'id') || '/edit'),
+        jsonb_build_object('method', 'deactivate', 'uri', 'catalog://article/' || (p_result->>'id') || '/deactivate'),
+        jsonb_build_object('method', 'delete', 'uri', 'catalog://article/' || (p_result->>'id'))
+      )
+      else jsonb_build_array(
+        jsonb_build_object('method', 'edit', 'uri', 'catalog://article/' || (p_result->>'id') || '/edit'),
+        jsonb_build_object('method', 'activate', 'uri', 'catalog://article/' || (p_result->>'id') || '/activate'),
+        jsonb_build_object('method', 'delete', 'uri', 'catalog://article/' || (p_result->>'id'))
+      )
+    end
+  """
+
+fn catalog._category_list_query(p_filter text?) -> setof jsonb [stable]:
+  return """
+    select to_jsonb(c) || jsonb_build_object(
+      'parent_name', p.name,
+      'article_count', coalesce(ac.cnt, 0)
+    )
+    from catalog.category c
+    left join catalog.category p on p.id = c.parent_id
+    left join lateral (
+      select count(*) as cnt from catalog.article where category_id = c.id
+    ) ac on true
+    where c.tenant_id = current_setting('app.tenant_id', true)
+      and (p_filter is null or p_filter = ''
+           or c.name ilike '%' || p_filter || '%')
+    order by c.sort_order, c.name
+  """
+
 -- Article options for cross-module use (quote, purchase)
 
 fn catalog.article_options(p_search text?) -> setof jsonb [stable]:

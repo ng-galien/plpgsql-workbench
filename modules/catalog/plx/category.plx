@@ -12,6 +12,7 @@ entity catalog.category:
   strategies:
     read.query: catalog._category_read_query
     read.hateoas: catalog._category_hateoas
+    list.query: catalog._category_list_query
 
   view:
     compact: [name, sort_order]

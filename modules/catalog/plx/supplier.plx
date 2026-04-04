@@ -13,6 +13,10 @@ entity catalog.supplier_article:
     moq int?
     is_preferred boolean default(false)
 
+  indexes:
+    by_article:
+      on: [article_id]
+
   view:
     compact: [supplier_name, cost_price, is_preferred]
     standard:

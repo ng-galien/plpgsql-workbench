@@ -11,7 +11,6 @@ include "./report.spec.plx"
 
 export expense.category
 export expense.expense_report
-export expense.line
 
 fn expense.brand() -> text [stable]:
   return i18n.t('expense.brand')

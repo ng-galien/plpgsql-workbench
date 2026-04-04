@@ -9,17 +9,6 @@ fn expense._next_reference() -> text:
     where reference like 'NDF-' || extract(year from now())::text || '-%'
   """
 
-fn expense.expense_report_reject(p_id text) -> jsonb [definer]:
-  """
-    update expense.expense_report
-    set status = 'rejected', updated_at = now()
-    where id = p_id::int and status = 'submitted'
-  """
-  result := select to_jsonb(r) from expense.expense_report r where id = p_id::int
-  if result is null:
-    raise 'expense.err_not_submitted'
-  return result
-
 fn expense._report_read_query(p_id text) -> jsonb [stable]:
   return """
     select to_jsonb(r) || jsonb_build_object(

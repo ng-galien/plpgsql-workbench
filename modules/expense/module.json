@@ -2,6 +2,6 @@
   "name": "expense",
   "version": "0.1.0",
   "description": "Expense reports — travel, purchases, reimbursements",
-  "plx": { "entry": "plx/expense.plx", "seed": "plx/seed.sql", "post_apply": "plx/post_apply.sql" },
+  "plx": { "entry": "plx/expense.plx", "seed": "plx/seed.sql" },
   "grants": { "anon": ["expense"] }
 }
