@@ -3,9 +3,9 @@
 PostgreSQL SDUI framework. `api()` dispatcher, `_view()` contract, i18n, UI primitives `pgv.ui_*`.
 
 **Dependencies:** none (foundation module)
-**Schemas:** `pgv`, `pgv_ut` (tests), `pgv_qa` (demo app)
+**Schemas:** `pgv`, `pgv_ut` (tests)
 
-**Special role:** SDUI reference for all modules (contract validation via `check_view()`)
+**Special role:** SDUI runtime foundation. HTML SSR is legacy and must not come back.
 
 ## SDUI -- Server-Driven UI
 
@@ -88,10 +88,10 @@ The client (React) is the **only** place where schema and data meet. The server 
 | `pgv.ui_stat(value, label, variant?)` | Stat | Stat for card body |
 | `pgv.ui_form_for(schema, entity, verb?)` | Auto-form | Introspects PG types -> SDUI form |
 
-### Contract Validation
+### Contract
 
 - `pgv.view_schema()` -- JSON Schema for the `_view()` contract
-- `pgv.check_view(schema, entity)` -- Validate that `{entity}_view()` output conforms to the contract
+- `check_*` helpers are legacy tooling, not part of the target runtime architecture
 
 ### i18n
 
@@ -125,9 +125,14 @@ The client (React) is the **only** place where schema and data meet. The server 
 
 - `module.json` -> manifest (schemas, dependencies, extensions, sql, grants)
 - `build/` -> deployment artifacts (DDL + packed functions)
-- `src/` -> individual versioned sources (pg_func_save)
-- `_ut` schemas -> pgTAP tests (`test_*()`)
-- `_qa` schemas -> seed data only (`seed()`, `clean()`), NO routing
+- `src/core/` -> runtime nucleus: i18n, helpers, SDUI primitives
+- `src/query/` -> query/filter helpers
+- `src/facade/` -> entrypoints and orchestration
+- `src/quarantine/` -> schema/introspection functions under review
+- `src/tooling/` -> legacy checks and non-runtime helpers
+- `tests/` -> responsibility-first pgTAP sources
+- `legacy/` -> leftover non-runtime assets only
+- `ARCHITECTURE.md` -> current responsibility split (`core`, `facade`, `quarantine`, `tooling`)
 
 ## DDL Content -- STRICT
 
@@ -148,18 +153,13 @@ DDL (`build/{schema}.ddl.sql`) contains **structure only**:
 - **feature_request / bug_report -> ALWAYS via issue_report**: never send feature_request or bug_report directly to another module. Create an issue: `INSERT INTO workbench.issue_report(issue_type, module, description) VALUES ('enhancement|bug', '<target_module>', '<description>')`. The lead will be notified and decide dispatch.
 - Each module is autonomous -- never modify another module's functions
 
-## QA Seed Data
-
-The `pgv_qa` schema is the **design system showcase** -- it contains demo data for pgv primitives:
-- `seed()` / `clean()` -- demo data for QA
-
 ## Agent Workflow
 
 1. On startup or when told "go": **always read `pg_msg_inbox module:pgv`**
 2. Process messages by priority (HIGH first)
 3. Do not resolve a message until the task is verified
-4. After each task: `pg_pack schemas: pgv,pgv_ut,pgv_qa` (all 3 schemas)
-5. Then `pg_func_save target: plpgsql://pgv` + `plpgsql://pgv_ut` + `plpgsql://pgv_qa`
+4. After each task: `pg_pack schemas: pgv,pgv_ut`
+5. Then `pg_func_save target: plpgsql://pgv` + `plpgsql://pgv_ut`
 
 ## Built-in Documentation
 
@@ -173,3 +173,4 @@ The `pgv_qa` schema is the **design system showcase** -- it contains demo data f
 - **pg_test**: discovers `test_*()` functions in the `_ut` schema
 - **You are the pgv agent, NOT the lead.** Never use `ws_health` to find your tasks -- it shows ALL workspace tasks. Use only `pg_msg_inbox module:pgv` to read YOUR messages. Only process messages addressed to `pgv`.
 - Legacy HTML SSR is being removed. Do not introduce new `"text/html"` page functions or route-based HTML contracts.
+- `schema_*` is currently a quarantine zone. Do not extend it casually without a design decision.

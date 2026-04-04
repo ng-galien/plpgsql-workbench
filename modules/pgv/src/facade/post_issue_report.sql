@@ -1,5 +1,5 @@
 CREATE OR REPLACE FUNCTION pgv.post_issue_report(p jsonb DEFAULT '{}'::jsonb)
- RETURNS text
+ RETURNS jsonb
  LANGUAGE plpgsql
 AS $function$
 DECLARE
@@ -10,7 +10,10 @@ DECLARE
 BEGIN
   v_desc := trim(p->>'description');
   IF v_desc IS NULL OR v_desc = '' THEN
-    RETURN pgv.toast(pgv.t('issue.error'), 'error');
+    RETURN jsonb_build_object(
+      'ok', false,
+      'message', pgv.t('issue.error')
+    );
   END IF;
 
   v_type := coalesce(p->>'issue_type', 'bug');
@@ -26,6 +29,11 @@ BEGIN
   INSERT INTO workbench.issue_report (description, issue_type, module, context)
   VALUES (v_desc, v_type, v_module, v_ctx);
 
-  RETURN pgv.toast(pgv.t('issue.success'));
+  RETURN jsonb_build_object(
+    'ok', true,
+    'message', pgv.t('issue.success'),
+    'issue_type', v_type,
+    'module', v_module
+  );
 END;
 $function$;
