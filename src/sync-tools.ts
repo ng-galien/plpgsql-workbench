@@ -9,11 +9,11 @@
 
 import { Pool } from "pg";
 import { toJSONSchema } from "zod";
+import { docmanPack } from "./commands/packs/docman.js";
+import { docstorePack } from "./commands/packs/docstore.js";
+import { googlePack } from "./commands/packs/google.js";
+import { plpgsqlPack } from "./commands/packs/plpgsql.js";
 import { buildContainer, type ToolHandler, type ToolPack } from "./core/container.js";
-import { docmanPack } from "./core/packs/docman.js";
-import { docstorePack } from "./core/packs/docstore.js";
-import { googlePack } from "./core/packs/google.js";
-import { plpgsqlPack } from "./core/packs/plpgsql.js";
 
 const connectionString =
   process.env.PLPGSQL_CONNECTION ?? process.env.DATABASE_URL ?? "postgresql://postgres@localhost:5432/postgres";

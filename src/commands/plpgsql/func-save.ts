@@ -1,0 +1,195 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { z } from "zod";
+import type { DbClient } from "../../core/connection.js";
+import type { ToolHandler, WithClient } from "../../core/container.js";
+import { text } from "../../core/helpers.js";
+import { formatTestReport, runTests } from "./test.js";
+
+interface FunctionEntry {
+  oid: string;
+  schema: string;
+  name: string;
+  ddl: string;
+}
+
+async function queryFunctions(client: DbClient, schema?: string, fnName?: string): Promise<FunctionEntry[]> {
+  let where =
+    "l.lanname IN ('plpgsql', 'sql') AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid = d.refobjid WHERE d.objid = p.oid AND d.deptype = 'e')";
+  const params: string[] = [];
+
+  if (schema) {
+    params.push(schema);
+    where += ` AND n.nspname = $${params.length}`;
+  } else {
+    where += ` AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pgv', 'workbench')`;
+  }
+
+  if (fnName) {
+    params.push(fnName);
+    where += ` AND p.proname = $${params.length}`;
+  }
+
+  const { rows } = await client.query<FunctionEntry>(
+    `SELECT p.oid::text, n.nspname AS schema, p.proname AS name,
+            pg_get_functiondef(p.oid) AS ddl
+     FROM pg_proc p
+     JOIN pg_namespace n ON n.oid = p.pronamespace
+     JOIN pg_language l ON l.oid = p.prolang
+     WHERE ${where}
+     ORDER BY n.nspname, p.proname, p.oid`,
+    params,
+  );
+  return rows;
+}
+
+async function dumpFunctions(client: DbClient, outDir: string, schema?: string, fnName?: string): Promise<string> {
+  const functions = await queryFunctions(client, schema, fnName);
+
+  if (functions.length === 0) {
+    return "no functions found";
+  }
+
+  const counts = new Map<string, number>();
+  for (const fn of functions) {
+    const key = `${fn.schema}/${fn.name}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const idx = new Map<string, number>();
+  const written = new Set<string>();
+  const removed: string[] = [];
+
+  for (const fn of functions) {
+    const schemaDir = path.join(outDir, fn.schema);
+    await fs.mkdir(schemaDir, { recursive: true });
+
+    const key = `${fn.schema}/${fn.name}`;
+    let fileName: string;
+    if ((counts.get(key) ?? 1) > 1) {
+      const i = (idx.get(key) ?? 0) + 1;
+      idx.set(key, i);
+      fileName = `${fn.name}_${i}.sql`;
+    } else {
+      fileName = `${fn.name}.sql`;
+    }
+
+    const filePath = path.join(schemaDir, fileName);
+    const content = fn.ddl.trimEnd().endsWith(";") ? fn.ddl : `${fn.ddl.trimEnd()};\n`;
+    await fs.writeFile(filePath, content, "utf-8");
+    written.add(path.join(fn.schema, fileName));
+  }
+
+  // Clean stale files: remove .sql files in schema dirs that are no longer in DB
+  if (schema && !fnName) {
+    const schemaDir = path.join(outDir, schema);
+    try {
+      const existing = await fs.readdir(schemaDir);
+      for (const file of existing) {
+        if (file.endsWith(".sql") && !written.has(path.join(schema, file))) {
+          await fs.unlink(path.join(schemaDir, file));
+          removed.push(`${schema}/${file}`);
+        }
+      }
+    } catch {
+      /* dir may not exist */
+    }
+  }
+
+  const parts: string[] = [];
+  parts.push(`dumped ${written.size} function${written.size !== 1 ? "s" : ""} to ${outDir}`);
+  if (removed.length > 0) {
+    parts.push(`cleaned ${removed.length} stale file${removed.length !== 1 ? "s" : ""}`);
+  }
+  parts.push(`completeness: full`);
+  parts.push("");
+  for (const f of Array.from(written).sort()) {
+    parts.push(`  ${f}`);
+  }
+  if (removed.length > 0) {
+    parts.push("");
+    parts.push("removed:");
+    for (const f of removed) {
+      parts.push(`  ${f}`);
+    }
+  }
+  return parts.join("\n");
+}
+
+export function createFuncSaveTool({
+  withClient,
+  moduleRegistry,
+}: {
+  withClient: WithClient;
+  moduleRegistry: Promise<import("../../core/pgm/registry.js").ModuleRegistry>;
+}): ToolHandler {
+  return {
+    metadata: {
+      name: "pg_func_save",
+      description:
+        "Save functions from database to SQL files on disk for version control.\n" +
+        "Creates one .sql file per function with full CREATE OR REPLACE DDL.\n" +
+        "Output path is auto-resolved from module registry (schema → module dir).\n" +
+        "Structure: modules/{module}/src/{schema}/{function_name}.sql",
+      schema: z.object({
+        target: z
+          .string()
+          .describe(
+            "plpgsql:// URI scope. plpgsql://schema for one schema, plpgsql://schema/function/name for one function",
+          ),
+      }),
+    },
+    handler: async (args, _extra) => {
+      const target = args.target as string;
+
+      return withClient(async (client) => {
+        let schema: string | undefined;
+        let fnName: string | undefined;
+
+        const fnMatch = target.match(/^plpgsql:\/\/(\w+)\/function\/(\w+)$/);
+        if (fnMatch) {
+          schema = fnMatch[1];
+          fnName = fnMatch[2];
+        } else {
+          const schemaMatch = target.match(/^plpgsql:\/\/(\w+)\/?$/);
+          if (schemaMatch) {
+            schema = schemaMatch[1];
+          } else {
+            return text(
+              `problem: invalid target: ${target}\nwhere: pg_func_save\nfix_hint: expected plpgsql://schema or plpgsql://schema/function/name`,
+            );
+          }
+        }
+
+        if (!schema) {
+          return text(`problem: schema required\nwhere: pg_func_save\nfix_hint: use plpgsql://schema`);
+        }
+
+        const registry = await moduleRegistry;
+        const outDir = registry.savePath(schema);
+        if (!outDir) {
+          return text(
+            `problem: no module owns schema "${schema}"\n` +
+              `where: pg_func_save\n` +
+              `fix_hint: check modules/*/module.json schemas field`,
+          );
+        }
+
+        const isTestSchema = schema.endsWith("_ut") || schema.endsWith("_it") || schema.endsWith("_qa");
+        const utSchema = isTestSchema ? null : `${schema}_ut`;
+        const testPattern = fnName ? `^test_${fnName}$` : undefined;
+        const testReport = utSchema ? await runTests(client, utSchema, testPattern) : null;
+        if (testReport && testReport.failed > 0) {
+          return text(
+            `✗ ${testReport.failed} test(s) failed in ${utSchema} — save aborted\n\n${formatTestReport(testReport)}`,
+          );
+        }
+
+        const result = await dumpFunctions(client, outDir, schema, fnName);
+        const testSummary =
+          testReport && testReport.total > 0 ? `\ntests: ${testReport.passed}/${testReport.total} passed` : "";
+        return text(result + testSummary);
+      });
+    },
+  };
+}

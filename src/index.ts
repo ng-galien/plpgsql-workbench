@@ -16,11 +16,11 @@ import { type WebSocket, WebSocketServer } from "ws";
 
 const execFileAsync = promisify(execFile);
 
+import { docmanPack } from "./commands/packs/docman.js";
+import { docstorePack } from "./commands/packs/docstore.js";
+import { googlePack } from "./commands/packs/google.js";
+import { plpgsqlPack } from "./commands/packs/plpgsql.js";
 import { buildContainer, mountTools, type ToolPack } from "./core/container.js";
-import { docmanPack } from "./core/packs/docman.js";
-import { docstorePack } from "./core/packs/docstore.js";
-import { googlePack } from "./core/packs/google.js";
-import { plpgsqlPack } from "./core/packs/plpgsql.js";
 
 const log = pino({
   level: process.env.LOG_LEVEL ?? "info",
