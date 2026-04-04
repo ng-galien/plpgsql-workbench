@@ -5,6 +5,7 @@ import type { ModuleContract } from "./contract.js";
 import type { DdlArtifact } from "./entity-ddl.js";
 import { expandEntities } from "./entity-expander.js";
 import { expandEvents } from "./event-expander.js";
+import { expandI18n } from "./i18n-expander.js";
 import { LexError, tokenize } from "./lexer.js";
 import { ParseError } from "./parse-context.js";
 import { parse } from "./parser.js";
@@ -138,6 +139,12 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
     return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
+  const i18nResult = expandI18n(mod);
+  errors.push(...i18nResult.errors);
+  if (errors.length > 0) {
+    return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
+  }
+
   // Expand tests into pgTAP functions
   const testResult = expandTests(mod.tests);
   for (const err of testResult.errors) {
@@ -153,8 +160,8 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
   const schemaArtifacts = buildSchemaArtifacts(
     allFunctions,
     testResult.functions,
-    expandResult.ddlArtifacts,
-    eventResult.ddlArtifacts,
+    [expandResult.ddlArtifacts, eventResult.ddlArtifacts],
+    mod.i18n.length > 0 && mod.name ? [mod.name] : [],
   );
 
   // Build alias map from imports
@@ -205,7 +212,12 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
     return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
-  const ddlArtifacts = [...schemaArtifacts, ...expandResult.ddlArtifacts, ...eventResult.ddlArtifacts];
+  const ddlArtifacts = [
+    ...schemaArtifacts,
+    ...expandResult.ddlArtifacts,
+    ...eventResult.ddlArtifacts,
+    ...i18nResult.artifacts,
+  ];
   const ddlFragments = ddlArtifacts.map((artifact) => artifact.sql);
   const ddlSql = ddlFragments.length > 0 ? ddlFragments.join("\n\n") : undefined;
   const testSql = testSqlParts.length > 0 ? testSqlParts.join("\n\n") : undefined;
@@ -235,7 +247,8 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
 function buildSchemaArtifacts(
   functions: readonly PlxFunction[],
   testFunctions: readonly PlxFunction[],
-  ...ddlSources: ReadonlyArray<readonly DdlArtifact[]>
+  ddlSources: ReadonlyArray<readonly DdlArtifact[]>,
+  extraSchemas: readonly string[] = [],
 ): DdlArtifact[] {
   const schemas = new Set<string>();
 
@@ -251,6 +264,7 @@ function buildSchemaArtifacts(
       if (match?.[1]) schemas.add(match[1]);
     }
   }
+  for (const schema of extraSchemas) schemas.add(schema);
 
   return [...schemas].sort().map((schema) => ({
     key: `ddl:schema:${schema}`,

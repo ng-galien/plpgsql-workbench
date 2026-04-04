@@ -2,8 +2,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { DbClient } from "../../connection.js";
 import { buildPlxModule } from "../plx-builder.js";
-import { diffModuleArtifacts, prepareModuleWorkflow, sortApplyArtifacts, syncModuleBuildFiles } from "../workflow.js";
+import {
+  diffModuleArtifacts,
+  prepareModuleWorkflow,
+  runModuleI18nSeed,
+  sortApplyArtifacts,
+  syncModuleBuildFiles,
+} from "../workflow.js";
 
 const tmpRoots: string[] = [];
 
@@ -296,6 +303,71 @@ fn quote.beta() -> int [stable]:
     const workflow = await prepareModuleWorkflow(root, "quote");
     expect(() => sortApplyArtifacts(workflow.artifacts)).toThrow(
       "artifact dependency cycle detected: function quote.alpha -> function quote.beta -> function quote.alpha",
+    );
+  });
+
+  it("runs module i18n_seed when present", async () => {
+    const queries: Array<{ sql: string; params?: unknown[] }> = [];
+    const client: DbClient = {
+      async query<T = Record<string, unknown>>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        if (sql.includes("FROM pg_proc")) return { rows: [{ present: 1 }] as T[], rowCount: 1 };
+        return { rows: [] as T[], rowCount: 0 };
+      },
+    };
+
+    const seeded = await runModuleI18nSeed(client, {
+      name: "quote",
+      version: "0.1.0",
+      description: "Quote",
+      schemas: { public: "quote", private: null },
+      dependencies: [],
+      extensions: [],
+      sql: [],
+      assets: {},
+      grants: {},
+    });
+
+    expect(seeded).toBe("seeded i18n quote.i18n_seed()");
+    expect(queries).toEqual([
+      expect.objectContaining({
+        sql: expect.stringContaining("FROM pg_proc"),
+        params: ["quote"],
+      }),
+      expect.objectContaining({
+        sql: 'SELECT "quote".i18n_seed()',
+      }),
+    ]);
+  });
+
+  it("skips module i18n_seed when absent", async () => {
+    const queries: Array<{ sql: string; params?: unknown[] }> = [];
+    const client: DbClient = {
+      async query<T = Record<string, unknown>>(sql: string, params?: unknown[]) {
+        queries.push({ sql, params });
+        return { rows: [] as T[], rowCount: 0 };
+      },
+    };
+
+    const seeded = await runModuleI18nSeed(client, {
+      name: "quote",
+      version: "0.1.0",
+      description: "Quote",
+      schemas: { public: "quote", private: null },
+      dependencies: [],
+      extensions: [],
+      sql: [],
+      assets: {},
+      grants: {},
+    });
+
+    expect(seeded).toBeUndefined();
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).toEqual(
+      expect.objectContaining({
+        sql: expect.stringContaining("FROM pg_proc"),
+        params: ["quote"],
+      }),
     );
   });
 });

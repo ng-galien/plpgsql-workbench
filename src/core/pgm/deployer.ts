@@ -266,7 +266,7 @@ async function postDeploy(client: pg.Client, modulesDir: string, plan: InstallPl
             [schema],
           );
           if (rows.length > 0) {
-            await client.query(`SELECT ${schema}.i18n_seed()`);
+            await client.query(`SELECT "${schema.replace(/"/g, '""')}".i18n_seed()`);
           }
         } catch {
           /* skip */

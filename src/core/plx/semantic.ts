@@ -12,6 +12,8 @@ import type {
 import { CHANGE_HANDLER_PARAMS, pointLoc } from "./ast.js";
 import { walkStatements } from "./walker.js";
 
+const DEFAULT_I18N_LANGS = ["fr"] as const;
+
 interface EventAnalysisOptions {
   allowedEvents?: Map<string, PlxEntity["events"][number]>;
 }
@@ -37,6 +39,12 @@ export interface SemanticWarning {
 export interface SemanticResult {
   errors: SemanticIssue[];
   warnings: SemanticWarning[];
+}
+
+interface I18nReference {
+  key: string;
+  loc: Loc;
+  owner: string;
 }
 
 type TypeKind = "boolean" | "int" | "jsonb" | "null" | "numeric" | "record" | "text" | "unknown" | "void";
@@ -101,6 +109,26 @@ export function analyzeModule(mod: PlxModule): SemanticResult {
     "Rename or remove the duplicated test declaration.",
     errors,
   );
+  checkDuplicates(
+    mod.i18n.flatMap((block) => block.entries.map((entry) => ({ loc: entry.loc, name: `${block.lang}:${entry.key}` }))),
+    "module",
+    "i18n entry",
+    "semantic.duplicate-i18n-entry",
+    "Keep each translation key unique per language across the module and its fragments.",
+    errors,
+  );
+
+  if (mod.i18n.length > 0 && !mod.depends.some((dep) => dep.name === "pgv")) {
+    errors.push({
+      code: "semantic.i18n-requires-pgv",
+      hint: "Add `depends pgv` so the generated i18n seed can write into pgv.i18n.",
+      loc: mod.i18n[0]?.loc ?? pointLoc(),
+      owner: "module",
+      message: "i18n blocks require a dependency on pgv",
+    });
+  }
+
+  addMissingI18nWarnings(mod, warnings);
 
   for (const imp of mod.imports) {
     const existing = importAliases.get(imp.alias);
@@ -151,6 +179,34 @@ export function analyzeModule(mod: PlxModule): SemanticResult {
   }
 
   return { errors, warnings };
+}
+
+function addMissingI18nWarnings(mod: PlxModule, warnings: SemanticWarning[]): void {
+  const refs = collectModuleI18nRefs(mod);
+  if (refs.length === 0) return;
+
+  const langs = mod.i18n.length > 0 ? [...new Set(mod.i18n.map((block) => block.lang))] : [...DEFAULT_I18N_LANGS];
+  const translated = new Set(mod.i18n.flatMap((block) => block.entries.map((entry) => `${block.lang}:${entry.key}`)));
+  const seenWarnings = new Set<string>();
+
+  for (const ref of refs) {
+    for (const lang of langs) {
+      const translationKey = `${lang}:${ref.key}`;
+      if (translated.has(translationKey)) continue;
+      if (seenWarnings.has(translationKey)) continue;
+      seenWarnings.add(translationKey);
+      warnings.push({
+        code: "semantic.missing-i18n-translation",
+        hint:
+          mod.i18n.length > 0
+            ? `Add \`${ref.key} = ...\` to the [${lang}] section of the module .i18n file.`
+            : `Create a module .i18n file and add \`${ref.key} = ...\` under [${lang}].`,
+        loc: ref.loc,
+        owner: ref.owner,
+        message: `missing i18n translation '${ref.key}' for lang '${lang}'`,
+      });
+    }
+  }
 }
 
 function analyzeCallable(
@@ -1111,6 +1167,49 @@ function collectLocals(stmts: Statement[]): Set<string> {
     },
   });
   return locals;
+}
+
+function collectModuleI18nRefs(mod: PlxModule): I18nReference[] {
+  const refs: I18nReference[] = [];
+  for (const entity of mod.entities) {
+    const owner = `entity ${entity.schema}.${entity.name}`;
+    refs.push({ key: entity.label, loc: entity.loc, owner });
+    collectViewI18nRefs(entity, refs, owner);
+    collectActionI18nRefs(entity, refs, owner);
+  }
+  return refs;
+}
+
+function collectViewI18nRefs(entity: PlxEntity, refs: I18nReference[], owner: string): void {
+  for (const section of [entity.view.standard, entity.view.expanded]) {
+    if (!section) continue;
+    for (const stat of section.stats ?? []) refs.push({ key: stat.label, loc: entity.loc, owner });
+    for (const related of section.related ?? []) refs.push({ key: related.label, loc: entity.loc, owner });
+  }
+
+  for (const formSection of entity.view.form ?? []) {
+    refs.push({ key: formSection.label, loc: entity.loc, owner });
+    for (const field of formSection.fields) refs.push({ key: field.label, loc: entity.loc, owner });
+  }
+}
+
+function collectActionI18nRefs(entity: PlxEntity, refs: I18nReference[], owner: string): void {
+  const seen = new Set<string>();
+  for (const action of entity.actions) {
+    seen.add(action.name);
+    refs.push({ key: action.label, loc: entity.loc, owner });
+    if (action.confirm) refs.push({ key: action.confirm, loc: entity.loc, owner });
+  }
+
+  if (!entity.states) return;
+  for (const transition of entity.states.transitions) {
+    if (seen.has(transition.name)) continue;
+    refs.push({
+      key: `${entity.schema}.action_${transition.name}`,
+      loc: transition.loc,
+      owner,
+    });
+  }
 }
 
 function checkDuplicates(

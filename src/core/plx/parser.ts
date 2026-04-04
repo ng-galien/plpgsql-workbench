@@ -146,6 +146,7 @@ function parseProgram(ctx: ParseContext, options: ParseOptions): PlxModule {
     exports,
     includes,
     imports,
+    i18n: [],
     traits,
     entities,
     functions,

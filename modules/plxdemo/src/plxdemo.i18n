@@ -1,0 +1,25 @@
+[fr]
+plxdemo.brand = PLX Demo
+plxdemo.entity_project = Projet
+plxdemo.entity_task = Tâche
+plxdemo.entity_note = Note
+plxdemo.section_project = Projet
+plxdemo.section_task = Tâche
+plxdemo.section_note = Note
+plxdemo.field_name = Nom
+plxdemo.field_code = Code
+plxdemo.field_description = Description
+plxdemo.field_budget = Budget
+plxdemo.field_owner = Responsable
+plxdemo.field_deadline = Échéance
+plxdemo.field_title = Titre
+plxdemo.field_priority = Priorité
+plxdemo.field_body = Contenu
+plxdemo.field_pinned = Épinglée
+plxdemo.action_edit = Modifier
+plxdemo.action_delete = Supprimer
+plxdemo.action_activate = Activer
+plxdemo.action_complete = Terminer
+plxdemo.action_archive = Archiver
+plxdemo.confirm_delete = Supprimer cet élément ?
+plxdemo.stat_task_count = Tâches

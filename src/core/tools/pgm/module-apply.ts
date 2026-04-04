@@ -140,6 +140,7 @@ function formatApplyExecution(
     warnings: string[];
     obsolete: { kind: string; name: string }[];
     buildFiles: string[];
+    postActions: string[];
     failure?: { problem: string; stage: string; where: string; fixHint?: string };
   },
 ): string {
@@ -185,6 +186,12 @@ function formatApplyExecution(
     body.push("warnings:");
     for (const warning of result.warnings.slice(0, 20)) body.push(`  - ${warning}`);
     if (result.warnings.length > 20) body.push(`  - ... +${result.warnings.length - 20} more`);
+  }
+
+  if (result.postActions.length > 0) {
+    body.push("");
+    body.push("post_apply:");
+    for (const action of result.postActions) body.push(`  - ${action}`);
   }
 
   return wrap(`plx://module/${moduleName}/apply`, "full", body.join("\n"), [

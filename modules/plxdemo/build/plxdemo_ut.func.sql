@@ -202,3 +202,18 @@ BEGIN
   RETURN NEXT is(v_r, NULL, 'assert line 20');
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION plxdemo_ut.test_module_i18n_sidecar_seeds_translations()
+ RETURNS SETOF text
+ LANGUAGE plpgsql AS $$
+DECLARE
+  v_lang record;
+BEGIN
+  PERFORM plxdemo.i18n_seed();
+  v_lang := set_config('pgv.lang', 'fr', true);
+  RETURN NEXT is(v_lang, 'fr', 'assert line 25');
+  RETURN NEXT is(pgv.t('plxdemo.entity_task'), 'Tâche', 'assert line 26');
+  RETURN NEXT is(pgv.t('plxdemo.field_priority'), 'Priorité', 'assert line 27');
+  RETURN NEXT is(pgv.t('plxdemo.confirm_delete'), 'Supprimer cet élément ?', 'assert line 28');
+END;
+$$;

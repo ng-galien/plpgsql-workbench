@@ -73,6 +73,7 @@ export interface ModuleApplyExecutionResult {
   warnings: string[];
   obsolete: AppliedArtifactState[];
   buildFiles: string[];
+  postActions: string[];
   failure?: ModuleApplyFailure;
 }
 
@@ -180,6 +181,7 @@ export async function applyModuleIncremental(
       plan: [],
       obsolete: diff.obsolete,
       buildFiles,
+      postActions: [],
       results: diff.unchanged.map((artifact) => ({
         key: artifact.key,
         kind: artifact.kind,
@@ -201,6 +203,7 @@ export async function applyModuleIncremental(
       plan: [],
       obsolete: diff.obsolete,
       buildFiles,
+      postActions: [],
       results: [],
       warnings: diff.obsolete.map((state) => `obsolete tracked artifact: ${state.kind} ${state.name}`),
       failure: toApplyFailure(error, "plx_apply.ordering"),
@@ -208,6 +211,7 @@ export async function applyModuleIncremental(
   }
   const results: ModuleApplyArtifactResult[] = [];
   const warnings: string[] = [];
+  let committedResult: ModuleApplyExecutionResult | undefined;
 
   await client.query("BEGIN");
   try {
@@ -249,14 +253,14 @@ export async function applyModuleIncremental(
 
     await client.query("COMMIT");
     await client.query("NOTIFY pgrst, 'reload schema'").catch(() => {});
-
-    return {
+    committedResult = {
       ok: true,
       transaction: "committed",
       diff,
       plan: ordered,
       obsolete: diff.obsolete,
       buildFiles,
+      postActions: [],
       results: [
         ...results,
         ...diff.unchanged.map((artifact) => ({
@@ -280,11 +284,40 @@ export async function applyModuleIncremental(
       plan: ordered,
       obsolete: diff.obsolete,
       buildFiles,
+      postActions: [],
       results,
       warnings,
       failure: toApplyFailure(error),
     };
   }
+
+  // Post-apply runs outside the transaction: a failure here is independent of the apply result.
+  const postActions = await runModulePostApply(client, workflow.manifest);
+  return { ...committedResult!, postActions };
+}
+
+export async function runModulePostApply(client: DbClient, manifest: ModuleManifest): Promise<string[]> {
+  const actions: string[] = [];
+  const seeded = await runModuleI18nSeed(client, manifest);
+  if (seeded) actions.push(seeded);
+  return actions;
+}
+
+export async function runModuleI18nSeed(client: DbClient, manifest: ModuleManifest): Promise<string | undefined> {
+  const schema = manifest.schemas.public;
+  if (!schema) return undefined;
+
+  const { rows } = await client.query<{ present: number }>(
+    `SELECT 1 AS present
+       FROM pg_proc p
+       JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = $1 AND p.proname = 'i18n_seed'`,
+    [schema],
+  );
+  if (rows.length === 0) return undefined;
+
+  await client.query(`SELECT ${qi(schema)}.i18n_seed()`);
+  return `seeded i18n ${schema}.i18n_seed()`;
 }
 
 export async function syncModuleBuildFiles(workflow: PreparedModuleWorkflow): Promise<string[]> {

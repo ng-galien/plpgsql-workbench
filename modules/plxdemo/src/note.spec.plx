@@ -18,3 +18,11 @@ test "note soft delete hides from list":
   plxdemo.note_delete(c->>'id')
   r := plxdemo.note_read(c->>'id')
   assert r is null
+
+test "module i18n sidecar seeds translations":
+  plxdemo.i18n_seed()
+  lang := set_config('pgv.lang', 'fr', true)
+  assert lang = 'fr'
+  assert pgv.t('plxdemo.entity_task') = 'Tâche'
+  assert pgv.t('plxdemo.field_priority') = 'Priorité'
+  assert pgv.t('plxdemo.confirm_delete') = 'Supprimer cet élément ?'

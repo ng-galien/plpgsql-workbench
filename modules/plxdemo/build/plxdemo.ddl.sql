@@ -251,4 +251,39 @@ SET
   call_sql = EXCLUDED.call_sql,
   enabled = EXCLUDED.enabled;
 
+CREATE OR REPLACE FUNCTION plxdemo.i18n_seed()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  INSERT INTO pgv.i18n (lang, key, value) VALUES
+    ('fr', 'plxdemo.brand', 'PLX Demo'),
+    ('fr', 'plxdemo.entity_project', 'Projet'),
+    ('fr', 'plxdemo.entity_task', 'Tâche'),
+    ('fr', 'plxdemo.entity_note', 'Note'),
+    ('fr', 'plxdemo.section_project', 'Projet'),
+    ('fr', 'plxdemo.section_task', 'Tâche'),
+    ('fr', 'plxdemo.section_note', 'Note'),
+    ('fr', 'plxdemo.field_name', 'Nom'),
+    ('fr', 'plxdemo.field_code', 'Code'),
+    ('fr', 'plxdemo.field_description', 'Description'),
+    ('fr', 'plxdemo.field_budget', 'Budget'),
+    ('fr', 'plxdemo.field_owner', 'Responsable'),
+    ('fr', 'plxdemo.field_deadline', 'Échéance'),
+    ('fr', 'plxdemo.field_title', 'Titre'),
+    ('fr', 'plxdemo.field_priority', 'Priorité'),
+    ('fr', 'plxdemo.field_body', 'Contenu'),
+    ('fr', 'plxdemo.field_pinned', 'Épinglée'),
+    ('fr', 'plxdemo.action_edit', 'Modifier'),
+    ('fr', 'plxdemo.action_delete', 'Supprimer'),
+    ('fr', 'plxdemo.action_activate', 'Activer'),
+    ('fr', 'plxdemo.action_complete', 'Terminer'),
+    ('fr', 'plxdemo.action_archive', 'Archiver'),
+    ('fr', 'plxdemo.confirm_delete', 'Supprimer cet élément ?'),
+    ('fr', 'plxdemo.stat_task_count', 'Tâches')
+  ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
+END;
+$function$;
+COMMENT ON FUNCTION plxdemo.i18n_seed() IS 'Seed i18n translations for plxdemo module.';
+
 CREATE SCHEMA IF NOT EXISTS "plxdemo_qa";

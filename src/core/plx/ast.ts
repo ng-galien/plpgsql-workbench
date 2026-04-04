@@ -63,6 +63,18 @@ export interface ModuleInclude {
   loc: Loc;
 }
 
+export interface I18nEntry {
+  key: string;
+  value: string;
+  loc: Loc;
+}
+
+export interface I18nBlock {
+  lang: string;
+  entries: I18nEntry[];
+  loc: Loc;
+}
+
 export type Visibility = "export" | "internal";
 
 export interface PlxModule {
@@ -72,6 +84,7 @@ export interface PlxModule {
   exports: ModuleExport[];
   includes: ModuleInclude[];
   imports: ImportAlias[];
+  i18n: I18nBlock[];
   traits: PlxTrait[];
   entities: PlxEntity[];
   functions: PlxFunction[];

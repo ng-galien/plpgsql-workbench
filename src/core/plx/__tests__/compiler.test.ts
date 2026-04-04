@@ -456,6 +456,66 @@ fn demo.ok() -> int:
     expect(result.warnings[0]?.message).toContain("unused import alias 'obj'");
   });
 
+  it("warns when referenced i18n keys are missing", () => {
+    const source = `
+module demo
+depends pgv
+
+entity demo.task:
+  fields:
+    title text required
+
+  states draft -> active:
+    activate(draft -> active)
+
+  view:
+    standard:
+      fields: [title]
+      stats:
+        {key: task_count, label: demo.stat_task_count}
+    form:
+      'demo.section_task':
+        {key: title, type: text, label: demo.field_title, required: true}
+
+  actions:
+    delete: {label: demo.action_delete, confirm: demo.confirm_delete}
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "semantic.missing-i18n-translation",
+          message: "missing i18n translation 'demo.entity_task' for lang 'fr'",
+        }),
+        expect.objectContaining({
+          code: "semantic.missing-i18n-translation",
+          message: "missing i18n translation 'demo.stat_task_count' for lang 'fr'",
+        }),
+        expect.objectContaining({
+          code: "semantic.missing-i18n-translation",
+          message: "missing i18n translation 'demo.section_task' for lang 'fr'",
+        }),
+        expect.objectContaining({
+          code: "semantic.missing-i18n-translation",
+          message: "missing i18n translation 'demo.field_title' for lang 'fr'",
+        }),
+        expect.objectContaining({
+          code: "semantic.missing-i18n-translation",
+          message: "missing i18n translation 'demo.action_delete' for lang 'fr'",
+        }),
+        expect.objectContaining({
+          code: "semantic.missing-i18n-translation",
+          message: "missing i18n translation 'demo.confirm_delete' for lang 'fr'",
+        }),
+        expect.objectContaining({
+          code: "semantic.missing-i18n-translation",
+          message: "missing i18n translation 'demo.action_activate' for lang 'fr'",
+        }),
+      ]),
+    );
+  });
+
   it("maps semantic errors inside interpolation to source location", () => {
     const source = `
 fn demo.bad(name text) -> text:

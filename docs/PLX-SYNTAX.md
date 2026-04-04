@@ -21,6 +21,18 @@ export invoice.total
 export invoice.line
 ```
 
+Module translations live in a sidecar `*.i18n` file placed next to the entry `.plx` file and loaded automatically when present.
+
+```ini
+[fr]
+invoice.brand = Facturation
+invoice.entity_invoice = Facture
+
+[en]
+invoice.brand = Billing
+invoice.entity_invoice = Invoice
+```
+
 ## Layer 2 — Declarative (entity, trait)
 
 Structure, metadata, contracts. `validate:` may embed boolean SQL rules, but declarative blocks do not contain imperative control flow.
@@ -417,6 +429,7 @@ Rules:
 | Dependency | `depends a, b, c` |
 | Import | `import schema.func as alias` |
 | Include | `include "./file.plx"` |
+| i18n sidecar | `module.i18n` with `[fr]` then `module.key = Valeur` |
 | Export | `export schema.name` |
 | Comment | `-- comment` |
 | Entity | `entity schema.name uses trait:` |

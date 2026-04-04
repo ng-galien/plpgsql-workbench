@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { PlxEntity, PlxFunction, PlxModule } from "./ast.js";
+import type { I18nBlock, I18nEntry, PlxEntity, PlxFunction, PlxModule } from "./ast.js";
 import { type CompileError, createDiagnostic } from "./compiler.js";
 import { LexError, tokenize } from "./lexer.js";
 import { ParseError } from "./parse-context.js";
@@ -20,6 +20,11 @@ export async function loadPlxModule(entryPath: string): Promise<LoadPlxModuleRes
   const root = rootResult.module;
   const errors: CompileError[] = [...rootResult.errors];
   const files = [resolvedEntry];
+  const i18nPath = resolvedEntry.replace(/\.plx$/i, ".i18n");
+  const i18nResult = await parseOptionalI18nFile(i18nPath);
+  errors.push(...i18nResult.errors);
+  if (i18nResult.blocks.length > 0) files.push(i18nPath);
+  root.i18n.push(...i18nResult.blocks);
   const fragments: PlxModule[] = [];
   const seenIncludes = new Set<string>();
 
@@ -110,6 +115,138 @@ function parsePlxSource(
   }
 }
 
+async function parseOptionalI18nFile(filePath: string): Promise<{ blocks: I18nBlock[]; errors: CompileError[] }> {
+  let source: string;
+  try {
+    source = await fs.readFile(filePath, "utf-8");
+  } catch (error: unknown) {
+    const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
+    return missing
+      ? { blocks: [], errors: [] }
+      : {
+          blocks: [],
+          errors: [
+            createDiagnostic(
+              "lex",
+              "io.read-failed",
+              `cannot read file: ${filePath}`,
+              { file: filePath, line: 0, col: 0, endLine: 0, endCol: 0 },
+              "Check that the file exists and is readable.",
+            ),
+          ],
+        };
+  }
+
+  return parseI18nSource(source, filePath);
+}
+
+function parseI18nSource(source: string, filePath: string): { blocks: I18nBlock[]; errors: CompileError[] } {
+  const blocks = new Map<string, I18nEntry[]>();
+  const errors: CompileError[] = [];
+  let currentLang: string | undefined;
+
+  const lines = source.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index++) {
+    const raw = lines[index] ?? "";
+    const lineNo = index + 1;
+    const trimmed = raw.trim();
+    if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith("--")) continue;
+
+    const section = trimmed.match(/^\[([A-Za-z0-9_-]+)\]$/);
+    if (section) {
+      const lang = section[1];
+      if (!lang) continue;
+      currentLang = lang;
+      if (!blocks.has(lang)) blocks.set(lang, []);
+      continue;
+    }
+
+    if (!currentLang) {
+      errors.push(
+        createDiagnostic(
+          "parse",
+          "parse.i18n-missing-lang-section",
+          "i18n entry declared before any [lang] section",
+          { file: filePath, line: lineNo, col: 1, endLine: lineNo, endCol: raw.length + 1 },
+          "Start the file with a language section like `[fr]`.",
+        ),
+      );
+      continue;
+    }
+
+    const eq = raw.indexOf("=");
+    if (eq < 0) {
+      errors.push(
+        createDiagnostic(
+          "parse",
+          "parse.i18n-invalid-entry",
+          "invalid i18n entry",
+          { file: filePath, line: lineNo, col: 1, endLine: lineNo, endCol: raw.length + 1 },
+          "Use `module.key = Valeur` inside a `[lang]` section.",
+        ),
+      );
+      continue;
+    }
+
+    const key = raw.slice(0, eq).trim();
+    const value = raw.slice(eq + 1).trim();
+    if (!key || !value) {
+      errors.push(
+        createDiagnostic(
+          "parse",
+          "parse.i18n-invalid-entry",
+          "invalid i18n entry",
+          { file: filePath, line: lineNo, col: 1, endLine: lineNo, endCol: raw.length + 1 },
+          "Use `module.key = Valeur` with both key and value.",
+        ),
+      );
+      continue;
+    }
+
+    if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$/.test(key)) {
+      errors.push(
+        createDiagnostic(
+          "parse",
+          "parse.i18n-invalid-key",
+          `invalid i18n key '${key}'`,
+          {
+            file: filePath,
+            line: lineNo,
+            col: 1,
+            endLine: lineNo,
+            endCol: eq + 1,
+          },
+          "Use dotted keys like `plxdemo.entity_task`.",
+        ),
+      );
+      continue;
+    }
+
+    const entries = blocks.get(currentLang) ?? [];
+    entries.push({
+      key,
+      value,
+      loc: {
+        file: filePath,
+        line: lineNo,
+        col: 1,
+        endLine: lineNo,
+        endCol: raw.length + 1,
+      },
+    });
+    blocks.set(currentLang, entries);
+  }
+
+  return {
+    blocks: [...blocks.entries()].map(([lang, entries]) => ({
+      lang,
+      entries,
+      loc: entries[0]?.loc ?? { file: filePath, line: 1, col: 1, endLine: 1, endCol: 1 },
+    })),
+    errors,
+  };
+}
+
 function mergeModule(root: PlxModule, fragments: PlxModule[]): PlxModule {
   return {
     name: root.name,
@@ -118,6 +255,7 @@ function mergeModule(root: PlxModule, fragments: PlxModule[]): PlxModule {
     exports: [...root.exports],
     includes: [...root.includes],
     imports: [...root.imports, ...fragments.flatMap((fragment) => fragment.imports)],
+    i18n: [...root.i18n, ...fragments.flatMap((fragment) => fragment.i18n)],
     traits: [...root.traits, ...fragments.flatMap((fragment) => fragment.traits)],
     entities: [...root.entities, ...fragments.flatMap((fragment) => fragment.entities)],
     functions: [...root.functions, ...fragments.flatMap((fragment) => fragment.functions)],
