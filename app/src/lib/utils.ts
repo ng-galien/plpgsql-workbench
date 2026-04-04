@@ -14,7 +14,7 @@ export function parseEntityUri(uri: string): { schema: string; entity: string; i
   const [schema, path] = uri.split("://");
   if (!path) return { schema: "", entity: "" };
   const parts = path.split("/");
-  return { schema, entity: parts[0], id: parts[1] };
+  return { schema: schema ?? "", entity: parts[0] ?? "", id: parts[1] };
 }
 
 export function buildEntityUri(schema: string, entity: string, id?: string): string {

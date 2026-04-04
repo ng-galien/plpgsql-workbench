@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { get as apiGet } from "./api";
-import { pgv, supabase } from "./supabase";
+import { sdui, supabase } from "./supabase";
 
 // --- Types ---
 
@@ -147,7 +147,7 @@ export const useStore = create<AppState>((set, get) => ({
   modules: [],
   loading: true,
   loadModules: async () => {
-    const { data } = await pgv.rpc("app_nav");
+    const { data } = await sdui.rpc("app_nav");
     set({ modules: data ?? [], loading: false });
   },
   loadViews: async () => {

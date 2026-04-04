@@ -19,7 +19,9 @@ export function App() {
     loadModules().then(() => loadViews());
     loadI18n();
     const cleanup = initRealtime();
-    return cleanup;
+    return () => {
+      void cleanup();
+    };
   }, [loadI18n, loadModules, loadViews]);
 
   return (
