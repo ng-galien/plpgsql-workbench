@@ -1,4 +1,4 @@
-import type { EntityField, PlxEntity } from "./ast.js";
+import type { EntityField, IndexDef, PlxEntity } from "./ast.js";
 import { formatDefaultValue } from "./entity-sql.js";
 import { sqlEscape } from "./util.js";
 
@@ -29,7 +29,7 @@ export function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): 
     let col = `  ${f.name} ${f.type}`;
     if (!f.nullable) col += " NOT NULL";
     if (f.unique) col += " UNIQUE";
-    if (f.defaultValue) col += ` DEFAULT ${formatDefaultValue(f.defaultValue, f.type)}`;
+    if (f.defaultValue !== undefined) col += ` DEFAULT ${formatDefaultValue(f.defaultValue, f.type)}`;
     col += ",";
     lines.push(col);
   }
@@ -49,6 +49,10 @@ export function generateDDL(entity: PlxEntity, resolved: ResolvedEntityFields): 
 
   if (entity.storage === "hybrid") {
     lines.push("  payload jsonb NOT NULL DEFAULT '{}'::jsonb,");
+  }
+
+  for (const generated of entity.generated) {
+    lines.push(`  ${generated.name} ${generated.type} GENERATED ALWAYS AS (${generated.expression}) STORED,`);
   }
 
   // Remove trailing comma from last line
@@ -99,6 +103,10 @@ ALTER TABLE ${entity.table} ADD CONSTRAINT ${constraintName} FOREIGN KEY (${fiel
     dependsOn: [`ddl:table:${entity.table}`],
   });
 
+  for (const index of entity.indexes) {
+    artifacts.push(buildIndexArtifact(entity, index));
+  }
+
   artifacts.push({
     key: `ddl:rls:${entity.table}`,
     name: `${entity.table}.rls`,
@@ -112,4 +120,16 @@ CREATE POLICY tenant_isolation ON ${entity.table} FOR ALL TO anon, authenticated
   });
 
   return { artifacts };
+}
+
+function buildIndexArtifact(entity: PlxEntity, index: IndexDef): DdlArtifact {
+  const indexName = `idx_${entity.name}_${index.name}`;
+  const using = index.using ? ` USING ${index.using}` : "";
+  const where = index.where ? ` WHERE ${index.where}` : "";
+  return {
+    key: `ddl:index:${entity.table}.${index.name}`,
+    name: `${entity.table}.${index.name}`,
+    sql: `CREATE INDEX IF NOT EXISTS ${indexName} ON ${entity.table}${using} (${index.on.join(", ")})${where};`,
+    dependsOn: [`ddl:table:${entity.table}`],
+  };
 }

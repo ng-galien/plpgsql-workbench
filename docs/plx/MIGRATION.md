@@ -41,6 +41,7 @@ Exemples typiques:
 - hook de cycle de vie manquant
 - type de champ ou action canonique absent
 - drift entre SDUI front, runtime et PLX
+- DDL structurel recurrent qui reste en `post_apply` sur plusieurs modules
 
 ## Read Model
 
@@ -66,8 +67,22 @@ Pour ce que le compilateur ne sait pas encore exprimer:
 
 Exemples:
 
-- `search_vec GENERATED ALWAYS`
-- index GIN
+- DDL vraiment hors subset supporte
+- vues auxiliaires
+- triggers techniques
+
+Avant de conclure a un manque compilateur:
+
+- verifier si `states` sait deja exprimer la transition voulue
+- verifier si `generated` couvre deja la colonne derivee
+- verifier si `indexes` couvre deja l'index recurrent
+
+Exemples deja supportes:
+
+- `submitted -> rejected` si `rejected` fait partie des etats declares
+- colonne `GENERATED ALWAYS AS (...) STORED`
+- index GIN simple
+- index partiel avec `where`
 - vues auxiliaires
 
 ## Critere De Parite Minimale

@@ -212,6 +212,32 @@ describe("pgm module workflow", () => {
     ).resolves.toContain("quote_ut.test_brand");
   });
 
+  it("keeps seed files out of the apply artifact graph", async () => {
+    const root = await createWorkspace();
+    await writeModule(root, "quote");
+
+    const moduleDir = path.join(root, "modules", "quote");
+    const manifestPath = path.join(moduleDir, "module.json");
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8")) as Record<string, unknown>;
+    await fs.mkdir(path.join(moduleDir, "plx"), { recursive: true });
+    await fs.writeFile(path.join(moduleDir, "plx", "seed.sql"), "SELECT 42;\n", "utf-8");
+    await fs.writeFile(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          ...manifest,
+          plx: { entry: "src/quote.plx", seed: "plx/seed.sql" },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf-8",
+    );
+
+    const workflow = await prepareModuleWorkflow(root, "quote");
+    expect(workflow.artifacts.map((artifact) => artifact.key)).not.toContain("seed");
+  });
+
   it("orders apply artifacts by dependency graph instead of plain kind rank", async () => {
     const root = await createWorkspace();
     await writeDependencyModule(

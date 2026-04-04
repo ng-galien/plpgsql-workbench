@@ -42,6 +42,28 @@ describe("entity DDL generation", () => {
           loc: LOC,
         },
       ],
+      generated: [
+        {
+          name: "search_vec",
+          type: "tsvector",
+          expression: "to_tsvector('simple', coalesce(title, ''))",
+          loc: LOC,
+        },
+      ],
+      indexes: [
+        {
+          name: "search",
+          using: "gin",
+          on: ["search_vec"],
+          loc: LOC,
+        },
+        {
+          name: "barcode",
+          on: ["owner_id"],
+          where: "owner_id IS NOT NULL",
+          loc: LOC,
+        },
+      ],
       payload: [
         {
           name: "title",
@@ -88,12 +110,19 @@ describe("entity DDL generation", () => {
     expect(sql).toContain("phase text NOT NULL DEFAULT 'draft' CHECK (phase IN ('draft', 'active'))");
     expect(sql).toContain("payload jsonb NOT NULL DEFAULT '{}'::jsonb");
     expect(sql).toContain(
+      "search_vec tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(title, ''))) STORED",
+    );
+    expect(sql).toContain(
       "ALTER TABLE demo.task ADD CONSTRAINT task_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES demo.user(id);",
     );
     expect(sql).toContain("GRANT USAGE ON SCHEMA demo TO anon;");
     expect(sql).toContain("REVOKE INSERT, UPDATE, DELETE ON TABLE demo.task FROM anon;");
     expect(sql).not.toContain("GRANT SELECT ON TABLE demo.task TO anon;");
     expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_task_tenant ON demo.task(tenant_id)");
+    expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_task_search ON demo.task USING gin (search_vec);");
+    expect(sql).toContain(
+      "CREATE INDEX IF NOT EXISTS idx_task_barcode ON demo.task (owner_id) WHERE owner_id IS NOT NULL;",
+    );
     expect(sql).toContain("ALTER TABLE demo.task ENABLE ROW LEVEL SECURITY");
     expect(sql).toContain("ALTER TABLE demo.task FORCE ROW LEVEL SECURITY");
     expect(sql).toContain("CREATE POLICY tenant_isolation ON demo.task FOR ALL TO anon, authenticated");

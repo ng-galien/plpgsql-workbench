@@ -136,6 +136,8 @@ export interface PlxEntity {
   traits: string[];
   storage: "row" | "hybrid";
   columns: EntityField[];
+  generated: GeneratedColumnDef[];
+  indexes: IndexDef[];
   payload: EntityField[];
   fields: EntityField[];
   states?: StateBlock;
@@ -159,6 +161,21 @@ export interface EntityField extends FieldDef {
   ref?: string;
   viewType?: string; // "date", "currency", "status", "textarea"
   label?: string; // i18n key override
+}
+
+export interface GeneratedColumnDef {
+  name: string;
+  type: string;
+  expression: string;
+  loc: Loc;
+}
+
+export interface IndexDef {
+  name: string;
+  using?: string;
+  on: string[];
+  where?: string;
+  loc: Loc;
 }
 
 export interface StateBlock {

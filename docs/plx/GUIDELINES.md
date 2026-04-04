@@ -79,6 +79,8 @@ Points d'extension a privilegier:
 - `strategies.read.query`
 - `strategies.read.hateoas`
 - `strategies.list.query`
+- `generated`
+- `indexes`
 - `plx.post_apply`
 
 Ne pas sortir trop vite du DSL si un point d'extension existe deja.
@@ -89,11 +91,17 @@ Garder du SQL ou des fonctions manuelles quand le besoin est structurellement ho
 
 Exemples:
 
-- FTS avec colonne `GENERATED ALWAYS`
-- index specifiques
+- DDL PostgreSQL exotique non encore modele
+- triggers ou vues auxiliaires
 - projections complexes ou optimisations lourdes
-- logique de rejet/refus qui deborde la state machine actuelle
+- logique de graphe d'etats vraiment complexe qui deborde la state machine declarative
 - fonctions runtime ou infrastructure
+
+Avant de sortir du DSL:
+
+- utiliser `generated` pour les colonnes `GENERATED ALWAYS` recurrentes
+- utiliser `indexes` pour les index simples, GIN et partiels
+- utiliser `states` pour les branches simples comme `submitted -> rejected` si l'etat cible est declare
 
 Le manuel doit alors etre clairement place:
 
@@ -133,6 +141,7 @@ Le SQL passthrough reste acceptable pour:
 - forcer tout le metier dans `_read()` ou `_list()` auto-generes au lieu d'utiliser `strategies.*`
 - exposer en CRUD une table qui devrait etre interne
 - utiliser `seed` pour du DDL structurel
+- garder en `post_apply` des generated columns ou des indexes simples maintenant supportes par le DSL
 - dupliquer un contrat SDUI cote front et cote PLX au lieu d'utiliser le schema canonique
 - contourner durablement le DSL au lieu de faire remonter un manque recurrent
 

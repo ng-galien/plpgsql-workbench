@@ -189,6 +189,22 @@ entity demo.task:
     expect(result.sql).toContain("jsonb_build_object('id', v_result.id, 'rank', v_result.rank)");
   });
 
+  it("preserves empty-string defaults in DDL and create SQL", () => {
+    const source = `
+entity demo.leave_request:
+  fields:
+    reason text default('')
+
+  payload:
+    note text? default('')
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.ddlSql).toContain("reason text NOT NULL DEFAULT ''");
+    expect(result.sql).toContain("COALESCE(v_p_row.reason, '')");
+    expect(result.sql).toContain("COALESCE(p_input->'note', to_jsonb(''::text))");
+  });
+
   it("hardens SECURITY DEFINER functions with a fixed search_path", () => {
     const source = `
 entity demo.task:
@@ -243,6 +259,44 @@ entity demo.line:
     expect(result.sql).not.toContain("demo.line_create");
     expect(result.sql).not.toContain("demo.line_update");
     expect(result.sql).not.toContain("demo.line_delete");
+  });
+
+  it("supports generated columns and declarative indexes in entity DDL", () => {
+    const source = `
+entity demo.asset:
+  fields:
+    title text required
+    description text?
+    tags text[]?
+
+  generated:
+    search_vec tsvector: """
+      setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
+      setweight(to_tsvector('simple', coalesce(description, '')), 'B')
+    """
+
+  indexes:
+    search:
+      using: gin
+      on: [search_vec]
+
+    tags:
+      using: gin
+      on: [tags]
+
+    title_fts:
+      using: gin
+      on: [to_tsvector('french', coalesce(title, ''))]
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.ddlSql).toContain("search_vec tsvector GENERATED ALWAYS AS (");
+    expect(result.ddlSql).toContain(
+      "CREATE INDEX IF NOT EXISTS idx_asset_search ON demo.asset USING gin (search_vec);",
+    );
+    expect(result.ddlSql).toContain("CREATE INDEX IF NOT EXISTS idx_asset_tags ON demo.asset USING gin (tags);");
+    expect(result.ddlSql).toContain("CREATE INDEX IF NOT EXISTS idx_asset_title_fts ON demo.asset USING gin (");
+    expect(result.ddlSql).toContain("to_tsvector('french',coalesce(title,''))");
   });
 
   it("runs before create hooks inside generated create functions", () => {
@@ -311,6 +365,33 @@ entity demo.task:
     expect(result.errors).toHaveLength(0);
     expect(result.sql).toContain("IF NOT (title = 'x') THEN");
     expect(result.sql).not.toContain("IF true NOT");
+  });
+
+  it("supports non-linear state transitions when states are declared", () => {
+    const source = `
+entity demo.report:
+  fields:
+    title text required
+
+  states draft -> submitted -> validated -> reimbursed -> rejected:
+    submit(draft -> submitted)
+    validate(submitted -> validated)
+    reject(submitted -> rejected)
+    reimburse(validated -> reimbursed)
+
+  actions:
+    submit: {label: demo.action_submit}
+    validate: {label: demo.action_validate}
+    reject: {label: demo.action_reject}
+    reimburse: {label: demo.action_reimburse}
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("FUNCTION demo.report_reject(p_id text)");
+    expect(result.sql).toContain("SET status = 'rejected'");
+    expect(result.sql).toContain("UPDATE demo.report SET status = 'rejected'");
+    expect(result.sql).toContain("status = 'submitted' RETURNING * INTO v_result");
+    expect(result.sql).toContain("'method', 'reject'");
   });
 
   it("supports triple-quoted SQL in return and assert", () => {

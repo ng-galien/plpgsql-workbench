@@ -11,6 +11,8 @@ import type {
   FormField,
   FormFieldValue,
   FormSection,
+  GeneratedColumnDef,
+  IndexDef,
   PlxEntity,
   RelatedDef,
   StatDef,
@@ -24,6 +26,7 @@ import type {
 } from "./ast.js";
 import { mergeLoc } from "./ast.js";
 import type { SduiViewField } from "./generated/sdui-contract.js";
+import type { Token } from "./lexer.js";
 import type { ParseContext } from "./parse-context.js";
 import { ParseError, parseSqlBlock } from "./parse-context.js";
 import { parseCommaSeparated } from "./parser-helpers.js";
@@ -63,6 +66,8 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
   let readKey: string | undefined;
   const fields: EntityField[] = [];
   const payload: EntityField[] = [];
+  const generated: GeneratedColumnDef[] = [];
+  const indexes: IndexDef[] = [];
   const events: EntityEvent[] = [];
   let states: StateBlock | undefined;
   let updateStates: string[] | undefined;
@@ -126,6 +131,10 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
       ctx.expect("DEDENT");
     } else if (kw === "states") {
       states = parseStateBlock(ctx);
+    } else if (kw === "generated") {
+      generated.push(...parseGeneratedBlock(ctx));
+    } else if (kw === "indexes") {
+      indexes.push(...parseIndexBlock(ctx));
     } else if (kw === "update_states") {
       ctx.advance();
       ctx.expect("COLON");
@@ -198,6 +207,8 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
     traits,
     storage: hybrid ? "hybrid" : "row",
     columns: fields,
+    generated,
+    indexes,
     payload: hybrid ? payload : [],
     fields: hybrid ? [...fields, ...payload] : fields,
     states,
@@ -369,6 +380,130 @@ function parseStateBlock(ctx: ParseContext): StateBlock {
   const initial = values[0] ?? "";
 
   return { column, initial, values, transitions, loc: mergeLoc(start, end) };
+}
+
+function parseGeneratedBlock(ctx: ParseContext): GeneratedColumnDef[] {
+  ctx.advance(); // "generated"
+  ctx.expect("COLON");
+  ctx.skipNewlines();
+  ctx.expect("INDENT");
+
+  const generated: GeneratedColumnDef[] = [];
+  while (!ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
+    ctx.skipNewlines();
+    if (ctx.isAt("DEDENT")) break;
+
+    const loc = ctx.loc();
+    const name = ctx.expect("IDENT").value;
+    const typeTokens: Token[] = [];
+    while (!ctx.isAt("COLON") && !ctx.isAt("NEWLINE") && !ctx.isAt("EOF")) {
+      typeTokens.push(ctx.advance());
+    }
+    ctx.expect("COLON");
+    const type = renderTokenSequence(typeTokens);
+    const expression = parseRawScalarOrSqlBlock(ctx);
+    generated.push({ name, type, expression, loc });
+    ctx.skipNewlines();
+  }
+
+  ctx.expect("DEDENT");
+  return generated;
+}
+
+function parseIndexBlock(ctx: ParseContext): IndexDef[] {
+  ctx.advance(); // "indexes"
+  ctx.expect("COLON");
+  ctx.skipNewlines();
+  ctx.expect("INDENT");
+
+  const indexes: IndexDef[] = [];
+  while (!ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
+    ctx.skipNewlines();
+    if (ctx.isAt("DEDENT")) break;
+
+    const loc = ctx.loc();
+    const name = ctx.expect("IDENT").value;
+    ctx.expect("COLON");
+    ctx.skipNewlines();
+    ctx.expect("INDENT");
+
+    let using: string | undefined;
+    let on: string[] = [];
+    let where: string | undefined;
+
+    while (!ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
+      ctx.skipNewlines();
+      if (ctx.isAt("DEDENT")) break;
+
+      const kw = ctx.expect("IDENT").value;
+      ctx.expect("COLON");
+      if (kw === "using") {
+        using = ctx.expect("IDENT").value;
+      } else if (kw === "on") {
+        on = parseRawList(ctx);
+      } else if (kw === "where") {
+        where = parseRawScalarOrSqlBlock(ctx);
+      } else {
+        parseRawScalarOrSqlBlock(ctx);
+      }
+      ctx.skipNewlines();
+    }
+
+    ctx.expect("DEDENT");
+    indexes.push({ name, using, on, where, loc });
+    ctx.skipNewlines();
+  }
+
+  ctx.expect("DEDENT");
+  return indexes;
+}
+
+function parseRawList(ctx: ParseContext): string[] {
+  const items: string[] = [];
+  ctx.expect("LBRACKET");
+  ctx.skipExprWs();
+  while (!ctx.isAt("RBRACKET") && !ctx.isAt("EOF")) {
+    const tokens: Token[] = [];
+    let depth = 0;
+    while (!ctx.isAt("EOF")) {
+      if (depth === 0 && (ctx.isAt("COMMA") || ctx.isAt("RBRACKET"))) break;
+      const token = ctx.advance();
+      if (token.type === "LBRACKET" || token.type === "LPAREN") depth++;
+      if (token.type === "RBRACKET" || token.type === "RPAREN") depth--;
+      tokens.push(token);
+    }
+    items.push(renderTokenSequence(tokens));
+    if (ctx.isAt("COMMA")) {
+      ctx.advance();
+      ctx.skipExprWs();
+    }
+  }
+  ctx.expect("RBRACKET");
+  return items.filter((item) => item.length > 0);
+}
+
+function parseRawScalarOrSqlBlock(ctx: ParseContext): string {
+  if (ctx.isAt("SQL_BLOCK")) {
+    return ctx.advance().value.trim();
+  }
+
+  const tokens: Token[] = [];
+  while (!ctx.isAt("NEWLINE") && !ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
+    tokens.push(ctx.advance());
+  }
+  return renderTokenSequence(tokens);
+}
+
+function renderTokenSequence(tokens: Token[]): string {
+  return tokens
+    .map((token) => {
+      if (token.type === "STRING") return `'${token.value.replace(/'/g, "''")}'`;
+      return token.value;
+    })
+    .join(" ")
+    .replace(/\s+([(),[\]])/g, "$1")
+    .replace(/([([,])\s+/g, "$1")
+    .trim();
 }
 
 function parseViewBlock(ctx: ParseContext): ViewBlock {

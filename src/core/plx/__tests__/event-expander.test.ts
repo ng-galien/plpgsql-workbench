@@ -220,6 +220,8 @@ function makeEntity(schema: string, name: string, overrides: Partial<PlxEntity> 
     traits: [],
     storage: "row",
     columns: [],
+    generated: [],
+    indexes: [],
     payload: [],
     fields: [],
     view: { compact: [] },

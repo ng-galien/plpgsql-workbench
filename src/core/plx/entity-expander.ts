@@ -552,7 +552,9 @@ function buildCreateFunction(entity: PlxEntity, resolved: ResolvedEntityFields):
   const writableFields = resolved.columns.filter((f) => !f.readOnly && !isAuditField(f.name));
   const colNames = writableFields.map((f) => f.name);
   const colValues = writableFields.map((f) =>
-    f.defaultValue ? `COALESCE(v_p_row.${f.name}, ${formatDefaultValue(f.defaultValue, f.type)})` : `v_p_row.${f.name}`,
+    f.defaultValue !== undefined
+      ? `COALESCE(v_p_row.${f.name}, ${formatDefaultValue(f.defaultValue, f.type)})`
+      : `v_p_row.${f.name}`,
   );
 
   if (entity.storage === "hybrid") {
@@ -974,7 +976,7 @@ function buildCreatePayloadSql(entity: PlxEntity, payloadFields: EntityField[], 
   return `jsonb_strip_nulls(jsonb_build_object(${payloadFields
     .flatMap((field) => [
       `'${field.name}'`,
-      field.defaultValue
+      field.defaultValue !== undefined
         ? `COALESCE(${payloadName}->'${field.name}', ${toJsonValueSql(field.defaultValue, field.type)})`
         : `${payloadName}->'${field.name}'`,
     ])

@@ -127,33 +127,25 @@ Bon fit:
 
 ## State Machine Simple
 
-Utiliser `states` pour les transitions lineaires et lisibles.
+Utiliser `states` pour les transitions lisibles, y compris avec branches simples si tous les etats sont declares.
 
 ```plx
-states draft -> submitted -> validated -> reimbursed:
+states draft -> submitted -> validated -> reimbursed -> rejected:
   submit(draft -> submitted)
   validate(submitted -> validated)
+  reject(submitted -> rejected)
   reimburse(validated -> reimbursed)
 ```
 
 Bon fit:
 
 - workflow principal
-- transitions sans embranchements complexes
+- transitions simples et explicites
+- branches metier courtes quand l'etat cible est declare
 
-## Rejet Manuel
+Limite actuelle:
 
-Quand la state machine actuelle ne sait pas exprimer le cas:
-
-```plx
-fn expense.expense_report_reject(p_id text) -> jsonb [definer]:
-  ...
-```
-
-Acceptable si:
-
-- le pattern reste marginal
-- la branche manquante n'est pas encore un besoin recurrent
+- pas de DSL plus riche pour modeliser des graphes d'etats complexes ou des meta-donnees de transition plus poussees
 
 ## Post Apply
 
@@ -170,6 +162,61 @@ A eviter:
 
 - seed de donnees metier
 - logique qui devrait etre dans le DDL genere
+
+## Colonnes Generees
+
+Utiliser `generated:` quand une colonne derivee revient dans le schema relationnel lui-meme.
+
+```plx
+generated:
+  amount_incl_tax numeric(12,2): amount_excl_tax + vat
+
+  search_vec tsvector: """
+    setweight(to_tsvector('simple', coalesce(title, '')), 'A') ||
+    setweight(to_tsvector('simple', coalesce(description, '')), 'B')
+  """
+```
+
+Bon fit:
+
+- colonnes `GENERATED ALWAYS`
+- FTS derive du contenu
+- calculs persistants portes par PostgreSQL
+
+Limite actuelle:
+
+- seulement `GENERATED ALWAYS AS (...) STORED`
+- pas encore de modelisation plus riche autour des options de colonne PostgreSQL
+
+## Index Declaratifs
+
+Utiliser `indexes:` pour les index recurrents lies a l'entite.
+
+```plx
+indexes:
+  search:
+    using: gin
+    on: [search_vec]
+
+  barcode:
+    on: [barcode]
+    where: barcode IS NOT NULL
+
+  title_fts:
+    using: gin
+    on: [to_tsvector('french', coalesce(title, ''))]
+```
+
+Bon fit:
+
+- GIN/GIST recurrents
+- index partiels simples
+- index FTS repetes sur plusieurs modules
+
+Limite actuelle:
+
+- pas de modelisation exhaustive de tous les index PostgreSQL
+- si l'index devient trop exotique, garder `plx.post_apply`
 
 ## SDUI
 
