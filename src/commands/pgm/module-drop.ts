@@ -3,7 +3,7 @@ import type { DbClient } from "../../core/connection.js";
 import type { ToolHandler, WithClient } from "../../core/container.js";
 import { text, wrap } from "../../core/helpers.js";
 import type { ModuleRegistry } from "../../core/pgm/registry.js";
-import { loadManifest } from "../../core/pgm/resolver.js";
+import { loadPlxManifest, plxSchemas } from "../../core/plx/manifest.js";
 
 export function createPlxModuleDropTool({
   withClient,
@@ -31,8 +31,8 @@ export function createPlxModuleDropTool({
 
       let schemas: string[];
       try {
-        const manifest = await loadManifest(`${registry.workspaceRoot}/modules`, moduleName);
-        schemas = ownedSchemas(manifest.schemas);
+        const manifest = await loadPlxManifest(`${registry.workspaceRoot}/modules`, moduleName);
+        schemas = plxSchemas(manifest);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return text(`problem: ${message}\nwhere: plx_drop\nfix_hint: verify the module name`);

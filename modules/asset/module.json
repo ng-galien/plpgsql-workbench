@@ -1,30 +1,7 @@
 {
   "name": "asset",
   "version": "0.1.0",
-  "description": "Asset management — images, metadata, classification, FTS search. Transversal module used by illustrator, cad, and other modules.",
-  "schemas": {
-    "public": "asset",
-    "test": "asset_ut",
-    "qa": "asset_qa"
-  },
-  "dependencies": [
-    "pgv"
-  ],
-  "extensions": [],
-  "sql": [
-    "build/asset.ddl.sql",
-    "build/asset.func.sql",
-    "build/asset_qa.func.sql",
-    "build/asset_ut.func.sql"
-  ],
-  "assets": {
-    "frontend": [],
-    "scripts": [],
-    "styles": []
-  },
-  "grants": {
-    "anon": [
-      "asset"
-    ]
-  }
+  "description": "Asset management — images, metadata, classification, FTS search",
+  "plx": { "entry": "plx/asset.plx", "seed": "plx/seed.sql", "post_apply": "plx/post_apply.sql" },
+  "grants": { "anon": ["asset"] }
 }

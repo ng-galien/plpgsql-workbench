@@ -1,0 +1,85 @@
+[fr]
+asset.brand = Assets
+asset.nav_assets = Photothèque
+asset.nav_upload = Upload
+
+asset.entity_asset = Asset
+
+asset.status_to_classify = À classifier
+asset.status_classified = Classifié
+asset.status_archived = Archivé
+
+asset.field_search = Recherche titre/description
+asset.field_status = Statut
+asset.field_tags = Tags
+asset.field_mime = Type MIME
+asset.field_title = Titre
+asset.field_description = Description
+asset.field_filename = Fichier
+asset.field_dimensions = Dimensions
+asset.field_credit = Crédit
+asset.field_season = Saison
+asset.field_usage_hint = Usage recommandé
+asset.field_colors = Couleurs dominantes
+asset.field_orientation = Orientation
+asset.field_created = Créé le
+asset.field_classified = Classifié le
+asset.field_path = Chemin
+asset.field_width = Largeur
+asset.field_height = Hauteur
+
+asset.filter_all = Tous
+asset.btn_filter = Filtrer
+asset.btn_delete = Supprimer
+asset.btn_classify = Classifier
+asset.btn_archive = Archiver
+asset.btn_restore = Restaurer
+asset.btn_edit = Modifier
+
+asset.col_filename = Fichier
+asset.col_title = Titre
+asset.col_mime = Type
+asset.col_status = Statut
+asset.col_tags = Tags
+asset.col_created = Créé le
+
+asset.stat_total = Total assets
+asset.stat_to_classify = À classifier
+asset.stat_classified = Classifiés
+
+asset.section_file = Fichier
+asset.section_metadata = Métadonnées
+asset.section_classification = Classification
+
+asset.empty_no_asset = Aucun asset
+asset.empty_first_asset = Les assets apparaîtront ici après upload dans Supabase Storage.
+asset.empty_no_results = Aucun résultat pour ces filtres.
+
+asset.toast_classified = Asset classifié.
+asset.toast_deleted = Asset supprimé.
+asset.toast_archived = Asset archivé.
+asset.toast_restored = Asset restauré.
+asset.err_not_found = Asset introuvable.
+asset.err_title_required = Le titre est obligatoire.
+
+asset.confirm_delete = Supprimer définitivement cet asset ?
+asset.confirm_archive = Archiver cet asset ?
+
+asset.action_classify = Classifier
+asset.action_archive = Archiver
+asset.action_restore = Restaurer
+asset.action_delete = Supprimer
+asset.action_edit = Modifier
+
+asset.season_spring = Printemps
+asset.season_summer = Été
+asset.season_autumn = Automne
+asset.season_winter = Hiver
+
+asset.orientation_landscape = Paysage
+asset.orientation_portrait = Portrait
+asset.orientation_square = Carré
+
+asset.mime_jpeg = image/jpeg
+asset.mime_png = image/png
+asset.mime_svg = image/svg+xml

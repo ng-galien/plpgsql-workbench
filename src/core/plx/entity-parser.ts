@@ -23,10 +23,11 @@ import type {
   Visibility,
 } from "./ast.js";
 import { mergeLoc } from "./ast.js";
+import type { SduiViewField } from "./generated/sdui-contract.js";
 import type { ParseContext } from "./parse-context.js";
 import { ParseError, parseSqlBlock } from "./parse-context.js";
 import { parseCommaSeparated } from "./parser-helpers.js";
-import { validateFormField } from "./sdui-schema.js";
+import { validateActionDef, validateFormField, validateViewField } from "./sdui-schema.js";
 
 export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntity {
   const start = ctx.loc();
@@ -212,7 +213,13 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
 function parseEntityField(ctx: ParseContext): EntityField {
   const loc = ctx.loc();
   const name = ctx.expect("IDENT").value;
-  const type = ctx.parseQualifiedName();
+  let type = ctx.parseQualifiedName();
+  // Support array types: text[] → text[]
+  if (ctx.isAt("LBRACKET")) {
+    ctx.advance();
+    ctx.expect("RBRACKET");
+    type = `${type}[]`;
+  }
 
   let nullable = false;
   let required = false;
@@ -359,7 +366,7 @@ function parseViewBlock(ctx: ParseContext): ViewBlock {
   ctx.skipNewlines();
   ctx.expect("INDENT");
 
-  let compact: string[] = [];
+  let compact: SduiViewField[] = [];
   let standard: ViewSection | undefined;
   let expanded: ViewSection | undefined;
   let form: FormSection[] | undefined;
@@ -372,7 +379,7 @@ function parseViewBlock(ctx: ParseContext): ViewBlock {
     if (kw === "compact") {
       ctx.advance();
       ctx.expect("COLON");
-      compact = parseStringList(ctx);
+      compact = parseViewFieldList(ctx);
     } else if (kw === "standard") {
       ctx.advance();
       ctx.expect("COLON");
@@ -395,20 +402,35 @@ function parseViewBlock(ctx: ParseContext): ViewBlock {
   return { compact, standard, expanded, form };
 }
 
-/** Parse [ident, ident, ...] as string names (NOT as PLX expressions) */
-function parseStringList(ctx: ParseContext): string[] {
+function parseViewFieldList(ctx: ParseContext): SduiViewField[] {
   ctx.expect("LBRACKET");
   ctx.skipExprWs();
-  const items: string[] = [];
+  const items: SduiViewField[] = [];
   while (!ctx.isAt("RBRACKET") && !ctx.isAt("EOF")) {
-    // Accept ident or {key: ...} object as string
     if (ctx.isAt("IDENT")) {
       items.push(ctx.advance().value);
     } else if (ctx.isAt("LBRACE")) {
-      // Skip complex field objects in compact — just capture the key
       ctx.advance();
-      while (!ctx.isAt("RBRACE") && !ctx.isAt("EOF")) ctx.advance();
+      ctx.skipExprWs();
+      const entries: Record<string, string> = {};
+      while (!ctx.isAt("RBRACE") && !ctx.isAt("EOF")) {
+        const key = ctx.parseObjectKey();
+        ctx.expect("COLON");
+        entries[key] = ctx.parseQualifiedValue();
+        ctx.skipExprWs();
+        if (ctx.isAt("COMMA")) {
+          ctx.advance();
+          ctx.skipExprWs();
+        }
+      }
       ctx.expect("RBRACE");
+      const loc = ctx.loc();
+      const validationErrors = validateViewField(entries, loc);
+      if (validationErrors.length > 0) {
+        const first = validationErrors[0]!;
+        throw new ParseError(first.message, loc, { code: first.code });
+      }
+      items.push(entries as unknown as SduiViewField);
     }
     ctx.skipExprWs();
     if (ctx.isAt("COMMA")) {
@@ -424,11 +446,11 @@ function parseViewSection(ctx: ParseContext): ViewSection {
   ctx.skipNewlines();
   // Can be inline [fields] or indented block with fields/stats/related
   if (ctx.isAt("LBRACKET")) {
-    return { fields: parseStringList(ctx) };
+    return { fields: parseViewFieldList(ctx) };
   }
 
   ctx.expect("INDENT");
-  let fields: string[] = [];
+  let fields: SduiViewField[] = [];
   let stats: StatDef[] | undefined;
   let related: RelatedDef[] | undefined;
 
@@ -440,7 +462,7 @@ function parseViewSection(ctx: ParseContext): ViewSection {
     if (kw === "fields") {
       ctx.advance();
       ctx.expect("COLON");
-      fields = parseStringList(ctx);
+      fields = parseViewFieldList(ctx);
     } else if (kw === "stats") {
       ctx.advance();
       ctx.expect("COLON");
@@ -469,16 +491,18 @@ function parseStatDefs(ctx: ParseContext): StatDef[] {
     ctx.expect("LBRACE");
     let key = "";
     let label = "";
+    let variant: string | undefined;
     while (!ctx.isAt("RBRACE") && !ctx.isAt("EOF")) {
       const k = ctx.parseObjectKey();
       ctx.expect("COLON");
       const v = ctx.parseQualifiedValue();
       if (k === "key") key = v;
       else if (k === "label") label = v;
+      else if (k === "variant") variant = v;
       if (ctx.isAt("COMMA")) ctx.advance();
     }
     ctx.expect("RBRACE");
-    defs.push({ key, label });
+    defs.push({ key, label, variant });
     ctx.skipNewlines();
   }
   ctx.expect("DEDENT");
@@ -593,6 +617,7 @@ function parseFormField(ctx: ParseContext): FormField {
 }
 
 function parseActionDef(ctx: ParseContext): ActionDef {
+  const loc = ctx.loc();
   const name = ctx.expect("IDENT").value;
   ctx.expect("COLON");
   ctx.expect("LBRACE");
@@ -616,6 +641,18 @@ function parseActionDef(ctx: ParseContext): ActionDef {
     }
   }
   ctx.expect("RBRACE");
+
+  const validationErrors = validateActionDef(
+    Object.fromEntries(
+      Object.entries({ label, icon, variant, confirm }).filter(([, value]) => value !== undefined),
+    ) as Record<string, string>,
+    loc,
+  );
+  if (validationErrors.length > 0) {
+    const first = validationErrors[0]!;
+    throw new ParseError(first.message, loc, { code: first.code });
+  }
+
   return { name, label, icon, variant, confirm };
 }
 
