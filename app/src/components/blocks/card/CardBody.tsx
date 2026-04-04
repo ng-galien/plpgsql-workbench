@@ -67,7 +67,7 @@ export function CardBody({
   );
 }
 
-const HIDDEN_FIELDS = new Set(["id", "tenant_id", "created_at", "updated_at", "actions"]);
+const HIDDEN_FIELDS = new Set(["id", "tenant_id", "created_at", "updated_at", "actions", "ui"]);
 
 export function FallbackBody({ data }: { data: Record<string, unknown> }) {
   return (
