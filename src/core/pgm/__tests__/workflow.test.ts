@@ -238,6 +238,44 @@ describe("pgm module workflow", () => {
     expect(workflow.artifacts.map((artifact) => artifact.key)).not.toContain("seed");
   });
 
+  it("loads plx.sqlLib files as workflow artifacts", async () => {
+    const root = await createWorkspace();
+    await writeModule(root, "quote");
+
+    const moduleDir = path.join(root, "modules", "quote");
+    const manifestPath = path.join(moduleDir, "module.json");
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8")) as Record<string, unknown>;
+    await fs.mkdir(path.join(moduleDir, "plx", "sql"), { recursive: true });
+    await fs.writeFile(
+      path.join(moduleDir, "plx", "sql", "helpers.sql"),
+      "CREATE OR REPLACE FUNCTION quote.helper() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          ...manifest,
+          plx: { entry: "src/quote.plx", sqlLib: ["plx/sql/helpers.sql"] },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf-8",
+    );
+
+    const workflow = await prepareModuleWorkflow(root, "quote");
+    expect(workflow.artifacts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "sql:quote:plx/sql/helpers.sql",
+          kind: "sql",
+          file: "plx/sql/helpers.sql",
+        }),
+      ]),
+    );
+  });
+
   it("orders apply artifacts by dependency graph instead of plain kind rank", async () => {
     const root = await createWorkspace();
     await writeDependencyModule(
@@ -302,6 +340,41 @@ entity quote.task:
     expect(keys.indexOf("ddl:table:quote.note")).toBeLessThan(keys.indexOf("ddl:fk:quote.task.note_id"));
     expect(keys.indexOf("ddl:table:quote.task")).toBeLessThan(keys.indexOf("ddl:fk:quote.task.note_id"));
     expect(keys.indexOf("ddl:fk:quote.task.note_id")).toBeLessThan(keys.indexOf("function:quote.task_create"));
+  });
+
+  it("orders plx.sqlLib before generated ddl and functions", async () => {
+    const root = await createWorkspace();
+    await writeModule(root, "quote");
+
+    const moduleDir = path.join(root, "modules", "quote");
+    const manifestPath = path.join(moduleDir, "module.json");
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8")) as Record<string, unknown>;
+    await fs.mkdir(path.join(moduleDir, "plx", "sql"), { recursive: true });
+    await fs.writeFile(
+      path.join(moduleDir, "plx", "sql", "helpers.sql"),
+      "CREATE OR REPLACE FUNCTION quote.helper() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\n",
+      "utf-8",
+    );
+    await fs.writeFile(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          ...manifest,
+          plx: { entry: "src/quote.plx", sqlLib: ["plx/sql/helpers.sql"] },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf-8",
+    );
+
+    const workflow = await prepareModuleWorkflow(root, "quote");
+    const ordered = sortApplyArtifacts(workflow.artifacts);
+    const keys = ordered.map((artifact) => artifact.key);
+
+    expect(keys.indexOf("sql:quote:plx/sql/helpers.sql")).toBeGreaterThanOrEqual(0);
+    expect(keys.indexOf("sql:quote:plx/sql/helpers.sql")).toBeLessThan(keys.indexOf("ddl:schema:quote"));
+    expect(keys.indexOf("sql:quote:plx/sql/helpers.sql")).toBeLessThan(keys.indexOf("function:quote.brand"));
   });
 
   it("fails with an explicit cycle on mutually dependent functions", async () => {

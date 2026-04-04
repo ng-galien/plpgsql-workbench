@@ -12,7 +12,7 @@ import { notifyPostgrestSchemaReload } from "../tooling/primitives/postgrest.js"
 import { withTransaction } from "../tooling/primitives/transaction.js";
 import { hashContent, type PreparedPlxModule, preparePlxModule, writePreparedBuildFiles } from "./plx-builder.js";
 
-type ModuleWorkflowArtifactKind = "extension" | "ddl" | "function" | "test" | "grant";
+type ModuleWorkflowArtifactKind = "extension" | "sql" | "ddl" | "function" | "test" | "grant";
 
 export interface ModuleWorkflowArtifact {
   key: string;
@@ -534,21 +534,28 @@ function resolveArtifactDependencies(
 ): string[] {
   const dependencies = new Set(artifact.dependsOn.filter((key) => artifactsByKey.has(key)));
   const extensions = [...artifactsByKey.values()].filter((candidate) => candidate.kind === "extension");
+  const sqlLib = [...artifactsByKey.values()].filter((candidate) => candidate.kind === "sql");
   const ddl = [...artifactsByKey.values()].filter((candidate) => candidate.kind === "ddl");
   const functions = [...artifactsByKey.values()].filter((candidate) => candidate.kind === "function");
 
   switch (artifact.kind) {
     case "extension":
       break;
+    case "sql":
+      for (const candidate of extensions) dependencies.add(candidate.key);
+      break;
     case "ddl":
       for (const candidate of extensions) dependencies.add(candidate.key);
+      for (const candidate of sqlLib) dependencies.add(candidate.key);
       break;
     case "function":
       for (const candidate of extensions) dependencies.add(candidate.key);
+      for (const candidate of sqlLib) dependencies.add(candidate.key);
       for (const candidate of ddl) dependencies.add(candidate.key);
       break;
     case "test":
       for (const candidate of extensions) dependencies.add(candidate.key);
+      for (const candidate of sqlLib) dependencies.add(candidate.key);
       for (const candidate of ddl) dependencies.add(candidate.key);
       for (const candidate of functions) dependencies.add(candidate.key);
       break;
@@ -614,10 +621,11 @@ function compareArtifacts(left: ModuleWorkflowArtifact, right: ModuleWorkflowArt
 function rankArtifactKind(kind: ModuleWorkflowArtifactKind): number {
   const rank: Record<ModuleWorkflowArtifactKind, number> = {
     extension: 0,
-    ddl: 1,
-    function: 2,
-    test: 3,
-    grant: 4,
+    sql: 1,
+    ddl: 2,
+    function: 3,
+    test: 4,
+    grant: 5,
   };
   return rank[kind];
 }

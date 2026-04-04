@@ -12,3 +12,10 @@ Ordre de lecture conseillé:
 2. [GUIDELINES.md](/Users/alexandreboyer/dev/projects/plpgsql-workbench/docs/plx/GUIDELINES.md)
 3. [PATTERNS.md](/Users/alexandreboyer/dev/projects/plpgsql-workbench/docs/plx/PATTERNS.md)
 4. [MIGRATION.md](/Users/alexandreboyer/dev/projects/plpgsql-workbench/docs/plx/MIGRATION.md)
+
+Rappels manifeste:
+
+- `plx.entry`: point d'entrée declaratif du module
+- `plx.sqlLib`: bibliotheque SQL appliquee avant les artefacts generes par PLX
+- `plx.seed`: donnees de reference
+- `plx.post_apply`: complements finaux apres apply principal

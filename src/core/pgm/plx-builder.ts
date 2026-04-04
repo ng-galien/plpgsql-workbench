@@ -15,7 +15,7 @@ interface PlxBuildResult {
 
 interface PlxPreparedArtifact {
   key: string;
-  kind: "ddl" | "function" | "test";
+  kind: "sql" | "ddl" | "function" | "test";
   name: string;
   file?: string;
   content: string;
@@ -82,10 +82,11 @@ export async function preparePlxModule(
   }
 
   const targets = plxBuildTargets(manifest.name);
+  const sqlLibArtifacts = await loadSqlLibArtifacts(moduleDir, manifest);
   const extraSchemaArtifacts = buildSupplementalSchemaArtifacts(bundle, manifest);
   const ddlContent = buildGeneratedDdl(bundle, extraSchemaArtifacts);
   const ddlHash = ddlContent ? hashContent(ddlContent) : undefined;
-  const artifacts = collectPreparedArtifacts(bundle, targets, extraSchemaArtifacts);
+  const artifacts = collectPreparedArtifacts(bundle, targets, [...sqlLibArtifacts, ...extraSchemaArtifacts]);
 
   // Validate if requested — validation only adds warnings
   if (options.validate !== false) {
@@ -202,6 +203,27 @@ function collectPreparedArtifacts(
       content: block.sql,
       hash: hashContent(block.sql),
       dependsOn: dependencyMap.get(key) ?? [],
+    });
+  }
+
+  return artifacts;
+}
+
+async function loadSqlLibArtifacts(moduleDir: string, manifest: PlxModuleManifest): Promise<PlxPreparedArtifact[]> {
+  const files = manifest.plx.sqlLib ?? [];
+  const artifacts: PlxPreparedArtifact[] = [];
+
+  for (const file of files) {
+    const fullPath = path.join(moduleDir, file);
+    const content = await fs.readFile(fullPath, "utf-8");
+    artifacts.push({
+      key: `sql:${manifest.name}:${file}`,
+      kind: "sql",
+      name: `${manifest.name}.${file}`,
+      file,
+      content,
+      hash: hashContent(content),
+      dependsOn: [],
     });
   }
 

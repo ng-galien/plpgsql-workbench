@@ -11,7 +11,7 @@ export interface PlxModuleManifest {
   name: string;
   version: string;
   description: string;
-  plx: { entry: string; seed?: string; post_apply?: string };
+  plx: { entry: string; sqlLib?: string[]; seed?: string; post_apply?: string };
   dependencies?: string[];
   extensions?: string[];
   grants?: Record<string, string[]>;

@@ -163,6 +163,39 @@ A eviter:
 - seed de donnees metier
 - logique qui devrait etre dans le DDL genere
 
+## SQL Expert De Module
+
+Utiliser `plx.sqlLib` quand un module garde un noyau SQL specialise que le PLX ne doit pas absorber.
+
+Exemple manifeste:
+
+```json
+{
+  "plx": {
+    "entry": "plx/cad.plx",
+    "sqlLib": [
+      "plx/sql/measure.sql",
+      "plx/sql/render_svg.sql",
+      "plx/sql/scene_json.sql"
+    ],
+    "seed": "plx/seed.sql",
+    "post_apply": "plx/post_apply.sql"
+  }
+}
+```
+
+Bon fit:
+
+- fonctions SQL expertes appelees depuis la facade PLX
+- geometrie, rendu, calculs metier tres specialises
+- bibliotheque SQL stable qu'on veut garder dans le module
+
+A eviter:
+
+- l'utiliser pour du seed
+- l'utiliser pour des complements qui doivent explicitement tourner apres l'apply principal
+- y remettre du DDL simple que `generated` ou `indexes` savent deja exprimer
+
 ## Colonnes Generees
 
 Utiliser `generated:` quand une colonne derivee revient dans le schema relationnel lui-meme.

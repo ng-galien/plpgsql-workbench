@@ -42,6 +42,7 @@ Exemples typiques:
 - type de champ ou action canonique absent
 - drift entre SDUI front, runtime et PLX
 - DDL structurel recurrent qui reste en `post_apply` sur plusieurs modules
+- bibliotheque SQL experte recurrente qui devrait vivre en `plx.sqlLib`
 
 ## Read Model
 
@@ -62,11 +63,13 @@ Quand le legacy avait deja une liste agregée:
 
 Pour ce que le compilateur ne sait pas encore exprimer:
 
+- `plx.sqlLib` pour la bibliotheque SQL experte appliquee avant le code genere
 - `plx.post_apply` pour DDL complementaire idempotent
 - helpers SQL manuels pour logique riche
 
 Exemples:
 
+- fonctions de geometrie ou de rendu specialisees
 - DDL vraiment hors subset supporte
 - vues auxiliaires
 - triggers techniques

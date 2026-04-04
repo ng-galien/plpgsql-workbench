@@ -81,6 +81,7 @@ Points d'extension a privilegier:
 - `strategies.list.query`
 - `generated`
 - `indexes`
+- `plx.sqlLib`
 - `plx.post_apply`
 
 Ne pas sortir trop vite du DSL si un point d'extension existe deja.
@@ -102,6 +103,25 @@ Avant de sortir du DSL:
 - utiliser `generated` pour les colonnes `GENERATED ALWAYS` recurrentes
 - utiliser `indexes` pour les index simples, GIN et partiels
 - utiliser `states` pour les branches simples comme `submitted -> rejected` si l'etat cible est declare
+- utiliser `plx.sqlLib` pour le SQL expert que la facade PLX appelle ou sur lequel elle s'appuie
+
+## Module Mixte
+
+Quand un module combine facade standard et noyau SQL expert:
+
+- `plx.entry` porte la facade declarative
+- `plx.sqlLib` porte la bibliotheque SQL appliquee avant le code genere
+- `plx.seed` garde les donnees de reference
+- `plx.post_apply` reste reserve aux complements finaux qui doivent s'executer apres l'apply principal
+
+Ordre du workflow:
+
+1. `extensions`
+2. `plx.sqlLib`
+3. artefacts PLX generes
+4. `i18n_seed()`
+5. `plx.seed`
+6. `plx.post_apply`
 
 Le manuel doit alors etre clairement place:
 
