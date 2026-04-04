@@ -3,9 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { type CompileWarning, compileModuleAndValidate, compileModuleBundle } from "../plx/compiler.js";
 import { collectCalls, resolveCallTarget } from "../plx/composition.js";
-import type { ModuleContract } from "../plx/contract.js";
+import { buildModuleContract, type ModuleContract } from "../plx/contract.js";
+import { loadPlxManifest, type PlxModuleManifest, plxBuildTargets } from "../plx/manifest.js";
 import { loadPlxModule } from "../plx/module-loader.js";
-import { loadManifest, type ModuleManifest } from "./resolver.js";
+import { loadManifest } from "./resolver.js";
 
 interface PlxBuildResult {
   files: string[];
@@ -26,6 +27,7 @@ export interface PreparedPlxModule {
   entry: string;
   files: string[];
   warnings: string[];
+  contract?: ModuleContract;
   outputs: {
     ddl?: { file?: string; content: string; hash: string };
     func?: { file?: string; content: string; hash: string };
@@ -36,7 +38,7 @@ export interface PreparedPlxModule {
 
 export async function buildPlxModule(
   modulesDir: string,
-  manifest: ModuleManifest,
+  manifest: PlxModuleManifest,
   options: { validate?: boolean } = {},
 ): Promise<PlxBuildResult> {
   const prepared = await preparePlxModule(modulesDir, manifest, options);
@@ -51,20 +53,10 @@ export async function buildPlxModule(
 
 export async function preparePlxModule(
   modulesDir: string,
-  manifest: ModuleManifest,
+  manifest: PlxModuleManifest,
   options: { validate?: boolean } = {},
 ): Promise<PreparedPlxModule> {
-  const entry = manifest.plx?.entry;
-  if (!entry) {
-    return {
-      entry: "",
-      files: [],
-      warnings: [],
-      outputs: {},
-      artifacts: [],
-    };
-  }
-
+  const entry = manifest.plx.entry;
   const moduleDir = path.join(modulesDir, manifest.name);
   const entryPath = path.join(moduleDir, entry);
   await fs.access(entryPath);
@@ -77,6 +69,7 @@ export async function preparePlxModule(
     throw new Error(`PLX build failed for module '${manifest.name}': ${formatted}`);
   }
 
+  const contract = buildModuleContract(loaded.module);
   const dependencyContracts = await loadDependencyContracts(modulesDir, manifest);
   const bundle = compileModuleBundle(loaded.module, { dependencyContracts });
   let { result } = bundle;
@@ -88,7 +81,7 @@ export async function preparePlxModule(
     throw new Error(`PLX build failed for module '${manifest.name}': ${formatted}`);
   }
 
-  const targets = resolveTargets(manifest);
+  const targets = plxBuildTargets(manifest.name);
   const extraSchemaArtifacts = buildSupplementalSchemaArtifacts(bundle, manifest);
   const ddlContent = buildGeneratedDdl(bundle, extraSchemaArtifacts);
   const ddlHash = ddlContent ? hashContent(ddlContent) : undefined;
@@ -103,6 +96,7 @@ export async function preparePlxModule(
     entry,
     files: loaded.files,
     warnings: result.warnings.map(formatWarning),
+    contract,
     outputs: {
       ddl: ddlContent && ddlHash ? { file: targets.ddl, content: ddlContent, hash: ddlHash } : undefined,
       func: result.sql.trim() ? { file: targets.func, content: result.sql, hash: hashContent(result.sql) } : undefined,
@@ -116,10 +110,11 @@ export async function preparePlxModule(
 
 async function loadDependencyContracts(
   modulesDir: string,
-  manifest: ModuleManifest,
+  manifest: PlxModuleManifest,
 ): Promise<Map<string, ModuleContract>> {
   const contracts = new Map<string, ModuleContract>();
-  for (const dep of manifest.dependencies) {
+  for (const dep of manifest.dependencies ?? []) {
+    // Dependencies may be PLX or legacy — use loadManifest which handles both
     const dependency = await loadManifest(modulesDir, dep);
     if (dependency.plxContract) contracts.set(dep, dependency.plxContract);
   }
@@ -160,30 +155,7 @@ export async function writePreparedBuildFiles(
   return written;
 }
 
-function resolveTargets(manifest: ModuleManifest): {
-  ddl?: string;
-  func?: string;
-  test?: string;
-} {
-  const sqlFiles = manifest.sql ?? [];
-  return {
-    ddl: sqlFiles.find((file) => isPrimaryDdl(file)),
-    func: sqlFiles.find((file) => isPrimaryFunc(file)),
-    test: sqlFiles.find((file) => isUnitTestFunc(file)),
-  };
-}
-
-function isPrimaryDdl(file: string): boolean {
-  return file.endsWith(".ddl.sql") && !file.includes("_qa.") && !file.includes("_ut.") && !file.includes("_it.");
-}
-
-function isPrimaryFunc(file: string): boolean {
-  return file.endsWith(".func.sql") && !file.includes("_qa.") && !file.includes("_ut.") && !file.includes("_it.");
-}
-
-function isUnitTestFunc(file: string): boolean {
-  return file.endsWith("_ut.func.sql");
-}
+// resolveTargets removed — use plxBuildTargets() from manifest.ts
 
 async function writeModuleFile(moduleDir: string, relativePath: string, content: string): Promise<void> {
   const outputPath = path.join(moduleDir, relativePath);
@@ -200,7 +172,7 @@ async function writeModuleFile(moduleDir: string, relativePath: string, content:
 
 function collectPreparedArtifacts(
   bundle: ReturnType<typeof compileModuleBundle>,
-  targets: ReturnType<typeof resolveTargets>,
+  targets: ReturnType<typeof plxBuildTargets>,
   extraDdlArtifacts: PlxPreparedArtifact[] = [],
 ): PlxPreparedArtifact[] {
   const artifacts: PlxPreparedArtifact[] = [...extraDdlArtifacts];
@@ -309,11 +281,11 @@ function buildGeneratedDdl(
 
 function buildSupplementalSchemaArtifacts(
   bundle: ReturnType<typeof compileModuleBundle>,
-  manifest: ModuleManifest,
+  manifest: PlxModuleManifest,
 ): PlxPreparedArtifact[] {
   const existing = new Set(bundle.artifact.ddlArtifacts.map((artifact) => artifact.key));
-  const targets = resolveTargets(manifest);
-  const schemas = [manifest.schemas.private, manifest.schemas.qa].filter((value): value is string => Boolean(value));
+  const targets = plxBuildTargets(manifest.name);
+  const schemas = [manifest.private, `${manifest.name}_qa`].filter((value): value is string => Boolean(value));
 
   return schemas
     .filter((schema) => !existing.has(`ddl:schema:${schema}`))

@@ -78,21 +78,20 @@ export function createPgmModuleStatusTool({
         tracking = "error";
       }
 
-      const contract = workflow.manifest.plxContract;
+      const contract = workflow.prepared.contract;
       const exports = contract?.exports.map((symbol) => `${symbol.schema}.${symbol.name}`) ?? [];
+      const dependencies = workflow.manifest.dependencies ?? [];
       const body: string[] = [];
 
       body.push(`module: ${workflow.manifest.name}`);
       body.push(`description: ${workflow.manifest.description}`);
       body.push(`path: ${rel(registry.workspaceRoot, workflow.moduleDir)}`);
-      body.push(`entry: ${workflow.manifest.plx?.entry ?? "none"}`);
+      body.push(`entry: ${workflow.manifest.plx.entry}`);
       body.push(`fragments: ${Math.max(0, workflow.prepared.files.length - 1)}`);
       body.push(`files: ${workflow.prepared.files.length}`);
 
       body.push("");
-      body.push(
-        `depends: ${workflow.manifest.dependencies.length > 0 ? workflow.manifest.dependencies.join(", ") : "none"}`,
-      );
+      body.push(`depends: ${dependencies.length > 0 ? dependencies.join(", ") : "none"}`);
       if (exports.length > 0) {
         body.push("exports:");
         for (const item of exports) body.push(`  - ${item}`);

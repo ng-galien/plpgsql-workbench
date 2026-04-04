@@ -44,22 +44,29 @@ export async function buildModuleRegistry(workspaceRoot: string): Promise<Module
       const manifestPath = path.join(modulesDir, entry.name, "module.json");
       try {
         const raw = await fs.readFile(manifestPath, "utf-8");
-        const manifest = JSON.parse(raw) as ModuleManifest;
+        const manifest = JSON.parse(raw) as Record<string, unknown>;
+        const name = manifest.name as string;
+        const isPlx = Boolean((manifest.plx as Record<string, unknown> | undefined)?.entry);
 
         const schemas: string[] = [];
-        if (manifest.schemas.public) schemas.push(manifest.schemas.public);
-        if (manifest.schemas.private) schemas.push(manifest.schemas.private);
+        const pub = isPlx ? name : (manifest.schemas as Record<string, string | null> | undefined)?.public;
+        if (pub) schemas.push(pub);
+        if (!isPlx && (manifest.schemas as Record<string, string | null> | undefined)?.private) {
+          schemas.push((manifest.schemas as Record<string, string>).private!);
+        }
+        if (isPlx && manifest.private) schemas.push(manifest.private as string);
         // Also include test/qa schemas by convention
-        if (manifest.schemas.public) {
-          schemas.push(`${manifest.schemas.public}_ut`);
-          schemas.push(`${manifest.schemas.public}_it`);
-          schemas.push(`${manifest.schemas.public}_qa`);
+        if (pub) {
+          schemas.push(`${pub}_ut`);
+          schemas.push(`${pub}_it`);
+          schemas.push(`${pub}_qa`);
         }
 
-        const functionsFile = manifest.sql.find((f) => f.endsWith(".func.sql")) ?? "";
+        const sqlFiles = isPlx ? [`build/${name}.func.sql`] : ((manifest.sql as string[]) ?? []);
+        const functionsFile = sqlFiles.find((f: string) => f.endsWith(".func.sql")) ?? "";
 
         mappings.push({
-          module: manifest.name,
+          module: name,
           modulePath: path.join(modulesDir, entry.name),
           functionsFile,
           schemas,

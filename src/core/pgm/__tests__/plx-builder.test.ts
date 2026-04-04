@@ -2,9 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { loadPlxManifest } from "../../plx/manifest.js";
 import { installModules } from "../installer.js";
 import { buildPlxModule } from "../plx-builder.js";
-import { loadManifest, resolve } from "../resolver.js";
+import { resolve } from "../resolver.js";
 
 const tmpRoots: string[] = [];
 
@@ -41,12 +42,6 @@ describe("pgm PLX build integration", () => {
         name: "quote",
         version: "0.1.0",
         description: "Quote",
-        schemas: { public: "quote", private: null },
-        dependencies: [],
-        extensions: [],
-        sql: ["build/quote.ddl.sql", "build/quote.func.sql", "build/quote_ut.func.sql"],
-        assets: {},
-        grants: {},
         plx: { entry: "src/quote.plx" },
       },
       `
@@ -62,7 +57,7 @@ test "estimate read":
     );
 
     const modulesDir = path.join(root, "modules");
-    const manifest = await loadManifest(modulesDir, "quote");
+    const manifest = await loadPlxManifest(modulesDir, "quote");
     const result = await buildPlxModule(modulesDir, manifest, { validate: false });
 
     expect(result.files).toEqual(["build/quote.ddl.sql", "build/quote.func.sql", "build/quote_ut.func.sql"]);

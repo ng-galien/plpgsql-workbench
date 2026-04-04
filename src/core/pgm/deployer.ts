@@ -6,6 +6,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
+import { fromModuleManifest } from "../plx/manifest.js";
 import { buildPlxModule } from "./plx-builder.js";
 import type { InstallPlan, ModuleManifest } from "./resolver.js";
 
@@ -198,7 +199,7 @@ export async function deployModules(
       if (only && manifest.name !== only) continue;
 
       try {
-        const build = await buildPlxModule(modulesDir, manifest, { validate: false });
+        const build = await buildPlxModule(modulesDir, fromModuleManifest(manifest), { validate: false });
         for (const warning of build.warnings) {
           console.warn(`  WARN   ${manifest.name}: ${warning}`);
         }

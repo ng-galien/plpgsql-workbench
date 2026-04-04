@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DbClient } from "../connection.js";
+import { loadPlxManifest, type PlxModuleManifest, plxSchema } from "../plx/manifest.js";
 import { quoteIdent } from "../sql.js";
 import {
   ensureAppliedArtifactTable,
@@ -10,7 +11,6 @@ import {
 import { notifyPostgrestSchemaReload } from "../tooling/primitives/postgrest.js";
 import { withTransaction } from "../tooling/primitives/transaction.js";
 import { hashContent, type PreparedPlxModule, preparePlxModule, writePreparedBuildFiles } from "./plx-builder.js";
-import { loadManifest, type ModuleManifest } from "./resolver.js";
 
 type ModuleWorkflowArtifactKind = "extension" | "ddl" | "function" | "test" | "grant";
 
@@ -51,7 +51,7 @@ export interface PreparedModuleWorkflow {
   workspaceRoot: string;
   modulesDir: string;
   moduleDir: string;
-  manifest: ModuleManifest;
+  manifest: PlxModuleManifest;
   prepared: PreparedPlxModule;
   artifacts: ModuleWorkflowArtifact[];
   buildFiles: ModuleBuildFileStatus[];
@@ -91,10 +91,7 @@ export async function prepareModuleWorkflow(
   options: { validate?: boolean } = { validate: false },
 ): Promise<PreparedModuleWorkflow> {
   const modulesDir = path.join(workspaceRoot, "modules");
-  const manifest = await loadManifest(modulesDir, moduleName);
-  if (!manifest.plx?.entry) {
-    throw new Error(`Module '${moduleName}' has no plx.entry`);
-  }
+  const manifest = await loadPlxManifest(modulesDir, moduleName);
 
   const moduleDir = path.join(modulesDir, moduleName);
   const prepared = await preparePlxModule(modulesDir, manifest, options);
@@ -276,16 +273,15 @@ export async function applyModuleIncremental(
   return { ...committedResult, postActions };
 }
 
-async function runModulePostApply(client: DbClient, manifest: ModuleManifest): Promise<string[]> {
+async function runModulePostApply(client: DbClient, manifest: PlxModuleManifest): Promise<string[]> {
   const actions: string[] = [];
   const seeded = await runModuleI18nSeed(client, manifest);
   if (seeded) actions.push(seeded);
   return actions;
 }
 
-export async function runModuleI18nSeed(client: DbClient, manifest: ModuleManifest): Promise<string | undefined> {
-  const schema = manifest.schemas.public;
-  if (!schema) return undefined;
+export async function runModuleI18nSeed(client: DbClient, manifest: PlxModuleManifest): Promise<string | undefined> {
+  const schema = plxSchema(manifest);
 
   const { rows } = await client.query<{ present: number }>(
     `SELECT 1 AS present
@@ -359,11 +355,12 @@ async function collectBuildFileStatus(
   return entries;
 }
 
-function buildManifestArtifacts(manifest: ModuleManifest): ModuleWorkflowArtifact[] {
+function buildManifestArtifacts(manifest: PlxModuleManifest): ModuleWorkflowArtifact[] {
   const artifacts: ModuleWorkflowArtifact[] = [];
+  const extensions = manifest.extensions ?? [];
 
-  if (manifest.extensions.length > 0) {
-    const content = manifest.extensions.map((ext) => `CREATE EXTENSION IF NOT EXISTS ${quoteIdent(ext)};`).join("\n");
+  if (extensions.length > 0) {
+    const content = extensions.map((ext) => `CREATE EXTENSION IF NOT EXISTS ${quoteIdent(ext)};`).join("\n");
     artifacts.push({
       key: "extensions",
       kind: "extension",

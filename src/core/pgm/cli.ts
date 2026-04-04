@@ -18,6 +18,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
+import { fromModuleManifest } from "../plx/manifest.js";
 import { checkModules, deployModules } from "./deployer.js";
 import { installModules } from "./installer.js";
 import { buildPlxModule } from "./plx-builder.js";
@@ -343,7 +344,7 @@ mod
       return;
     }
 
-    const result = await buildPlxModule(modulesDir, manifest, { validate: opts.validate });
+    const result = await buildPlxModule(modulesDir, fromModuleManifest(manifest), { validate: opts.validate });
     if (result.files.length === 0) {
       console.log(`No PLX artifacts generated for ${moduleName}`);
     } else {

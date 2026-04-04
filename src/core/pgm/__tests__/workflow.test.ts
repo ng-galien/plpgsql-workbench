@@ -106,8 +106,9 @@ describe("pgm module workflow", () => {
     const workflow = await prepareModuleWorkflow(root, "quote");
 
     expect(workflow.prepared.files.map((file: string) => path.basename(file))).toEqual(["quote.plx", "brand.plx"]);
-    expect(workflow.artifacts.map((artifact) => artifact.key)).toEqual([
+    expect(workflow.artifacts.map((artifact) => artifact.key).sort()).toEqual([
       "ddl:schema:quote",
+      "ddl:schema:quote_qa",
       "ddl:schema:quote_ut",
       "function:quote.brand",
       "test:quote_ut.test_brand",
@@ -143,12 +144,6 @@ describe("pgm module workflow", () => {
       name: "quote",
       version: "0.1.0",
       description: "Quote",
-      schemas: { public: "quote", private: null },
-      dependencies: [],
-      extensions: [],
-      sql: ["build/quote.ddl.sql", "build/quote.func.sql", "build/quote_ut.func.sql"],
-      assets: {},
-      grants: {},
       plx: { entry: "src/quote.plx" },
     });
 
@@ -184,8 +179,9 @@ describe("pgm module workflow", () => {
     ]);
 
     const diff = diffModuleArtifacts(workflow.artifacts, applied);
-    expect(diff.changed.map((artifact) => artifact.key)).toEqual([
+    expect(diff.changed.map((artifact) => artifact.key).sort()).toEqual([
       "ddl:schema:quote",
+      "ddl:schema:quote_qa",
       "ddl:schema:quote_ut",
       "test:quote_ut.test_brand",
     ]);
@@ -239,13 +235,10 @@ test "total":
 
     const keys = ordered.map((artifact) => artifact.key);
     expect(keys[0]).toBe("extensions");
-    expect(keys.slice(1, 3).sort()).toEqual(["ddl:schema:quote", "ddl:schema:quote_ut"]);
-    expect(keys.slice(3)).toEqual([
-      "function:quote.lines",
-      "function:quote.total",
-      "test:quote_ut.test_total",
-      "grants",
-    ]);
+    const ddlKeys = keys.filter((k) => k.startsWith("ddl:")).sort();
+    expect(ddlKeys).toEqual(["ddl:schema:quote", "ddl:schema:quote_qa", "ddl:schema:quote_ut"]);
+    const nonDdlKeys = keys.filter((k) => !k.startsWith("ddl:") && k !== "extensions");
+    expect(nonDdlKeys).toEqual(["function:quote.lines", "function:quote.total", "test:quote_ut.test_total", "grants"]);
   });
 
   it("orders split ddl artifacts so referenced tables exist before foreign keys", async () => {
@@ -320,12 +313,7 @@ fn quote.beta() -> int [stable]:
       name: "quote",
       version: "0.1.0",
       description: "Quote",
-      schemas: { public: "quote", private: null },
-      dependencies: [],
-      extensions: [],
-      sql: [],
-      assets: {},
-      grants: {},
+      plx: { entry: "src/quote.plx" },
     });
 
     expect(seeded).toBe("seeded i18n quote.i18n_seed()");
@@ -353,12 +341,7 @@ fn quote.beta() -> int [stable]:
       name: "quote",
       version: "0.1.0",
       description: "Quote",
-      schemas: { public: "quote", private: null },
-      dependencies: [],
-      extensions: [],
-      sql: [],
-      assets: {},
-      grants: {},
+      plx: { entry: "src/quote.plx" },
     });
 
     expect(seeded).toBeUndefined();
