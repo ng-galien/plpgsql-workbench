@@ -1,0 +1,92 @@
+[fr]
+catalog.brand = Catalogue
+catalog.nav_articles = Articles
+catalog.nav_categories = Catégories
+catalog.nav_suppliers = Fournisseurs
+
+catalog.entity_article = Article
+catalog.entity_category = Catégorie
+catalog.entity_unit = Unité
+catalog.entity_supplier_article = Fournisseur article
+catalog.entity_pricing_tier = Palier tarifaire
+
+catalog.stat_active_articles = Articles actifs
+catalog.stat_categories = Catégories
+catalog.stat_avg_sale_price = Prix moyen vente
+catalog.stat_article_count = Articles
+catalog.stat_children_count = Sous-catégories
+catalog.stat_supplier_count = Fournisseurs
+
+catalog.field_reference = Référence
+catalog.field_name = Nom
+catalog.field_category = Catégorie
+catalog.field_description = Description
+catalog.field_unit = Unité
+catalog.field_vat_rate = TVA
+catalog.field_sale_price = Prix vente HT
+catalog.field_purchase_price = Prix achat HT
+catalog.field_status = Statut
+catalog.field_search = Recherche
+catalog.field_parent = Catégorie parente
+catalog.field_sort_order = Ordre
+catalog.field_active = Actif
+catalog.field_barcode = Code-barres
+catalog.field_image = Image
+catalog.field_weight = Poids (kg)
+catalog.field_min_order_qty = Qté min commande
+catalog.field_supplier_name = Fournisseur
+catalog.field_supplier_ref = Réf. fournisseur
+catalog.field_cost_price = Prix fournisseur HT
+catalog.field_lead_time = Délai (jours)
+catalog.field_moq = Qté min fournisseur
+catalog.field_preferred = Préféré
+catalog.field_article = Article
+catalog.field_min_qty = À partir de
+catalog.field_unit_price = Prix unitaire
+
+catalog.col_ref = Réf.
+catalog.col_name = Nom
+catalog.col_category = Catégorie
+catalog.col_sale_price = PV HT
+catalog.col_purchase_price = PA HT
+catalog.col_unit = Unité
+catalog.col_vat_rate = TVA
+catalog.col_status = Statut
+catalog.col_parent = Parente
+catalog.col_articles = Articles
+
+catalog.section_identity = Identité
+catalog.section_classification = Classification
+catalog.section_pricing = Tarification
+catalog.section_logistics = Logistique
+catalog.section_category = Catégorie
+catalog.section_supplier = Fournisseur
+
+catalog.action_edit = Modifier
+catalog.action_delete = Supprimer
+catalog.action_deactivate = Désactiver
+catalog.action_activate = Réactiver
+
+catalog.confirm_delete_article = Supprimer cet article ?
+catalog.confirm_delete_category = Supprimer cette catégorie ?
+catalog.confirm_delete_supplier = Supprimer ce fournisseur ?
+
+catalog.related_quotes = Devis
+catalog.related_purchases = Achats
+catalog.related_stock = Stock
+
+catalog.badge_active = Actif
+catalog.badge_inactive = Inactif
+
+catalog.empty_no_article = Aucun article
+catalog.empty_first_article = Ajoutez votre premier article au catalogue.
+catalog.empty_no_category = Aucune catégorie
+catalog.empty_no_supplier = Aucun fournisseur
+
+catalog.err_not_found = Article introuvable.
+catalog.err_name_required = Le nom est obligatoire.
+catalog.toast_created = Article créé.
+catalog.toast_updated = Article modifié.
+catalog.toast_deleted = Article supprimé.
+catalog.toast_deactivated = Article désactivé.
+catalog.toast_activated = Article réactivé.

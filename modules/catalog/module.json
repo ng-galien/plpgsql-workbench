@@ -1,31 +1,7 @@
 {
   "name": "catalog",
-  "version": "0.1.0",
-  "description": "Catalogue produits/services — tarifs, unités, catégories (alimente quote + stock)",
-  "schemas": {
-    "public": "catalog",
-    "test": "catalog_ut",
-    "qa": "catalog_qa"
-  },
-  "dependencies": [
-    "pgv"
-  ],
-  "extensions": [],
-  "sql": [
-    "build/catalog.ddl.sql",
-    "build/catalog.func.sql",
-    "build/catalog.seed.sql",
-    "build/catalog_qa.func.sql",
-    "build/catalog_ut.func.sql"
-  ],
-  "assets": {
-    "frontend": [],
-    "scripts": [],
-    "styles": []
-  },
-  "grants": {
-    "anon": [
-      "catalog"
-    ]
-  }
+  "version": "0.2.0",
+  "description": "Product/Service catalog — articles, categories, suppliers, pricing tiers",
+  "plx": { "entry": "plx/catalog.plx", "seed": "plx/seed.sql", "post_apply": "plx/post_apply.sql" },
+  "grants": { "anon": ["catalog"] }
 }
