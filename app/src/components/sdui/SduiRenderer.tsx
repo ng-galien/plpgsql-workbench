@@ -6,7 +6,7 @@ import { Workflow } from "@/components/primitives/Workflow";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { get } from "@/lib/api";
-import type { SduiActionNode, SduiNode } from "@/lib/sdui";
+import type { SduiActionNode, SduiField, SduiNode } from "@/lib/sdui";
 import { getSduiDataForSource } from "@/lib/sdui";
 import { fieldKey, fieldLabel, fieldType, formatDate, formatDatetime } from "@/lib/utils";
 
@@ -165,6 +165,7 @@ function SduiFieldControl({
     type: string;
     label: string;
     required?: boolean;
+    search?: boolean;
     options?: unknown;
     source?: string;
     display?: string;
@@ -181,6 +182,11 @@ function SduiFieldControl({
 
   switch (field.type) {
     case "select": {
+      if (field.search) {
+        return (
+          <SduiComboboxField field={field} value={value} label={label} inputClass={inputClass} onChange={setValue} />
+        );
+      }
       const options: Array<{ value: string; label: string } | string> = Array.isArray(field.options)
         ? field.options
         : [];
@@ -220,11 +226,6 @@ function SduiFieldControl({
             rows={3}
           />
         </label>
-      );
-
-    case "combobox":
-      return (
-        <SduiComboboxField field={field} value={value} label={label} inputClass={inputClass} onChange={setValue} />
       );
 
     case "checkbox":
@@ -385,7 +386,7 @@ function SduiDetail({
   data,
   t,
 }: {
-  fields: Array<string | { key: string; type?: string; label?: string }>;
+  fields: SduiField[];
   data?: Record<string, unknown>;
   t: (key: string) => string;
 }) {

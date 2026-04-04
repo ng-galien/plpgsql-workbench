@@ -1,5 +1,11 @@
 import { create } from "zustand";
 import { get as apiGet } from "./api";
+import type {
+  SduiFormField as FormField,
+  SduiFormSection as FormSection,
+  SduiViewField as ViewField,
+  SduiViewTemplate as ViewTemplate,
+} from "./generated/sdui-contract";
 import { sdui, supabase } from "./supabase";
 
 // --- Types ---
@@ -30,46 +36,7 @@ export interface Toast {
   timeout?: number;
 }
 
-export type ViewField = string | { key: string; type?: string; label?: string };
-
-export interface FormField {
-  key: string;
-  type: string;
-  label: string;
-  required?: boolean;
-  options?: unknown;
-  source?: string;
-  display?: string;
-  filter?: string;
-}
-
-export interface FormSection {
-  label: string;
-  fields: FormField[];
-}
-
-export interface ViewTemplate {
-  uri?: string;
-  label?: string;
-  icon?: string;
-  template?: {
-    compact?: { fields: ViewField[] };
-    standard?: {
-      fields: ViewField[];
-      stats?: { key: string; label: string; variant?: string }[];
-      related?: { entity: string; label: string; filter: string }[];
-    };
-    expanded?: {
-      fields: ViewField[];
-      stats?: { key: string; label: string; variant?: string }[];
-      related?: { entity: string; label: string; filter: string }[];
-    };
-    form?: {
-      sections: FormSection[];
-    };
-  };
-  actions?: Record<string, { label: string; icon?: string; variant?: string; confirm?: string }>;
-}
+export type { FormField, FormSection, ViewField, ViewTemplate };
 
 export interface CardAction {
   id: string;

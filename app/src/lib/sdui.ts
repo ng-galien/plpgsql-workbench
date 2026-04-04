@@ -1,4 +1,8 @@
-import type { FormField, ViewField, ViewTemplate } from "./store";
+import type {
+  SduiFormField as FormField,
+  SduiViewField as ViewField,
+  SduiViewTemplate as ViewTemplate,
+} from "./generated/sdui-contract";
 import { fieldKey } from "./utils";
 
 export interface SduiActionNode {
