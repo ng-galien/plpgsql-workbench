@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DbClient } from "../connection.js";
 import { hashContent } from "../pgm/plx-builder.js";
+import { quoteIdent } from "../sql.js";
 import {
   diffAppliedArtifacts,
   ensureAppliedArtifactTable,
@@ -255,10 +256,6 @@ async function listSqlFiles(dir: string): Promise<string[]> {
     .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
     .map((entry) => path.join(path.basename(dir), entry.name).split(path.sep).join("/"))
     .sort();
-}
-
-function quoteIdent(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
 }
 
 function toApplyFailure(error: unknown): RuntimeApplyFailure {

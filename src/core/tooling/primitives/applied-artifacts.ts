@@ -1,4 +1,5 @@
 import type { DbClient } from "../../connection.js";
+import { quoteIdent } from "../../sql.js";
 
 export interface ArtifactLike<Kind extends string = string> {
   key: string;
@@ -138,8 +139,4 @@ export async function upsertAppliedArtifactState<Kind extends string = string>(
        applied_at = now()`,
     [scope.scopeValue, artifact.key, artifact.kind, artifact.name, file ?? null, artifact.hash],
   );
-}
-
-function quoteIdent(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
 }

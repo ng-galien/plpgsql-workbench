@@ -8,7 +8,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
-import { type AwilixContainer, asValue, createContainer } from "awilix";
+import type { AwilixContainer } from "awilix";
 import type { z } from "zod";
 import type { DbClient } from "./connection.js";
 import type { ToolResult } from "./helpers.js"; // used by ToolHandler
@@ -29,44 +29,6 @@ export interface ToolMetadata {
 export interface ToolHandler {
   metadata: ToolMetadata;
   handler: (args: Record<string, unknown>, extra: ToolExtra) => Promise<ToolResult>;
-}
-
-/** A pack registers services and tools into the container. */
-export type ToolPack = (container: AwilixContainer, config: Record<string, unknown>) => void;
-
-/** Profile: which packs to load + their config. */
-export interface WorkbenchProfile {
-  packs: Record<string, Record<string, unknown>>;
-}
-
-// --- Container builder ---
-
-export function buildContainer(profile: WorkbenchProfile, packs: Record<string, ToolPack>): AwilixContainer {
-  const container = createContainer({ strict: true });
-
-  // Register each requested pack
-  for (const [name, config] of Object.entries(profile.packs)) {
-    const pack = packs[name];
-    if (!pack) throw new Error(`Unknown pack: ${name}`);
-    pack(container, config);
-  }
-
-  // Resolve only tool registrations (named *Tool) to avoid eagerly creating
-  // infrastructure like the DB pool at startup.
-  const registry = new Map<string, ToolHandler>();
-  for (const name of Object.keys(container.registrations)) {
-    if (!name.endsWith("Tool")) continue;
-    const val = container.resolve(name);
-    if (isToolHandler(val)) {
-      registry.set(val.metadata.name, val);
-    }
-  }
-
-  container.register({
-    toolRegistry: asValue(registry),
-  });
-
-  return container;
 }
 
 // --- MCP mounting ---
@@ -111,17 +73,4 @@ export async function mountTools(server: McpServer, container: AwilixContainer, 
       },
     );
   }
-}
-
-// --- Guard ---
-
-function isToolHandler(val: unknown): val is ToolHandler {
-  return (
-    typeof val === "object" &&
-    val !== null &&
-    "metadata" in val &&
-    "handler" in val &&
-    typeof (val as any).metadata?.name === "string" &&
-    typeof (val as any).handler === "function"
-  );
 }

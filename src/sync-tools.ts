@@ -3,35 +3,21 @@
 /**
  * sync-tools — Syncs tool definitions from code into workbench.toolbox/toolbox_tool tables.
  *
- * Reads the Awilix registry, creates an "admin" toolbox with all tools.
+ * Reads the plugin registry, creates an "admin" toolbox with all tools.
  * Run after deploy/migration: npm run sync-tools
  */
 
 import { Pool } from "pg";
 import { toJSONSchema } from "zod";
-import { docmanPack } from "./commands/packs/docman.js";
-import { docstorePack } from "./commands/packs/docstore.js";
-import { googlePack } from "./commands/packs/google.js";
-import { plpgsqlPack } from "./commands/packs/plpgsql.js";
-import { buildContainer, type ToolHandler, type ToolPack } from "./core/container.js";
+import type { ToolHandler } from "./core/container.js";
+import { buildPluginContainer } from "./core/plugin-registry.js";
+import { ALL_PLUGINS } from "./plugins/index.js";
 
 const connectionString =
   process.env.PLPGSQL_CONNECTION ?? process.env.DATABASE_URL ?? "postgresql://postgres@localhost:5432/postgres";
 
-const packConfigs: Record<string, Record<string, unknown>> = {
-  plpgsql: {},
-  docstore: {},
-  google: {},
-  docman: {},
-};
-const packImpls: Record<string, ToolPack> = {
-  plpgsql: plpgsqlPack,
-  docstore: docstorePack,
-  google: googlePack,
-  docman: docmanPack,
-};
-
-const container = buildContainer({ packs: packConfigs }, packImpls);
+const manifest = { plugins: Object.fromEntries(ALL_PLUGINS.map((p) => [p.id, {}])) };
+const { container } = buildPluginContainer(manifest, ALL_PLUGINS);
 const registry: Map<string, ToolHandler> = container.resolve("toolRegistry");
 const toolNames = [...registry.keys()];
 

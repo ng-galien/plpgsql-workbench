@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DbClient } from "../connection.js";
+import { quoteIdent } from "../sql.js";
 import {
   ensureAppliedArtifactTable,
   readAppliedArtifactStates,
@@ -295,7 +296,7 @@ export async function runModuleI18nSeed(client: DbClient, manifest: ModuleManife
   );
   if (rows.length === 0) return undefined;
 
-  await client.query(`SELECT ${qi(schema)}.i18n_seed()`);
+  await client.query(`SELECT ${quoteIdent(schema)}.i18n_seed()`);
   return `seeded i18n ${schema}.i18n_seed()`;
 }
 
@@ -362,7 +363,7 @@ function buildManifestArtifacts(manifest: ModuleManifest): ModuleWorkflowArtifac
   const artifacts: ModuleWorkflowArtifact[] = [];
 
   if (manifest.extensions.length > 0) {
-    const content = manifest.extensions.map((ext) => `CREATE EXTENSION IF NOT EXISTS ${qi(ext)};`).join("\n");
+    const content = manifest.extensions.map((ext) => `CREATE EXTENSION IF NOT EXISTS ${quoteIdent(ext)};`).join("\n");
     artifacts.push({
       key: "extensions",
       kind: "extension",
@@ -376,9 +377,9 @@ function buildManifestArtifacts(manifest: ModuleManifest): ModuleWorkflowArtifac
   const grantStatements: string[] = [];
   for (const [role, schemas] of Object.entries(manifest.grants ?? {})) {
     for (const schema of schemas) {
-      grantStatements.push(`GRANT USAGE ON SCHEMA ${qi(schema)} TO ${qi(role)};`);
-      grantStatements.push(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${qi(schema)} TO ${qi(role)};`);
-      grantStatements.push(`GRANT SELECT ON ALL TABLES IN SCHEMA ${qi(schema)} TO ${qi(role)};`);
+      grantStatements.push(`GRANT USAGE ON SCHEMA ${quoteIdent(schema)} TO ${quoteIdent(role)};`);
+      grantStatements.push(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${quoteIdent(schema)} TO ${quoteIdent(role)};`);
+      grantStatements.push(`GRANT SELECT ON ALL TABLES IN SCHEMA ${quoteIdent(schema)} TO ${quoteIdent(role)};`);
     }
   }
   if (grantStatements.length > 0) {
@@ -442,8 +443,8 @@ async function dropFunctionByIdentityArgs(
 ): Promise<void> {
   const dropSql =
     identityArgs.trim().length > 0
-      ? `DROP FUNCTION IF EXISTS ${qi(schema)}.${qi(name)}(${identityArgs})`
-      : `DROP FUNCTION IF EXISTS ${qi(schema)}.${qi(name)}()`;
+      ? `DROP FUNCTION IF EXISTS ${quoteIdent(schema)}.${quoteIdent(name)}(${identityArgs})`
+      : `DROP FUNCTION IF EXISTS ${quoteIdent(schema)}.${quoteIdent(name)}()`;
   await client.query(dropSql);
 }
 
@@ -603,8 +604,4 @@ function toApplyFailure(error: unknown, where = "plx_apply"): ModuleApplyFailure
         ? "Break the artifact dependency cycle or split the module so artifacts can be applied in a deterministic order."
         : undefined,
   };
-}
-
-function qi(id: string): string {
-  return `"${id.replace(/"/g, '""')}"`;
 }

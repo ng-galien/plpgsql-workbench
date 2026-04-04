@@ -1,4 +1,5 @@
 import type { DbClient } from "../../connection.js";
+import { quoteIdent, quoteLiteral } from "../../sql.js";
 
 export interface TestSessionConfig {
   testSchema: string;
@@ -93,12 +94,4 @@ export async function rollbackDeterministicTestSession(client: DbClient, state: 
 
 function deriveSourceSchema(testSchema: string): string {
   return testSchema.replace(/_(ut|it)$/, "");
-}
-
-function quoteIdent(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
-}
-
-function quoteLiteral(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
 }
