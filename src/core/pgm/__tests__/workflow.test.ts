@@ -108,7 +108,7 @@ describe("pgm module workflow", () => {
     expect(workflow.prepared.files.map((file: string) => path.basename(file))).toEqual(["quote.plx", "brand.plx"]);
     expect(workflow.artifacts.map((artifact) => artifact.key).sort()).toEqual([
       "ddl:schema:quote",
-      "ddl:schema:quote_qa",
+
       "ddl:schema:quote_ut",
       "function:quote.brand",
       "test:quote_ut.test_brand",
@@ -181,7 +181,7 @@ describe("pgm module workflow", () => {
     const diff = diffModuleArtifacts(workflow.artifacts, applied);
     expect(diff.changed.map((artifact) => artifact.key).sort()).toEqual([
       "ddl:schema:quote",
-      "ddl:schema:quote_qa",
+
       "ddl:schema:quote_ut",
       "test:quote_ut.test_brand",
     ]);
@@ -236,7 +236,7 @@ test "total":
     const keys = ordered.map((artifact) => artifact.key);
     expect(keys[0]).toBe("extensions");
     const ddlKeys = keys.filter((k) => k.startsWith("ddl:")).sort();
-    expect(ddlKeys).toEqual(["ddl:schema:quote", "ddl:schema:quote_qa", "ddl:schema:quote_ut"]);
+    expect(ddlKeys).toEqual(["ddl:schema:quote", "ddl:schema:quote_ut"]);
     const nonDdlKeys = keys.filter((k) => !k.startsWith("ddl:") && k !== "extensions");
     expect(nonDdlKeys).toEqual(["function:quote.lines", "function:quote.total", "test:quote_ut.test_total", "grants"]);
   });

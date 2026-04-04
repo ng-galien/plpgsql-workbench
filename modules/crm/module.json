@@ -2,6 +2,6 @@
   "name": "crm",
   "version": "0.1.0",
   "description": "Client management — individuals, companies, contacts, interactions",
-  "plx": { "entry": "plx/crm.plx" },
+  "plx": { "entry": "plx/crm.plx", "seed": "plx/seed.sql" },
   "grants": { "anon": ["crm"] }
 }

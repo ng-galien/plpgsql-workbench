@@ -87,6 +87,21 @@ export async function preparePlxModule(
   const ddlHash = ddlContent ? hashContent(ddlContent) : undefined;
   const artifacts = collectPreparedArtifacts(bundle, targets, extraSchemaArtifacts);
 
+  // Load seed artifact if declared
+  if (manifest.plx.seed) {
+    const seedPath = path.join(moduleDir, manifest.plx.seed);
+    const seedContent = await fs.readFile(seedPath, "utf-8");
+    artifacts.push({
+      key: "seed",
+      kind: "ddl",
+      name: `${manifest.name}.seed`,
+      file: manifest.plx.seed,
+      content: seedContent,
+      hash: hashContent(seedContent),
+      dependsOn: [],
+    });
+  }
+
   // Validate if requested — validation only adds warnings
   if (options.validate !== false) {
     result = await compileModuleAndValidate(loaded.module, { dependencyContracts });
@@ -285,7 +300,7 @@ function buildSupplementalSchemaArtifacts(
 ): PlxPreparedArtifact[] {
   const existing = new Set(bundle.artifact.ddlArtifacts.map((artifact) => artifact.key));
   const targets = plxBuildTargets(manifest.name);
-  const schemas = [manifest.private, `${manifest.name}_qa`].filter((value): value is string => Boolean(value));
+  const schemas = [manifest.private].filter((value): value is string => Boolean(value));
 
   return schemas
     .filter((schema) => !existing.has(`ddl:schema:${schema}`))

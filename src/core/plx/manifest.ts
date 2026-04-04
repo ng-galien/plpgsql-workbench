@@ -11,7 +11,7 @@ export interface PlxModuleManifest {
   name: string;
   version: string;
   description: string;
-  plx: { entry: string };
+  plx: { entry: string; seed?: string };
   dependencies?: string[];
   extensions?: string[];
   grants?: Record<string, string[]>;
@@ -35,7 +35,7 @@ export function plxBuildTargets(name: string): { ddl: string; func: string; test
 /** Derive all schemas owned by a PLX module. */
 export function plxSchemas(manifest: PlxModuleManifest): string[] {
   const pub = manifest.name;
-  const schemas = [pub, `${pub}_ut`, `${pub}_it`, `${pub}_qa`];
+  const schemas = [pub, `${pub}_ut`, `${pub}_it`];
   if (manifest.private) schemas.push(manifest.private);
   return schemas;
 }
@@ -86,7 +86,6 @@ export function toModuleManifest(plx: PlxModuleManifest): ModuleManifest {
     schemas: {
       public: plx.name,
       private: plx.private ?? null,
-      qa: `${plx.name}_qa`,
     },
     dependencies: plx.dependencies ?? [],
     extensions: plx.extensions ?? [],

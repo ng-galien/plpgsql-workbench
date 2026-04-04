@@ -269,14 +269,16 @@ export async function applyModuleIncremental(
   if (!committedResult) {
     throw new Error("module apply committed without a result payload");
   }
-  const postActions = await runModulePostApply(client, workflow.manifest);
+  const postActions = await runModulePostApply(client, workflow.manifest, workflow.moduleDir);
   return { ...committedResult, postActions };
 }
 
-async function runModulePostApply(client: DbClient, manifest: PlxModuleManifest): Promise<string[]> {
+async function runModulePostApply(client: DbClient, manifest: PlxModuleManifest, moduleDir: string): Promise<string[]> {
   const actions: string[] = [];
   const seeded = await runModuleI18nSeed(client, manifest);
   if (seeded) actions.push(seeded);
+  const seedAction = await runModuleSeed(client, manifest, moduleDir);
+  if (seedAction) actions.push(seedAction);
   return actions;
 }
 
@@ -294,6 +296,20 @@ export async function runModuleI18nSeed(client: DbClient, manifest: PlxModuleMan
 
   await client.query(`SELECT ${quoteIdent(schema)}.i18n_seed()`);
   return `seeded i18n ${schema}.i18n_seed()`;
+}
+
+async function runModuleSeed(
+  client: DbClient,
+  manifest: PlxModuleManifest,
+  moduleDir: string,
+): Promise<string | undefined> {
+  const seedFile = manifest.plx.seed;
+  if (!seedFile) return undefined;
+
+  const seedPath = path.join(moduleDir, seedFile);
+  const content = await fs.readFile(seedPath, "utf-8");
+  await client.query(content);
+  return `seeded ${manifest.name} from ${seedFile}`;
 }
 
 export async function syncModuleBuildFiles(workflow: PreparedModuleWorkflow): Promise<string[]> {
