@@ -539,11 +539,13 @@ export class ParseContext {
       return { kind: "literal", value: tok.value, type: "text", loc: tokenLoc(tok) };
     }
 
+    if (tok.type === "BOOLEAN") {
+      this.advance();
+      return { kind: "literal", value: tok.value === "true", type: "boolean", loc: tokenLoc(tok) };
+    }
+
     if (tok.type === "NUMBER") {
       this.advance();
-      if (tok.value === "true" || tok.value === "false") {
-        return { kind: "literal", value: tok.value === "true", type: "boolean", loc: tokenLoc(tok) };
-      }
       return { kind: "literal", value: Number(tok.value), type: "int", loc: tokenLoc(tok) };
     }
 
@@ -793,6 +795,7 @@ function isExprStartToken(tok: Token | undefined): boolean {
   if (!tok) return false;
   return (
     tok.type === "IDENT" ||
+    tok.type === "BOOLEAN" ||
     tok.type === "NUMBER" ||
     tok.type === "STRING" ||
     tok.type === "INTERP_STRING" ||

@@ -87,9 +87,9 @@ entity crm.client uses auditable:
     delete: {label: crm.action_delete, icon: 'X', variant: danger, confirm: crm.confirm_delete}
 ```
 
-### Entity — hybrid storage (columns + payload)
+### Entity — hybrid storage (fields + payload)
 
-`columns:` hold relational, indexed, or foreign-key-backed data. `payload:` holds flexible document data stored in `jsonb`.
+`fields:` hold structured relational data. `payload:` holds flexible document data stored in `jsonb`.
 
 ```plx
 entity project.task:
@@ -98,7 +98,7 @@ entity project.task:
   label: 'project.entity_task'
   list_order: 'created_at desc'
 
-  columns:
+  fields:
     project_id int ref(project.project)
     assignee_id int? ref(hr.employee)
     due_date date?
@@ -434,7 +434,7 @@ Rules:
 | Comment | `-- comment` |
 | Entity | `entity schema.name uses trait:` |
 | Row field | `name type modifiers` (`required`, `unique`, `?`, `default(...)`, `ref(...)`) |
-| Column (hybrid) | Same as row field, inside `columns:` |
+| Structured field (hybrid) | Same as row field, inside `fields:` |
 | Payload (hybrid) | Same as row field, inside `payload:` |
 | Function | `[export] fn schema.name(params) -> type [attrs]:` |
 | Test | `test "name":` |

@@ -68,6 +68,24 @@ export fn quote.read(id int, label text? = 'draft', count int = 1, fallback text
     ]);
   });
 
+  it("tokenizes and parses boolean literals as booleans", () => {
+    const tokens = tokenize(`
+fn demo.flags(done boolean = true) -> void:
+  assert false
+`);
+    expect(tokens.some((token) => token.type === "BOOLEAN" && token.value === "true")).toBe(true);
+    expect(tokens.some((token) => token.type === "BOOLEAN" && token.value === "false")).toBe(true);
+
+    const mod = parse(tokens);
+    expect(mod.functions[0]?.params[0]).toEqual(expect.objectContaining({ defaultValue: "true" }));
+    expect(mod.functions[0]?.body[0]).toEqual(
+      expect.objectContaining({
+        kind: "assert",
+        expression: expect.objectContaining({ kind: "literal", type: "boolean", value: false }),
+      }),
+    );
+  });
+
   it("errors when depends/include/export are declared before module", () => {
     expect(parseErrorOf("depends crm")).toMatchObject({ code: "parse.depends-without-module" });
     expect(parseErrorOf('include "./brand.plx"')).toMatchObject({ code: "parse.include-without-module" });

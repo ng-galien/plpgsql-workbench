@@ -151,7 +151,7 @@ quote.brand = Devis
     );
   });
 
-  it("requires pgv when a sidecar .i18n file is present", async () => {
+  it("compiles i18n sidecar without requiring a pgv dependency", async () => {
     const root = await createTmpDir();
     const entry = path.join(root, "quote.plx");
 
@@ -176,13 +176,8 @@ quote.brand = Devis
     const mod = loaded.module;
     if (!mod) throw new Error("expected loaded module");
     const result = compileModule(mod);
-    expect(result.errors).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "semantic.i18n-requires-pgv",
-        }),
-      ]),
-    );
+    expect(result.errors).toEqual([]);
+    expect(result.ddlSql).toContain("INSERT INTO i18n.translation");
   });
 
   it("warns when sidecar .i18n misses referenced keys", async () => {

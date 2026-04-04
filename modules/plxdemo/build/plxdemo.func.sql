@@ -7,6 +7,15 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION plxdemo.brand_payload()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE AS $$
+BEGIN
+  RETURN jsonb_build_object('entity', 'plxdemo', 'label', pgv.t('plxdemo.brand'));
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION plxdemo.project_create_kickoff_task(project_id int)
  RETURNS void
  LANGUAGE plpgsql
@@ -309,7 +318,7 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = 'P0400', MESSAGE = 'Bad Request', DETAIL = 'plxdemo.err_title_required';
   END IF;
   v_p_row := jsonb_populate_record(NULL::plxdemo.task, p_input);
-  IF NOT ((coalesce(p_input->>'priority', 'normal') in ('low', 'normal', 'high'))) THEN
+  IF NOT (coalesce(p_input->>'priority', 'normal') IN ('low', 'normal', 'high')) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0400', MESSAGE = 'Bad Request', DETAIL = 'priority_valid';
   END IF;
   INSERT INTO plxdemo.task (rank, note_id, project_id, payload)
@@ -345,7 +354,7 @@ BEGIN
     RAISE EXCEPTION 'plxdemo.err_not_found';
   END IF;
   v_p_row := jsonb_populate_record(v_current, p_input);
-  IF NOT ((coalesce(p_input->>'priority', 'normal') in ('low', 'normal', 'high'))) THEN
+  IF NOT (coalesce(p_input->>'priority', 'normal') IN ('low', 'normal', 'high')) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0400', MESSAGE = 'Bad Request', DETAIL = 'priority_valid';
   END IF;
   UPDATE plxdemo.task SET

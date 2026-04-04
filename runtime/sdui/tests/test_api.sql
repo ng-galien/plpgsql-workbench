@@ -4,6 +4,7 @@ CREATE OR REPLACE FUNCTION sdui_ut.test_api()
 AS $function$
 DECLARE
   v jsonb;
+  v_client_id int;
 BEGIN
   PERFORM set_config('app.tenant_id', 'dev', true);
 
@@ -20,6 +21,9 @@ BEGIN
   v := sdui.api('get', 'docs://charter');
   RETURN NEXT ok(v ? 'data', 'list: has data key');
   RETURN NEXT is(v->>'uri', 'docs://charter', 'list: uri preserved');
+  IF jsonb_typeof(v->'data') = 'array' AND jsonb_array_length(v->'data') > 0 THEN
+    RETURN NEXT ok(NOT ((v->'data'->0) ? 'ui'), 'list: rows do not embed ui');
+  END IF;
 
   v := sdui.api('get', 'docs://charter/nonexistent_id');
   RETURN NEXT ok(v ? 'data', 'read: has data key');
@@ -46,14 +50,22 @@ BEGIN
   RETURN NEXT ok(v ? 'data', 'slug: read passes segment to _read');
   RETURN NEXT is(v->>'uri', 'docs://charter/my-slug-name', 'slug: uri preserved with slug');
 
-  v := sdui.api('patch', 'crm://client/1', '{"phone": "09 99 99 99 99"}'::jsonb);
+  PERFORM set_config('app.permissions', 'crm.client.create,crm.client.read,crm.client.modify', true);
+  INSERT INTO crm.client (tenant_id, type, name, email, phone, city, tier, active)
+  VALUES ('dev', 'company', 'Jean Dupont', 'jean@example.com', '06 12 34 56 78', 'Paris', 'standard', true)
+  RETURNING id INTO v_client_id;
+
+  v := sdui.api('set', 'crm://client', '{"type":"company","name":"New Client","email":"new@example.com"}'::jsonb);
+  RETURN NEXT is(v->'data'->>'name', 'New Client', 'set: creates row through jsonb contract');
+  RETURN NEXT ok(v->'data' ? 'ui', 'set: embeds ui on single-row result');
+
+  v := sdui.api('patch', format('crm://client/%s', v_client_id), '{"phone": "09 99 99 99 99"}'::jsonb);
   RETURN NEXT is(v->'data'->>'phone', '09 99 99 99 99', 'patch: field updated');
   RETURN NEXT is(v->'data'->>'name', 'Jean Dupont', 'patch: unpatched field preserved');
   RETURN NEXT ok((v->'data'->>'type') IS NOT NULL, 'patch: NOT NULL fields preserved');
+  RETURN NEXT ok(v->'data' ? 'ui', 'patch: embeds ui on single-row result');
 
   v := sdui.api('patch', 'crm://client/999999', '{"phone": "00"}'::jsonb);
   RETURN NEXT is((v->>'status')::int, 404, 'patch: nonexistent row returns 404');
   RETURN NEXT is(v->>'instance', 'crm://client/999999', 'patch: instance is the URI');
-
-  UPDATE crm.client SET phone = '06 12 34 56 78' WHERE id = 1;
 END; $function$;

@@ -451,6 +451,9 @@ function parseParam(ctx: ParseContext): Param {
     if (tok.type === "STRING") {
       ctx.advance();
       defaultValue = `'${sqlEscape(tok.value)}'`;
+    } else if (tok.type === "BOOLEAN") {
+      ctx.advance();
+      defaultValue = tok.value;
     } else if (tok.type === "NUMBER") {
       ctx.advance();
       defaultValue = tok.value;

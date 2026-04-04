@@ -41,7 +41,7 @@ export function expandI18n(mod: PlxModule): I18nExpandResult {
  LANGUAGE plpgsql
 AS $function$
 BEGIN
-  INSERT INTO pgv.i18n (lang, key, value) VALUES
+  INSERT INTO i18n.translation (lang, key, value) VALUES
 ${tuples.join(",\n")}
   ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
 END;

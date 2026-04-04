@@ -542,7 +542,7 @@ function parseFormSections(ctx: ParseContext): FormSection[] {
 
 function parseFormFieldValue(ctx: ParseContext): string | boolean | Record<string, string> {
   const tok = ctx.peek();
-  if (tok.type === "NUMBER" && (tok.value === "true" || tok.value === "false")) {
+  if (tok.type === "BOOLEAN") {
     ctx.advance();
     return tok.value === "true";
   }

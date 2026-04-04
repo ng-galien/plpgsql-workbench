@@ -5,7 +5,7 @@ entity plxdemo.task uses auditable:
   label: 'plxdemo.entity_task'
   list_order: 'created_at desc'
 
-  columns:
+  fields:
     rank int? default(0)
     note_id int? ref(plxdemo.note)
     project_id int? ref(plxdemo.project)
@@ -17,9 +17,7 @@ entity plxdemo.task uses auditable:
     done boolean? default(false)
 
   validate:
-    priority_valid: """
-      coalesce(p_input->>'priority', 'normal') in ('low', 'normal', 'high')
-    """
+    priority_valid: coalesce(p_input->>'priority', 'normal') in ('low', 'normal', 'high')
 
   view:
     compact: [title, priority, done, rank, note_id]

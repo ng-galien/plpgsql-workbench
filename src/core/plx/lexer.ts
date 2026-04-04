@@ -47,6 +47,7 @@ export type TokenType =
   | "RBRACE"
   | "IDENT"
   | "NUMBER"
+  | "BOOLEAN"
   | "STRING"
   | "INTERP_STRING"
   | "SQL_BLOCK"
@@ -432,7 +433,7 @@ function tokenizeLine(
       if (kw) {
         push(makeToken(file, kw, ident.toLowerCase(), lineNum, col));
       } else if (ident === "true" || ident === "false") {
-        push(makeToken(file, "NUMBER", ident, lineNum, col));
+        push(makeToken(file, "BOOLEAN", ident, lineNum, col));
       } else {
         push(makeToken(file, "IDENT", ident, lineNum, col));
       }

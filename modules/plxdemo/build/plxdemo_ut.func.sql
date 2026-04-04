@@ -2,9 +2,21 @@ CREATE OR REPLACE FUNCTION plxdemo_ut.test_health()
  RETURNS SETOF text
  LANGUAGE plpgsql AS $$
 BEGIN
-  RETURN NEXT is(plxdemo.health()->>'name', 'plxdemo', 'assert line 20');
-  RETURN NEXT is(plxdemo.health()->>'status', 'ok', 'assert line 21');
-  RETURN NEXT is(plxdemo.health()->>'demo', 'crud+validation+states+events', 'assert line 22');
+  RETURN NEXT is(plxdemo.health()->>'name', 'plxdemo', 'assert line 25');
+  RETURN NEXT is(plxdemo.health()->>'status', 'ok', 'assert line 26');
+  RETURN NEXT is(plxdemo.health()->>'demo', 'crud+validation+states+events', 'assert line 27');
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION plxdemo_ut.test_brand_payload()
+ RETURNS SETOF text
+ LANGUAGE plpgsql AS $$
+DECLARE
+  v_p jsonb;
+BEGIN
+  v_p := plxdemo.brand_payload();
+  RETURN NEXT is(v_p->>'entity', 'plxdemo', 'assert line 31');
+  RETURN NEXT is(v_p->>'label', 'PLX Demo', 'assert line 32');
 END;
 $$;
 
