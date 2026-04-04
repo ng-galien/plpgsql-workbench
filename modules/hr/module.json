@@ -1,30 +1,7 @@
 {
   "name": "hr",
   "version": "0.1.0",
-  "description": "Salariés, congés, absences, heures travaillées, registre du personnel",
-  "schemas": {
-    "public": "hr",
-    "test": "hr_ut",
-    "qa": "hr_qa"
-  },
-  "dependencies": [
-    "pgv"
-  ],
-  "extensions": [],
-  "sql": [
-    "build/hr.ddl.sql",
-    "build/hr.func.sql",
-    "build/hr_qa.func.sql",
-    "build/hr_ut.func.sql"
-  ],
-  "assets": {
-    "frontend": [],
-    "scripts": [],
-    "styles": []
-  },
-  "grants": {
-    "anon": [
-      "hr"
-    ]
-  }
+  "description": "Human resources — employees, leave requests, timesheets, leave balances",
+  "plx": { "entry": "plx/hr.plx", "seed": "plx/seed.sql" },
+  "grants": { "anon": ["hr"] }
 }

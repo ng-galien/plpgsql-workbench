@@ -1,0 +1,91 @@
+[fr]
+hr.brand = RH
+hr.nav_employees = Employés
+hr.nav_absences = Absences
+hr.nav_timesheets = Pointage
+
+hr.entity_employee = Employé
+hr.entity_absence = Demande d'absence
+hr.entity_timesheet = Pointage
+hr.entity_leave_balance = Solde congés
+
+hr.gender_m = Homme
+hr.gender_f = Femme
+
+hr.contract_cdi = CDI
+hr.contract_cdd = CDD
+hr.contract_apprenticeship = Apprentissage
+hr.contract_internship = Stage
+hr.contract_temp = Intérim
+
+hr.absence_paid_leave = Congé payé
+hr.absence_rtt = RTT
+hr.absence_sick = Maladie
+hr.absence_unpaid = Sans solde
+hr.absence_training = Formation
+hr.absence_other = Autre
+
+hr.status_active = Actif
+hr.status_inactive = Inactif
+hr.status_pending = En attente
+hr.status_approved = Approuvé
+hr.status_rejected = Refusé
+hr.status_cancelled = Annulé
+
+hr.field_employee_code = Matricule
+hr.field_last_name = Nom
+hr.field_first_name = Prénom
+hr.field_email = Email
+hr.field_phone = Téléphone
+hr.field_birth_date = Date de naissance
+hr.field_gender = Genre
+hr.field_nationality = Nationalité
+hr.field_position = Poste
+hr.field_qualification = Qualification
+hr.field_department = Service
+hr.field_contract_type = Type de contrat
+hr.field_hire_date = Date d'embauche
+hr.field_end_date = Date de fin
+hr.field_gross_salary = Salaire brut
+hr.field_weekly_hours = Heures/semaine
+hr.field_notes = Notes
+hr.field_employee = Employé
+hr.field_leave_type = Type d'absence
+hr.field_start_date = Date début
+hr.field_end_date_leave = Date fin
+hr.field_day_count = Nb jours
+hr.field_reason = Motif
+hr.field_work_date = Date
+hr.field_hours = Heures
+hr.field_description = Description
+
+hr.section_identity = Identité
+hr.section_position = Poste
+hr.section_contract = Contrat
+hr.section_notes = Notes
+hr.section_leave = Demande d'absence
+hr.section_timesheet = Pointage
+
+hr.stat_cp_remaining = CP restants
+hr.stat_rtt_remaining = RTT restants
+hr.stat_hours_30d = Heures (30j)
+hr.stat_leave_count = Absences
+hr.stat_balance_remaining = Solde restant
+
+hr.rel_absences = Absences
+hr.rel_timesheets = Pointages
+
+hr.action_edit = Modifier
+hr.action_delete = Supprimer
+hr.action_deactivate = Désactiver
+hr.action_activate = Réactiver
+hr.action_approve = Approuver
+hr.action_reject = Refuser
+hr.action_cancel = Annuler
+
+hr.confirm_delete_employee = Supprimer cet employé et tout son historique ?
+hr.confirm_delete_absence = Supprimer cette demande ?
+
+hr.err_not_found = Employé introuvable.
+hr.err_name_required = Le nom est obligatoire.
+hr.err_date_order = La date de fin doit être postérieure à la date de début.
