@@ -1,0 +1,62 @@
+[fr]
+crm.brand = CRM
+crm.nav_clients = Clients
+crm.nav_interactions = Interactions
+crm.nav_import = Import
+
+crm.entity_client = Client
+crm.entity_contact = Contact
+crm.entity_interaction = Interaction
+
+crm.type_individual = Particulier
+crm.type_company = Entreprise
+crm.type_call = Appel
+crm.type_visit = Visite
+crm.type_email = Courriel
+crm.type_note = Note
+
+crm.tier_standard = Standard
+crm.tier_premium = Premium
+crm.tier_vip = VIP
+
+crm.field_type = Type
+crm.field_name = Nom
+crm.field_email = Email
+crm.field_phone = Téléphone
+crm.field_address = Adresse
+crm.field_city = Ville
+crm.field_postal_code = Code postal
+crm.field_tier = Tier
+crm.field_notes = Notes
+crm.field_role = Rôle
+crm.field_subject = Sujet
+crm.field_details = Détails
+
+crm.section_identity = Identité
+crm.section_contact = Contact
+crm.section_address = Adresse
+crm.section_notes = Notes
+crm.section_interaction = Interaction
+
+crm.action_archive = Archiver
+crm.action_activate = Réactiver
+crm.action_delete = Supprimer
+
+crm.confirm_archive = Archiver ce client ?
+crm.confirm_delete_client = Supprimer définitivement ce client et tout son historique ?
+crm.confirm_delete_contact = Supprimer ce contact ?
+crm.confirm_delete_interaction = Supprimer cette interaction ?
+
+crm.stat_quotes = Devis
+crm.stat_revenue = CA total
+crm.stat_pending = En attente
+crm.col_contacts = Contacts
+crm.col_interactions = Interactions
+crm.col_client = Client
+
+crm.related_quotes = Devis
+crm.related_invoices = Factures
+
+crm.err_not_found = Client introuvable.
+crm.err_name_required = Le nom est obligatoire.
+crm.err_subject_required = Le sujet est obligatoire.

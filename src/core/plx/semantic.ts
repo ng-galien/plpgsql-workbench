@@ -118,16 +118,6 @@ export function analyzeModule(mod: PlxModule): SemanticResult {
     errors,
   );
 
-  if (mod.i18n.length > 0 && !mod.depends.some((dep) => dep.name === "pgv")) {
-    errors.push({
-      code: "semantic.i18n-requires-pgv",
-      hint: "Add `depends pgv` so the generated i18n seed can write into pgv.i18n.",
-      loc: mod.i18n[0]?.loc ?? pointLoc(),
-      owner: "module",
-      message: "i18n blocks require a dependency on pgv",
-    });
-  }
-
   addMissingI18nWarnings(mod, warnings);
 
   for (const imp of mod.imports) {
@@ -1190,7 +1180,10 @@ function collectViewI18nRefs(entity: PlxEntity, refs: I18nReference[], owner: st
 
   for (const formSection of entity.view.form ?? []) {
     refs.push({ key: formSection.label, loc: entity.loc, owner });
-    for (const field of formSection.fields) refs.push({ key: field.label, loc: entity.loc, owner });
+    for (const field of formSection.fields) {
+      const label = field.entries.label;
+      if (typeof label === "string") refs.push({ key: label, loc: entity.loc, owner });
+    }
   }
 }
 

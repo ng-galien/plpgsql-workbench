@@ -9,6 +9,7 @@ import type {
   EntityHook,
   EntityHookEvent,
   FormField,
+  FormFieldValue,
   FormSection,
   PlxEntity,
   RelatedDef,
@@ -25,6 +26,7 @@ import { mergeLoc } from "./ast.js";
 import type { ParseContext } from "./parse-context.js";
 import { ParseError, parseSqlBlock } from "./parse-context.js";
 import { parseCommaSeparated } from "./parser-helpers.js";
+import { validateFormField } from "./sdui-schema.js";
 
 export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntity {
   const start = ctx.loc();
@@ -538,26 +540,40 @@ function parseFormSections(ctx: ParseContext): FormSection[] {
   return sections;
 }
 
+function parseFormFieldValue(ctx: ParseContext): string | boolean | Record<string, string> {
+  const tok = ctx.peek();
+  if (tok.type === "NUMBER" && (tok.value === "true" || tok.value === "false")) {
+    ctx.advance();
+    return tok.value === "true";
+  }
+  if (tok.type === "LBRACE") {
+    ctx.advance();
+    ctx.skipExprWs();
+    const obj: Record<string, string> = {};
+    while (!ctx.isAt("RBRACE") && !ctx.isAt("EOF")) {
+      const k = ctx.parseObjectKey();
+      ctx.expect("COLON");
+      obj[k] = ctx.parseQualifiedValue();
+      ctx.skipExprWs();
+      if (ctx.isAt("COMMA")) {
+        ctx.advance();
+        ctx.skipExprWs();
+      }
+    }
+    ctx.expect("RBRACE");
+    return obj;
+  }
+  return ctx.parseQualifiedValue();
+}
+
 function parseFormField(ctx: ParseContext): FormField {
   ctx.expect("LBRACE");
   ctx.skipExprWs();
-  let key = "";
-  let type = "text";
-  let label = "";
-  let required: boolean | undefined;
+  const entries: Record<string, FormFieldValue> = {};
   while (!ctx.isAt("RBRACE") && !ctx.isAt("EOF")) {
     const k = ctx.parseObjectKey();
     ctx.expect("COLON");
-    if (k === "required") {
-      // boolean value
-      const v = ctx.advance().value;
-      required = v === "true";
-    } else {
-      const v = ctx.parseQualifiedValue();
-      if (k === "key") key = v;
-      else if (k === "type") type = v;
-      else if (k === "label") label = v;
-    }
+    entries[k] = parseFormFieldValue(ctx);
     ctx.skipExprWs();
     if (ctx.isAt("COMMA")) {
       ctx.advance();
@@ -565,7 +581,15 @@ function parseFormField(ctx: ParseContext): FormField {
     }
   }
   ctx.expect("RBRACE");
-  return { key, type, label, required };
+
+  const loc = ctx.loc();
+  const validationErrors = validateFormField(entries, loc);
+  if (validationErrors.length > 0) {
+    const first = validationErrors[0]!;
+    throw new ParseError(first.message, loc, { code: first.code });
+  }
+
+  return { entries };
 }
 
 function parseActionDef(ctx: ParseContext): ActionDef {

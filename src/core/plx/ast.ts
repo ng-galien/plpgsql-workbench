@@ -204,11 +204,10 @@ export interface FormSection {
   fields: FormField[];
 }
 
+export type FormFieldValue = string | boolean | Record<string, string>;
+
 export interface FormField {
-  key: string;
-  type: string; // "text", "date", "textarea", "select"
-  label: string; // i18n key
-  required?: boolean;
+  entries: Record<string, FormFieldValue>;
 }
 
 export interface ActionDef {

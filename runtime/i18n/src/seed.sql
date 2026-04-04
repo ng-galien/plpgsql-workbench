@@ -25,7 +25,8 @@ BEGIN
     ('fr', 'app.group_finance', 'Finance'),
     ('fr', 'app.group_team', 'Équipe'),
     ('fr', 'app.group_admin', 'Administration'),
-    ('fr', 'app.search', 'Rechercher...')
+    ('fr', 'app.search', 'Rechercher...'),
+    ('fr', 'app.new', 'Nouveau')
   ON CONFLICT (lang, key) DO UPDATE SET value = EXCLUDED.value;
 END;
 $function$;

@@ -3,7 +3,7 @@ import type { DbClient } from "../../core/connection.js";
 import type { ToolHandler, WithClient } from "../../core/container.js";
 import { text } from "../../core/helpers.js";
 import type { ModuleRegistry } from "../../core/pgm/registry.js";
-import { loadManifest } from "../../core/pgm/resolver.js";
+import { loadPlxManifest } from "../../core/plx/manifest.js";
 import { formatReadDocument } from "../../core/tooling/primitives/read.js";
 import { formatTestReport, type TestReport } from "../plpgsql/test.js";
 
@@ -37,11 +37,8 @@ export function createPlxModuleTestTool({
 
       let testSchema: string;
       try {
-        const manifest = await loadManifest(`${registry.workspaceRoot}/modules`, moduleName);
-        if (!manifest.schemas.public) {
-          return text(`problem: module '${moduleName}' has no public schema\nwhere: plx_test`);
-        }
-        testSchema = `${manifest.schemas.public}_${suite === "unit" ? "ut" : "it"}`;
+        const manifest = await loadPlxManifest(`${registry.workspaceRoot}/modules`, moduleName);
+        testSchema = `${manifest.name}_${suite === "unit" ? "ut" : "it"}`;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return text(`problem: ${message}\nwhere: plx_test\nfix_hint: verify the module name`);

@@ -298,12 +298,25 @@ function buildFormSections(sections: FormSection[], loc: Loc = LOC): Expression 
 }
 
 function buildFormFieldObj(f: FormField, loc: Loc = LOC): Expression {
-  const entries: JsonLiteral["entries"] = [
-    jEntry("key", strLit(f.key, loc)),
-    jEntry("type", strLit(f.type, loc)),
-    jEntry("label", strLit(f.label, loc)),
-  ];
-  if (f.required) entries.push(jEntry("required", { kind: "literal", value: true, type: "boolean", loc }));
+  const entries: JsonLiteral["entries"] = [];
+  for (const [key, value] of Object.entries(f.entries)) {
+    if (typeof value === "boolean") {
+      entries.push(jEntry(key, { kind: "literal", value, type: "boolean", loc }));
+    } else if (typeof value === "object") {
+      // Nested object → emit as JSON object
+      const nested: JsonLiteral["entries"] = [];
+      for (const [nk, nv] of Object.entries(value)) {
+        nested.push(jEntry(nk, strLit(nv, loc)));
+      }
+      entries.push(jEntry(key, jObj(nested, loc)));
+    } else if (key === "options" && value.includes(".")) {
+      // Convention: options with a dot = qualified function ref (schema.fn) → emit call.
+      // Plain strings (URIs like 'crm://client') pass through as string literals.
+      entries.push(jEntry(key, { kind: "call", name: value, args: [], loc }));
+    } else {
+      entries.push(jEntry(key, strLit(value, loc)));
+    }
+  }
   return jObj(entries, loc);
 }
 

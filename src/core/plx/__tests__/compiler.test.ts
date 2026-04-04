@@ -753,6 +753,119 @@ entity demo.task:
     );
   });
 
+  it("compiles select with static options resolved via function call", () => {
+    const source = `
+module demo
+
+entity demo.item:
+  fields:
+    status text required
+
+  view:
+    form:
+      'demo.section':
+        {key: status, type: select, label: demo.field_status, required: true, options: demo.status_options}
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("'options'");
+    // options string should emit a function call, not a string literal
+    expect(result.sql).toContain("demo.status_options()");
+    expect(result.sql).not.toContain("'demo.status_options'");
+  });
+
+  it("compiles select with search and RPC options object", () => {
+    const source = `
+module demo
+
+entity demo.item:
+  fields:
+    client_id int?
+
+  view:
+    form:
+      'demo.section':
+        {key: client_id, type: select, label: demo.field_client, search: true, options: {source: 'crm://client', display: name}}
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("'search'");
+    expect(result.sql).toContain("'options'");
+    expect(result.sql).toContain("'source'");
+    expect(result.sql).toContain("'crm://client'");
+    expect(result.sql).toContain("'display'");
+    expect(result.sql).toContain("'name'");
+  });
+
+  it("errors on combobox type (use select with search instead)", () => {
+    const source = `
+module demo
+
+entity demo.item:
+  fields:
+    client_id int?
+
+  view:
+    form:
+      'demo.section':
+        {key: client_id, type: combobox, label: demo.field_client}
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "parse.invalid-form-field-type",
+        }),
+      ]),
+    );
+  });
+
+  it("errors on unknown form field property", () => {
+    const source = `
+module demo
+
+entity demo.item:
+  fields:
+    name text required
+
+  view:
+    form:
+      'demo.section':
+        {key: name, type: text, label: demo.field_name, bogus: foo}
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "parse.invalid-form-field-property",
+        }),
+      ]),
+    );
+  });
+
+  it("errors on form field missing required key", () => {
+    const source = `
+module demo
+
+entity demo.item:
+  fields:
+    name text required
+
+  view:
+    form:
+      'demo.section':
+        {type: text, label: demo.field_name}
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "parse.invalid-form-field",
+        }),
+      ]),
+    );
+  });
+
   it("errors when emit is used outside entity change hooks", () => {
     const source = `
 fn demo.bad() -> void:
