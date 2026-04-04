@@ -1,0 +1,110 @@
+[fr]
+expense.brand = Notes de frais
+expense.nav_dashboard = Dashboard
+expense.nav_reports = Notes
+expense.nav_categories = Catégories
+
+expense.entity_expense_report = Note de frais
+expense.entity_category = Catégorie de frais
+
+expense.section_info = Informations
+expense.section_lines = Lignes de dépenses
+
+expense.status_draft = Brouillon
+expense.status_submitted = Soumise
+expense.status_validated = Validée
+expense.status_reimbursed = Remboursée
+expense.status_rejected = Rejetée
+
+expense.stat_reports = Notes de frais
+expense.stat_current_total = Total en cours
+expense.stat_avg_amount = Montant moyen
+expense.stat_pending_validation = A valider
+expense.stat_total_excl_tax = Total HT
+expense.stat_total_vat = Total TVA
+expense.stat_total_incl_tax = Total TTC
+expense.stat_line_count = Lignes
+expense.stat_total = Total
+
+expense.col_reference = Référence
+expense.col_author = Auteur
+expense.col_period = Période
+expense.col_lines = Lignes
+expense.col_status = Statut
+expense.col_total_incl_tax = Total TTC
+expense.col_date = Date
+expense.col_category = Catégorie
+expense.col_description = Description
+expense.col_km = Km
+expense.col_excl_tax = HT
+expense.col_vat = TVA
+expense.col_incl_tax = TTC
+expense.col_accounting_code = Code comptable
+expense.col_start_date = Date début
+expense.col_end_date = Date fin
+expense.col_line_count = Nb lignes
+expense.col_name = Nom
+
+expense.field_author = Auteur
+expense.field_start_date = Date début
+expense.field_end_date = Date fin
+expense.field_comment = Commentaire
+expense.field_expense_date = Date
+expense.field_category = Catégorie
+expense.field_description = Description
+expense.field_amount_excl_tax = Montant HT
+expense.field_vat = TVA
+expense.field_km = Km (si déplacement)
+expense.field_status = Statut
+expense.field_name = Nom
+expense.field_accounting_code = Code comptable
+
+expense.action_edit = Modifier
+expense.action_delete = Supprimer
+expense.action_submit = Soumettre
+expense.action_validate = Valider
+expense.action_reject = Rejeter
+expense.action_reimburse = Rembourser
+expense.action_add_line = Ajouter une ligne
+expense.action_new_report = Nouvelle note
+
+expense.confirm_submit = Soumettre cette note pour validation ?
+expense.confirm_validate = Valider cette note de frais ?
+expense.confirm_reject = Rejeter cette note de frais ?
+expense.confirm_reimburse = Marquer cette note comme remboursée ?
+expense.confirm_delete = Supprimer cette note de frais ?
+expense.confirm_delete_category = Supprimer cette catégorie ?
+
+expense.filter_all = Tous
+expense.filter_draft = Brouillon
+expense.filter_submitted = Soumise
+expense.filter_validated = Validée
+expense.filter_reimbursed = Remboursée
+expense.filter_rejected = Rejetée
+
+expense.empty_no_category = Aucune catégorie
+expense.empty_no_report = Aucune note de frais
+expense.empty_first_report = Créez votre première note pour commencer.
+expense.empty_no_results = Aucune note trouvée
+expense.empty_no_line = Aucune ligne
+expense.empty_add_line = Ajoutez des dépenses à cette note.
+
+expense.err_id_required = ID requis.
+expense.err_fields_required = Auteur, date début et date fin sont requis.
+expense.err_date_order = La date de fin doit être postérieure à la date de début.
+expense.err_note_not_modifiable = Note introuvable ou non modifiable.
+expense.err_line_fields = Note, date, description et montant HT requis.
+expense.err_note_not_found = Note introuvable.
+expense.err_not_draft = Ajout impossible : la note n'est plus en brouillon.
+expense.err_no_lines = Impossible de soumettre une note sans ligne.
+expense.err_not_draft_submit = Note introuvable ou pas en brouillon.
+expense.err_not_submitted = Note introuvable ou pas en statut soumise.
+expense.err_not_validated = Note introuvable ou pas en statut validée.
+
+expense.toast_line_added = Ligne ajoutée.
+expense.toast_note_created = Note créée.
+expense.toast_note_updated = Note modifiée.
+expense.toast_note_submitted = Note soumise pour validation.
+expense.toast_note_validated = Note validée.
+expense.toast_note_rejected = Note rejetée.
+expense.toast_note_reimbursed = Note remboursée

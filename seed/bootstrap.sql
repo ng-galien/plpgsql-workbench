@@ -14,7 +14,15 @@ BEGIN
 
   -- Dev tenant: grant all permissions (no auth)
   IF v_tenant = 'dev' THEN
-    PERFORM set_config('app.permissions', 'crm.client.create,crm.client.read,crm.client.modify,crm.client.delete,crm.contact.create,crm.contact.read,crm.contact.modify,crm.contact.delete,crm.interaction.create,crm.interaction.read,crm.interaction.modify,crm.interaction.delete', true);
+    PERFORM set_config('app.permissions', array_to_string(ARRAY[
+      'crm.client.create','crm.client.read','crm.client.modify','crm.client.delete',
+      'crm.contact.create','crm.contact.read','crm.contact.modify','crm.contact.delete',
+      'crm.interaction.create','crm.interaction.read','crm.interaction.modify','crm.interaction.delete',
+      'asset.asset.create','asset.asset.read','asset.asset.modify','asset.asset.delete',
+      'expense.category.create','expense.category.read','expense.category.modify','expense.category.delete',
+      'expense.expense_report.create','expense.expense_report.read','expense.expense_report.modify','expense.expense_report.delete',
+      'expense.line.create','expense.line.read','expense.line.modify','expense.line.delete'
+    ], ','), true);
   END IF;
 END; $$;
 GRANT EXECUTE ON FUNCTION workbench.postgrest_pre_request() TO anon;
