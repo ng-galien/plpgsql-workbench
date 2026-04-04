@@ -58,7 +58,6 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
   let listOrder = "id";
   let readKey: string | undefined;
   const fields: EntityField[] = [];
-  const columns: EntityField[] = [];
   const payload: EntityField[] = [];
   const events: EntityEvent[] = [];
   let states: StateBlock | undefined;
@@ -99,12 +98,17 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
       ctx.advance();
       ctx.expect("COLON");
       readKey = ctx.expect("STRING").value;
-    } else if (kw === "fields" || kw === "columns" || kw === "payload") {
+    } else if (kw === "columns") {
+      throw new ParseError("`columns:` is no longer supported; use `fields:` instead", ctx.loc(), {
+        code: "parse.columns-removed",
+        hint: "Define structured entity attributes under `fields:` and keep optional jsonb data under `payload:`.",
+      });
+    } else if (kw === "fields" || kw === "payload") {
       ctx.advance();
       ctx.expect("COLON");
       ctx.skipNewlines();
       ctx.expect("INDENT");
-      const target = kw === "columns" ? columns : kw === "payload" ? payload : fields;
+      const target = kw === "payload" ? payload : fields;
       while (!ctx.isAt("DEDENT") && !ctx.isAt("EOF")) {
         ctx.skipNewlines();
         if (ctx.isAt("DEDENT")) break;
@@ -171,11 +175,7 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
   }
 
   const end = ctx.expect("DEDENT");
-  if (fields.length > 0 && (columns.length > 0 || payload.length > 0)) {
-    throw new ParseError("entity cannot mix fields: with columns:/payload:", start);
-  }
   const hybrid = payload.length > 0;
-  const rowFields = columns.length > 0 ? columns : fields;
 
   return {
     kind: "entity",
@@ -188,9 +188,9 @@ export function parseEntity(ctx: ParseContext, visibility: Visibility): PlxEntit
     label,
     traits,
     storage: hybrid ? "hybrid" : "row",
-    columns: hybrid ? columns : rowFields,
+    columns: fields,
     payload: hybrid ? payload : [],
-    fields: hybrid ? [...columns, ...payload] : rowFields,
+    fields: hybrid ? [...fields, ...payload] : fields,
     states,
     updateStates,
     view,
@@ -468,7 +468,7 @@ function parseStatDefs(ctx: ParseContext): StatDef[] {
     let key = "";
     let label = "";
     while (!ctx.isAt("RBRACE") && !ctx.isAt("EOF")) {
-      const k = ctx.expect("IDENT").value;
+      const k = ctx.parseObjectKey();
       ctx.expect("COLON");
       const v = ctx.parseQualifiedValue();
       if (k === "key") key = v;
@@ -495,9 +495,9 @@ function parseRelatedDefs(ctx: ParseContext): RelatedDef[] {
     let label = "";
     let filter = "";
     while (!ctx.isAt("RBRACE") && !ctx.isAt("EOF")) {
-      const k = ctx.expect("IDENT").value;
+      const k = ctx.parseObjectKey();
       ctx.expect("COLON");
-      const v = ctx.expect("IDENT", "STRING").value;
+      const v = ctx.parseQualifiedValue();
       if (k === "entity") entity = v;
       else if (k === "label") label = v;
       else if (k === "filter") filter = v;
@@ -546,7 +546,7 @@ function parseFormField(ctx: ParseContext): FormField {
   let label = "";
   let required: boolean | undefined;
   while (!ctx.isAt("RBRACE") && !ctx.isAt("EOF")) {
-    const k = ctx.expect("IDENT").value;
+    const k = ctx.parseObjectKey();
     ctx.expect("COLON");
     if (k === "required") {
       // boolean value
@@ -578,7 +578,7 @@ function parseActionDef(ctx: ParseContext): ActionDef {
   let variant: string | undefined;
   let confirm: string | undefined;
   while (!ctx.isAt("RBRACE") && !ctx.isAt("EOF")) {
-    const k = ctx.expect("IDENT").value;
+    const k = ctx.parseObjectKey();
     ctx.expect("COLON");
     const v = ctx.parseQualifiedValue();
     if (k === "label") label = v;

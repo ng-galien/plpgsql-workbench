@@ -483,7 +483,7 @@ export class ParseContext {
 
       this.advanceBinaryOperator(opInfo);
       const nextMin = opInfo.assoc === "right" ? opInfo.precedence : opInfo.precedence + 1;
-      const right = this.parseExpression(nextMin);
+      const right = opInfo.op === "IN" && this.isAt("LPAREN") ? this.parseInList() : this.parseExpression(nextMin);
       left = { kind: "binary", op: opInfo.op, left, right, loc: mergeLoc(left.loc, right.loc) };
     }
 
@@ -690,13 +690,40 @@ export class ParseContext {
   }
 
   private parseJsonEntry(): { key: string; value: Expression } {
-    const keyTok = this.expect("IDENT");
+    const keyTok = this.parseJsonKeyToken();
     const key = keyTok.value;
     if (!this.isAt("COLON")) {
       return { key, value: { kind: "identifier", name: key, loc: tokenLoc(keyTok) } };
     }
     this.expect("COLON");
     return { key, value: this.parseExpression() };
+  }
+
+  private parseJsonKeyToken(): Token {
+    const tok = this.peek();
+    if (JSON_KEY_TOKEN_TYPES.has(tok.type)) return this.advance();
+    throw new ParseError(`expected IDENT, got ${tok.type} '${tok.value}'`, tokenLoc(tok), {
+      code: "parse.unexpected-token",
+      hint: "Expected IDENT at this position.",
+    });
+  }
+
+  parseObjectKey(): string {
+    return this.parseJsonKeyToken().value;
+  }
+
+  private parseInList(): ArrayLiteral {
+    const start = tokenLoc(this.expect("LPAREN"));
+    const elements: Expression[] = [];
+    if (!this.isAt("RPAREN")) {
+      elements.push(this.parseExpression());
+      while (this.isAt("COMMA")) {
+        this.advance();
+        elements.push(this.parseExpression());
+      }
+    }
+    const end = tokenLoc(this.expect("RPAREN"));
+    return { kind: "array_literal", elements, loc: mergeLoc(start, end) };
   }
 
   private parseArrayLiteral(): ArrayLiteral {
@@ -953,6 +980,10 @@ function binaryOpInfo(tok: Token, next: Token | undefined): BinaryOpInfo | undef
     return undefined;
   }
 
+  if (tok.type === "IN") {
+    return { op: "IN", precedence: 30, assoc: "left" };
+  }
+
   if (tok.type === "ARROW") {
     return isExprStartToken(next) ? { op: "->", precedence: 70, assoc: "left" } : undefined;
   }
@@ -983,6 +1014,38 @@ function binaryOpInfo(tok: Token, next: Token | undefined): BinaryOpInfo | undef
       return undefined;
   }
 }
+
+const JSON_KEY_TOKEN_TYPES = new Set<Token["type"]>([
+  "IDENT",
+  "FN",
+  "IF",
+  "ELSE",
+  "ELSIF",
+  "FOR",
+  "IN",
+  "RETURN",
+  "RAISE",
+  "MATCH",
+  "WHEN",
+  "SETOF",
+  "NOT",
+  "YIELD",
+  "CASE",
+  "THEN",
+  "END",
+  "IMPORT",
+  "AS",
+  "MODULE",
+  "DEPENDS",
+  "INCLUDE",
+  "EXPORT",
+  "INTERNAL",
+  "ENTITY",
+  "TRAIT",
+  "USES",
+  "TEST",
+  "ASSERT",
+]);
 
 // ---------- Standalone helpers ----------
 

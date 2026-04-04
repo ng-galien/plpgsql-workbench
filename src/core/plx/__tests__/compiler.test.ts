@@ -165,10 +165,10 @@ entity demo.task:
     expect(result.sql).toContain("jsonb_populate_record(v_current, p_input)");
   });
 
-  it("supports columns + payload entities with hybrid storage", () => {
+  it("supports fields + payload entities with hybrid storage", () => {
     const source = `
 entity demo.task:
-  columns:
+  fields:
     rank int? default(0)
 
   payload:
@@ -200,14 +200,14 @@ entity demo.task:
     expect(result.sql).toContain("SET search_path = demo, pg_catalog, pg_temp");
   });
 
-  it("generates foreign key constraints for ref(...) columns", () => {
+  it("generates foreign key constraints for ref(...) fields", () => {
     const source = `
 entity demo.note:
   fields:
     title text required
 
 entity demo.task:
-  columns:
+  fields:
     note_id int? ref(demo.note)
 
   payload:
@@ -386,6 +386,30 @@ fn demo.json_name(r jsonb) -> jsonb:
     const result = compile(source);
     expect(result.errors).toHaveLength(0);
     expect(result.sql).toContain("RETURN r->'name';");
+  });
+
+  it("allows PLX keywords as bare json object keys", () => {
+    const source = `
+fn demo.payload() -> jsonb:
+  return {entity: 'task', import: 'alias'}
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("jsonb_build_object('entity', 'task', 'import', 'alias')");
+  });
+
+  it("supports SQL IN expressions in validate rules", () => {
+    const source = `
+entity demo.task:
+  fields:
+    title text required
+
+  validate:
+    status_valid: coalesce(p_input->>'status', 'draft') in ('draft', 'active')
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("coalesce(p_input->>'status', 'draft') IN ('draft', 'active')");
   });
 
   it("returns warnings instead of crashing on PG validation errors", async () => {

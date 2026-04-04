@@ -654,6 +654,14 @@ class CodegenContext {
     }
     const { precedence, assoc } = binaryPrecedence(bin.op);
     const left = this.emitNestedExpr(bin.left, precedence, "left", assoc);
+    if (bin.op === "IN" && bin.right.kind === "array_literal") {
+      const items: (string | MappedText)[] = [];
+      bin.right.elements.forEach((element, index) => {
+        if (index > 0) items.push(", ");
+        items.push(this.emitExprMap(element));
+      });
+      return withContainerSegment(concatMapped([left, " IN (", ...items, ")"]), bin.loc);
+    }
     const right = this.emitNestedExpr(bin.right, precedence, "right", assoc);
     if (bin.op === "::") return withContainerSegment(concatMapped([left, "::", right]), bin.loc);
     if (bin.op === "->>" || bin.op === "->") return withContainerSegment(concatMapped([left, bin.op, right]), bin.loc);
@@ -758,6 +766,7 @@ function binaryPrecedence(op: string): { precedence: number; assoc: Assoc } {
     case "<":
     case ">=":
     case "<=":
+    case "IN":
     case "IS NULL":
     case "IS NOT NULL":
       return { precedence: 30, assoc: "left" };

@@ -425,6 +425,7 @@ export interface CaseExpr {
 }
 
 export type BinaryOp =
+  | "IN"
   | "IS NULL"
   | "IS NOT NULL"
   | "AND"

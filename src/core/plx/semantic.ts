@@ -337,7 +337,7 @@ function analyzeEntity(
       if (field.ref) {
         errors.push({
           code: "semantic.payload-ref-unsupported",
-          hint: "Move relational references to columns:, not payload:.",
+          hint: "Move relational references to fields:, not payload:.",
           loc: field.loc,
           owner: `entity ${entityName}`,
           message: `payload field '${field.name}' cannot declare ref(${field.ref})`,
@@ -346,10 +346,10 @@ function analyzeEntity(
       if (field.unique) {
         errors.push({
           code: "semantic.payload-unique-unsupported",
-          hint: "Move unique fields to columns or keep the entity in row storage.",
+          hint: "Move unique fields to fields or keep the entity in row storage.",
           loc: field.loc,
           owner: `entity ${entityName}`,
-          message: `payload field '${field.name}' cannot be unique in columns + payload storage`,
+          message: `payload field '${field.name}' cannot be unique in fields + payload storage`,
         });
       }
     }
@@ -903,6 +903,7 @@ function inferBinaryType(expr: Extract<Expression, { kind: "binary" }>, ctx: Ana
     case "<":
     case ">=":
     case "<=":
+    case "IN":
     case "IS NULL":
     case "IS NOT NULL":
       return declaredType("boolean");

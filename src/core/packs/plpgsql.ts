@@ -41,6 +41,9 @@ import { createSchemaTool } from "../tools/plpgsql/schema.js";
 import { createSearchTool } from "../tools/plpgsql/search.js";
 import { createTestTool, formatTestReport, runTests } from "../tools/plpgsql/test.js";
 import { createVisualTool } from "../tools/plpgsql/visual.js";
+import { createRuntimeApplyTool } from "../tools/runtime/apply.js";
+import { createRuntimeStatusTool } from "../tools/runtime/status.js";
+import { createRuntimeTestTool } from "../tools/runtime/test.js";
 
 type PoolLogger = Pick<Console, "error">;
 type PgPoolLike = Pick<Pool, "connect" | "on">;
@@ -118,6 +121,18 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
         return buildModuleRegistry(process.cwd());
       })(),
     ),
+    workspaceRoot: asValue(
+      (() => {
+        let dir = process.cwd();
+        for (let i = 0; i < 10; i++) {
+          if (fsSync.existsSync(pathMod.join(dir, "runtime")) || fsSync.existsSync(pathMod.join(dir, "modules"))) {
+            return dir;
+          }
+          dir = pathMod.dirname(dir);
+        }
+        return process.cwd();
+      })(),
+    ),
 
     setFunction: asFunction(createSetFunction).singleton(),
 
@@ -140,6 +155,9 @@ export const plpgsqlPack: ToolPack = (container: AwilixContainer, config: Record
     pgmModuleApplyTool: asFunction(createPgmModuleApplyTool).singleton(),
     plxModuleDropTool: asFunction(createPlxModuleDropTool).singleton(),
     plxModuleTestTool: asFunction(createPlxModuleTestTool).singleton(),
+    runtimeStatusTool: asFunction(createRuntimeStatusTool).singleton(),
+    runtimeApplyTool: asFunction(createRuntimeApplyTool).singleton(),
+    runtimeTestTool: asFunction(createRuntimeTestTool).singleton(),
     funcDelTool: asFunction(createFuncDelTool).singleton(),
     funcRenameTool: asFunction(createFuncRenameTool).singleton(),
     funcBulkDelTool: asFunction(createFuncBulkDelTool).singleton(),
