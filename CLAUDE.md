@@ -55,20 +55,24 @@ modules/{name}/
 │   ├── {name}.i18n      # Translations sidecar
 │   ├── {entity}.plx     # Entity definitions
 │   └── {entity}.spec.plx # Tests
-├── build/               # Generated SQL (committed, output of plx build)
+├── build/               # Generated SQL (gitignored, output of plx build)
 │   ├── {schema}.ddl.sql
 │   └── {schema}.func.sql
-└── src/                 # Legacy individual function files (being replaced by plx/)
+└── legacy/              # Legacy SQL files kept for migration reference
 ```
 
 **module.json** declares `plx.entry` pointing to the PLX entry file:
 ```json
 {
   "name": "crm",
-  "schemas": { "public": "crm", "test": "crm_ut", "qa": "crm_qa" },
-  "plx": { "entry": "plx/crm.plx" }
+  "version": "0.1.0",
+  "description": "Client management — individuals, companies, contacts, interactions",
+  "plx": { "entry": "plx/crm.plx", "seed": "plx/seed.sql", "post_apply": "plx/post_apply.sql" },
+  "grants": { "anon": ["crm"] }
 }
 ```
+
+**PLX-first manifests** use `PlxModuleManifest` (`src/core/plx/manifest.ts`). Schemas and build targets are derived from module name by convention — no `schemas`, `sql`, or `assets` fields needed.
 
 **MCP tools:**
 
@@ -115,7 +119,14 @@ runtime/{target}/
 
 ## PLX Language
 
-PLX compiles `.plx` files to PL/pgSQL. Zero runtime dependency — pure static transpilation. Full syntax reference: `docs/PLX-SYNTAX.md`.
+PLX compiles `.plx` files to PL/pgSQL. Zero runtime dependency — pure static transpilation.
+
+| File | Content |
+|------|---------|
+| `docs/PLX-SYNTAX.md` | PLX language full syntax reference |
+| `docs/plx/GUIDELINES.md` | Modelling rules, when to use declarative vs extension points vs manual SQL |
+| `docs/plx/PATTERNS.md` | Recipes: expose:false, before_create, strategies, post_apply, state machines |
+| `docs/plx/MIGRATION.md` | Method for porting legacy modules to PLX |
 
 ### Compiler Pipeline (`src/core/plx/`)
 
@@ -255,7 +266,9 @@ Modules are being migrated to PLX. Current state:
 
 | Module | Schemas | PLX | Purpose |
 |--------|---------|-----|---------|
-| crm | crm, crm_ut, crm_qa | **yes** | Clients, contacts, interactions |
+| crm | crm, crm_ut | **yes** | Clients, contacts, interactions |
+| asset | asset, asset_ut | **yes** | Images, metadata, classification, FTS |
+| expense | expense, expense_ut | **yes** | Expense reports, categories, line items |
 | plxdemo | plxdemo, plxdemo_qa | **yes** | PLX demo/dogfood |
 | cad | cad, _cad, cad_qa | pending | CAD 3D wood structures (PostGIS/SFCGAL) |
 | quote | quote, quote_qa | pending | Quotes & invoices |
