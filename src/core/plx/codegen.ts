@@ -216,6 +216,8 @@ class CodegenContext {
       if (sql.startsWith("(") && sql.endsWith(")")) sql = sql.slice(1, -1).trim();
       if (value.inferredTable) return { plName, type: value.inferredTable, isRow: true };
       if (value.inferredType) return this.varInfoForType(plName, value.inferredType);
+      const inferredCallReturn = this.inferSqlCallReturnType(value.sql);
+      if (inferredCallReturn) return this.varInfoForType(plName, inferredCallReturn);
       if (INFER_COUNT_RE.test(sql)) return { plName, type: "bigint", isRow: false };
       if (INFER_JSONB_RE.test(sql)) return { plName, type: "jsonb", isRow: false };
       if (INFER_INT_RE.test(sql)) return { plName, type: "integer", isRow: false };
@@ -229,6 +231,9 @@ class CodegenContext {
     if (value.kind === "array_literal") return { plName, type: "jsonb", init: "'[]'::jsonb", isRow: false };
     if (value.kind === "json_literal") return { plName, type: "jsonb", isRow: false };
     if (value.kind === "string_interp") return { plName, type: "text", isRow: false };
+    if (value.kind === "binary" && value.op === "::") {
+      return this.varInfoForType(plName, this.emitExprMap(value.right).text);
+    }
     if (value.kind === "call") {
       const fn = value.name.toLowerCase();
       const targetName = this.aliases.get(value.name) ?? value.name;
@@ -253,8 +258,25 @@ class CodegenContext {
     return { plName, type: "jsonb", isRow: false };
   }
 
+  private inferSqlCallReturnType(sql: string): string | undefined {
+    const normalized = sql
+      .trim()
+      .replace(/^\(\s*/, "")
+      .replace(/\s*\)$/, "");
+    const match = normalized.match(/^select\s+([a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)?)\s*\(/i);
+    if (!match?.[1]) return undefined;
+    const targetName = this.aliases.get(match[1]) ?? match[1];
+    return this.returnTypes.get(targetName);
+  }
+
   private varInfoForType(plName: string, typeName: string): VarInfo {
     const lowered = typeName.toLowerCase();
+    if (lowered.endsWith("[]")) {
+      const baseType = lowered.slice(0, -2).trim();
+      const normalizedBase =
+        normalizeScalarTypeName(baseType) ?? (baseType.includes(".") ? typeName.slice(0, -2).trim() : baseType);
+      return { plName, type: `${normalizedBase}[]`, isRow: false };
+    }
     if (lowered === "jsonb" || lowered === "json") return { plName, type: "jsonb", isRow: false };
     if (lowered === "text") return { plName, type: "text", isRow: false };
     if (lowered === "boolean") return { plName, type: "boolean", isRow: false };
@@ -374,7 +396,7 @@ class CodegenContext {
   }
 
   private emitSqlAssign(plName: string, sql: SqlBlockExpr): void {
-    let sqlText = sql.sql;
+    let sqlText = this.rewriteSqlIdentifiers(sql.sql);
     const lowerSql = sqlText.toLowerCase().trim();
 
     // Parenthesized subquery: (SELECT ...) → unwrap and use SELECT INTO
@@ -534,7 +556,7 @@ class CodegenContext {
   }
 
   private emitSqlStatement(stmt: SqlStatement): void {
-    this.line(`${stmt.sql};`, stmt.loc);
+    this.line(`${this.rewriteSqlIdentifiers(stmt.sql)};`, stmt.loc);
   }
 
   // ---------- Expression emission ----------
@@ -546,7 +568,7 @@ class CodegenContext {
   private emitExprMap(expr: Expression): MappedText {
     switch (expr.kind) {
       case "sql_block":
-        return { text: expr.sql, segments: [segmentForText(expr.sql, expr.loc)] };
+        return withContainerSegment(mappedLiteral(this.rewriteSqlIdentifiers(expr.sql), expr.loc), expr.loc);
       case "json_literal":
         return this.emitJson(expr);
       case "array_literal":
@@ -673,7 +695,12 @@ class CodegenContext {
     const parts: (string | MappedText)[] = [`${name}(`];
     call.args.forEach((arg, index) => {
       if (index > 0) parts.push(", ");
-      parts.push(this.emitExprMap(arg));
+      if (!("kind" in arg)) {
+        if (arg.name) parts.push(`${arg.name} := `);
+        parts.push(this.emitExprMap(arg.value));
+      } else {
+        parts.push(this.emitExprMap(arg));
+      }
     });
     parts.push(")");
     return withContainerSegment(concatMapped(parts), call.loc);
@@ -697,6 +724,74 @@ class CodegenContext {
     if (this.paramNames.has(name)) return name;
     const v = this.vars.get(name);
     return v ? v.plName : name;
+  }
+
+  private rewriteSqlIdentifiers(sql: string): string {
+    let result = "";
+    let i = 0;
+
+    while (i < sql.length) {
+      const current = sql[i];
+      const next = sql[i + 1];
+
+      if (current === "-" && next === "-") {
+        const end = sql.indexOf("\n", i + 2);
+        const stop = end === -1 ? sql.length : end;
+        result += sql.slice(i, stop);
+        i = stop;
+        continue;
+      }
+
+      if (current === "/" && next === "*") {
+        const end = sql.indexOf("*/", i + 2);
+        const stop = end === -1 ? sql.length : end + 2;
+        result += sql.slice(i, stop);
+        i = stop;
+        continue;
+      }
+
+      if (current === "'") {
+        const stop = consumeQuoted(sql, i, "'");
+        result += sql.slice(i, stop);
+        i = stop;
+        continue;
+      }
+
+      if (current === '"') {
+        const stop = consumeQuoted(sql, i, '"');
+        result += sql.slice(i, stop);
+        i = stop;
+        continue;
+      }
+
+      const dollarTag = readDollarQuoteTag(sql, i);
+      if (dollarTag) {
+        const end = sql.indexOf(dollarTag, i + dollarTag.length);
+        const stop = end === -1 ? sql.length : end + dollarTag.length;
+        result += sql.slice(i, stop);
+        i = stop;
+        continue;
+      }
+
+      if (isIdentifierStart(current)) {
+        let end = i + 1;
+        while (end < sql.length && isIdentifierChar(sql[end])) end++;
+        const token = sql.slice(i, end);
+        const varInfo = this.vars.get(token);
+        if (varInfo && shouldRewriteIdentifier(sql, i, end)) {
+          result += varInfo.plName;
+        } else {
+          result += token;
+        }
+        i = end;
+        continue;
+      }
+
+      result += current;
+      i += 1;
+    }
+
+    return result;
   }
 
   private line(text: string, loc?: Loc, segments: SourceSegment[] = []): void {
@@ -854,4 +949,82 @@ function segmentForText(text: string, loc: Loc): SourceSegment {
     loc,
     text,
   };
+}
+
+function isIdentifierStart(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z_]/.test(char);
+}
+
+function isIdentifierChar(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z0-9_]/.test(char);
+}
+
+function consumeQuoted(sql: string, start: number, quote: "'" | '"'): number {
+  let i = start + 1;
+  while (i < sql.length) {
+    if (sql[i] === quote) {
+      if (sql[i + 1] === quote) {
+        i += 2;
+        continue;
+      }
+      return i + 1;
+    }
+    i += 1;
+  }
+  return sql.length;
+}
+
+function readDollarQuoteTag(sql: string, start: number): string | undefined {
+  if (sql[start] !== "$") return undefined;
+  const rest = sql.slice(start);
+  const match = rest.match(/^\$[A-Za-z_][A-Za-z0-9_]*\$/) ?? rest.match(/^\$\$/);
+  return match?.[0];
+}
+
+function shouldRewriteIdentifier(sql: string, start: number, end: number): boolean {
+  const prevIndex = previousSignificantIndex(sql, start - 1);
+  const prev = prevIndex === undefined ? undefined : sql[prevIndex];
+  if (prev === ".") return false;
+  if (prev === ":" && prevIndex !== undefined) {
+    const beforePrevIndex = previousSignificantIndex(sql, prevIndex - 1);
+    if (beforePrevIndex !== undefined && sql[beforePrevIndex] === ":") return false;
+  }
+  const next = nextSignificantChar(sql, end);
+  if (next === "(") return false;
+  return true;
+}
+
+function previousSignificantIndex(sql: string, index: number): number | undefined {
+  for (let i = index; i >= 0; i -= 1) {
+    if (!/\s/.test(sql[i] ?? "")) return i;
+  }
+  return undefined;
+}
+
+function previousSignificantChar(sql: string, index: number): string | undefined {
+  const prevIndex = previousSignificantIndex(sql, index);
+  return prevIndex === undefined ? undefined : sql[prevIndex];
+}
+
+function nextSignificantChar(sql: string, index: number): string | undefined {
+  for (let i = index; i < sql.length; i += 1) {
+    if (!/\s/.test(sql[i] ?? "")) return sql[i];
+  }
+  return undefined;
+}
+
+function normalizeScalarTypeName(typeName: string): string | undefined {
+  if (typeName === "json" || typeName === "jsonb") return "jsonb";
+  if (typeName === "text") return "text";
+  if (typeName === "boolean") return "boolean";
+  if (typeName === "int" || typeName === "integer" || typeName === "smallint") return "integer";
+  if (typeName === "bigint") return "bigint";
+  if (typeName === "numeric" || typeName === "decimal" || typeName === "real" || typeName === "double precision") {
+    return typeName;
+  }
+  if (typeName === "uuid") return "uuid";
+  if (typeName === "date") return "date";
+  if (typeName === "timestamp") return "timestamp";
+  if (typeName === "timestamptz") return "timestamptz";
+  return undefined;
 }

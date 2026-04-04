@@ -518,7 +518,13 @@ function renameExpression(expr: Expression, renameMap: Map<string, string>): Exp
         right: renameExpression(expr.right, renameMap),
       };
     case "call":
-      return { ...expr, args: expr.args.map((arg) => renameExpression(arg, renameMap)) };
+      return {
+        ...expr,
+        args: expr.args.map((arg) => ({
+          ...("kind" in arg ? { value: arg, loc: arg.loc } : arg),
+          value: renameExpression("kind" in arg ? arg : arg.value, renameMap),
+        })),
+      };
     case "case_expr":
       return {
         ...expr,

@@ -822,7 +822,7 @@ function inferCallType(expr: Extract<Expression, { kind: "call" }>, ctx: Analysi
   const targetName = ctx.importTargets.get(callRoot) ?? expr.name;
   if (ctx.importAliases.has(callRoot)) ctx.usedImports.add(callRoot);
 
-  const argTypes = expr.args.map((arg) => inferExpressionType(arg, ctx));
+  const argTypes = expr.args.map((arg) => inferExpressionType("kind" in arg ? arg : arg.value, ctx));
   const builtin = builtinSignature(targetName);
   if (!builtin) return { kind: "unknown", raw: "unknown" };
 
@@ -1174,8 +1174,17 @@ function collectModuleI18nRefs(mod: PlxModule): I18nReference[] {
 function collectViewI18nRefs(entity: PlxEntity, refs: I18nReference[], owner: string): void {
   for (const section of [entity.view.standard, entity.view.expanded]) {
     if (!section) continue;
+    for (const field of section.fields) {
+      if (typeof field === "string") continue;
+      if (field.label) refs.push({ key: field.label, loc: entity.loc, owner });
+    }
     for (const stat of section.stats ?? []) refs.push({ key: stat.label, loc: entity.loc, owner });
     for (const related of section.related ?? []) refs.push({ key: related.label, loc: entity.loc, owner });
+  }
+
+  for (const field of entity.view.compact) {
+    if (typeof field === "string") continue;
+    if (field.label) refs.push({ key: field.label, loc: entity.loc, owner });
   }
 
   for (const formSection of entity.view.form ?? []) {

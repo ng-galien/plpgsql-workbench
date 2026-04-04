@@ -1,5 +1,7 @@
 // PLX AST
 
+import type { SduiViewField } from "./generated/sdui-contract.js";
+
 export interface Loc {
   file?: string;
   line: number;
@@ -175,15 +177,17 @@ export interface StateTransition {
   loc: Loc;
 }
 
+export type ViewField = SduiViewField;
+
 export interface ViewBlock {
-  compact: string[];
+  compact: ViewField[];
   standard?: ViewSection;
   expanded?: ViewSection;
   form?: FormSection[];
 }
 
 export interface ViewSection {
-  fields: string[];
+  fields: ViewField[];
   stats?: StatDef[];
   related?: RelatedDef[];
 }
@@ -191,6 +195,7 @@ export interface ViewSection {
 export interface StatDef {
   key: string;
   label: string;
+  variant?: string;
 }
 
 export interface RelatedDef {
@@ -517,6 +522,14 @@ export interface BinaryExpr {
 export interface CallExpr {
   kind: "call";
   name: string;
-  args: Expression[];
+  args: CallArgEntry[];
   loc: Loc;
 }
+
+export interface CallArg {
+  name?: string;
+  value: Expression;
+  loc: Loc;
+}
+
+export type CallArgEntry = CallArg | Expression;

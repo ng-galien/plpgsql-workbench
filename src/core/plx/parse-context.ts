@@ -483,7 +483,12 @@ export class ParseContext {
 
       this.advanceBinaryOperator(opInfo);
       const nextMin = opInfo.assoc === "right" ? opInfo.precedence : opInfo.precedence + 1;
-      const right = opInfo.op === "IN" && this.isAt("LPAREN") ? this.parseInList() : this.parseExpression(nextMin);
+      const right =
+        opInfo.op === "IN" && this.isAt("LPAREN")
+          ? this.parseInList()
+          : opInfo.op === "::"
+            ? this.parseCastType()
+            : this.parseExpression(nextMin);
       left = { kind: "binary", op: opInfo.op, left, right, loc: mergeLoc(left.loc, right.loc) };
     }
 
@@ -561,8 +566,8 @@ export class ParseContext {
 
         // schema.func(args)
         if (this.isAt("LPAREN")) {
-          const args = this.parseArgList();
-          const end = args.at(-1)?.loc ?? currentLoc;
+          const { args, endLoc } = this.parseArgList();
+          const end = endLoc ?? currentLoc;
           return { kind: "call", name: `${tok.value}.${second}`, args, loc: mergeLoc(loc, end) };
         }
 
@@ -599,8 +604,8 @@ export class ParseContext {
 
       // func(args)
       if (this.isAt("LPAREN")) {
-        const args = this.parseArgList();
-        const end = args.at(-1)?.loc ?? loc;
+        const { args, endLoc } = this.parseArgList();
+        const end = endLoc ?? loc;
         return { kind: "call", name: tok.value, args, loc: mergeLoc(loc, end) };
       }
 
@@ -655,23 +660,35 @@ export class ParseContext {
     return { kind: "case_expr", subject, arms, elseResult, loc: mergeLoc(start, end) };
   }
 
-  parseArgList(): Expression[] {
+  parseArgList(): { args: { name?: string; value: Expression; loc: Loc }[]; endLoc: Loc } {
     this.expect("LPAREN");
     this.skipExprWs();
-    const args: Expression[] = [];
+    const args: { name?: string; value: Expression; loc: Loc }[] = [];
     if (!this.isAt("RPAREN")) {
-      args.push(this.parseExpression());
+      args.push(this.parseCallArg());
       this.skipExprWs();
       while (this.isAt("COMMA")) {
         this.advance();
         this.skipExprWs();
-        args.push(this.parseExpression());
+        args.push(this.parseCallArg());
         this.skipExprWs();
       }
     }
     this.skipExprWs();
-    this.expect("RPAREN");
-    return args;
+    const end = tokenLoc(this.expect("RPAREN"));
+    return { args, endLoc: end };
+  }
+
+  private parseCallArg(): { name?: string; value: Expression; loc: Loc } {
+    if (this.isAt("IDENT") && this.peekAt(1)?.type === "ASSIGN") {
+      const nameTok = this.advance();
+      this.advance();
+      const value = this.parseExpression();
+      return { name: nameTok.value, value, loc: mergeLoc(tokenLoc(nameTok), value.loc) };
+    }
+
+    const value = this.parseExpression();
+    return { value, loc: value.loc };
   }
 
   private parseJsonLiteral(): JsonLiteral {
@@ -726,6 +743,28 @@ export class ParseContext {
     }
     const end = tokenLoc(this.expect("RPAREN"));
     return { kind: "array_literal", elements, loc: mergeLoc(start, end) };
+  }
+
+  private parseCastType(): Expression {
+    const first = this.expect("IDENT");
+    let raw = first.value;
+    let end = tokenLoc(first);
+
+    if (this.isAt("DOT")) {
+      this.advance();
+      const second = this.expect("IDENT");
+      raw = `${raw}.${second.value}`;
+      end = tokenLoc(second);
+    }
+
+    while (this.isAt("LBRACKET") && this.peekAt(1)?.type === "RBRACKET") {
+      const open = this.advance();
+      const close = this.advance();
+      raw += "[]";
+      end = mergeLoc(tokenLoc(open), tokenLoc(close));
+    }
+
+    return { kind: "identifier", name: raw, loc: mergeLoc(tokenLoc(first), end) };
   }
 
   private parseArrayLiteral(): ArrayLiteral {
@@ -947,7 +986,14 @@ function remapExpressionLocs(expr: Expression, baseLoc: Loc): void {
       remapExpressionLocs(expr.expression, baseLoc);
       return;
     case "call":
-      for (const arg of expr.args) remapExpressionLocs(arg, baseLoc);
+      for (const arg of expr.args) {
+        if (!("kind" in arg)) {
+          remapExpressionLocs(arg.value, baseLoc);
+          arg.loc = shiftRelativeLoc(arg.loc, baseLoc);
+        } else {
+          remapExpressionLocs(arg, baseLoc);
+        }
+      }
       return;
     case "case_expr":
       remapExpressionLocs(expr.subject, baseLoc);

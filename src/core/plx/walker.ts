@@ -68,7 +68,7 @@ function walkExpression(expr: Expression, visitor: AstVisitor): void {
 
   switch (expr.kind) {
     case "call":
-      for (const arg of expr.args) walkExpression(arg, visitor);
+      for (const arg of expr.args) walkExpression("kind" in arg ? arg : arg.value, visitor);
       return;
     case "array_literal":
       for (const element of expr.elements) walkExpression(element, visitor);

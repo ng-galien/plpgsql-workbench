@@ -150,6 +150,47 @@ fn quote.read(id int) -> jsonb:
     );
   });
 
+  it("parses named arguments in call expressions", () => {
+    const mod = parse(
+      tokenize(`
+fn demo.run() -> jsonb:
+  return demo.classify(p_id := 7, p_title := 'Test')
+`),
+    );
+
+    const call = mod.functions[0]?.body[0];
+    expect(call).toEqual(
+      expect.objectContaining({
+        kind: "return",
+        value: expect.objectContaining({
+          kind: "call",
+          name: "demo.classify",
+          args: [expect.objectContaining({ name: "p_id" }), expect.objectContaining({ name: "p_title" })],
+        }),
+      }),
+    );
+  });
+
+  it("parses cast targets with array suffixes", () => {
+    const mod = parse(
+      tokenize(`
+fn demo.arr() -> void:
+  values := '{jazz,concert}'::text[]
+`),
+    );
+
+    expect(mod.functions[0]?.body[0]).toEqual(
+      expect.objectContaining({
+        kind: "assign",
+        value: expect.objectContaining({
+          kind: "binary",
+          op: "::",
+          right: expect.objectContaining({ kind: "identifier", name: "text[]" }),
+        }),
+      }),
+    );
+  });
+
   it("parses entity events, lifecycle hooks, emit statements and subscriptions", () => {
     const mod = parse(
       tokenize(`
@@ -205,6 +246,30 @@ on purchase.receipt.received(receipt_id, supplier_id):
         event: "received",
         params: ["receipt_id", "supplier_id"],
       }),
+    ]);
+  });
+
+  it("parses view template field objects", () => {
+    const mod = parse(
+      tokenize(`
+entity demo.task:
+  fields:
+    title text required
+    status text
+
+  view:
+    compact: [{key: title, label: demo.field_title}]
+    standard:
+      fields: [title, {key: status, type: status, label: demo.field_status}]
+`),
+    );
+
+    expect(mod.entities[0]?.view.compact).toEqual([
+      expect.objectContaining({ key: "title", label: "demo.field_title" }),
+    ]);
+    expect(mod.entities[0]?.view.standard?.fields).toEqual([
+      "title",
+      expect.objectContaining({ key: "status", type: "status", label: "demo.field_status" }),
     ]);
   });
 

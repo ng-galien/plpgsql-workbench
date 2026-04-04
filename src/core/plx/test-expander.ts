@@ -90,7 +90,7 @@ function findQualifiedCallInExpr(expr: Expression): string | undefined {
     if (expr.name.includes(".")) return expr.name.split(".")[0];
     // Search inside arguments (e.g. count(expense.list_items()))
     for (const arg of expr.args) {
-      const found = findQualifiedCallInExpr(arg);
+      const found = findQualifiedCallInExpr("kind" in arg ? arg : arg.value);
       if (found) return found;
     }
   }

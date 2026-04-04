@@ -9,6 +9,8 @@ import { expandI18n } from "./i18n-expander.js";
 import { LexError, tokenize } from "./lexer.js";
 import { ParseError } from "./parse-context.js";
 import { parse } from "./parser.js";
+import { validateViewPayload } from "./sdui-schema.js";
+import { buildEntityViewPayload } from "./sdui-view.js";
 import { analyzeModule } from "./semantic.js";
 import { expandTests } from "./test-expander.js";
 
@@ -126,6 +128,15 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
   const expandResult = expandEntities(mod);
   for (const err of expandResult.errors) {
     errors.push(createDiagnostic("codegen", "codegen.entity-expansion-failed", err.message, err.loc));
+  }
+  if (errors.length > 0) {
+    return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
+  }
+
+  for (const entity of mod.entities) {
+    for (const error of validateViewPayload(buildEntityViewPayload(entity), entity.loc)) {
+      errors.push(createDiagnostic("validate", error.code, error.message, error.loc));
+    }
   }
   if (errors.length > 0) {
     return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);

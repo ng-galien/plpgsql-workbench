@@ -163,6 +163,9 @@ entity demo.task:
     expect(result.sql).toContain("FUNCTION demo.task_update(p_id text, p_input jsonb)");
     expect(result.sql).toContain("jsonb_populate_record(NULL::demo.task, p_input)");
     expect(result.sql).toContain("jsonb_populate_record(v_current, p_input)");
+    expect(result.sql).toContain("'entity_type', 'crud'");
+    expect(result.sql).toContain("'compact'");
+    expect(result.sql).toContain("'standard'");
   });
 
   it("supports fields + payload entities with hybrid storage", () => {
@@ -277,6 +280,119 @@ test "triple quoted assert":
     expect(result.errors).toHaveLength(0);
     expect(result.sql).toContain("RETURN QUERY select jsonb_build_object('id', 1);");
     expect(result.testSql).toContain("RETURN NEXT ok((select true), 'assert line 9');");
+  });
+
+  it("supports named arguments in regular PLX calls", () => {
+    const source = `
+fn demo.classify(p_id int, p_title text) -> jsonb [stable]:
+  return jsonb_build_object('status', 'classified', 'id', p_id, 'title', p_title)
+
+test "named args":
+  id := 7
+  result := demo.classify(p_id := id, p_title := 'Test')
+  assert result->>'status' = 'classified'
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("v_result := demo.classify(p_id := v_id, p_title := 'Test');");
+    expect(result.testSql).toContain("v_result jsonb;");
+  });
+
+  it("rewrites local PLX variables inside sql blocks to their plpgsql names", () => {
+    const source = `
+fn demo.id() -> int [stable]:
+  return 1
+
+test "sql block local vars":
+  asset_id := demo.id()
+  assert """
+    select asset_id = 1
+  """
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("v_asset_id");
+    expect(result.testSql).toContain("select v_asset_id = 1");
+    expect(result.testSql).not.toContain("select asset_id = 1");
+  });
+
+  it("infers integer variables from cast expressions", () => {
+    const source = `
+test "cast inference":
+  id_seed := demo.id()
+  c := jsonb_build_object('id', 7)
+  asset_id := (c->>'id')::int
+  assert """
+    select asset_id = 7
+  """
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("v_asset_id integer;");
+  });
+
+  it("infers array variables from cast expressions", () => {
+    const source = `
+fn demo.seed() -> int [stable]:
+  return 1
+
+test "array cast inference":
+  seed := demo.seed()
+  values := '{jazz,concert}'::text[]
+  assert """
+    select values[1]::text = 'jazz'
+  """
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("v_values text[];");
+  });
+
+  it("emits cast targets with array suffixes in generated SQL", () => {
+    const source = `
+fn demo.tags() -> text[] [stable]:
+  return '{jazz,concert}'::text[]
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("RETURN '{jazz,concert}'::text[];");
+  });
+
+  it("does not rewrite cast targets inside sql blocks", () => {
+    const source = `
+fn demo.asset_id() -> int [stable]:
+  return 1
+
+test "cast target rewrite guard":
+  asset_id := demo.asset_id()
+  result := """
+    select '1'::asset_id
+  """
+  assert asset_id = 1
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("v_asset_id integer;");
+    expect(result.testSql).toContain("select INTO v_result '1'::asset_id");
+    expect(result.testSql).not.toContain("::v_asset_id");
+  });
+
+  it("infers sql_block select function return types from known functions", () => {
+    const source = `
+fn demo.classify() -> jsonb [stable]:
+  return jsonb_build_object('status', 'classified')
+
+test "sql block call return type":
+  seed := demo.classify()
+  result := """
+    select demo.classify()
+  """
+  assert result->>'status' = 'classified'
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("v_result jsonb;");
+    expect(result.testSql).toContain("select INTO v_result demo.classify()");
   });
 
   it("supports declarative entity validate rules", () => {
@@ -753,6 +869,90 @@ entity demo.task:
     );
   });
 
+  it("emits structured view field objects from template sections", () => {
+    const source = `
+module demo
+depends pgv
+
+entity demo.task:
+  fields:
+    title text required
+    status text
+
+  view:
+    compact: [{key: title, label: demo.field_title}]
+    standard:
+      fields: [title, {key: status, type: status, label: demo.field_status}]
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("'compact'");
+    expect(result.sql).toContain("'fields'");
+    expect(result.sql).toContain("'key', 'title'");
+    expect(result.sql).toContain("'label', 'demo.field_title'");
+    expect(result.sql).toContain("'type', 'status'");
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "semantic.missing-i18n-translation",
+          message: "missing i18n translation 'demo.field_title' for lang 'fr'",
+        }),
+        expect.objectContaining({
+          code: "semantic.missing-i18n-translation",
+          message: "missing i18n translation 'demo.field_status' for lang 'fr'",
+        }),
+      ]),
+    );
+  });
+
+  it("emits stat variants in view template output", () => {
+    const source = `
+module demo
+depends pgv
+
+entity demo.task:
+  fields:
+    title text required
+
+  view:
+    compact: [title]
+    standard:
+      fields: [title]
+      stats:
+        {key: overdue_count, label: demo.stat_overdue_count, variant: warning}
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("'variant', 'warning'");
+  });
+
+  it("fails validation when compiled view payload violates the canonical SDUI schema", () => {
+    const source = `
+module demo
+depends pgv
+
+entity demo.task:
+  fields:
+    title text required
+
+  view:
+    compact: [title]
+    form:
+      'Section':
+        {key: title, type: text, label: 'Title'}
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          phase: "validate",
+          code: "validate.invalid-view-payload",
+        }),
+      ]),
+    );
+    expect(result.errors.some((error) => error.message.includes("view.template.form.sections[0].label"))).toBe(true);
+  });
+
   it("compiles select with static options resolved via function call", () => {
     const source = `
 module demo
@@ -843,6 +1043,26 @@ entity demo.item:
     );
   });
 
+  it("accepts select with canonical search property", () => {
+    const source = `
+module demo
+
+entity demo.item:
+  fields:
+    client_id int?
+
+  view:
+    form:
+      'demo.section':
+        {key: client_id, type: select, label: demo.field_client, search: true, source: 'crm://client', display: name}
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("'search'");
+    expect(result.sql).toContain("'source'");
+    expect(result.sql).toContain("'display'");
+  });
+
   it("errors on form field missing required key", () => {
     const source = `
 module demo
@@ -861,6 +1081,28 @@ entity demo.item:
       expect.arrayContaining([
         expect.objectContaining({
           code: "parse.invalid-form-field",
+        }),
+      ]),
+    );
+  });
+
+  it("errors on invalid action variant from SDUI contract", () => {
+    const source = `
+module demo
+
+entity demo.item:
+  fields:
+    name text required
+
+  actions:
+    archive: {label: demo.action_archive, variant: accent}
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "parse.invalid-action-variant",
+          phase: "parse",
         }),
       ]),
     );

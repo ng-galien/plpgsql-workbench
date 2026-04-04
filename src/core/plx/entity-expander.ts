@@ -17,6 +17,7 @@ import type {
   Statement,
   StateTransition,
   StrategyDecl,
+  ViewField,
   ViewSection,
 } from "./ast.js";
 import { pointLoc } from "./ast.js";
@@ -218,16 +219,20 @@ function fieldDef(name: string, type: string, nullable: boolean, defaultValue?: 
 function buildViewFunction(entity: PlxEntity): PlxFunction {
   const loc = entity.loc;
   const view = entity.view;
+  const defaultFields = entity.fields.map((field) => field.name);
+  const compactFields = view.compact.length > 0 ? view.compact : defaultFields;
+  const standardSection = view.standard ?? { fields: compactFields };
   const entries: JsonLiteral["entries"] = [
     jEntry("uri", strLit(entity.uri, loc)),
     jEntry("label", strLit(entity.label, loc)),
   ];
   if (entity.icon) entries.push(jEntry("icon", strLit(entity.icon, loc)));
+  entries.push(jEntry("entity_type", strLit("crud", loc)));
 
   // Template
   const template: JsonLiteral["entries"] = [];
-  template.push(jEntry("compact", jObj([jEntry("fields", strArr(view.compact, loc))], loc)));
-  if (view.standard) template.push(jEntry("standard", buildViewSection(view.standard, loc)));
+  template.push(jEntry("compact", jObj([jEntry("fields", buildViewFieldArray(compactFields, loc))], loc)));
+  template.push(jEntry("standard", buildViewSection(standardSection, loc)));
   if (view.expanded) template.push(jEntry("expanded", buildViewSection(view.expanded, loc)));
   if (view.form) template.push(jEntry("form", buildFormSections(view.form, loc)));
   entries.push(jEntry("template", jObj(template, loc)));
@@ -263,11 +268,13 @@ function buildViewFunction(entity: PlxEntity): PlxFunction {
 }
 
 function buildViewSection(section: ViewSection, loc: Loc = LOC): Expression {
-  const entries: JsonLiteral["entries"] = [jEntry("fields", strArr(section.fields, loc))];
+  const entries: JsonLiteral["entries"] = [jEntry("fields", buildViewFieldArray(section.fields, loc))];
   if (section.stats) {
-    const statsArr = section.stats.map((s) =>
-      jObj([jEntry("key", strLit(s.key, loc)), jEntry("label", strLit(s.label, loc))], loc),
-    );
+    const statsArr = section.stats.map((s) => {
+      const props: JsonLiteral["entries"] = [jEntry("key", strLit(s.key, loc)), jEntry("label", strLit(s.label, loc))];
+      if (s.variant) props.push(jEntry("variant", strLit(s.variant, loc)));
+      return jObj(props, loc);
+    });
     entries.push(jEntry("stats", { kind: "array_literal", elements: statsArr, loc }));
   }
   if (section.related) {
@@ -1030,6 +1037,23 @@ function jEntry(key: string, value: Expression): JsonLiteral["entries"][number] 
 }
 function strArr(items: string[], loc: Loc = LOC): Expression {
   return textArray(items, loc);
+}
+
+function buildViewFieldArray(fields: ViewField[], loc: Loc = LOC): Expression {
+  return {
+    kind: "array_literal",
+    elements: fields.map((field) =>
+      typeof field === "string"
+        ? strLit(field, loc)
+        : jObj(
+            Object.entries(field).flatMap(([key, value]) =>
+              typeof value === "string" ? [jEntry(key, strLit(value, loc))] : [],
+            ),
+            loc,
+          ),
+    ),
+    loc,
+  };
 }
 function sqlBlock(
   sql: string,
