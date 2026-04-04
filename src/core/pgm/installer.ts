@@ -1,7 +1,7 @@
 /**
  * pgm installer — copies module SQL + assets into an app directory
  * with proper slot numbering and ordering.
- * Generates pgv-modules.js for Alpine.js component loading.
+ * Still supports legacy frontend asset loading while the old pgv shell exists.
  */
 
 import fs from "node:fs/promises";
@@ -76,7 +76,7 @@ export async function installModules(modulesDir: string, appDir: string, plan: I
       files.push(`frontend/${basename}`);
     }
 
-    // --- Scripts (Alpine.js components) ---
+    // --- Scripts (legacy frontend assets) ---
     const scripts = manifest.assets?.scripts ?? [];
     for (const scriptFile of scripts) {
       const src = path.join(moduleDir, scriptFile);
@@ -113,7 +113,7 @@ export async function installModules(modulesDir: string, appDir: string, plan: I
     }
   }
 
-  // --- Generate pgv-modules.js ---
+  // --- Generate pgv-modules.js (legacy asset loader) ---
   if (allScripts.length > 0 || allStyles.length > 0) {
     await generateModulesLoader(appDir, allScripts, allStyles);
     results.push({
@@ -135,7 +135,7 @@ export async function installModules(modulesDir: string, appDir: string, plan: I
   return results;
 }
 
-// --- pgv-modules.js generator ---
+// --- Legacy frontend asset loader ---
 
 async function generateModulesLoader(appDir: string, scripts: string[], styles: string[]): Promise<void> {
   const lines: string[] = [];

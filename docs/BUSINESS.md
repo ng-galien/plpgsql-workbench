@@ -11,7 +11,7 @@ Les spécialisations métier (fumiste, menuisier, plombier, etc.) sont des **cou
 
 ## Executive Summary
 
-Application de gestion métier pour TPE/PME construite entièrement en PostgreSQL. Le HTML est généré côté serveur par des fonctions PL/pgSQL (pgView), servi par PostgREST, affiché par un shell SPA de 50 lignes. Zéro framework JS, zéro serveur applicatif. Premier marché cible : artisans (fumistes, menuisiers, plombiers, chauffagistes).
+Application de gestion métier pour TPE/PME construite entièrement en PostgreSQL. Le backend expose des contrats SDUI et des APIs JSON via PostgREST, consommés par un shell client. Zéro serveur applicatif. Premier marché cible : artisans (fumistes, menuisiers, plombiers, chauffagistes).
 
 **Avantage concurrentiel** : coût de développement et de maintenance 10x inférieur à une app classique React/Node, avec les mêmes fonctionnalités.
 
@@ -49,7 +49,7 @@ Un logiciel **simple, pas cher, spécifique au métier** qui fait devis → comm
 
 | Module | Schema | Fonctions | Description |
 |--------|--------|-----------|-------------|
-| **pgv** | pgv | 49 | Framework SSR — primitives UI, router, shell Alpine.js |
+| **pgv** | pgv | 49 | Fondation SDUI — API dispatcher, contrat de vue, i18n, primitives UI |
 | **crm** | crm | 19 | Clients (particuliers + entreprises), contacts, interactions |
 | **quote** | quote | 31 | Devis, factures, lignes, TVA, numerotation legale |
 | **ledger** | ledger | 29 | Compta double entree, PCG simplifie, journaux |
@@ -101,13 +101,13 @@ NEXT    Production       PWA mobile, facture electronique 2027, Stripe, deploy S
 ### Stack technique
 
 ```
-PostgreSQL           Base de données + logique métier + rendu HTML
-PostgREST            API HTTP automatique (1 endpoint : POST /rpc/page)
-pgView               Moteur SSR en PL/pgSQL (la DB génère le HTML)
-PicoCSS + marked.js  Style + Markdown côté client
+PostgreSQL           Base de données + logique métier + contrats SDUI
+PostgREST            API HTTP automatique
+pgView               Fondation SDUI en PL/pgSQL (contrat de vue, dispatcher, i18n)
+Client shell         Rendu et interaction côté client
 Supabase             Hébergement managé (DB + PostgREST + Auth + Storage)
 
-0 framework JS. 0 serveur applicatif. 0 build pipeline.
+0 serveur applicatif. 0 backend web custom.
 ```
 
 ### Différenciation technique

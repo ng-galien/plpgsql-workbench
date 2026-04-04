@@ -1,14 +1,14 @@
 ---
 topic: data-convention
 ---
-# Convention data_* — Query API for pgv.table()
+# Convention data_* — Query API for table data sources
 
 ## Overview
 
-`data_*` functions serve JSON datasets for the `pgv.table()` Alpine plugin.
+`data_*` functions serve JSON datasets for table-oriented clients.
 They handle filtering, search (FTS), and cursor-based navigation (next/prev).
 
-Convention: `get_*` = HTML pages, `post_*` = actions, `data_*` = JSON datasets.
+Convention: `data_*` = JSON datasets consumed by the client shell or SDUI components.
 
 ## Signature
 
@@ -142,7 +142,7 @@ Per-tenant language config via workbench.config or tenant.lang column.
 
 ## PostgREST routing
 
-data_* functions are called directly, NOT through pgv.route():
+`data_*` functions are called directly over RPC:
 
   POST /rpc/data_{resource}
   Content-Profile: {schema}
@@ -152,13 +152,13 @@ data_* functions are called directly, NOT through pgv.route():
 
 ## Grants
 
-Same as get_*/post_*:
+Like the rest of the backend JSON API:
 
   GRANT EXECUTE ON FUNCTION {schema}.data_{resource}(jsonb) TO anon;
 
-## pgv.table() integration
+## Table integration
 
-The page function (get_*) declares the table config:
+A SDUI client or table component declares the datasource config:
 
   pgv.table(jsonb_build_object(
     'rpc',     'data_messages',
@@ -180,12 +180,12 @@ The page function (get_*) declares the table config:
     'page_size', 20
   ))
 
-The Alpine plugin pgvTable handles: rendering, filtering, sorting (client),
-next/prev navigation (server), search (FTS via q), loading states.
+The client handles rendering, filtering UI, sorting (client),
+next/prev navigation (server), search (FTS via q), and loading states.
 
 ## i18n keys
 
-All UI labels in pgvTable use pgv.t() for internationalization:
+All table labels should use `pgv.t()` for internationalization:
 
   Key                    Default (fr)       Usage
   ---------------------  -----------------  ---------------------------

@@ -1,7 +1,7 @@
 {
   "name": "pgv",
   "version": "1.0.0",
-  "description": "pgView — Server-Side Rendering framework for PostgreSQL apps. Alpine.js shell + PicoCSS + PostgREST + pgv.* UI primitives.",
+  "description": "pgView — PostgreSQL SDUI foundation: api dispatcher, view contract, i18n, introspection and UI primitives.",
   "schemas": {
     "public": "pgv",
     "private": null,

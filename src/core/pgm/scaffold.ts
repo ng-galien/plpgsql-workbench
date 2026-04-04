@@ -217,8 +217,7 @@ mcp:
 }
 
 function rolesSql(_name: string): string {
-  return `-- Roles and domain (module schemas are created by their own DDL files)
-DO $$ BEGIN CREATE DOMAIN "text/html" AS TEXT; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+  return `-- Roles (module schemas are created by their own DDL files)
 DO $$ BEGIN CREATE ROLE authenticator NOINHERIT LOGIN PASSWORD 'authenticator'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 DO $$ BEGIN CREATE ROLE anon NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 GRANT anon TO authenticator;
@@ -479,15 +478,13 @@ Ce module est un **module independant** du framework pgView. Ses dependances son
 
 ### Conventions PL/pgSQL
 
-- \`get_*()\` → pages GET, \`post_*()\` → actions POST. Nommage = routing automatique via \`pgv.route()\`
-- \`nav_items() -> jsonb\` → menu du module. Retourne \`jsonb\` (JAMAIS TABLE)
+- \`nav_items() -> jsonb\` → navigation du module. Retourne \`jsonb\` (JAMAIS TABLE)
 - \`brand() -> text\` → nom affiche dans la nav
-- \`get_index()\` → page d'accueil du module (obligatoire)
-- Parametres via query string : \`/page?p_id=42\` → \`get_page(p_id int)\`
-- POST retourne raw HTML (templates \`<template data-toast>\` ou \`<template data-redirect>\`) — jamais wrappe dans \`page()\`
-- Tables via \`<md>\` blocks (markdown), JAMAIS \`<table>\` HTML. \`<md data-page="20">\` pour pagination
-- CSS classes \`pgv-*\`, JAMAIS de \`style="..."\` inline
-- Primitives UI : \`pgv.stat()\`, \`pgv.badge()\`, \`pgv.card()\`, \`pgv.grid()\`, \`pgv.empty()\`, \`pgv.md_table()\`, \`pgv.action()\`
+- Entites CRUD → \`_list()\`, \`_read()\`, \`_create()\`, \`_update()\`, \`_delete()\`
+- Presentation SDUI → \`_view() -> jsonb\` ou PLX \`view:\` compile vers \`_view()\`
+- Actions metier → fonctions explicites appelees via \`pgv.api('post', uri, data)\`
+- Backend = JSON/SDUI uniquement. Pas de HTML SSR, pas de \`get_*()/post_*()\` legacy
+- Primitives UI : \`pgv.ui_*\` uniquement. Le shell client rend les composants
 
 ### Workflow dev (STRICT)
 
@@ -542,10 +539,10 @@ Certains modules ont des donnees de reference necessaires au fonctionnement :
 ## i18n
 
 Le framework utilise \`pgv.t(key)\` pour l'internationalisation. Chaque module doit :
-1. Créer \`${name}.i18n_seed()\` — INSERT INTO pgv.i18n(lang, key, value) les traductions FR
+1. Déclarer ses traductions dans \`src/${name}.i18n\`
 2. Clés namespaced : \`${name}.nav_xxx\`, \`${name}.title_xxx\`, \`${name}.btn_xxx\`, etc.
-3. Utiliser \`pgv.t('${name}.xxx')\` dans nav_items(), brand(), et toutes les fonctions get_*/post_*
-4. \`ON CONFLICT DO NOTHING\` dans le seed
+3. Utiliser \`pgv.t('${name}.xxx')\` dans nav_items(), brand(), \`_view()\` et les helpers backend
+4. Laisser \`plx_apply\` générer puis seed automatiquement \`${name}.i18n_seed()\`
 
 ## QA Seed Data
 

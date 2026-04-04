@@ -172,4 +172,4 @@ The `pgv_qa` schema is the **design system showcase** -- it contains demo data f
 - **tenant_id**: always `PERFORM set_config('app.tenant_id', 'test', true)` at the start of each test
 - **pg_test**: discovers `test_*()` functions in the `_ut` schema
 - **You are the pgv agent, NOT the lead.** Never use `ws_health` to find your tasks -- it shows ALL workspace tasks. Use only `pg_msg_inbox module:pgv` to read YOUR messages. Only process messages addressed to `pgv`.
-- PostgREST content negotiation -- use domain `"text/html"` for pages
+- Legacy HTML SSR is being removed. Do not introduce new `"text/html"` page functions or route-based HTML contracts.
