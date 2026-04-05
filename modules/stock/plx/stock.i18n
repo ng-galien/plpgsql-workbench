@@ -1,0 +1,119 @@
+[fr]
+stock.brand = Stock
+
+stock.nav_articles = Articles
+stock.nav_warehouses = Dépôts
+stock.nav_movements = Mouvements
+stock.nav_alerts = Alertes
+stock.nav_valuation = Valorisation
+stock.nav_inventory = Inventaire
+
+stock.entity_article = Article
+stock.entity_warehouse = Dépôt
+stock.entity_movement = Mouvement
+
+stock.type_entry = Entrée
+stock.type_exit = Sortie
+stock.type_transfer = Transfert
+stock.type_inventory = Inventaire
+
+stock.cat_wood = Bois
+stock.cat_hardware = Quincaillerie
+stock.cat_panel = Panneau
+stock.cat_insulation = Isolant
+stock.cat_finishing = Finition
+stock.cat_other = Autre
+
+stock.unit_u = Unité
+stock.unit_m = Mètre
+stock.unit_m2 = m²
+stock.unit_m3 = m³
+stock.unit_kg = kg
+stock.unit_l = Litre
+
+stock.warehouse_workshop = Atelier
+stock.warehouse_site = Chantier
+stock.warehouse_vehicle = Véhicule
+stock.warehouse_storage = Entrepôt
+
+stock.field_reference = Référence
+stock.field_description = Désignation
+stock.field_category = Catégorie
+stock.field_unit = Unité
+stock.field_purchase_price = Prix d'achat
+stock.field_min_threshold = Seuil mini
+stock.field_supplier = Fournisseur
+stock.field_notes = Notes
+stock.field_name = Nom
+stock.field_type = Type
+stock.field_address = Adresse
+stock.field_quantity = Quantité
+stock.field_unit_price = Prix unitaire
+stock.field_dest_warehouse = Dépôt destination (transfert)
+stock.field_doc_ref = Référence doc
+stock.field_catalog_article = Article catalog
+stock.field_active = Actif
+
+stock.section_identity = Identification
+stock.section_pricing = Tarification & seuils
+stock.section_links = Liens
+stock.section_location = Localisation
+
+stock.stat_stock_total = Stock total
+stock.stat_pmp = PMP
+stock.stat_min_threshold = Seuil mini
+stock.stat_nb_articles = Nb articles
+stock.stat_articles = Articles
+stock.stat_stock_value = Valeur stock
+stock.stat_alerts = Alertes
+stock.stat_week_movements = Mouvements semaine
+
+stock.col_ref = Réf.
+stock.col_description = Désignation
+stock.col_category = Catégorie
+stock.col_stock = Stock
+stock.col_pmp = PMP
+stock.col_alert = Alerte
+stock.col_supplier = Fournisseur
+stock.col_active = Actif
+stock.col_name = Nom
+stock.col_type = Type
+stock.col_address = Adresse
+stock.col_articles = Articles
+stock.col_date = Date
+stock.col_article = Article
+stock.col_warehouse = Dépôt
+stock.col_qty = Qté
+stock.col_quantity = Quantité
+stock.col_current_stock = Stock actuel
+stock.col_unit_price = PU
+stock.col_unit = Unité
+
+stock.action_edit = Modifier
+stock.action_deactivate = Désactiver
+stock.action_activate = Réactiver
+stock.action_delete = Supprimer
+stock.action_inventory = Inventaire
+stock.action_new_movement = Nouveau mouvement
+
+stock.confirm_deactivate = Désactiver cet élément ?
+stock.confirm_delete = Supprimer définitivement ?
+
+stock.rel_supplier = Fournisseur
+stock.rel_catalog = Article catalog
+stock.rel_articles = Articles en stock
+stock.rel_movements = Mouvements
+
+stock.empty_no_article = Aucun article
+stock.empty_no_warehouse = Aucun dépôt
+stock.empty_no_movement = Aucun mouvement
+
+stock.err_warehouse_inactive = Dépôt inexistant ou inactif
+stock.err_no_lines = Aucune ligne à réceptionner
+stock.err_insufficient_stock = Stock insuffisant dans ce dépôt
+
+stock.toast_article_created = Article créé
+stock.toast_article_updated = Article modifié
+stock.toast_warehouse_created = Dépôt créé
+stock.toast_warehouse_updated = Dépôt modifié
+stock.toast_movement_recorded = Mouvement enregistré

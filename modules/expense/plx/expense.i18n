@@ -6,6 +6,7 @@ expense.nav_categories = Catégories
 
 expense.entity_expense_report = Note de frais
 expense.entity_category = Catégorie de frais
+expense.entity_line = Ligne de dépense
 
 expense.section_info = Informations
 expense.section_lines = Lignes de dépenses
