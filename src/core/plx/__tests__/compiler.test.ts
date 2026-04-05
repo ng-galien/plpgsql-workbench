@@ -429,6 +429,21 @@ test "named args":
     expect(result.testSql).toContain("v_result jsonb;");
   });
 
+  it("treats bool return types as boolean locals", () => {
+    const source = `
+fn demo.is_ready() -> bool [stable]:
+  return true
+
+test "bool local":
+  ready := demo.is_ready()
+  assert ready = true
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.testSql).toContain("v_ready boolean;");
+    expect(result.testSql).toContain("v_ready := demo.is_ready();");
+  });
+
   it("rewrites local PLX variables inside sql blocks to their plpgsql names", () => {
     const source = `
 fn demo.id() -> int [stable]:

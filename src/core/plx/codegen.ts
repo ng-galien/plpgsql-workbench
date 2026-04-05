@@ -279,7 +279,7 @@ class CodegenContext {
     }
     if (lowered === "jsonb" || lowered === "json") return { plName, type: "jsonb", isRow: false };
     if (lowered === "text") return { plName, type: "text", isRow: false };
-    if (lowered === "boolean") return { plName, type: "boolean", isRow: false };
+    if (lowered === "boolean" || lowered === "bool") return { plName, type: "boolean", isRow: false };
     if (lowered === "int" || lowered === "integer" || lowered === "smallint")
       return { plName, type: "integer", isRow: false };
     if (lowered === "bigint") return { plName, type: "bigint", isRow: false };
@@ -1016,7 +1016,7 @@ function nextSignificantChar(sql: string, index: number): string | undefined {
 function normalizeScalarTypeName(typeName: string): string | undefined {
   if (typeName === "json" || typeName === "jsonb") return "jsonb";
   if (typeName === "text") return "text";
-  if (typeName === "boolean") return "boolean";
+  if (typeName === "boolean" || typeName === "bool") return "boolean";
   if (typeName === "int" || typeName === "integer" || typeName === "smallint") return "integer";
   if (typeName === "bigint") return "bigint";
   if (typeName === "numeric" || typeName === "decimal" || typeName === "real" || typeName === "double precision") {
