@@ -11,7 +11,8 @@ Migrer un module legacy vers PLX sans perdre le metier important, mais sans forc
 3. Recuperer le CRUD et les vues standards.
 4. Rebrancher les invariants metier avec hooks et validations.
 5. Rebrancher les enrichissements de lecture/liste avec `strategies.*`.
-6. Garder le reste en fonctions manuelles ou `post_apply` si necessaire.
+6. Utiliser `override` pour remplacer explicitement une surface CRUD generee si besoin.
+7. Garder le reste en fonctions manuelles ou `post_apply` si necessaire.
 
 ## Ce Qu'il Faut Preserver
 
@@ -43,6 +44,7 @@ Exemples typiques:
 - drift entre SDUI front, runtime et PLX
 - DDL structurel recurrent qui reste en `post_apply` sur plusieurs modules
 - bibliotheque SQL experte recurrente qui devrait vivre en `plx.sqlLib`
+- besoin recurrent de remplacer proprement une fonction CRUD generee
 
 ## Read Model
 
@@ -58,6 +60,19 @@ Quand le legacy avait deja une liste agregée:
 
 - utiliser `strategies.list.query`
 - garder la projection optimisee cote SQL
+
+## Override D'Une Surface CRUD
+
+Quand une fonction CRUD generee ne respecte pas un invariant metier important:
+
+- remplacer la fonction manuelle avec `fn ... [override]`
+- ne pas compter sur l'ordre de generation SQL
+
+Exemples:
+
+- soft delete sur `_delete`
+- `_read()` metier totalement remplace
+- `_list()` specialisee hors `strategies.*`
 
 ## Structure Hors Compilateur
 

@@ -22,7 +22,7 @@ import { ParseContext, ParseError } from "./parse-context.js";
 import { parseCommaSeparated } from "./parser-helpers.js";
 import { sqlEscape } from "./util.js";
 
-const VALID_FUNC_ATTRS = new Set(["stable", "immutable", "volatile", "definer", "strict"]);
+const VALID_FUNC_ATTRS = new Set(["stable", "immutable", "volatile", "definer", "strict", "override"]);
 
 interface ParseOptions {
   kind?: "module" | "fragment";

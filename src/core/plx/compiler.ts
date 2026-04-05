@@ -167,8 +167,34 @@ export function compileModuleBundle(mod: PlxModule, options: CompileModuleOption
     return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
   }
 
+  const manualOverrides = new Set(
+    mod.functions.filter((fn) => fn.attributes.includes("override")).map((fn) => `${fn.schema}.${fn.name}`),
+  );
+  const generatedFunctions = [...expandResult.functions, ...eventResult.functions];
+  const generatedByName = new Set(generatedFunctions.map((fn) => `${fn.schema}.${fn.name}`));
+
+  for (const fn of mod.functions) {
+    const key = `${fn.schema}.${fn.name}`;
+    if (!generatedByName.has(key)) continue;
+    if (fn.attributes.includes("override")) continue;
+    errors.push(
+      createDiagnostic(
+        "codegen",
+        "codegen.generated-function-collision",
+        `manual function '${key}' collides with a generated PLX function; mark it with [override] to replace the generated version`,
+        fn.loc,
+      ),
+    );
+  }
+  if (errors.length > 0) {
+    return emptyBundle({ sql: "", errors, warnings, functionCount: 0 }, mod);
+  }
+
   // Merge expanded functions with hand-written ones
-  const allFunctions = [...mod.functions, ...expandResult.functions, ...eventResult.functions];
+  const allFunctions = [
+    ...mod.functions,
+    ...generatedFunctions.filter((fn) => !manualOverrides.has(`${fn.schema}.${fn.name}`)),
+  ];
   const schemaArtifacts = buildSchemaArtifacts(
     allFunctions,
     testResult.functions,

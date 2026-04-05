@@ -261,6 +261,41 @@ entity demo.line:
     expect(result.sql).not.toContain("demo.line_delete");
   });
 
+  it("errors on manual collisions with generated CRUD functions without override", () => {
+    const source = `
+entity demo.article:
+  fields:
+    title text required
+
+fn demo.article_delete(p_id text) -> jsonb [definer]:
+  return jsonb_build_object('mode', 'soft')
+`;
+    const result = compile(source);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "codegen.generated-function-collision",
+        }),
+      ]),
+    );
+  });
+
+  it("lets manual functions override generated CRUD when marked explicitly", () => {
+    const source = `
+entity demo.article:
+  fields:
+    title text required
+
+fn demo.article_delete(p_id text) -> jsonb [definer, override]:
+  return jsonb_build_object('mode', 'soft')
+`;
+    const result = compile(source);
+    expect(result.errors).toHaveLength(0);
+    expect(result.sql).toContain("FUNCTION demo.article_delete(p_id text)");
+    expect(result.sql).toContain("'mode', 'soft'");
+    expect(result.sql).not.toContain("DELETE FROM demo.article WHERE id = p_id::int");
+  });
+
   it("supports generated columns and declarative indexes in entity DDL", () => {
     const source = `
 entity demo.asset:

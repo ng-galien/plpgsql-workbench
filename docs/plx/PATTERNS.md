@@ -44,6 +44,31 @@ Ce qui disparait:
 - `_update`
 - `_delete`
 
+## Override D'Une Fonction Generee
+
+Utiliser `fn ... [override]` quand une surface CRUD generee doit etre remplacee explicitement par une version metier.
+
+```plx
+entity stock.article:
+  fields:
+    title text required
+
+fn stock.article_delete(p_id text) -> jsonb [definer, override]:
+  return stock.article_archive(p_id)
+```
+
+Bon fit:
+
+- soft delete
+- archivage
+- delete metier avec controles supplementaires
+- surcharge explicite de `_read`, `_list`, `_delete`, etc.
+
+Regle:
+
+- sans `override`, une collision entre fonction manuelle et fonction generee est une erreur compilateur
+- avec `override`, la fonction manuelle remplace la version generee
+
 ## Before Create
 
 Utiliser `before create` pour preparer `p_row` avant merge du `p_input`.

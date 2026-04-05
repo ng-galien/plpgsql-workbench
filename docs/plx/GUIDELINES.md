@@ -68,6 +68,12 @@ Le genere est le bon choix quand:
 - les actions derivent du statut ou d'une regle simple
 - les validations se basent sur `p_input` et `p_row`
 
+Si une fonction CRUD generee ne convient pas telle quelle:
+
+- ne pas compter sur l'ordre de generation
+- utiliser une fonction manuelle `fn ... [override]`
+- laisser le compilateur supprimer explicitement la version generee
+
 ## Quand Utiliser Un Point D'Extension
 
 Utiliser un point d'extension quand le metier depasse le CRUD simple mais reste naturellement rattache a une entite.
@@ -83,6 +89,7 @@ Points d'extension a privilegier:
 - `indexes`
 - `plx.sqlLib`
 - `plx.post_apply`
+- `override` sur une fonction manuelle quand une surface CRUD generee doit etre remplacee
 
 Ne pas sortir trop vite du DSL si un point d'extension existe deja.
 
@@ -164,6 +171,7 @@ Le SQL passthrough reste acceptable pour:
 - garder en `post_apply` des generated columns ou des indexes simples maintenant supportes par le DSL
 - dupliquer un contrat SDUI cote front et cote PLX au lieu d'utiliser le schema canonique
 - contourner durablement le DSL au lieu de faire remonter un manque recurrent
+- redefinir une fonction CRUD generee sans `override` en comptant sur le dernier `CREATE OR REPLACE`
 
 ## Checklist
 

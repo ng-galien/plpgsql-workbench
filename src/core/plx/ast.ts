@@ -285,7 +285,7 @@ export interface EntityHook {
   loc: Loc;
 }
 
-export type FuncAttribute = "stable" | "immutable" | "volatile" | "definer" | "strict";
+export type FuncAttribute = "stable" | "immutable" | "volatile" | "definer" | "strict" | "override";
 
 export interface PlxFunction {
   kind: "function";
