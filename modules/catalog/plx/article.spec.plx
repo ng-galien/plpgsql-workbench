@@ -36,6 +36,37 @@ test "article deactivate and activate":
 
   catalog.article_delete(a->>'id')
 
+test "article hateoas reflects active state":
+  a := catalog.article_create({name: 'Hateoas Test', reference: 'HAT-001'})
+
+  r1 := catalog.article_read(a->>'id')
+  actions1 := r1->'actions'
+  assert jsonb_path_exists(actions1, '$[*] ? (@.method == "deactivate")')
+  assert jsonb_path_exists(actions1, '$[*] ? (@.method == "edit")')
+  assert jsonb_path_exists(actions1, '$[*] ? (@.method == "delete")')
+
+  catalog.article_deactivate(a->>'id')
+  r2 := catalog.article_read(a->>'id')
+  actions2 := r2->'actions'
+  assert jsonb_path_exists(actions2, '$[*] ? (@.method == "activate")')
+
+  catalog.article_delete(a->>'id')
+
+test "article list enriched":
+  cat := catalog.category_create({name: 'List Cat'})
+  a := catalog.article_create({name: 'Enriched Article', reference: 'ENR-001', category_id: (cat->>'id')::int})
+
+  row := """
+    select to_jsonb(r) from catalog._article_list_query(null) r
+    where r->>'id' = v_a->>'id'
+    limit 1
+  """
+  assert row->>'category_name' = 'List Cat'
+  assert (row->>'supplier_count')::int >= 0
+
+  catalog.article_delete(a->>'id')
+  catalog.category_delete(cat->>'id')
+
 test "supplier article crud":
   a := catalog.article_create({name: 'Supplier Test', reference: 'SUP-001'})
   s := catalog.supplier_article_create({article_id: (a->>'id')::int, supplier_name: 'Leroy Merlin', cost_price: 50.00, lead_time_days: 5})
